@@ -4,7 +4,7 @@ Orchestra is a professional **Agentic Orchestration Platform** designed to autom
 
 ## 🚀 Overview
 
-Orchestra bridges the gap between issue trackers (like Linear) and autonomous coding agents. It continuously polls for new work, creates deterministic per-issue workspaces, and orchestrates agent runs based on repo-defined policies.
+Orchestra bridges the gap between issue trackers and autonomous coding agents. It continuously polls for new work, creates deterministic per-issue workspaces, and orchestrates agent runs based on repo-defined policies.
 
 ### The Problem
 Traditional agent execution often relies on manual scripts, lacking isolation, observability, and structured management. Orchestra solves these problems by providing a managed platform that treats agent sessions as first-class, repeatable workflows.
@@ -17,7 +17,7 @@ Traditional agent execution often relies on manual scripts, lacking isolation, o
 
 ## ✨ Key Features
 
-- **Linear Integration**: Native GraphQL-based support for polling candidates and reconciling issue states.
+- **Pluggable Tracker Adapters**: Generic interface for integrating with any issue tracker (Linear, GitHub, or custom internal implementations).
 - **Dynamic Workflows**: Hot-reloadable `WORKFLOW.md` for updating prompts and runtime limits without service restarts.
 - **Advanced Orchestration**: Bounded concurrency (global and per-state thresholds), prioritization, and exponential backoff retries.
 - **Workspace Lifecycle**: Automated directory sanitization, isolation invariants, and customizable hooks (`after_create`, `before_run`, etc.).
@@ -29,7 +29,7 @@ Traditional agent execution often relies on manual scripts, lacking isolation, o
 Orchestra is organized as a monorepo:
 
 - **`apps/backend`**: The core orchestration engine written in Go (chi, zerolog).
-- **`apps/desktop`**: An Electron-based desktop application (React, Vite, Lucide) for monitoring and managing agent sessions.
+- **`apps/desktop`**: An Electron-based desktop application (React, Vite, Lucide, shadcn/ui) for monitoring and managing agent sessions.
 - **`packages/protocol`**: Shared protocol definitions and JSON schemas for agent communication.
 - **`packages/config-spec`**: Centralized configuration specifications and defaults.
 - **`ops/`**: Deployment configurations including Docker Compose and systemd units.
@@ -40,7 +40,7 @@ Orchestra is organized as a monorepo:
 ### Prerequisites
 - **Go**: 1.24+
 - **Node.js**: Latest LTS
-- **Linear API Key**: Set as `LINEAR_API_KEY` in your environment.
+- **Tracker Integration**: Configure your preferred tracker adapter in `WORKFLOW.md`.
 
 ### Installation
 
@@ -69,8 +69,8 @@ Orchestra is configured via a `WORKFLOW.md` file in the root of your target repo
 ```yaml
 ---
 tracker:
-  kind: linear
-  project_slug: PROJ
+  kind: memory # Or your custom implementation
+  # project_slug: PROJ
 polling:
   interval_ms: 30000
 agent:
