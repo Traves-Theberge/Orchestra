@@ -706,16 +706,17 @@ function queueRowsFromSnapshot(snapshot: SnapshotPayload | null): QueueRow[] {
 export function KanbanBoard({
   loadingState,
   snapshot,
+  doneItems = [],
   onInspectIssue,
 }: {
   loadingState: boolean
   snapshot: SnapshotPayload | null
+  doneItems?: any[]
   onInspectIssue: (issueIdentifier: string) => Promise<void>
 }) {
   const todoItems = getSortedRetryEntries(snapshot?.retrying ?? [])
   const inProgressItems = getSortedRunningEntries(snapshot?.running ?? [])
-  const doneItems: any[] = [] // Placeholder for now
-
+...
   const columns = [
     { id: 'todo', title: 'To Do', items: todoItems, icon: <div className="h-2 w-2 rounded-full border-2 border-muted-foreground" /> },
     { id: 'progress', title: 'In Progress', items: inProgressItems, icon: <div className="h-2 w-2 rounded-full border-2 border-amber-500 bg-amber-500" /> },

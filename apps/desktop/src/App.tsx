@@ -198,8 +198,28 @@ export default function App() {
           setLoadingState(false)
           setErrorMessage('')
         },
-        onTimelineEvent: (_eventType, envelope) => {
+        onTimelineEvent: (eventType, envelope) => {
           setTimeline((previous) => appendTimelineEvent(previous, { type: envelope.type, at: envelope.timestamp, data: envelope.data }))
+          if (eventType === 'run_succeeded') {
+            const issueId = (envelope.data.issue_id as string) || ''
+            const issueIdentifier = (envelope.data.issue_identifier as string) || ''
+            if (issueId && issueIdentifier) {
+              setDoneIssues((prev) => {
+                if (prev.find((i) => i.issue_id === issueId)) {
+                  return prev
+                }
+                return [
+                  ...prev,
+                  {
+                    issue_id: issueId,
+                    issue_identifier: issueIdentifier,
+                    state: 'Completed',
+                    at: envelope.timestamp,
+                  },
+                ]
+              })
+            }
+          }
         },
         onStatus: (message) => {
           setStatusMessage(message)
@@ -553,7 +573,7 @@ export default function App() {
 
               {showIssueBoard ? (
                 <section className="col-span-12">
-                  <KanbanBoard loadingState={loadingState} snapshot={snapshot} onInspectIssue={handleInspectIssueFromList} />
+                  <KanbanBoard loadingState={loadingState} snapshot={snapshot} doneItems={doneIssues} onInspectIssue={handleInspectIssueFromList} />
                 </section>
               ) : null}
 
