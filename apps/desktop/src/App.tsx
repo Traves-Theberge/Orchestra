@@ -91,6 +91,7 @@ export default function App() {
   const [config, setConfig] = useState<BackendConfig | null>(null)
   const [snapshot, setSnapshot] = useState<SnapshotPayload | null>(null)
   const [timeline, setTimeline] = useState<TimelineItem[]>([])
+  const [doneIssues, setDoneIssues] = useState<any[]>([])
   const [loadingConfig, setLoadingConfig] = useState(true)
   const [savingConfig, setSavingConfig] = useState(false)
   const [profilesPending, setProfilesPending] = useState(false)
