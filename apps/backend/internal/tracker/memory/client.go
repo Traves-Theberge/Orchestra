@@ -111,6 +111,47 @@ func (c *Client) SetIssueState(issueID string, state string) {
 	c.issues[issueID] = issue
 }
 
+func (c *Client) UpdateIssue(_ context.Context, identifier string, updates map[string]any) (*tracker.Issue, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	var target *tracker.Issue
+	for id, issue := range c.issues {
+		if issue.Identifier == identifier || issue.ID == identifier {
+			copy := issue
+			target = &copy
+			defer func(id string) {
+				c.issues[id] = *target
+			}(id)
+			break
+		}
+	}
+
+	if target == nil {
+		return nil, nil
+	}
+
+	if val, ok := updates["state"]; ok {
+		if s, ok := val.(string); ok {
+			target.State = s
+		}
+	}
+	if val, ok := updates["assignee_id"]; ok {
+		if s, ok := val.(string); ok {
+			target.AssigneeID = s
+		}
+	}
+	if val, ok := updates["priority"]; ok {
+		if n, ok := val.(int); ok {
+			target.Priority = n
+		} else if f, ok := val.(float64); ok {
+			target.Priority = int(f)
+		}
+	}
+
+	return target, nil
+}
+
 func normalizeStateSet(values []string) map[string]struct{} {
 	out := map[string]struct{}{}
 	for _, value := range values {

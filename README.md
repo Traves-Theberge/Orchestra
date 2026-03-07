@@ -20,9 +20,31 @@ Traditional agent execution often relies on manual scripts, lacking isolation, o
 - **Pluggable Tracker Adapters**: Generic interface for integrating with any issue tracker (Linear, GitHub, or custom internal implementations).
 - **Dynamic Workflows**: Hot-reloadable `WORKFLOW.md` for updating prompts and runtime limits without service restarts.
 - **Advanced Orchestration**: Bounded concurrency (global and per-state thresholds), prioritization, and exponential backoff retries.
-- **Workspace Lifecycle**: Automated directory sanitization, isolation invariants, and customizable hooks (`after_create`, `before_run`, etc.).
+- **Workspace Isolation**: Automated directory sanitization, path guarding (traversal/symlink protection), and lifecycle hooks.
+- **Multi-Agent Support**: Native support for **Codex**, **Claude Code**, and **OpenCode** with specialized process management and event parsing.
 - **Agent Runner Protocol**: Standardized JSON-RPC handshake for integrating any compatible coding agent app-server.
 - **Workspace Migration**: Built-in support for planning and executing workspace transfers between storage roots.
+
+## 🏗️ Architecture & Mechanics
+
+Orchestra operates as a distributed system with a decoupled execution engine and monitoring dashboard.
+
+### 1. The Backend Core Loop
+The Go backend runs two primary concurrent workers:
+- **Refresh Worker (1s)**: Synchronizes tracker state with local snapshots and identifies candidates.
+- **Execution Worker (300ms)**: Claims runnable issues and dispatches them to the agent registry.
+
+### 2. Workspace Lifecycle & Security
+Every agent session is isolated within a dedicated workspace.
+- **Path Guarding**: Strict validation ensures agents cannot escape their assigned directory via traversal or symlink attacks.
+- **Lifecycle Hooks**: Extensible hooks allow for precise environment setup:
+  - `after_create`: Provisioning and dependency installation.
+  - `before_run` / `after_run`: Environment wrapping for every agent turn.
+  - `before_remove`: Cleanup before workspace deletion.
+
+### 3. Communication Protocols
+- **Agent-Server**: Stateless JSON-RPC over `stdin`/`stdout` handling initialization, thread management, and automated action approvals.
+- **Desktop-Backend**: Hybrid synchronization using **SSE (Server-Sent Events)** for real-time timeline updates with an automatic **2s Snapshot Polling** fallback for restricted environments.
 
 ## 📂 Project Structure
 
@@ -74,7 +96,11 @@ tracker:
 polling:
   interval_ms: 30000
 agent:
+  provider: claude # Options: codex, claude, opencode
   max_concurrent_agents: 10
+  commands:
+    claude: "claude -p {{prompt}}"
+    opencode: "opencode run {{prompt}}"
 hooks:
   after_create: |
     git clone ...
@@ -102,3 +128,5 @@ Orchestra exposes a REST API (default port `4010`) for status and control:
 This project is licensed under the Apache 2.0 License - see the [LICENSE](LICENSE) and [NOTICE](NOTICE) files for details.
 
 This project is based on OpenAI's [Symphony](https://github.com/openai/symphony) project.
+
+Rewritten by [Traves Theberge](https://github.com/traves-theberge) in Go and TypeScript and Electron for the desktop app.

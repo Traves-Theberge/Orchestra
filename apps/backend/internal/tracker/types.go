@@ -30,4 +30,5 @@ type Client interface {
 	FetchIssuesByIDs(ctx context.Context, issueIDs []string) ([]Issue, error)
 	FetchIssueStatesByIDs(ctx context.Context, issueIDs []string) (map[string]string, error)
 	FetchIssuesByStates(ctx context.Context, states []string) ([]Issue, error)
+	UpdateIssue(ctx context.Context, identifier string, updates map[string]any) (*Issue, error)
 }

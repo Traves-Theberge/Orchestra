@@ -83,6 +83,7 @@ func NewRouterWithPubSub(
 	}
 
 	r.Get("/api/v1/{issue_identifier}", server.GetIssue)
+	r.Patch("/api/v1/{issue_identifier}", server.PatchIssue)
 
 	return r
 }

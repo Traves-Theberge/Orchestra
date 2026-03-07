@@ -458,6 +458,10 @@ func appendUniqueIssues(out []tracker.Issue, issues []tracker.Issue, seen map[st
 	return out
 }
 
+func (c *Client) UpdateIssue(_ context.Context, identifier string, updates map[string]any) (*tracker.Issue, error) {
+	return nil, fmt.Errorf("UpdateIssue not implemented for GraphQL tracker")
+}
+
 func sortIssues(issues []tracker.Issue) {
 	sort.SliceStable(issues, func(i int, j int) bool {
 		left := strings.TrimSpace(issues[i].Identifier)

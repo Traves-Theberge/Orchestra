@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Activity, AlertTriangle, Wrench } from 'lucide-react'
+import { Activity, AlertCircle, AlertTriangle, MoreHorizontal, SignalHigh, SignalLow, SignalMedium, Users, Wrench } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -283,41 +283,122 @@ export function SettingsCard({
   )
 }
 
-export function IssueDetailView({ result }: { result: Record<string, unknown> }) {
+const AVAILABLE_AGENTS = [
+  { id: 'agent-codex', name: 'Codex Orchestrator', role: 'Primary' },
+  { id: 'agent-claude', name: 'Claude Operator', role: 'Reasoning' },
+  { id: 'agent-gpt', name: 'GPT Assistant', role: 'Utility' },
+  { id: 'agent-open', name: 'OpenCode Runner', role: 'Local' },
+]
+
+const AGENT_STATES = [
+  'Backlog',
+  'Todo',
+  'In Progress',
+  'In Review',
+  'Done',
+  'Canceled',
+]
+
+function PriorityIcon({ priority, className }: { priority: number; className?: string }) {
+  // 0: No Priority, 1: Low, 2: Medium, 3: High, 4: Urgent
+  switch (priority) {
+    case 1:
+      return <SignalLow className={`text-muted-foreground/60 ${className}`} />
+    case 2:
+      return <SignalMedium className={`text-amber-500/60 ${className}`} />
+    case 3:
+      return <SignalHigh className={`text-orange-500/80 ${className}`} />
+    case 4:
+      return <AlertCircle className={`text-red-500 ${className}`} />
+    default:
+      return <MoreHorizontal className={`text-muted-foreground/40 ${className}`} />
+  }
+}
+
+function PriorityLabel({ priority }: { priority: number }) {
+  const labels = ['No Priority', 'Low', 'Medium', 'High', 'Urgent']
+  return <span>{labels[priority] || 'No Priority'}</span>
+}
+
+export function IssueDetailView({ result, onUpdate }: { result: Record<string, unknown>; onUpdate?: (updates: Record<string, unknown>) => Promise<void> }) {
+  const [localState, setLocalState] = useState((result.state as string) || 'Todo')
+  const [localAssignee, setLocalAssignee] = useState((result.assignee_id as string) || 'Unassigned')
+
+  const handleStateChange = async (newState: string) => {
+    setLocalState(newState)
+    if (onUpdate) {
+      await onUpdate({ state: newState })
+    }
+  }
+
+  const handleAssigneeChange = async (newAssignee: string) => {
+    setLocalAssignee(newAssignee)
+    if (onUpdate) {
+      await onUpdate({ assignee_id: newAssignee })
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="rounded-lg border bg-muted/30 p-4">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-border/40 pb-4">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="font-mono text-[10px] uppercase tracking-wider">
                 {(result.identifier as string) || (result.id as string)}
               </Badge>
-              <span className="text-xs text-muted-foreground">in {(result.team_id as string) || 'unknown team'}</span>
+              <span className="text-xs text-muted-foreground">in {(result.team_id as string) || 'Orchestra'}</span>
             </div>
             <h3 className="mt-1 truncate text-lg font-semibold text-foreground">{(result.title as string) || 'No Title'}</h3>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" className="h-8 text-xs" disabled>
-              Change State
-            </Button>
-            <Button variant="outline" size="sm" className="h-8 text-xs" disabled>
-              Assign
-            </Button>
+            <select
+              className="h-8 rounded-md border border-border bg-background px-2 text-xs font-medium focus:ring-1 focus:ring-primary"
+              value={localState}
+              onChange={(e) => handleStateChange(e.target.value)}
+            >
+              {AGENT_STATES.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+            <select
+              className="h-8 rounded-md border border-border bg-background px-2 text-xs font-medium focus:ring-1 focus:ring-primary"
+              value={localAssignee}
+              onChange={(e) => handleAssigneeChange(e.target.value)}
+            >
+              <option value="Unassigned">Assign Agent...</option>
+              {AVAILABLE_AGENTS.map((agent) => (
+                <option key={agent.id} value={agent.id}>{agent.name}</option>
+              ))}
+            </select>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-5">
           <div className="space-y-1">
-            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">State</p>
+            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Status</p>
             <div className="flex items-center gap-2">
-              <div className="h-2 w-2 rounded-full bg-primary" />
-              <span className="font-medium">{(result.state as string) || 'n/a'}</span>
+              <div className={`h-2 w-2 rounded-full ${localState === 'In Progress' ? 'bg-amber-500 animate-pulse' : 'bg-primary'}`} />
+              <span className="font-medium">{localState}</span>
             </div>
           </div>
           <div className="space-y-1">
-            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Assignee</p>
-            <p className="font-medium">{(result.assignee_id as string) || 'Unassigned'}</p>
+            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Priority</p>
+            <div className="flex items-center gap-2">
+              <PriorityIcon priority={Number(result.priority ?? 0)} className="h-4 w-4" />
+              <span className="font-medium">
+                <PriorityLabel priority={Number(result.priority ?? 0)} />
+              </span>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Assigned Agent</p>
+            <div className="flex items-center gap-2">
+              <Users className="h-3.5 w-3.5 text-muted-foreground/60" />
+              <p className="font-medium">
+                {AVAILABLE_AGENTS.find(a => a.id === localAssignee)?.name || localAssignee}
+              </p>
+            </div>
           </div>
           <div className="space-y-1">
             <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Project</p>
@@ -377,6 +458,7 @@ export function IssueInspectorCard({
   issueLookupResult,
   onIssueLookupIdChange,
   onIssueLookup,
+  onIssueUpdate,
 }: {
   configReady: boolean
   issueLookupId: string
@@ -385,6 +467,7 @@ export function IssueInspectorCard({
   issueLookupResult: Record<string, unknown> | null
   onIssueLookupIdChange: (value: string) => void
   onIssueLookup: () => Promise<void>
+  onIssueUpdate?: (identifier: string, updates: Record<string, unknown>) => Promise<void>
 }) {
   return (
     <Card className="border bg-card shadow-lg dark:bg-card">
@@ -413,7 +496,12 @@ export function IssueInspectorCard({
           </div>
         ) : null}
 
-        {issueLookupResult ? <IssueDetailView result={issueLookupResult} /> : null}
+        {issueLookupResult ? (
+          <IssueDetailView
+            result={issueLookupResult}
+            onUpdate={(updates) => (onIssueUpdate ? onIssueUpdate(issueLookupId, updates) : Promise.resolve())}
+          />
+        ) : null}
       </CardContent>
     </Card>
   )
@@ -714,17 +802,84 @@ export function KanbanBoard({
   doneItems?: any[]
   onInspectIssue: (issueIdentifier: string) => Promise<void>
 }) {
-  const todoItems = getSortedRetryEntries(snapshot?.retrying ?? [])
-  const inProgressItems = getSortedRunningEntries(snapshot?.running ?? [])
-...
+  const [stateFilter, setStateFilter] = useState<string>('all')
+  const [priorityFilter, setPriorityFilter] = useState<string>('all')
+
+  const allItems = [
+    ...(getSortedRetryEntries(snapshot?.retrying ?? []) as any[]),
+    ...(getSortedRunningEntries(snapshot?.running ?? []) as any[]),
+    ...doneItems,
+  ]
+
+  const uniqueStates = Array.from(new Set(allItems.map((item) => item.state))).sort()
+
+  const filterItem = (item: any) => {
+    const stateMatch = stateFilter === 'all' || item.state === stateFilter
+    const priorityMatch = priorityFilter === 'all' || String(item.priority ?? 0) === priorityFilter
+    return stateMatch && priorityMatch
+  }
+
+  const todoItems = getSortedRetryEntries(snapshot?.retrying ?? []).filter(filterItem)
+  const inProgressItems = getSortedRunningEntries(snapshot?.running ?? []).filter(filterItem)
+  const filteredDoneItems = doneItems.filter(filterItem)
+
   const columns = [
     { id: 'todo', title: 'To Do', items: todoItems, icon: <div className="h-2 w-2 rounded-full border-2 border-muted-foreground" /> },
     { id: 'progress', title: 'In Progress', items: inProgressItems, icon: <div className="h-2 w-2 rounded-full border-2 border-amber-500 bg-amber-500" /> },
-    { id: 'done', title: 'Done', items: doneItems, icon: <div className="h-2 w-2 rounded-full bg-primary" /> },
+    { id: 'done', title: 'Done', items: filteredDoneItems, icon: <div className="h-2 w-2 rounded-full bg-primary" /> },
   ]
 
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center gap-3 border-b border-border/40 pb-4">
+        <div className="flex items-center gap-2 rounded-md border bg-muted/20 px-2 py-1">
+          <span className="text-[10px] font-bold uppercase tracking-tight text-muted-foreground/60">State</span>
+          <select
+            className="bg-transparent text-xs font-medium focus:outline-none"
+            value={stateFilter}
+            onChange={(e) => setStateFilter(e.target.value)}
+          >
+            <option value="all">All</option>
+            {uniqueStates.map((state) => (
+              <option key={state} value={state}>
+                {state}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2 rounded-md border bg-muted/20 px-2 py-1">
+          <span className="text-[10px] font-bold uppercase tracking-tight text-muted-foreground/60">Priority</span>
+          <select
+            className="bg-transparent text-xs font-medium focus:outline-none"
+            value={priorityFilter}
+            onChange={(e) => setPriorityFilter(e.target.value)}
+          >
+            <option value="all">All</option>
+            <option value="0">No Priority</option>
+            <option value="1">Low</option>
+            <option value="2">Medium</option>
+            <option value="3">High</option>
+            <option value="4">Urgent</option>
+          </select>
+        </div>
+
+        {stateFilter !== 'all' || priorityFilter !== 'all' ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-[10px] text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              setStateFilter('all')
+              setPriorityFilter('all')
+            }}
+          >
+            Clear filters
+          </Button>
+        ) : null}
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
       {columns.map((column) => (
         <div key={column.id} className="flex flex-col gap-3">
           <div className="flex items-center justify-between px-1">
@@ -754,9 +909,12 @@ export function KanbanBoard({
                   onClick={() => void onInspectIssue(item.issue_identifier)}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <span className="font-mono text-[10px] font-semibold tracking-tight text-muted-foreground/80">
-                      {item.issue_identifier}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <PriorityIcon priority={Number((item as any).priority ?? 0)} className="h-3 w-3" />
+                      <span className="font-mono text-[10px] font-semibold tracking-tight text-muted-foreground/80">
+                        {item.issue_identifier}
+                      </span>
+                    </div>
                     <span className="text-[9px] font-medium text-muted-foreground/40">
                       {(item as any).at ? new Date((item as any).at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (item as any).due_at ? 'Retry' : ''}
                     </span>
@@ -764,6 +922,18 @@ export function KanbanBoard({
                   <p className="mt-2 line-clamp-2 text-[13px] font-medium leading-tight text-foreground/90">
                     {(item as any).last_message || (item as any).error || 'No message'}
                   </p>
+                  {Array.isArray((item as any).labels) && (item as any).labels.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {(item as any).labels.slice(0, 2).map((label: string) => (
+                        <Badge key={label} variant="secondary" className="px-1 py-0 text-[9px] font-normal text-muted-foreground/70">
+                          {label}
+                        </Badge>
+                      ))}
+                      {(item as any).labels.length > 2 && (
+                        <span className="text-[9px] text-muted-foreground/40">+{(item as any).labels.length - 2}</span>
+                      )}
+                    </div>
+                  )}
                   <div className="mt-3 flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
                       <div className="h-2 w-2 rounded-full bg-primary/20" />

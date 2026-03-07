@@ -133,7 +133,30 @@ async function requestJSON<T>(config: BackendConfig, path: string, init?: Reques
     throw new APIError('request_failed', `${response.status} ${response.statusText}`)
   }
 
+  // Handle cases where response might be empty (204 No Content) or other non-JSON but successful responses
+  if (response.status === 204) {
+    return {} as T
+  }
+
   return (await response.json()) as T
+}
+
+export async function updateIssue(
+  config: BackendConfig,
+  issueIdentifier: string,
+  updates: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const normalized = issueIdentifier.trim()
+  if (normalized === '') {
+    throw new APIError('invalid_request', 'issue identifier is required')
+  }
+  return requestJSON<Record<string, unknown>>(config, `/api/v1/${encodeURIComponent(normalized)}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(updates),
+  })
 }
 
 export async function fetchState(config: BackendConfig): Promise<SnapshotPayload> {

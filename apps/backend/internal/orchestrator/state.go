@@ -338,6 +338,25 @@ func (s *Service) PerformRefresh(ctx context.Context) error {
 	return nil
 }
 
+func (s *Service) UpdateIssue(ctx context.Context, identifier string, updates map[string]any) (*tracker.Issue, error) {
+	s.mu.RLock()
+	client := s.trackerClient
+	s.mu.RUnlock()
+
+	if client == nil {
+		return nil, nil
+	}
+
+	issue, err := client.UpdateIssue(ctx, identifier, updates)
+	if err != nil {
+		return nil, err
+	}
+
+	// Trigger refresh to reflect changes immediately in snapshot
+	s.QueueRefresh()
+	return issue, nil
+}
+
 func (s *Service) enqueueCandidates(candidates []tracker.Issue) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	s.mu.Lock()

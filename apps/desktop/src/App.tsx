@@ -379,6 +379,19 @@ export default function App() {
     await executeIssueLookup(issueLookupId)
   }
 
+  const handleIssueUpdate = async (identifier: string, updates: Record<string, unknown>) => {
+    if (!config) return
+    try {
+      await updateIssue(config, identifier, updates)
+      // Refetch state immediately to show updates in Kanban/lists
+      void handleRefresh()
+      // Also refetch the specific issue to update the detail view if it's open
+      void executeIssueLookup(identifier)
+    } catch (err) {
+      setOperatorError('update issue failed', err)
+    }
+  }
+
   const handleInspectIssueFromList = async (issueIdentifier: string) => {
     setIssueLookupId(issueIdentifier)
     setInspectDialogOpen(true)
@@ -599,6 +612,7 @@ export default function App() {
                     issueLookupResult={issueLookupResult}
                     onIssueLookupIdChange={setIssueLookupId}
                     onIssueLookup={handleIssueLookup}
+                    onIssueUpdate={handleIssueUpdate}
                   />
                 </section>
               ) : null}

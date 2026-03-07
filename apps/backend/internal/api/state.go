@@ -92,3 +92,27 @@ func (s *Server) GetIssue(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(response)
 }
+
+func (s *Server) PatchIssue(w http.ResponseWriter, r *http.Request) {
+	identifier := chi.URLParam(r, "issue_identifier")
+	var updates map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid_json", "failed to decode request body")
+		return
+	}
+
+	issue, err := s.orchestrator.UpdateIssue(r.Context(), identifier, updates)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "update_failed", err.Error())
+		return
+	}
+
+	if issue == nil {
+		writeJSONError(w, http.StatusNotFound, "issue_not_found", "issue not found")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(issue)
+}
