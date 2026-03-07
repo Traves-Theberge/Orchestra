@@ -1,0 +1,38 @@
+name: make-all
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  make-all:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: elixir
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up mise tools
+        uses: jdx/mise-action@v3
+        with:
+          install: true
+          cache: true
+          working_directory: elixir
+
+      - name: Cache deps and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            elixir/deps
+            elixir/_build
+          key: ${{ runner.os }}-mix-${{ hashFiles('elixir/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-
+
+      - name: Verify make all
+        run: make all

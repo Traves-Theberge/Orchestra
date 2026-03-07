@@ -1,0 +1,19 @@
+services:
+  orchestra-backend:
+    build:
+      context: ../../
+      dockerfile: ops/docker/Dockerfile.backend
+    image: orchestra-backend:latest
+    container_name: orchestra-backend
+    environment:
+      ORCHESTRA_SERVER_HOST: 0.0.0.0
+      ORCHESTRA_SERVER_PORT: 4000
+      ORCHESTRA_WORKSPACE_ROOT: /var/lib/orchestra/workspaces
+    ports:
+      - "4000:4000"
+    volumes:
+      - orchestra-workspaces:/var/lib/orchestra/workspaces
+    restart: unless-stopped
+
+volumes:
+  orchestra-workspaces:

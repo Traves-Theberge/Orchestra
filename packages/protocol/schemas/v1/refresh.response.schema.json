@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "orchestra.protocol.v1.refresh.response",
+  "title": "Orchestra Refresh Response",
+  "type": "object",
+  "required": ["queued", "coalesced", "requested_at", "operations"],
+  "properties": {
+    "queued": { "type": "boolean" },
+    "coalesced": { "type": "boolean" },
+    "requested_at": { "type": "string", "format": "date-time" },
+    "operations": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "additionalProperties": true
+}

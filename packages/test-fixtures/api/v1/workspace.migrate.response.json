@@ -1,0 +1,15 @@
+{
+  "from": "/tmp/orchestra_workspaces_prev",
+  "to": "/tmp/orchestra_workspaces",
+  "dry_run": true,
+  "result": {
+    "applied": false,
+    "actions": [
+      {
+        "type": "rename_root",
+        "source": "/tmp/orchestra_workspaces_prev",
+        "target": "/tmp/orchestra_workspaces"
+      }
+    ]
+  }
+}

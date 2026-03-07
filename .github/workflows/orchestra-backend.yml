@@ -1,0 +1,46 @@
+name: orchestra-backend
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/backend/go.mod
+
+      - name: Verify formatting
+        run: |
+          test -z "$(gofmt -l ./cmd ./internal)"
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Run race tests
+        run: go test -race ./...
+
+  naming-guard:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      - name: Check Orchestra naming guard
+        run: .github/scripts/check-orchestra-naming.sh

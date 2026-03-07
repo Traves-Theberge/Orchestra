@@ -1,0 +1,20 @@
+FROM golang:1.24 AS build
+WORKDIR /src
+
+COPY apps/backend/go.mod apps/backend/go.sum ./apps/backend/
+RUN cd apps/backend && go mod download
+
+COPY apps/backend ./apps/backend
+RUN cd apps/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/orchestrad ./cmd/orchestrad
+RUN cd apps/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/orchestra ./cmd/orchestra
+
+FROM gcr.io/distroless/static-debian12
+WORKDIR /app
+COPY --from=build /out/orchestrad /usr/local/bin/orchestrad
+COPY --from=build /out/orchestra /usr/local/bin/orchestra
+
+ENV ORCHESTRA_SERVER_HOST=0.0.0.0
+ENV ORCHESTRA_SERVER_PORT=4000
+EXPOSE 4000
+
+ENTRYPOINT ["/usr/local/bin/orchestrad"]

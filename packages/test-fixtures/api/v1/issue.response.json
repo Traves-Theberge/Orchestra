@@ -1,0 +1,30 @@
+{
+  "issue_identifier": "MT-649",
+  "issue_id": "abc123",
+  "status": "running",
+  "workspace": {
+    "path": "/tmp/orchestra_workspaces/MT-649"
+  },
+  "attempts": {
+    "restart_count": 1,
+    "current_retry_attempt": 2
+  },
+  "running": {
+    "session_id": "thread-1-turn-1",
+    "turn_count": 7,
+    "state": "In Progress"
+  },
+  "retry": null,
+  "logs": {
+    "codex_session_logs": [
+      {
+        "label": "latest",
+        "path": "",
+        "url": null
+      }
+    ]
+  },
+  "recent_events": [],
+  "last_error": null,
+  "tracked": {}
+}

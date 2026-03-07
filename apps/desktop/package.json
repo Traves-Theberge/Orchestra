@@ -1,0 +1,51 @@
+{
+  "name": "orchestra-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "concurrently -k \"vite --port 5173 --strictPort\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron electron/main.cjs\"",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:smoke-renderer": "vitest run src/App.smoke.test.tsx --reporter=verbose",
+    "smoke:ops": "node scripts/smoke-ops-flow.mjs",
+    "smoke:ops:go": "node scripts/smoke-ops-flow.mjs --spawn-backend --base-url=http://127.0.0.1:4010",
+    "smoke:ops:go:auth": "node scripts/smoke-ops-flow.mjs --spawn-backend --require-auth --token=smoke-token --base-url=http://127.0.0.1:4012",
+    "parity:verify": "node scripts/parity-report.mjs",
+    "parity:verify:twice": "npm run parity:verify && npm run parity:verify",
+    "release:readiness": "node scripts/release-readiness.mjs",
+    "release:gate": "npm run parity:verify:twice && npm run release:readiness"
+  },
+  "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.4",
+    "@radix-ui/react-slot": "^1.1.1",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwind-merge": "^2.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "^33.2.1",
+    "jsdom": "^25.0.1",
+    "@testing-library/react": "^16.2.0",
+    "postcss": "^8.4.49",
+    "react-grab": "^0.1.25",
+    "tailwindcss": "^3.4.16",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3",
+    "vitest": "^2.1.8",
+    "wait-on": "^8.0.1"
+  }
+}

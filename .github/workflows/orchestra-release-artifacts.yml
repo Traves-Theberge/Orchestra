@@ -1,0 +1,32 @@
+name: orchestra-release-artifacts
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-artifacts:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/backend/go.mod
+
+      - name: Build Orchestra binaries
+        run: |
+          mkdir -p dist/orchestra
+          go build -o dist/orchestra/orchestrad ./cmd/orchestrad
+          go build -o dist/orchestra/orchestra ./cmd/orchestra
+
+      - name: Upload Orchestra artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: orchestra-backend-artifacts
+          path: apps/backend/dist/orchestra

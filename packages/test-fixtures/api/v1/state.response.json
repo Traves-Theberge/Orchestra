@@ -1,0 +1,16 @@
+{
+  "generated_at": "2026-02-24T20:15:30Z",
+  "counts": {
+    "running": 2,
+    "retrying": 1
+  },
+  "running": [],
+  "retrying": [],
+  "codex_totals": {
+    "input_tokens": 5000,
+    "output_tokens": 2400,
+    "total_tokens": 7400,
+    "seconds_running": 1834.2
+  },
+  "rate_limits": null
+}

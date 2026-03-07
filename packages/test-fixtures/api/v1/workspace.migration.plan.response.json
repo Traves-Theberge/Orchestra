@@ -1,0 +1,14 @@
+{
+  "from": "/tmp/orchestra_workspaces_prev",
+  "to": "/tmp/orchestra_workspaces",
+  "result": {
+    "applied": false,
+    "actions": [
+      {
+        "type": "rename_root",
+        "source": "/tmp/orchestra_workspaces_prev",
+        "target": "/tmp/orchestra_workspaces"
+      }
+    ]
+  }
+}

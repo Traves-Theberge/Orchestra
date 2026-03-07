@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 210 20% 98%;
+  --foreground: 161 50% 5%;
+  --card: 0 0% 100%;
+  --card-foreground: 161 50% 5%;
+  --primary: 161 72% 38%;
+  --primary-foreground: 210 20% 98%;
+  --muted: 210 10% 94%;
+  --muted-foreground: 210 10% 40%;
+  --border: 210 10% 88%;
+}
+
+.dark {
+  --background: 160 10% 3%;
+  --foreground: 160 20% 98%;
+  --card: 160 10% 6%;
+  --card-foreground: 160 20% 98%;
+  --primary: 161 72% 45%;
+  --primary-foreground: 160 10% 3%;
+  --muted: 160 10% 12%;
+  --muted-foreground: 160 5% 65%;
+  --border: 160 10% 15%;
+}
+
+* {
+  @apply border-border;
+}
+
+body {
+  @apply bg-background text-foreground antialiased;
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Helvetica, Arial, sans-serif;
+  background-image:
+    radial-gradient(1200px 480px at -10% -20%, hsl(var(--primary) / 0.08), transparent 70%),
+    radial-gradient(1100px 520px at 110% -10%, hsl(var(--muted-foreground) / 0.12), transparent 70%),
+    linear-gradient(180deg, hsl(var(--background)), hsl(var(--background)));
+}

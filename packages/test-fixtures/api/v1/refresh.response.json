@@ -1,0 +1,6 @@
+{
+  "queued": true,
+  "coalesced": false,
+  "requested_at": "2026-02-24T20:15:30Z",
+  "operations": ["poll", "reconcile"]
+}

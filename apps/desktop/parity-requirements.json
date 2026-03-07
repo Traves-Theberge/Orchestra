@@ -1,0 +1,39 @@
+{
+  "required_workflows": [
+    {
+      "id": "desktop-unit-and-integration-tests",
+      "description": "Desktop parser/runtime/navigation tests pass",
+      "required_check_ids": ["desktop_tests"]
+    },
+    {
+      "id": "renderer-boot-and-settings-smoke",
+      "description": "Renderer mounts and settings/issue-inspector smoke interactions pass",
+      "required_check_ids": ["renderer_boot_smoke"]
+    },
+    {
+      "id": "desktop-static-type-safety",
+      "description": "Desktop TypeScript typecheck passes to prevent runtime symbol regressions",
+      "required_check_ids": ["desktop_typecheck"]
+    },
+    {
+      "id": "desktop-production-build",
+      "description": "Desktop renderer builds successfully",
+      "required_check_ids": ["desktop_build"]
+    },
+    {
+      "id": "backend-regression-suite",
+      "description": "Go backend contract and behavior tests pass",
+      "required_check_ids": ["backend_tests"]
+    },
+    {
+      "id": "ops-flow-open-host",
+      "description": "Open-host ops flow passes including SSE and issue error contract",
+      "required_check_ids": ["smoke_go_open_host"]
+    },
+    {
+      "id": "ops-flow-auth-host",
+      "description": "Auth-host ops flow passes including unauthorized and authorized behavior",
+      "required_check_ids": ["smoke_go_auth_host"]
+    }
+  ]
+}

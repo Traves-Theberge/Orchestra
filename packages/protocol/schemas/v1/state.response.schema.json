@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "orchestra.protocol.v1.state.response",
+  "title": "Orchestra State Response",
+  "type": "object",
+  "required": [
+    "generated_at",
+    "counts",
+    "running",
+    "retrying",
+    "codex_totals",
+    "rate_limits"
+  ],
+  "properties": {
+    "generated_at": { "type": "string", "format": "date-time" },
+    "counts": {
+      "type": "object",
+      "required": ["running", "retrying"],
+      "properties": {
+        "running": { "type": "integer", "minimum": 0 },
+        "retrying": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "running": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "retrying": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "codex_totals": {
+      "type": "object",
+      "required": ["input_tokens", "output_tokens", "total_tokens", "seconds_running"],
+      "properties": {
+        "input_tokens": { "type": "integer" },
+        "output_tokens": { "type": "integer" },
+        "total_tokens": { "type": "integer" },
+        "seconds_running": { "type": "number" }
+      },
+      "additionalProperties": true
+    },
+    "rate_limits": {}
+  },
+  "additionalProperties": true
+}

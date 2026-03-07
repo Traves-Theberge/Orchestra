@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "orchestra.protocol.v1.issue.response",
+  "title": "Orchestra Issue Runtime Response",
+  "type": "object",
+  "required": ["issue_identifier", "issue_id", "status", "workspace", "tracked"],
+  "properties": {
+    "issue_identifier": { "type": "string" },
+    "issue_id": { "type": "string" },
+    "status": { "type": "string" },
+    "workspace": {
+      "type": "object",
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "running": {
+      "type": ["object", "null"]
+    },
+    "retry": {
+      "type": ["object", "null"]
+    },
+    "tracked": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": true
+}
