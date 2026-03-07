@@ -4,6 +4,7 @@ import { SidebarNav } from '@/components/app-shell/sidebar-nav'
 import { TopBar } from '@/components/app-shell/top-bar'
 import {
   IssueInspectorCard,
+  IssueDetailView,
   IntegrationUtilityCard,
   KanbanBoard,
   MetricCard,
@@ -14,6 +15,13 @@ import {
   StatusStrip,
   TimelineCard,
 } from '@/components/app-shell/panels'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Skeleton } from '@/components/ui/skeleton'
 import { periodFilters, type SidebarItem, type TimelineItem } from '@/components/app-shell/types'
 import {
   applyWorkspaceMigration,
@@ -608,6 +616,30 @@ export default function App() {
           </div>
         </main>
       </div>
+
+      <Dialog open={inspectDialogOpen} onOpenChange={setInspectDialogOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Issue Inspection</DialogTitle>
+          </DialogHeader>
+          <div className="py-2">
+            {issueLookupPending ? (
+              <div className="space-y-4">
+                <Skeleton className="h-8 w-[200px]" />
+                <Skeleton className="h-[200px] w-full" />
+              </div>
+            ) : issueLookupError ? (
+              <div className="rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-900 dark:border-red-900/70 dark:bg-red-950/35 dark:text-red-200">
+                {issueLookupError}
+              </div>
+            ) : issueLookupResult ? (
+              <IssueDetailView result={issueLookupResult} />
+            ) : (
+              <p className="text-center text-sm text-muted-foreground">No issue selected.</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
