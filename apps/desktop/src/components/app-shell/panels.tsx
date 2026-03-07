@@ -952,6 +952,7 @@ export function KanbanBoard({
           </div>
         </div>
       ))}
+      </div>
     </div>
   )
 }

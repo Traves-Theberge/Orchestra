@@ -668,7 +668,7 @@ export default function App() {
                 {issueLookupError}
               </div>
             ) : issueLookupResult ? (
-              <IssueDetailView result={issueLookupResult} />
+              <IssueDetailView result={issueLookupResult} onUpdate={(updates) => handleIssueUpdate(issueLookupId, updates)} />
             ) : (
               <p className="text-center text-sm text-muted-foreground">No issue selected.</p>
             )}

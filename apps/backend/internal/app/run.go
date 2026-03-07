@@ -129,6 +129,20 @@ func processExecutionTick(
 		return
 	}
 
+	// Resolve provider from assignee if possible, otherwise fallback to default
+	activeProvider := provider
+	activeProviderName := providerName
+
+	if entry.AssigneeID != "" {
+		// Strip "agent-" prefix if present from UI identifiers
+		p := strings.TrimPrefix(entry.AssigneeID, "agent-")
+		candidate := agents.Provider(strings.ToLower(p))
+		if registry.HasProvider(candidate) {
+			activeProvider = candidate
+			activeProviderName = string(candidate)
+		}
+	}
+
 	workspacePath, _, err := workspaceService.EnsureIssueWorkspace(entry.IssueIdentifier, workspaceHooks)
 	if err != nil {
 		attempt := entry.TurnCount + 1
@@ -136,7 +150,7 @@ func processExecutionTick(
 		publishLifecycleEvent(pubsub, "run_failed", map[string]any{
 			"issue_id":         entry.IssueID,
 			"issue_identifier": entry.IssueIdentifier,
-			"provider":         providerName,
+			"provider":         activeProviderName,
 			"attempt":          attempt,
 			"error":            err.Error(),
 			"cause":            "workspace_prepare_failed",
@@ -145,14 +159,14 @@ func processExecutionTick(
 			publishLifecycleEvent(pubsub, "retry_scheduled", map[string]any{
 				"issue_id":         entry.IssueID,
 				"issue_identifier": entry.IssueIdentifier,
-				"provider":         providerName,
+				"provider":         activeProviderName,
 				"attempt":          attempt,
 				"due_at":           dueAt.UTC().Format(time.RFC3339),
 				"cause":            "workspace_prepare_failed",
 			})
 		}
 		service.RecordRunFailure(entry.IssueID, entry.IssueIdentifier, attempt, dueAt, err)
-		logger.Error().Err(err).Str("issue_id", entry.IssueID).Msg("workspace preparation failed")
+		logger.Error().Err(err).Str("issue_id", entry.IssueID).Str("provider", activeProviderName).Msg("workspace preparation failed")
 		publishSnapshot(pubsub, service)
 		return
 	}
@@ -168,7 +182,7 @@ func processExecutionTick(
 			publishLifecycleEvent(pubsub, "run_failed", map[string]any{
 				"issue_id":         entry.IssueID,
 				"issue_identifier": entry.IssueIdentifier,
-				"provider":         providerName,
+				"provider":         activeProviderName,
 				"attempt":          attempt,
 				"error":            err.Error(),
 				"cause":            "before_run_hook_failed",
@@ -177,14 +191,14 @@ func processExecutionTick(
 				publishLifecycleEvent(pubsub, "retry_scheduled", map[string]any{
 					"issue_id":         entry.IssueID,
 					"issue_identifier": entry.IssueIdentifier,
-					"provider":         providerName,
+					"provider":         activeProviderName,
 					"attempt":          attempt,
 					"due_at":           dueAt.UTC().Format(time.RFC3339),
 					"cause":            "before_run_hook_failed",
 				})
 			}
 			service.RecordRunFailure(entry.IssueID, entry.IssueIdentifier, attempt, dueAt, err)
-			logger.Error().Err(err).Str("issue_id", entry.IssueID).Msg("workspace before_run hook failed")
+			logger.Error().Err(err).Str("issue_id", entry.IssueID).Str("provider", activeProviderName).Msg("workspace before_run hook failed")
 			publishSnapshot(pubsub, service)
 			return
 		}
@@ -194,7 +208,7 @@ func processExecutionTick(
 	publishLifecycleEvent(pubsub, "run_started", map[string]any{
 		"issue_id":         entry.IssueID,
 		"issue_identifier": entry.IssueIdentifier,
-		"provider":         providerName,
+		"provider":         activeProviderName,
 		"attempt":          attempt,
 	})
 	renderedPrompt, promptErr := prompt.Build(workflowFile, prompt.BuildInput{
@@ -206,7 +220,7 @@ func processExecutionTick(
 		renderedPrompt = buildExecutionPrompt(entry.IssueIdentifier, attempt)
 	}
 
-	result, runErr := registry.RunTurn(context.Background(), provider, agents.TurnRequest{
+	result, runErr := registry.RunTurn(context.Background(), activeProvider, agents.TurnRequest{
 		Workspace:       workspacePath,
 		WorkspaceRoot:   workspaceRoot,
 		Prompt:          renderedPrompt,
@@ -218,7 +232,7 @@ func processExecutionTick(
 		ToolSpecs:       toolSpecs,
 	}, func(event agents.Event) {
 		service.RecordRunEvent(entry.IssueID, event)
-		publishRunEvent(pubsub, entry, providerName, event)
+		publishRunEvent(pubsub, entry, activeProviderName, event)
 	})
 
 	if runErr != nil {
@@ -231,7 +245,7 @@ func processExecutionTick(
 		publishLifecycleEvent(pubsub, "run_failed", map[string]any{
 			"issue_id":         entry.IssueID,
 			"issue_identifier": entry.IssueIdentifier,
-			"provider":         providerName,
+			"provider":         activeProviderName,
 			"attempt":          attempt,
 			"error":            runErr.Error(),
 			"cause":            "agent_run_failed",
@@ -240,14 +254,14 @@ func processExecutionTick(
 			publishLifecycleEvent(pubsub, "retry_scheduled", map[string]any{
 				"issue_id":         entry.IssueID,
 				"issue_identifier": entry.IssueIdentifier,
-				"provider":         providerName,
+				"provider":         activeProviderName,
 				"attempt":          attempt,
 				"due_at":           dueAt.UTC().Format(time.RFC3339),
 				"cause":            "agent_run_failed",
 			})
 		}
 		service.RecordRunFailure(entry.IssueID, entry.IssueIdentifier, attempt, dueAt, runErr)
-		logger.Error().Err(runErr).Str("issue_id", entry.IssueID).Msg("agent run failed")
+		logger.Error().Err(runErr).Str("issue_id", entry.IssueID).Str("provider", activeProviderName).Msg("agent run failed")
 		publishSnapshot(pubsub, service)
 		return
 	}

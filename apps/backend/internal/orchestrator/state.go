@@ -24,6 +24,7 @@ type RunningEntry struct {
 	IssueIdentifier string `json:"issue_identifier"`
 	Title           string `json:"title,omitempty"`
 	State           string `json:"state"`
+	AssigneeID      string `json:"assignee_id,omitempty"`
 	SessionID       string `json:"session_id"`
 	SessionLogPath  string `json:"session_log_path,omitempty"`
 	TurnCount       int64  `json:"turn_count"`
@@ -42,6 +43,7 @@ type RetryEntry struct {
 	IssueID         string `json:"issue_id"`
 	IssueIdentifier string `json:"issue_identifier"`
 	State           string `json:"state,omitempty"`
+	AssigneeID      string `json:"assignee_id,omitempty"`
 	Attempt         int64  `json:"attempt"`
 	DueAt           string `json:"due_at"`
 	Error           string `json:"error"`
@@ -389,6 +391,7 @@ func (s *Service) enqueueCandidates(candidates []tracker.Issue) {
 			IssueIdentifier: issue.Identifier,
 			Title:           issue.Title,
 			State:           issue.State,
+			AssigneeID:      issue.AssigneeID,
 			StartedAt:       now,
 			LastEventAt:     now,
 			LastEvent:       "dispatch_queued",
@@ -461,6 +464,7 @@ func (s *Service) releaseDueRetries() {
 			IssueIdentifier: retry.IssueIdentifier,
 			Title:           "",
 			State:           state,
+			AssigneeID:      retry.AssigneeID,
 			StartedAt:       now.Format(time.RFC3339),
 			LastEventAt:     now.Format(time.RFC3339),
 			LastEvent:       "retry_due",
@@ -527,6 +531,7 @@ func (s *Service) filterRetryingByCurrentStates(ctx context.Context, client trac
 		if strings.TrimSpace(entry.State) == "" {
 			entry.State = state
 		}
+		entry.AssigneeID = issue.AssigneeID
 		filtered = append(filtered, entry)
 	}
 
@@ -540,12 +545,14 @@ func (s *Service) RecordRunFailure(issueID string, issueIdentifier string, attem
 
 	filtered := make([]RunningEntry, 0, len(s.running))
 	issueState := ""
+	issueAssigneeID := ""
 	for _, entry := range s.running {
 		if entry.IssueID != issueID {
 			filtered = append(filtered, entry)
 			continue
 		}
 		issueState = entry.State
+		issueAssigneeID = entry.AssigneeID
 		s.accumulateEntryTotalsLocked(entry)
 	}
 	s.running = filtered
@@ -564,6 +571,7 @@ func (s *Service) RecordRunFailure(issueID string, issueIdentifier string, attem
 		IssueID:         issueID,
 		IssueIdentifier: issueIdentifier,
 		State:           issueState,
+		AssigneeID:      issueAssigneeID,
 		Attempt:         attempt,
 		DueAt:           dueAt.UTC().Format(time.RFC3339),
 		Error:           message,
