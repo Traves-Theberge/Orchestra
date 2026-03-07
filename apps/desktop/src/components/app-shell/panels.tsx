@@ -283,6 +283,92 @@ export function SettingsCard({
   )
 }
 
+export function IssueDetailView({ result }: { result: Record<string, unknown> }) {
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border bg-muted/30 p-4">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="font-mono text-[10px] uppercase tracking-wider">
+                {(result.identifier as string) || (result.id as string)}
+              </Badge>
+              <span className="text-xs text-muted-foreground">in {(result.team_id as string) || 'unknown team'}</span>
+            </div>
+            <h3 className="mt-1 truncate text-lg font-semibold text-foreground">{(result.title as string) || 'No Title'}</h3>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" className="h-8 text-xs" disabled>
+              Change State
+            </Button>
+            <Button variant="outline" size="sm" className="h-8 text-xs" disabled>
+              Assign
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+          <div className="space-y-1">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">State</p>
+            <div className="flex items-center gap-2">
+              <div className="h-2 w-2 rounded-full bg-primary" />
+              <span className="font-medium">{(result.state as string) || 'n/a'}</span>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Assignee</p>
+            <p className="font-medium">{(result.assignee_id as string) || 'Unassigned'}</p>
+          </div>
+          <div className="space-y-1">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Project</p>
+            <p className="font-medium">{(result.project_id as string) || 'None'}</p>
+          </div>
+          <div className="space-y-1">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Labels</p>
+            <div className="flex flex-wrap gap-1">
+              {Array.isArray(result.labels) && result.labels.length > 0 ? (
+                result.labels.map((label: string) => (
+                  <Badge key={label} variant="secondary" className="px-1.5 py-0 text-[10px]">
+                    {label}
+                  </Badge>
+                ))
+              ) : (
+                <span className="text-muted-foreground">None</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {(result.description as string) ? (
+          <div className="mt-4 border-t pt-4">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Description</p>
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground line-clamp-10">
+              {result.description as string}
+            </p>
+          </div>
+        ) : null}
+      </div>
+
+      <Dialog>
+        <DialogTrigger asChild>
+          <Button variant="ghost" size="sm" className="h-7 text-[10px] text-muted-foreground hover:text-foreground">
+            View Raw JSON Payload
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Raw Issue Payload</DialogTitle>
+            <DialogDescription>Snapshot of the issue data from the tracker contract.</DialogDescription>
+          </DialogHeader>
+          <pre className="max-h-[500px] overflow-auto rounded-md border bg-muted p-4 text-[10px]">
+            {JSON.stringify(result, null, 2)}
+          </pre>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
 export function IssueInspectorCard({
   configReady,
   issueLookupId,
@@ -327,89 +413,7 @@ export function IssueInspectorCard({
           </div>
         ) : null}
 
-        {issueLookupResult ? (
-          <div className="space-y-4">
-            <div className="rounded-lg border bg-muted/30 p-4">
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="font-mono text-[10px] uppercase tracking-wider">
-                      {(issueLookupResult.identifier as string) || (issueLookupResult.id as string)}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground">in {(issueLookupResult.team_id as string) || 'unknown team'}</span>
-                  </div>
-                  <h3 className="mt-1 truncate text-lg font-semibold text-foreground">{(issueLookupResult.title as string) || 'No Title'}</h3>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" className="h-8 text-xs" disabled>
-                    Change State
-                  </Button>
-                  <Button variant="outline" size="sm" className="h-8 text-xs" disabled>
-                    Assign
-                  </Button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
-                <div className="space-y-1">
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">State</p>
-                  <div className="flex items-center gap-2">
-                    <div className="h-2 w-2 rounded-full bg-primary" />
-                    <span className="font-medium">{(issueLookupResult.state as string) || 'n/a'}</span>
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Assignee</p>
-                  <p className="font-medium">{(issueLookupResult.assignee_id as string) || 'Unassigned'}</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Project</p>
-                  <p className="font-medium">{(issueLookupResult.project_id as string) || 'None'}</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Labels</p>
-                  <div className="flex flex-wrap gap-1">
-                    {Array.isArray(issueLookupResult.labels) && issueLookupResult.labels.length > 0 ? (
-                      issueLookupResult.labels.map((label: string) => (
-                        <Badge key={label} variant="secondary" className="px-1.5 py-0 text-[10px]">
-                          {label}
-                        </Badge>
-                      ))
-                    ) : (
-                      <span className="text-muted-foreground">None</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {(issueLookupResult.description as string) ? (
-                <div className="mt-4 border-t pt-4">
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Description</p>
-                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground line-clamp-3">
-                    {issueLookupResult.description as string}
-                  </p>
-                </div>
-              ) : null}
-            </div>
-
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-7 text-[10px] text-muted-foreground hover:text-foreground">
-                  View Raw JSON Payload
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-2xl">
-                <DialogHeader>
-                  <DialogTitle>Raw Issue Payload</DialogTitle>
-                  <DialogDescription>Snapshot of the issue data from the tracker contract.</DialogDescription>
-                </DialogHeader>
-                <pre className="max-h-[500px] overflow-auto rounded-md border bg-muted p-4 text-[10px]">
-                  {JSON.stringify(issueLookupResult, null, 2)}
-                </pre>
-              </DialogContent>
-            </Dialog>
-          </div>
-        ) : null}
+        {issueLookupResult ? <IssueDetailView result={issueLookupResult} /> : null}
       </CardContent>
     </Card>
   )
@@ -719,59 +723,58 @@ export function KanbanBoard({
   ]
 
   return (
-    <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
       {columns.map((column) => (
-        <div key={column.id} className="flex flex-col gap-4">
+        <div key={column.id} className="flex flex-col gap-3">
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-2">
               {column.icon}
-              <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">{column.title}</h3>
-              <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
-                {column.items.length}
-              </Badge>
+              <h3 className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">{column.title}</h3>
+              <span className="text-[11px] font-medium text-muted-foreground/50">{column.items.length}</span>
             </div>
-            <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground">
-              <span className="text-lg">+</span>
+            <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:bg-muted/50">
+              <span className="text-lg font-light">+</span>
             </Button>
           </div>
 
-          <div className="flex min-h-[500px] flex-col gap-3 rounded-xl bg-muted/20 p-2">
+          <div className="flex min-h-[500px] flex-col gap-2 rounded-xl bg-muted/10 p-1.5 transition-colors hover:bg-muted/20">
             {loadingState ? (
-              Array.from({ length: 3 }).map((_, idx) => <Skeleton key={idx} className="h-24 w-full rounded-lg" />)
+              Array.from({ length: 3 }).map((_, idx) => <Skeleton key={idx} className="h-28 w-full rounded-lg" />)
             ) : column.items.length === 0 ? (
-              <div className="flex flex-1 items-center justify-center p-8 text-center">
-                <p className="text-xs text-muted-foreground/50">No issues in {column.title}</p>
+              <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
+                <div className="mb-2 h-8 w-8 rounded-full border-2 border-dashed border-muted-foreground/20" />
+                <p className="text-[10px] uppercase tracking-widest text-muted-foreground/40">Empty</p>
               </div>
             ) : (
               column.items.map((item) => (
                 <Card
                   key={item.issue_id}
-                  className="group cursor-pointer border-transparent bg-card shadow-sm transition hover:border-primary/30 hover:shadow-md"
+                  className="group relative cursor-pointer border-transparent bg-card p-3 shadow-sm transition-all hover:border-primary/20 hover:shadow-md active:scale-[0.98]"
                   onClick={() => void onInspectIssue(item.issue_identifier)}
                 >
-                  <CardContent className="p-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <Badge variant="outline" className="h-5 border-muted-foreground/30 px-1 text-[10px] font-mono text-muted-foreground">
-                        {item.issue_identifier}
-                      </Badge>
-                      <span className="text-[10px] text-muted-foreground">{(item as any).at || (item as any).due_at || ''}</span>
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="font-mono text-[10px] font-semibold tracking-tight text-muted-foreground/80">
+                      {item.issue_identifier}
+                    </span>
+                    <span className="text-[9px] font-medium text-muted-foreground/40">
+                      {(item as any).at ? new Date((item as any).at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (item as any).due_at ? 'Retry' : ''}
+                    </span>
+                  </div>
+                  <p className="mt-2 line-clamp-2 text-[13px] font-medium leading-tight text-foreground/90">
+                    {(item as any).last_message || (item as any).error || 'No message'}
+                  </p>
+                  <div className="mt-3 flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <div className="h-2 w-2 rounded-full bg-primary/20" />
+                      <span className="text-[10px] font-medium text-muted-foreground/60">{item.state}</span>
                     </div>
-                    <p className="mt-2 line-clamp-2 text-xs font-medium leading-snug">
-                      {(item as any).last_message || (item as any).error || item.state}
-                    </p>
-                    <div className="mt-3 flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5">
-                        <div className="h-4 w-4 rounded-full bg-muted-foreground/10" />
-                        <span className="text-[10px] text-muted-foreground">{item.state}</span>
+                    {(item as any).session_id ? (
+                      <div className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-tighter text-amber-500/80">
+                        <Activity className="h-2.5 w-2.5" />
+                        <span>Live</span>
                       </div>
-                      {(item as any).session_id ? (
-                        <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                          <Activity className="h-3 w-3" />
-                          <span>Active</span>
-                        </div>
-                      ) : null}
-                    </div>
-                  </CardContent>
+                    ) : null}
+                  </div>
                 </Card>
               ))
             )}

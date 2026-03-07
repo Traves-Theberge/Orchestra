@@ -101,6 +101,7 @@ export default function App() {
   const [issueLookupResult, setIssueLookupResult] = useState<Record<string, unknown> | null>(null)
   const [issueLookupError, setIssueLookupError] = useState('')
   const [refreshPending, setRefreshPending] = useState(false)
+  const [inspectDialogOpen, setInspectDialogOpen] = useState(false)
   const [activeSection, setActiveSection] = useState('dashboard')
   const [activePeriod, setActivePeriod] = useState<(typeof periodFilters)[number]>('Week')
 
@@ -351,9 +352,7 @@ export default function App() {
 
   const handleInspectIssueFromList = async (issueIdentifier: string) => {
     setIssueLookupId(issueIdentifier)
-    if (activeSection !== 'dashboard' && activeSection !== 'running') {
-      setActiveSection('dashboard')
-    }
+    setInspectDialogOpen(true)
     await executeIssueLookup(issueIdentifier)
   }
 
