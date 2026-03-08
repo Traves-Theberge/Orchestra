@@ -7,4 +7,8 @@ contextBridge.exposeInMainWorld('orchestraDesktop', {
   setActiveBackendProfile: (profileId) => ipcRenderer.invoke('orchestra:set-active-backend-profile', profileId),
   saveBackendProfile: (profile) => ipcRenderer.invoke('orchestra:save-backend-profile', profile),
   deleteBackendProfile: (profileId) => ipcRenderer.invoke('orchestra:delete-backend-profile', profileId),
+  getAgentTokens: () => ipcRenderer.invoke('orchestra:get-agent-tokens'),
+  setAgentToken: (name, value) => ipcRenderer.invoke('orchestra:set-agent-token', { name, value }),
+  openExternal: (url) => ipcRenderer.invoke('orchestra:open-external', url),
+  selectFolder: () => ipcRenderer.invoke('orchestra:select-folder'),
 })

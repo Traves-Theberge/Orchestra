@@ -21,8 +21,9 @@ Traditional agent execution often relies on manual scripts, lacking isolation, o
 - **Dynamic Workflows**: Hot-reloadable `WORKFLOW.md` for updating prompts and runtime limits without service restarts.
 - **Advanced Orchestration**: Bounded concurrency (global and per-state thresholds), prioritization, and exponential backoff retries.
 - **Workspace Isolation**: Automated directory sanitization, path guarding (traversal/symlink protection), and lifecycle hooks.
-- **Multi-Agent Support**: Native support for **Codex**, **Claude Code**, and **OpenCode** with specialized process management and event parsing.
 - **Agent Runner Protocol**: Standardized JSON-RPC handshake for integrating any compatible coding agent app-server.
+- **Orchestra Data Warehouse**: A persistent SQLite-backed analytics layer for long-term session history, token tracking, and cross-agent rollups.
+- **Automated Project Discovery**: Intelligent mapping of local Git workspaces and manually configured roots to logical "Projects".
 - **Workspace Migration**: Built-in support for planning and executing workspace transfers between storage roots.
 
 ## 🏗️ Architecture & Mechanics
@@ -124,9 +125,13 @@ Orchestra exposes a REST API (default port `4010`) for status and control:
 - `POST /api/v1/refresh`: Manual trigger for tracker polling.
 - `POST /api/v1/workspace/migrate`: Execute a planned workspace migration.
 
-## 📄 License
+## 📄 License & Attribution
+
 This project is licensed under the Apache 2.0 License - see the [LICENSE](LICENSE) and [NOTICE](NOTICE) files for details.
 
-This project is based on OpenAI's [Symphony](https://github.com/openai/symphony) project.
+### Third-Party Licenses
+Orchestra incorporates components and architectural patterns from the following projects:
+- **Unfirehose**: The Data Warehouse ingestion and token rollup logic is based on [unfirehose-nextjs-logger](https://github.com/TimeHexOn/unfirehose-nextjs-logger). See [licenses/UNFIREHOSE_LICENSE](licenses/UNFIREHOSE_LICENSE) for the original AGPL-3.0 license and permacomputer preamble.
+- **Symphony**: This project is based on OpenAI's [Symphony](https://github.com/openai/symphony) project.
 
-Rewritten by [Traves Theberge](https://github.com/traves-theberge) in Go and TypeScript and Electron for the desktop app.
+Rewritten and extended by [Traves Theberge](https://github.com/traves-theberge) in Go, TypeScript, and Electron.

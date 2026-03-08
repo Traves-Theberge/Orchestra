@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/orchestra/orchestra/apps/backend/internal/db"
 	"github.com/orchestra/orchestra/apps/backend/internal/observability"
 	"github.com/orchestra/orchestra/apps/backend/internal/orchestrator"
 	"github.com/orchestra/orchestra/apps/backend/internal/staticassets"
@@ -21,6 +22,7 @@ type Server struct {
 	workspaceRoot string
 	authToken     string
 	pubsub        *observability.PubSub
+	db            *db.DB
 }
 
 func NewRouter(
@@ -30,7 +32,7 @@ func NewRouter(
 	host string,
 	apiToken string,
 ) http.Handler {
-	return NewRouterWithPubSub(logger, orchestratorService, workspaceRoot, host, apiToken, nil)
+	return NewRouterWithPubSub(logger, orchestratorService, workspaceRoot, host, apiToken, nil, nil)
 }
 
 func NewRouterWithPubSub(
@@ -40,6 +42,7 @@ func NewRouterWithPubSub(
 	host string,
 	apiToken string,
 	pubsub *observability.PubSub,
+	warehouseDB *db.DB,
 ) http.Handler {
 	server := &Server{
 		logger:        logger,
@@ -47,6 +50,7 @@ func NewRouterWithPubSub(
 		workspaceRoot: workspaceRoot,
 		authToken:     apiToken,
 		pubsub:        pubsub,
+		db:            warehouseDB,
 	}
 	r := chi.NewRouter()
 
@@ -58,7 +62,7 @@ func NewRouterWithPubSub(
 	r.Use(middleware.Timeout(30 * time.Second))
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:*", "http://127.0.0.1:*"},
-		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+		AllowedMethods:   []string{"GET", "POST", "DELETE", "PATCH", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		AllowCredentials: false,
 		MaxAge:           300,
@@ -70,8 +74,25 @@ func NewRouterWithPubSub(
 	r.Get("/healthz", Healthz)
 	r.Get("/api/v1/healthz", Healthz)
 	r.Get("/api/v1/state", server.GetState)
+	r.Get("/api/v1/issues", server.GetIssues)
+	r.Post("/api/v1/issues", server.PostIssue)
+	r.Get("/api/v1/search", server.GetSearch)
 	r.Get("/api/v1/events", server.GetEvents)
 	r.Get("/api/v1/workspace/migration/plan", server.GetWorkspaceMigrationPlan)
+	r.Get("/api/v1/config/agents", server.GetAgentConfig)
+	r.Post("/api/v1/config/agents", server.PostAgentConfig)
+	r.Get("/api/v1/agents", server.GetAgents)
+
+	r.Get("/api/v1/projects", server.GetProjects)
+	r.Post("/api/v1/projects", server.CreateProject)
+	r.Get("/api/v1/projects/{project_id}", server.GetProject)
+	r.Delete("/api/v1/projects/{project_id}", server.DeleteProject)
+	r.Post("/api/v1/projects/{project_id}/refresh", server.RefreshProject)
+	r.Get("/api/v1/projects/{project_id}/tree", server.GetProjectFileTree)
+	r.Get("/api/v1/projects/{project_id}/git", server.GetProjectGitStats)
+	r.Get("/api/v1/sessions", server.GetSessions)
+	r.Get("/api/v1/sessions/{session_id}", server.GetSessionDetail)
+	r.Get("/api/v1/warehouse/stats", server.GetWarehouseStats)
 
 	requiresAuth := hostRequiresProtectedAuth(host)
 	if requiresAuth && strings.TrimSpace(apiToken) != "" {
@@ -82,8 +103,13 @@ func NewRouterWithPubSub(
 		r.Post("/api/v1/workspace/migrate", server.PostWorkspaceMigrate)
 	}
 
-	r.Get("/api/v1/{issue_identifier}", server.GetIssue)
-	r.Patch("/api/v1/{issue_identifier}", server.PatchIssue)
+	r.Get("/api/v1/issues/{issue_identifier}", server.GetIssue)
+	r.Get("/api/v1/issues/{issue_identifier}/logs", server.GetIssueLogs)
+	r.Get("/api/v1/issues/{issue_identifier}/diff", server.GetIssueDiff)
+	r.Get("/api/v1/issues/{issue_identifier}/artifacts", server.GetArtifacts)
+	r.Get("/api/v1/issues/{issue_identifier}/artifacts/*", server.GetArtifactContent)
+	r.Patch("/api/v1/issues/{issue_identifier}", server.PatchIssue)
+	r.Delete("/api/v1/issues/{issue_identifier}/session", server.DeleteIssueSession)
 
 	return r
 }

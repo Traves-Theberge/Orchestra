@@ -153,16 +153,16 @@ func (c *Client) FetchIssuesByIDs(ctx context.Context, issueIDs []string) ([]tra
 	return out, nil
 }
 
-func (c *Client) FetchIssuesByStates(ctx context.Context, states []string) ([]tracker.Issue, error) {
+func (c *Client) FetchIssues(ctx context.Context, filter tracker.IssueFilter) ([]tracker.Issue, error) {
 	out := make([]tracker.Issue, 0)
 	seen := map[string]struct{}{}
-	if len(states) == 0 {
+	if len(filter.States) == 0 {
 		return out, nil
 	}
 
 	var after string
 	for {
-		variables := map[string]any{"states": states, "first": 100}
+		variables := map[string]any{"states": filter.States, "first": 100}
 		if strings.TrimSpace(after) != "" {
 			variables["after"] = after
 		}
@@ -456,6 +456,14 @@ func appendUniqueIssues(out []tracker.Issue, issues []tracker.Issue, seen map[st
 		out = append(out, issue)
 	}
 	return out
+}
+
+func (c *Client) SearchIssues(_ context.Context, query string) ([]tracker.Issue, error) {
+	return nil, fmt.Errorf("SearchIssues not implemented for GraphQL tracker")
+}
+
+func (c *Client) CreateIssue(_ context.Context, title, description, state string, priority int, assigneeID, projectID string) (*tracker.Issue, error) {
+	return nil, fmt.Errorf("CreateIssue not implemented for GraphQL tracker")
 }
 
 func (c *Client) UpdateIssue(_ context.Context, identifier string, updates map[string]any) (*tracker.Issue, error) {

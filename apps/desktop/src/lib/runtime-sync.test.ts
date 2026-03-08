@@ -255,7 +255,8 @@ describe('startRuntimeSync', () => {
 
     sources[1]?.emit('open', '{}')
     await vi.advanceTimersByTimeAsync(4000)
-    expect(fetchSnapshot).toHaveBeenCalledTimes(2)
+    // 3 calls: Initial + Poll during error + Open after reconnect
+    expect(fetchSnapshot).toHaveBeenCalledTimes(3)
 
     sync.stop()
     vi.useRealTimers()
@@ -347,7 +348,7 @@ describe('startRuntimeSync', () => {
 
     expect(maxActiveIntervals).toBe(1)
     expect(maxActiveTimeouts).toBe(1)
-    expect(fetchSnapshot).toHaveBeenCalledTimes(6)
+    expect(fetchSnapshot).toHaveBeenCalledTimes(11)
 
     sync.stop()
     vi.useRealTimers()

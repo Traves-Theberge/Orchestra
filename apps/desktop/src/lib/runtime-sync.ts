@@ -25,7 +25,17 @@ type RuntimeSyncDeps = {
   clearTimeoutFn: (id: number) => void
 }
 
-const lifecycleEventTypes = ['run_event', 'run_started', 'run_failed', 'run_continues', 'run_succeeded', 'retry_scheduled']
+const lifecycleEventTypes = [
+  'run_event',
+  'run_started',
+  'run_failed',
+  'run_continues',
+  'run_succeeded',
+  'retry_scheduled',
+  'hook_started',
+  'hook_completed',
+  'hook_failed',
+]
 
 function reconnectDelayMs(attempt: number): number {
   const base = 3000
@@ -33,7 +43,7 @@ function reconnectDelayMs(attempt: number): number {
   return Math.min(base * Math.pow(2, Math.max(0, attempt - 1)), max)
 }
 
-export function startRuntimeSync(config: BackendConfig, handlers: RuntimeSyncHandlers, deps: RuntimeSyncDeps): { stop: () => void } {
+export function startRuntimeSync(config: BackendConfig, handlers: RuntimeSyncHandlers, deps: RuntimeSyncDeps): { stop: () => void; startPolling: () => void; stopPolling: () => void } {
   let closed = false
   let stream: EventSourceLike | null = null
   let reconnectTimer: number | null = null
@@ -71,22 +81,37 @@ export function startRuntimeSync(config: BackendConfig, handlers: RuntimeSyncHan
   }
 
   const attachStream = () => {
-    if (config.apiToken.trim() !== '') {
+    if (config.apiToken && config.apiToken.trim() !== '') {
       handlers.onStatus('SSE disabled while bearer token is set (EventSource header limitation); polling mode active.')
       startPolling()
       return
     }
 
-    stream = deps.createEventSource(new URL('/api/v1/events', config.baseUrl).toString())
+    if (!config.baseUrl || config.baseUrl.trim() === '') {
+      handlers.onError('SSE disabled: invalid base URL.')
+      startPolling()
+      return
+    }
+
+    try {
+      stream = deps.createEventSource(new URL('/api/v1/events', config.baseUrl).toString())
+    } catch (e) {
+      handlers.onError(`SSE disabled: failed to create EventSource: ${e instanceof Error ? e.message : 'unknown error'}`)
+      startPolling()
+      return
+    }
 
     const seenEventKeys = new Set<string>()
 
     stream.addEventListener('open', () => {
+      const wasReconnecting = reconnectAttempt > 0
       reconnectAttempt = 0
       stopPolling()
       handlers.onStatus('SSE connected.')
       // Spec 5.1: Refetch full state on reconnect to ensure consistency after a disconnect span.
-      void loadSnapshot()
+      if (wasReconnecting) {
+        void loadSnapshot()
+      }
     })
 
     stream.addEventListener('snapshot', (event) => {
@@ -162,5 +187,7 @@ export function startRuntimeSync(config: BackendConfig, handlers: RuntimeSyncHan
       }
       stopPolling()
     },
+    startPolling,
+    stopPolling,
   }
 }

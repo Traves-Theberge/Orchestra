@@ -1,7 +1,12 @@
-import { useEffect, useState, type ReactNode } from 'react'
-import { Activity, AlertCircle, AlertTriangle, MoreHorizontal, SignalHigh, SignalLow, SignalMedium, Users, Wrench } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import Ansi from 'ansi-to-react'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { Activity, AlertCircle, AlertTriangle, AppWindow, CheckCircle2, ChevronDown, Circle, CircleDashed, Cpu, FileText, Folder, FolderTree, GitBranch, Loader2, MoreHorizontal, ShieldCheck, SignalHigh, SignalLow, SignalMedium, Terminal, Users, Wrench, Clock, Search, LayoutDashboard, ListTodo, History, Ticket, Database, Settings2, Sun, Moon, Download, RefreshCcw, Info, BarChart3, Zap, Layout, Rows, Play, ChevronRight, File } from 'lucide-react'
+import * as Tooltip from '@radix-ui/react-tooltip'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { AppTooltip } from '../ui/tooltip-wrapper'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
@@ -15,7 +20,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { TimelineItem } from '@/components/app-shell/types'
-import type { BackendConfig } from '@/lib/orchestra-client'
+import { fetchArtifactContent, fetchArtifacts, fetchIssueDiff, fetchIssueLogs, updateIssue, type BackendConfig } from '@/lib/orchestra-client'
 import type { SnapshotPayload } from '@/lib/orchestra-types'
 import { getSortedRetryEntries, getSortedRunningEntries } from '@/lib/view-models'
 
@@ -26,176 +31,257 @@ type BackendProfile = {
   apiToken: string
 }
 
-export function StatusStrip({
-  statusMessage,
-  errorMessage,
-  generatedAt,
-  onDownloadDiagnostics,
-}: {
-  statusMessage: string
-  errorMessage: string
-  generatedAt: string
-  onDownloadDiagnostics?: () => void
-}) {
+function IconButton({ icon, title, onClick, className = '' }: { icon: ReactNode; title: string; onClick?: () => void; className?: string }) {
   return (
-    <section className="mt-4 rounded-xl border bg-card p-3 shadow-[0_8px_24px_rgba(0,0,0,0.08)] dark:bg-card dark:shadow-[0_8px_24px_rgba(0,0,0,0.32)]">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <Badge variant="secondary" className="border bg-muted/50 text-foreground dark:text-foreground">
-            Runtime
-          </Badge>
-          <span className="text-muted-foreground">Last snapshot:</span>
-          <span className="text-foreground dark:text-muted-foreground">{generatedAt}</span>
+    <AppTooltip content={title}>
+      <button
+        type="button"
+        aria-label={title}
+        onClick={onClick}
+        className={`grid h-8 w-8 place-items-center rounded-lg bg-transparent text-muted-foreground transition hover:bg-muted hover:text-foreground ${className}`}
+      >
+        {icon}
+      </button>
+    </AppTooltip>
+  )
+}
+
+export function DashboardOverview({
+  projects,
+  stats,
+  warehouseStats,
+  onProjectClick,
+}: {
+  projects: Project[]
+  stats: Record<string, ProjectStats>
+  warehouseStats: GlobalStats | null
+  onProjectClick: (id: string) => void
+}) {
+  const sortedProjects = [...projects].sort((a, b) => {
+    const sA = stats[a.id]?.total_sessions ?? 0
+    const sB = stats[b.id]?.total_sessions ?? 0
+    return sB - sA
+  }).slice(0, 3)
+
+  return (
+    <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+      {/* Primary Analytics */}
+      <div className="xl:col-span-2 space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card className="bg-background/40 backdrop-blur-xl border-white/5 shadow-2xl overflow-hidden group">
+            <div className="absolute top-0 left-0 w-1 h-full bg-primary/50" />
+            <CardHeader className="pb-2">
+              <CardTitle className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2">
+                <Zap size={14} className="text-primary" />
+                Fleet Throughput
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-baseline gap-2">
+                <span className="text-4xl font-black tracking-tighter">
+                  {warehouseStats ? ((warehouseStats.total_input + warehouseStats.total_output) / 1000).toFixed(1) : '--'}
+                </span>
+                <span className="text-sm font-bold text-muted-foreground uppercase">k Tokens</span>
+              </div>
+              <p className="text-[10px] text-muted-foreground/60 mt-1 font-medium">Aggregated across all managed workspaces</p>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-background/40 backdrop-blur-xl border-white/5 shadow-2xl overflow-hidden group">
+            <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/50" />
+            <CardHeader className="pb-2">
+              <CardTitle className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2">
+                <Activity size={14} className="text-blue-500" />
+                Operational Efficiency
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-baseline gap-2">
+                <span className="text-4xl font-black tracking-tighter">
+                  {warehouseStats ? ((warehouseStats.total_output / Math.max(warehouseStats.total_input, 1)) * 100).toFixed(0) : '--'}
+                </span>
+                <span className="text-sm font-bold text-muted-foreground">%</span>
+              </div>
+              <p className="text-[10px] text-muted-foreground/60 mt-1 font-medium">Output-to-input generation ratio</p>
+            </CardContent>
+          </Card>
         </div>
 
-        {onDownloadDiagnostics ? (
-          <Button variant="ghost" size="sm" className="h-7 px-2 text-[10px] text-muted-foreground hover:text-foreground" onClick={onDownloadDiagnostics}>
-            Download Diagnostics
-          </Button>
-        ) : null}
+        <Card className="bg-background/40 backdrop-blur-xl border-white/5 shadow-2xl">
+          <CardHeader className="flex flex-row items-center justify-between pb-4">
+            <div className="space-y-1">
+              <CardTitle className="text-sm font-bold flex items-center gap-2">
+                <FolderTree size={16} className="text-primary/70" />
+                Workspace Activity
+              </CardTitle>
+              <CardDescription className="text-[11px]">Recent compute activity by project</CardDescription>
+            </div>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="h-8 px-3 text-[10px] uppercase font-black tracking-widest text-primary hover:bg-primary/10" 
+              onClick={() => onProjectClick('')}
+            >
+              Explore All
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {sortedProjects.length === 0 ? (
+                <div className="py-12 text-center border border-dashed border-white/10 rounded-2xl bg-white/[0.02]">
+                  <Folder size={32} className="mx-auto mb-3 opacity-10" />
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-widest">No projects discovered</p>
+                </div>
+              ) : sortedProjects.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => onProjectClick(p.id)}
+                  className="flex w-full items-center justify-between rounded-xl border border-transparent bg-white/[0.03] p-4 transition-all hover:bg-white/[0.06] hover:border-white/10 group"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="rounded-lg bg-primary/10 p-2.5 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all duration-300">
+                      <Folder size={18} />
+                    </div>
+                    <div className="text-left">
+                      <p className="text-sm font-bold tracking-tight group-hover:text-primary transition-colors">{p.name}</p>
+                      <p className="text-[10px] text-muted-foreground font-mono opacity-40 truncate max-w-[240px]">{p.root_path}</p>
+                    </div>
+                  </div>
+                  <div className="text-right flex items-center gap-6">
+                    <div>
+                      <p className="text-xs font-black">{stats[p.id]?.total_sessions || 0}</p>
+                      <p className="text-[9px] uppercase font-bold text-muted-foreground/50">Sessions</p>
+                    </div>
+                    <ChevronRight size={14} className="text-muted-foreground/20 group-hover:text-primary transition-colors" />
+                  </div>
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {statusMessage ? (
-        <div
-          className="mt-2 rounded-lg border bg-muted/50 px-3 py-2 text-sm text-foreground dark:text-foreground"
-          role="status"
-          aria-live="polite"
-        >
-          {statusMessage}
-        </div>
-      ) : null}
-
-      {errorMessage ? (
-        <div className="mt-2 rounded-lg border border-red-800/80 bg-red-950/35 px-3 py-2 text-sm text-red-200" role="alert" aria-live="assertive">
-          {errorMessage}
-        </div>
-      ) : null}
-    </section>
-  )
-}
-
-export function RunningIssuesCard({
-  loadingState,
-  snapshot,
-  onInspectIssue,
-}: {
-  loadingState: boolean
-  snapshot: SnapshotPayload | null
-  onInspectIssue: (issueIdentifier: string) => Promise<void>
-}) {
-  const runningRows = getSortedRunningEntries(snapshot?.running ?? [])
-
-  return (
-    <Card className="border bg-card shadow-lg dark:bg-card">
-      <CardHeader>
-        <CardTitle>Running Issues</CardTitle>
-        <CardDescription>Live sessions from runtime snapshot</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Issue</TableHead>
-              <TableHead>State</TableHead>
-              <TableHead>Session</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loadingState
-              ? Array.from({ length: 3 }).map((_, idx) => (
-                  <TableRow key={idx}>
-                    <TableCell colSpan={3}>
-                      <Skeleton className="h-5 w-full" />
-                    </TableCell>
-                  </TableRow>
-                ))
-              : runningRows.map((row) => (
-                  <TableRow key={row.issue_id}>
-                    <TableCell className="font-medium">
-                      <button
-                        type="button"
-                        className="rounded px-1 py-0.5 text-left text-blue-700 underline-offset-2 hover:underline dark:text-blue-300"
-                        onClick={() => void onInspectIssue(row.issue_identifier)}
-                        title="Inspect issue details"
-                      >
-                        {row.issue_identifier}
-                      </button>
-                    </TableCell>
-                    <TableCell>{row.state}</TableCell>
-                    <TableCell>{row.session_id || 'n/a'}</TableCell>
-                  </TableRow>
-                ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
-  )
-}
-
-export function RetryQueueCard({
-  snapshot,
-  onInspectIssue,
-}: {
-  snapshot: SnapshotPayload | null
-  onInspectIssue: (issueIdentifier: string) => Promise<void>
-}) {
-  const retryRows = getSortedRetryEntries(snapshot?.retrying ?? [])
-
-  return (
-    <Card className="h-full border bg-card shadow-lg dark:bg-card">
-      <CardHeader>
-        <CardTitle>Retry Queue</CardTitle>
-        <CardDescription>Upcoming retries and failure causes</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {retryRows.map((entry) => (
-          <div key={entry.issue_id} className="rounded-md border bg-muted/50 p-3 text-sm dark:bg-muted/50">
-            <button
-              type="button"
-              className="font-medium text-blue-700 underline-offset-2 hover:underline dark:text-blue-300"
-              onClick={() => void onInspectIssue(entry.issue_identifier)}
-              title="Inspect issue details"
-            >
-              {entry.issue_identifier}
-            </button>
-            <div className="text-muted-foreground">attempt={entry.attempt}</div>
-            <div className="text-muted-foreground">due_at={entry.due_at}</div>
-            <Badge variant="outline" className="mt-2 border text-muted-foreground">
-              {entry.error || 'retry'}
-            </Badge>
+      {/* Fleet Distribution */}
+      <Card className="bg-background/40 backdrop-blur-xl border-white/5 shadow-2xl flex flex-col h-full">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-sm font-bold flex items-center gap-2">
+            <Cpu size={16} className="text-amber-500/70" />
+            Agent Distribution
+          </CardTitle>
+          <CardDescription className="text-[11px]">Provider workload across historical sessions</CardDescription>
+        </CardHeader>
+        <CardContent className="flex-1 flex flex-col justify-between">
+          {!warehouseStats || !warehouseStats.provider_usage || Object.entries(warehouseStats.provider_usage).length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center py-12 opacity-20 grayscale">
+              <Activity size={48} className="mb-4" />
+              <p className="text-[10px] font-black uppercase tracking-[0.2em]">Telemetry Pending</p>
+            </div>
+          ) : (
+            <div className="space-y-5">
+              {Object.entries(warehouseStats.provider_usage)
+                .sort((a, b) => b[1] - a[1])
+                .map(([name, tokens]) => {
+                  const percentage = Math.max(5, (tokens / warehouseStats.total_tokens) * 100)
+                  return (
+                    <div key={name} className="space-y-2">
+                      <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest">
+                        <span className="flex items-center gap-2">
+                          <div className={`h-1.5 w-1.5 rounded-full ${name.includes('claude') ? 'bg-orange-500' : 'bg-primary'}`} />
+                          {name}
+                        </span>
+                        <span className="text-muted-foreground">{(tokens / 1000).toFixed(1)}k</span>
+                      </div>
+                      <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full transition-all duration-1000 ease-out ${name.includes('claude') ? 'bg-orange-500/50' : 'bg-primary/50'}`} 
+                          style={{ width: `${percentage}%` }} 
+                        />
+                      </div>
+                    </div>
+                  )
+                })}
+            </div>
+          )}
+          
+          <div className="mt-8 pt-6 border-t border-white/5">
+            <div className="flex items-center justify-between p-4 rounded-2xl bg-primary/5 border border-primary/10">
+              <div>
+                <p className="text-[9px] font-black uppercase tracking-widest text-primary/60">Fleet Health</p>
+                <p className="text-sm font-bold">Stable & Ready</p>
+              </div>
+              <div className="h-2 w-2 rounded-full bg-primary animate-pulse shadow-[0_0_8px_rgba(var(--primary),0.5)]" />
+            </div>
           </div>
-        ))}
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </div>
   )
 }
 
 export function TimelineCard({ timeline }: { timeline: TimelineItem[] }) {
+  const getEventIcon = (type: string) => {
+    switch (type) {
+      case 'run_started': return <Activity className="h-3.5 w-3.5 text-blue-500" />
+      case 'run_succeeded': return <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
+      case 'run_failed': return <AlertCircle className="h-3.5 w-3.5 text-red-500" />
+      case 'retry_scheduled': return <RefreshCcw className="h-3.5 w-3.5 text-amber-500" />
+      case 'hook_started': return <Wrench className="h-3.5 w-3.5 text-zinc-400" />
+      case 'hook_completed': return <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
+      default: return <Info className="h-3.5 w-3.5 text-muted-foreground" />
+    }
+  }
+
   return (
-    <Card className="border bg-card shadow-lg dark:bg-card">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Wrench className="h-4 w-4" />
-          Lifecycle Timeline
-        </CardTitle>
-        <CardDescription>Most recent non-snapshot event envelopes from `/api/v1/events`.</CardDescription>
+    <Card className="h-full border bg-card shadow-lg dark:bg-card flex flex-col">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+            <History className="h-4 w-4" />
+            Activity Feed
+          </CardTitle>
+          <Badge variant="outline" className="text-[10px] font-mono">{timeline.length} events</Badge>
+        </div>
+        <CardDescription className="text-[11px]">Real-time operational event stream</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-2">
+      <CardContent className="flex-1 overflow-auto px-4">
         {timeline.length === 0 ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <AlertTriangle className="h-4 w-4" />
-            No lifecycle events received yet.
+          <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground/40">
+            <Activity className="h-8 w-8 mb-2 opacity-20" />
+            <p className="text-xs italic uppercase tracking-wider">Awaiting telemetry...</p>
           </div>
         ) : (
-          timeline.map((item, idx) => (
-            <div key={`${item.type}-${idx}`} className="rounded-md border bg-muted/50 p-2 text-xs dark:bg-muted/50">
-              <div className="mb-1 flex items-center gap-2">
-                <Badge variant="secondary">{item.type}</Badge>
-                <span className="text-muted-foreground">{item.at}</span>
+          <div className="relative space-y-4 before:absolute before:left-[11px] before:top-2 before:h-[calc(100%-16px)] before:w-[1px] before:bg-border/60">
+            {timeline.map((item, idx) => (
+              <div key={`${item.type}-${idx}`} className="relative pl-8 group">
+                <div className="absolute left-0 top-0.5 z-10 grid h-6 w-6 place-items-center rounded-full border bg-card shadow-sm group-hover:border-primary/40 transition-colors">
+                  {getEventIcon(item.type)}
+                </div>
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold text-foreground capitalize">{item.type.replace(/_/g, ' ')}</span>
+                    <span className="text-[9px] font-medium text-muted-foreground/60 font-mono">
+                      {new Date(item.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    </span>
+                  </div>
+                  
+                  {(item.data as any).issue_identifier && (
+                    <div className="flex items-center gap-1.5 text-[10px] font-mono text-primary font-bold">
+                      <Ticket className="h-3 w-3" />
+                      {(item.data as any).issue_identifier}
+                    </div>
+                  )}
+
+                  <div className="rounded-lg border bg-muted/30 p-2 group-hover:bg-muted/50 transition-colors">
+                    <pre className="max-h-24 overflow-auto text-[10px] text-muted-foreground leading-relaxed whitespace-pre-wrap scrollbar-hide">
+                      {typeof (item.data as any).last_message === 'string' 
+                        ? (item.data as any).last_message 
+                        : JSON.stringify(item.data, null, 2)}
+                    </pre>
+                  </div>
+                </div>
               </div>
-              <pre className="overflow-auto whitespace-pre-wrap text-foreground dark:text-muted-foreground">{JSON.stringify(item.data, null, 2)}</pre>
-            </div>
-          ))
+            ))}
+          </div>
         )}
       </CardContent>
     </Card>
@@ -213,6 +299,8 @@ export function SettingsCard({
   migrationFrom,
   migrationTo,
   migrationPlan,
+  agentConfig,
+  agentTokens,
   onMigrationFromChange,
   onMigrationToChange,
   onMigrationPlan,
@@ -221,6 +309,8 @@ export function SettingsCard({
   onSetActiveProfile,
   onCreateProfile,
   onDeleteProfile,
+  onSaveAgentConfig,
+  onSaveAgentToken,
 }: {
   loadingConfig: boolean
   savingConfig: boolean
@@ -232,6 +322,8 @@ export function SettingsCard({
   migrationFrom: string
   migrationTo: string
   migrationPlan: Record<string, unknown> | null
+  agentConfig: { commands: Record<string, string>; agent_provider: string } | null
+  agentTokens: Record<string, string>
   onMigrationFromChange: (value: string) => void
   onMigrationToChange: (value: string) => void
   onMigrationPlan: () => Promise<void>
@@ -240,63 +332,189 @@ export function SettingsCard({
   onSetActiveProfile: (profileId: string) => Promise<void>
   onCreateProfile: (name: string) => Promise<void>
   onDeleteProfile: (profileId: string) => Promise<void>
+  onSaveAgentConfig: (config: { commands: Record<string, string>; agent_provider: string }) => Promise<void>
+  onSaveAgentToken: (name: string, value: string | null) => Promise<void>
 }) {
-  return (
-    <Card className="border bg-card shadow-lg dark:bg-card">
-      <CardHeader>
-        <CardTitle>Settings</CardTitle>
-        <CardDescription>Backend connection and workspace migration tools are grouped here.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3 text-sm text-foreground dark:text-muted-foreground">
-        <div className="space-y-2 rounded-lg border bg-muted/50 p-3 dark:bg-muted/50">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Backend Configuration</p>
-          <BackendConfigForm
-            loadingConfig={loadingConfig}
-            savingConfig={savingConfig}
-            profilesPending={profilesPending}
-            config={config}
-            backendProfiles={backendProfiles}
-            activeProfileId={activeProfileId}
-            onSaveBackendConfig={onSaveBackendConfig}
-            onSetActiveProfile={onSetActiveProfile}
-            onCreateProfile={onCreateProfile}
-            onDeleteProfile={onDeleteProfile}
-          />
-        </div>
+  const [activeTab, setActiveTab] = useState<'backend' | 'agents' | 'tokens' | 'migration'>('backend')
 
-        <div className="flex flex-wrap items-center gap-2">
-          <WorkspaceMigrationDialog
-            migrationPending={migrationPending}
-            config={config}
-            migrationFrom={migrationFrom}
-            migrationTo={migrationTo}
-            migrationPlan={migrationPlan}
-            onMigrationFromChange={onMigrationFromChange}
-            onMigrationToChange={onMigrationToChange}
-            onMigrationPlan={onMigrationPlan}
-            onMigrationApply={onMigrationApply}
-          />
+  const tabs = [
+    { id: 'backend', label: 'Backend', icon: <Database className="h-3.5 w-3.5" /> },
+    { id: 'agents', label: 'Agents', icon: <Zap className="h-3.5 w-3.5" /> },
+    { id: 'tokens', label: 'Tokens', icon: <ShieldCheck className="h-3.5 w-3.5" /> },
+    { id: 'migration', label: 'Migration', icon: <RefreshCcw className="h-3.5 w-3.5" /> },
+  ] as const
+
+  return (
+    <Card className="border bg-card shadow-lg dark:bg-card flex flex-col h-full overflow-hidden">
+      <CardHeader className="border-b border-border/40 pb-0 shrink-0">
+        <CardTitle className="mb-2">System Settings</CardTitle>
+        <CardDescription className="mb-4 text-xs font-medium">Configure orchestrator runtime and security parameters.</CardDescription>
+        
+        <div className="flex gap-1">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 border-b-2 px-4 py-2 text-xs font-bold uppercase tracking-widest transition-all ${
+                activeTab === tab.id
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
         </div>
-        <p className="text-muted-foreground">Next: persist profile presets and secure token vault integration.</p>
+      </CardHeader>
+      <CardContent className="pt-6 flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+          {activeTab === 'backend' && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                <Database className="h-3.5 w-3.5" />
+                Connection Profiles
+              </div>
+              <BackendConfigForm
+                loadingConfig={loadingConfig}
+                savingConfig={savingConfig}
+                profilesPending={profilesPending}
+                config={config}
+                backendProfiles={backendProfiles}
+                activeProfileId={activeProfileId}
+                onSaveBackendConfig={onSaveBackendConfig}
+                onSetActiveProfile={onSetActiveProfile}
+                onCreateProfile={onCreateProfile}
+                onDeleteProfile={onDeleteProfile}
+                disabled={loadingConfig || savingConfig || profilesPending}
+              />
+            </div>
+          )}
+
+          {activeTab === 'agents' && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                <Zap className="h-3.5 w-3.5" />
+                Fleet Configuration
+              </div>
+              {agentConfig ? (
+                <AgentConfigForm
+                  agentConfig={agentConfig}
+                  onSave={onSaveAgentConfig}
+                  disabled={savingConfig || loadingConfig}
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-12 text-center text-muted-foreground">
+                  <Activity className="h-8 w-8 mb-2 opacity-20" />
+                  <p className="text-xs italic uppercase tracking-wider">No agent configuration loaded from active profile.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'tokens' && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Credential Vault
+              </div>
+              <AgentTokensForm tokens={agentTokens} onSave={onSaveAgentToken} disabled={savingConfig || loadingConfig} />
+            </div>
+          )}
+
+          {activeTab === 'migration' && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                <RefreshCcw className="h-3.5 w-3.5" />
+                Workspace Transfer
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Migrate issue workspaces between filesystem targets. This tool will recursively copy git state and artifacts.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <WorkspaceMigrationDialog
+                  migrationPending={migrationPending}
+                  config={config}
+                  migrationFrom={migrationFrom}
+                  migrationTo={migrationTo}
+                  migrationPlan={migrationPlan}
+                  onMigrationFromChange={onMigrationFromChange}
+                  onMigrationToChange={onMigrationToChange}
+                  onMigrationPlan={onMigrationPlan}
+                  onMigrationApply={onMigrationApply}
+                />
+              </div>
+            </div>
+          )}
+        </div>
       </CardContent>
     </Card>
   )
 }
 
-const AVAILABLE_AGENTS = [
-  { id: 'agent-codex', name: 'Codex Orchestrator', role: 'Primary' },
-  { id: 'agent-claude', name: 'Claude Operator', role: 'Reasoning' },
-  { id: 'agent-gpt', name: 'GPT Assistant', role: 'Utility' },
-  { id: 'agent-open', name: 'OpenCode Runner', role: 'Local' },
-]
+function AgentConfigForm({
+  agentConfig,
+  onSave,
+  disabled,
+}: {
+  agentConfig: { commands: Record<string, string>; agent_provider: string }
+  onSave: (config: { commands: Record<string, string>; agent_provider: string }) => Promise<void>
+  disabled: boolean
+}) {
+  const [provider, setProvider] = useState(agentConfig.agent_provider || '')
+  const [commands, setCommands] = useState(agentConfig.commands || {})
+
+  const handleCommandChange = (key: string, value: string) => {
+    setCommands((prev) => ({ ...prev, [key]: value }))
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <label className="text-xs text-muted-foreground">Primary Provider</label>
+        <CustomDropdown
+          className="w-64"
+          value={provider}
+          options={Object.keys(commands).map((p) => ({ label: p, value: p, icon: <Activity className="h-3 w-3" /> }))}
+          onChange={setProvider}
+          disabled={disabled}
+          placeholder="Select provider..."
+        />
+      </div>
+
+      <div className="space-y-3">
+        <label className="text-xs text-muted-foreground">Agent Commands</label>
+        {Object.keys(commands).length === 0 ? (
+          <p className="text-[10px] text-muted-foreground/50">No agent runners configured in backend.</p>
+        ) : Object.keys(commands).map((p) => (
+          <div key={p} className="space-y-1">
+            <span className="text-[10px] font-bold uppercase text-muted-foreground/60">{p}</span>
+            <input
+              className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm font-mono"
+              value={commands[p]}
+              onChange={(e) => handleCommandChange(p, e.target.value)}
+              placeholder={`command for ${p}...`}
+              disabled={disabled}
+            />
+          </div>
+        ))}
+      </div>
+
+      <Button
+        size="sm"
+        onClick={() => void onSave({ agent_provider: provider, commands })}
+        disabled={disabled || !provider}
+      >
+        Update Agent Configuration
+      </Button>
+    </div>
+  )
+}
 
 const AGENT_STATES = [
-  'Backlog',
   'Todo',
   'In Progress',
-  'In Review',
   'Done',
-  'Canceled',
 ]
 
 function PriorityIcon({ priority, className }: { priority: number; className?: string }) {
@@ -320,9 +538,154 @@ function PriorityLabel({ priority }: { priority: number }) {
   return <span>{labels[priority] || 'No Priority'}</span>
 }
 
-export function IssueDetailView({ result, onUpdate }: { result: Record<string, unknown>; onUpdate?: (updates: Record<string, unknown>) => Promise<void> }) {
+function CustomDropdown({
+  value,
+  options,
+  onChange,
+  className = '',
+  disabled = false,
+  placeholder = 'Select...',
+}: {
+  value: string | number
+  options: { label: string; value: string | number; icon?: ReactNode }[]
+  onChange: (value: any) => void
+  className?: string
+  disabled?: boolean
+  placeholder?: string
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const selectedOption = options.find((opt) => opt.value === value)
+
+  return (
+    <div className={`relative ${className}`} ref={dropdownRef}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setIsOpen(!isOpen)}
+        className={`flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium transition-all hover:border-primary/40 focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50 ${
+          isOpen ? 'border-primary ring-2 ring-primary/20' : ''
+        }`}
+      >
+        <div className="flex items-center gap-2 truncate">
+          {selectedOption?.icon}
+          <span className="truncate">{selectedOption?.label || placeholder}</span>
+        </div>
+        <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute left-0 top-full z-[100] mt-1 w-full min-w-[160px] overflow-hidden rounded-xl border border-border bg-card p-1 shadow-2xl animate-in fade-in zoom-in-95 duration-100">
+          <div className="max-h-[300px] overflow-auto">
+            {options.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => {
+                  onChange(option.value)
+                  setIsOpen(false)
+                }}
+                className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium transition-colors ${
+                  option.value === value
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-foreground hover:bg-muted/50'
+                }`}
+              >
+                {option.icon}
+                <span className="flex-1 truncate">{option.label}</span>
+                {option.value === value && <div className="h-1.5 w-1.5 rounded-full bg-primary" />}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function IssueDetailView({
+  result,
+  onUpdate,
+  onStopSession,
+  config,
+  timeline = [],
+  availableAgents = [],
+}: {
+  result: Record<string, unknown>
+  onUpdate?: (updates: Record<string, unknown>) => Promise<void>
+  onStopSession?: () => Promise<void>
+  config: BackendConfig | null
+  timeline?: TimelineItem[]
+  availableAgents?: string[]
+}) {
   const [localState, setLocalState] = useState((result.state as string) || 'Todo')
   const [localAssignee, setLocalAssignee] = useState((result.assignee_id as string) || 'Unassigned')
+  const [activeTab, setActiveTab] = useState<'overview' | 'changes' | 'logs' | 'artifacts'>('overview')
+  const [logs, setLogs] = useState<string>('')
+  const [logsLoading, setLogsLoading] = useState(false)
+  const [diff, setDiff] = useState<string>('')
+  const [diffLoading, setDiffLoading] = useState(false)
+  const [artifacts, setArtifacts] = useState<string[]>([])
+  const [artifactsLoading, setArtifactsLoading] = useState(false)
+  const [selectedArtifact, setSelectedArtifact] = useState<string | null>(null)
+  const [artifactContent, setArtifactContent] = useState<string | null>(null)
+  const [contentLoading, setArtifactContentLoading] = useState(false)
+  const logsEndRef = useRef<HTMLDivElement>(null)
+
+  const identifier = (result.identifier as string) || (result.id as string) || ''
+
+  useEffect(() => {
+    if (activeTab === 'logs' && identifier && config) {
+      setLogsLoading(true)
+      fetchIssueLogs(config, identifier)
+        .then(setLogs)
+        .catch(() => setLogs('No active logs found for this session.'))
+        .finally(() => setLogsLoading(false))
+    }
+    if (activeTab === 'changes' && identifier && config) {
+      setDiffLoading(true)
+      fetchIssueDiff(config, identifier)
+        .then(setDiff)
+        .catch(() => setDiff('Failed to fetch workspace diff.'))
+        .finally(() => setDiffLoading(false))
+    }
+    if (activeTab === 'artifacts' && identifier && config) {
+      setArtifactsLoading(true)
+      fetchArtifacts(config, identifier)
+        .then(setArtifacts)
+        .catch(() => setArtifacts([]))
+        .finally(() => setArtifactsLoading(false))
+    }
+  }, [activeTab, identifier, config])
+
+  useEffect(() => {
+    if (selectedArtifact && identifier && config) {
+      setArtifactContentLoading(true)
+      fetchArtifactContent(config, identifier, selectedArtifact)
+        .then(setArtifactContent)
+        .catch(() => setArtifactContent('Failed to load artifact content.'))
+        .finally(() => setArtifactContentLoading(false))
+    } else {
+      setArtifactContent(null)
+    }
+  }, [selectedArtifact, identifier, config])
+
+  useEffect(() => {
+    if (activeTab === 'logs' && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [logs, activeTab])
 
   const handleStateChange = async (newState: string) => {
     setLocalState(newState)
@@ -338,172 +701,612 @@ export function IssueDetailView({ result, onUpdate }: { result: Record<string, u
     }
   }
 
+  const getHookStatus = (type: string) => {
+    const relevant = timeline.filter((e) => (e.data as any)?.issue_id === result.id || (e.data as any)?.issue_identifier === identifier)
+    const failed = relevant.find((e) => e.type === 'hook_failed' && (e.data as any)?.hook_type === type)
+    if (failed) return 'failed'
+    const completed = relevant.find((e) => e.type === 'hook_completed' && (e.data as any)?.hook_type === type)
+    if (completed) return 'completed'
+    const started = relevant.find((e) => e.type === 'hook_started' && (e.data as any)?.hook_type === type)
+    if (started) return 'active'
+    return 'pending'
+  }
+
+  const hooks = [
+    { id: 'after_create', label: 'Workspace Setup', description: 'Provisioning environment and dependencies' },
+    { id: 'before_run', label: 'Pre-run Hook', description: 'Preparing context for agent execution' },
+    { id: 'after_run', label: 'Post-run Hook', description: 'Capturing artifacts and cleaning up' },
+  ]
+
   return (
-    <div className="space-y-4">
-      <div className="rounded-lg border bg-muted/30 p-4">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-border/40 pb-4">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="font-mono text-[10px] uppercase tracking-wider">
-                {(result.identifier as string) || (result.id as string)}
-              </Badge>
-              <span className="text-xs text-muted-foreground">in {(result.team_id as string) || 'Orchestra'}</span>
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-1 rounded-lg bg-muted/20 p-1">
+        <button
+          onClick={() => setActiveTab('overview')}
+          className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${activeTab === 'overview' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            }`}
+        >
+          Overview
+        </button>
+        <button
+          onClick={() => setActiveTab('changes')}
+          className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${activeTab === 'changes' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            }`}
+        >
+          Changes
+        </button>
+        <button
+          onClick={() => setActiveTab('logs')}
+          className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${activeTab === 'logs' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            }`}
+        >
+          Live Logs
+        </button>
+        <button
+          onClick={() => setActiveTab('artifacts')}
+          className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${activeTab === 'artifacts' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            }`}
+        >
+          Artifacts
+        </button>
+      </div>
+
+      {activeTab === 'overview' ? (
+        <div className="space-y-4">
+          <div className="rounded-lg border bg-muted/30 p-4">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-border/40 pb-4">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="font-mono text-[10px] uppercase tracking-wider">
+                    {identifier}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">in {(result.team_id as string) || 'Orchestra'}</span>
+                </div>
+                <h3 className="mt-1 truncate text-lg font-semibold text-foreground">{(result.title as string) || 'No Title'}</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                {(localState === 'Todo' || localState === 'Done') && (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="h-8 gap-2 bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/20"
+                    onClick={() => handleStateChange('In Progress')}
+                  >
+                    <Play size={12} fill="currentColor" />
+                    Run Task
+                  </Button>
+                )}
+                {localState === 'In Progress' && onStopSession && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 border-red-200 text-xs text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-900/30 dark:text-red-400 dark:hover:bg-red-950/20"
+                    onClick={() => void onStopSession()}
+                  >
+                    Stop Session
+                  </Button>
+                )}
+                <CustomDropdown
+                  className="w-40"
+                  value={localState}
+                  options={AGENT_STATES.map((s) => ({ label: s, value: s }))}
+                  onChange={handleStateChange}
+                />
+                <CustomDropdown
+                  className="w-56"
+                  value={localAssignee}
+                  options={[
+                    { label: 'Unassigned', value: 'Unassigned', icon: <Users className="h-3 w-3" /> },
+                    ...availableAgents.map((agent) => ({
+                      label: agent,
+                      value: agent,
+                      icon: <Activity className="h-3 w-3" />,
+                    })),
+                  ]}
+                  onChange={handleAssigneeChange}
+                  placeholder="Assign Agent..."
+                />
+              </div>            </div>
+
+            <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-5">
+              <div className="space-y-1">
+                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Status</p>
+                <div className="flex items-center gap-2">
+                  <div className={`h-2 w-2 rounded-full ${localState === 'In Progress' ? 'bg-amber-500 animate-pulse' : 'bg-primary'}`} />
+                  <span className="font-medium">{localState}</span>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Priority</p>
+                <div className="flex items-center gap-2">
+                  <PriorityIcon priority={Number(result.priority ?? 0)} className="h-4 w-4" />
+                  <span className="font-medium">
+                    <PriorityLabel priority={Number(result.priority ?? 0)} />
+                  </span>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Assigned Agent</p>
+                <div className="flex items-center gap-2">
+                  <Users className="h-3.5 w-3.5 text-muted-foreground/60" />
+                  <p className="font-medium">{availableAgents.find((a) => a === localAssignee) || localAssignee}</p>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Project</p>
+                <p className="font-medium">{(result.project_id as string) || 'None'}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Labels</p>
+                <div className="flex flex-wrap gap-1">
+                  {Array.isArray(result.labels) && result.labels.length > 0 ? (
+                    result.labels.map((label: string) => (
+                      <Badge key={label} variant="secondary" className="px-1.5 py-0 text-[10px]">
+                        {label}
+                      </Badge>
+                    ))
+                  ) : (
+                    <span className="text-muted-foreground">None</span>
+                  )}
+                </div>
+              </div>
             </div>
-            <h3 className="mt-1 truncate text-lg font-semibold text-foreground">{(result.title as string) || 'No Title'}</h3>
+
+            {(result.description as string) ? (
+              <div className="mt-4 border-t pt-4">
+                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Description</p>
+                <p className="mt-1 text-sm leading-relaxed text-muted-foreground line-clamp-10">{result.description as string}</p>
+              </div>
+            ) : null}
+
+            <div className="mt-4 border-t pt-4">
+              <p className="mb-3 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Workspace Hooks</p>
+              <div className="space-y-3">
+                {hooks.map((hook) => {
+                  const status = getHookStatus(hook.id)
+                  return (
+                    <div key={hook.id} className="flex items-start gap-3">
+                      <div className="mt-0.5">
+                        {status === 'completed' && <CheckCircle2 className="h-4 w-4 text-primary" />}
+                        {status === 'active' && <Loader2 className="h-4 w-4 animate-spin text-amber-500" />}
+                        {status === 'failed' && <AlertCircle className="h-4 w-4 text-red-500" />}
+                        {status === 'pending' && <Circle className="h-4 w-4 text-muted-foreground/30" />}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className={`text-xs font-medium ${status === 'pending' ? 'text-muted-foreground/50' : 'text-foreground'}`}>
+                          {hook.label}
+                        </p>
+                        <p className="truncate text-[10px] text-muted-foreground/60">{hook.description}</p>
+                      </div>
+                      {status !== 'pending' && (
+                        <Badge
+                          variant="outline"
+                          className={`h-4 px-1 text-[9px] uppercase tracking-tighter ${status === 'completed'
+                              ? 'border-primary/20 text-primary'
+                              : status === 'active'
+                                ? 'border-amber-500/20 text-amber-500'
+                                : 'border-red-500/20 text-red-500'
+                            }`}
+                        >
+                          {status}
+                        </Badge>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <select
-              className="h-8 rounded-md border border-border bg-background px-2 text-xs font-medium focus:ring-1 focus:ring-primary"
-              value={localState}
-              onChange={(e) => handleStateChange(e.target.value)}
-            >
-              {AGENT_STATES.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-            <select
-              className="h-8 rounded-md border border-border bg-background px-2 text-xs font-medium focus:ring-1 focus:ring-primary"
-              value={localAssignee}
-              onChange={(e) => handleAssigneeChange(e.target.value)}
-            >
-              <option value="Unassigned">Assign Agent...</option>
-              {AVAILABLE_AGENTS.map((agent) => (
-                <option key={agent.id} value={agent.id}>{agent.name}</option>
-              ))}
-            </select>
+
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-7 text-[10px] text-muted-foreground hover:text-foreground">
+                View Raw JSON Payload
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Raw Issue Payload</DialogTitle>
+                <DialogDescription>Snapshot of the issue data from the tracker contract.</DialogDescription>
+              </DialogHeader>
+              <pre className="max-h-[500px] overflow-auto rounded-md border bg-muted p-4 text-[10px]">{JSON.stringify(result, null, 2)}</pre>
+            </DialogContent>
+          </Dialog>
+        </div>
+      ) : activeTab === 'changes' ? (
+        <div className="relative min-h-[400px] rounded-lg border bg-[#1e1e1e] overflow-hidden shadow-inner">
+          <div className="flex items-center justify-between border-b border-white/5 bg-black/20 px-3 py-2">
+            <div className="flex items-center gap-2 text-zinc-500">
+              <GitBranch className="h-3 w-3" />
+              <span className="text-[10px] font-mono uppercase tracking-wider">workspace.diff</span>
+            </div>
+            {diffLoading && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
+          </div>
+          <div className="max-h-[500px] overflow-auto">
+            {diffLoading && !diff ? (
+              <div className="space-y-2 p-4">
+                <Skeleton className="h-3 w-3/4" />
+                <Skeleton className="h-3 w-1/2" />
+                <Skeleton className="h-3 w-2/3" />
+              </div>
+            ) : diff ? (
+              <SyntaxHighlighter
+                language="diff"
+                style={oneDark}
+                customStyle={{ margin: 0, borderRadius: 0, fontSize: '11px', background: 'transparent' }}
+                showLineNumbers={false}
+              >
+                {diff}
+              </SyntaxHighlighter>
+            ) : (
+              <p className="p-8 text-center text-xs text-muted-foreground/50">No changes detected in workspace.</p>
+            )}
           </div>
         </div>
-
-        <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-5">
-          <div className="space-y-1">
-            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Status</p>
-            <div className="flex items-center gap-2">
-              <div className={`h-2 w-2 rounded-full ${localState === 'In Progress' ? 'bg-amber-500 animate-pulse' : 'bg-primary'}`} />
-              <span className="font-medium">{localState}</span>
+      ) : activeTab === 'logs' ? (
+        <div className="relative min-h-[400px] rounded-lg border bg-black p-4 font-mono text-[11px] leading-relaxed text-zinc-300 shadow-inner">
+          <div className="mb-3 flex items-center justify-between border-b border-white/10 pb-2">
+            <div className="flex items-center gap-2 text-zinc-500">
+              <Terminal className="h-3 w-3" />
+              <span>agent-turn-session.log</span>
             </div>
+            {logsLoading && <div className="h-2 w-2 animate-pulse rounded-full bg-primary" />}
           </div>
-          <div className="space-y-1">
-            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Priority</p>
-            <div className="flex items-center gap-2">
-              <PriorityIcon priority={Number(result.priority ?? 0)} className="h-4 w-4" />
-              <span className="font-medium">
-                <PriorityLabel priority={Number(result.priority ?? 0)} />
-              </span>
-            </div>
+          <div className="max-h-[500px] overflow-auto whitespace-pre-wrap">
+            {logsLoading && !logs ? (
+              <div className="space-y-2">
+                <div className="h-3 w-3/4 animate-pulse rounded bg-zinc-800" />
+                <div className="h-3 w-1/2 animate-pulse rounded bg-zinc-800" />
+                <div className="h-3 w-2/3 animate-pulse rounded bg-zinc-800" />
+              </div>
+            ) : logs ? (
+              <Ansi>{logs}</Ansi>
+            ) : (
+              'No logs available for this session.'
+            )}
+            <div ref={logsEndRef} />
           </div>
-          <div className="space-y-1">
-            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Assigned Agent</p>
-            <div className="flex items-center gap-2">
-              <Users className="h-3.5 w-3.5 text-muted-foreground/60" />
-              <p className="font-medium">
-                {AVAILABLE_AGENTS.find(a => a.id === localAssignee)?.name || localAssignee}
-              </p>
-            </div>
-          </div>
-          <div className="space-y-1">
-            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Project</p>
-            <p className="font-medium">{(result.project_id as string) || 'None'}</p>
-          </div>
-          <div className="space-y-1">
-            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Labels</p>
-            <div className="flex flex-wrap gap-1">
-              {Array.isArray(result.labels) && result.labels.length > 0 ? (
-                result.labels.map((label: string) => (
-                  <Badge key={label} variant="secondary" className="px-1.5 py-0 text-[10px]">
-                    {label}
-                  </Badge>
-                ))
+        </div>
+      ) : (
+        <div className="grid grid-cols-12 gap-4">
+          <div className="col-span-12 rounded-lg border bg-muted/10 p-2 md:col-span-4">
+            <p className="mb-2 px-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60">Files</p>
+            <div className="max-h-[400px] space-y-1 overflow-auto">
+              {artifactsLoading ? (
+                Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-8 w-full rounded" />)
+              ) : artifacts.length === 0 ? (
+                <p className="p-4 text-center text-xs text-muted-foreground">No artifacts found.</p>
               ) : (
-                <span className="text-muted-foreground">None</span>
+                artifacts.map((path) => (
+                  <button
+                    key={path}
+                    onClick={() => setSelectedArtifact(path)}
+                    className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors ${
+                      selectedArtifact === path ? 'bg-primary/10 text-primary' : 'text-foreground hover:bg-muted/50'
+                    }`}
+                  >
+                    <FileText className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                    <span className="truncate">{path}</span>
+                  </button>
+                ))
               )}
             </div>
           </div>
-        </div>
-
-        {(result.description as string) ? (
-          <div className="mt-4 border-t pt-4">
-            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Description</p>
-            <p className="mt-1 text-sm leading-relaxed text-muted-foreground line-clamp-10">
-              {result.description as string}
-            </p>
+          <div className="col-span-12 rounded-lg border bg-card p-0 md:col-span-8">
+            {selectedArtifact ? (
+              <div className="flex h-full flex-col">
+                <div className="flex items-center justify-between border-b bg-muted/30 px-3 py-2">
+                  <span className="truncate font-mono text-[10px] text-muted-foreground">{selectedArtifact}</span>
+                  {contentLoading && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
+                </div>
+                <div className="max-h-[500px] overflow-auto">
+                  {contentLoading && !artifactContent ? (
+                    <div className="space-y-2 p-4">
+                      <Skeleton className="h-3 w-3/4" />
+                      <Skeleton className="h-3 w-1/2" />
+                      <Skeleton className="h-3 w-2/3" />
+                    </div>
+                  ) : (
+                    <SyntaxHighlighter
+                      language={selectedArtifact.split('.').pop() || 'text'}
+                      style={oneDark}
+                      customStyle={{ margin: 0, borderRadius: 0, fontSize: '11px', background: 'transparent' }}
+                      lineNumberStyle={{ minWidth: '2.5em', paddingRight: '1em', color: '#4b5563', textAlign: 'right' }}
+                      showLineNumbers
+                    >
+                      {artifactContent || ''}
+                    </SyntaxHighlighter>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="flex h-[400px] items-center justify-center p-8 text-center">
+                <div className="space-y-2">
+                  <FileText className="mx-auto h-8 w-8 text-muted-foreground/20" />
+                  <p className="text-xs text-muted-foreground/50">Select a file to view its contents.</p>
+                </div>
+              </div>
+            )}
           </div>
-        ) : null}
-      </div>
-
-      <Dialog>
-        <DialogTrigger asChild>
-          <Button variant="ghost" size="sm" className="h-7 text-[10px] text-muted-foreground hover:text-foreground">
-            View Raw JSON Payload
-          </Button>
-        </DialogTrigger>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Raw Issue Payload</DialogTitle>
-            <DialogDescription>Snapshot of the issue data from the tracker contract.</DialogDescription>
-          </DialogHeader>
-          <pre className="max-h-[500px] overflow-auto rounded-md border bg-muted p-4 text-[10px]">
-            {JSON.stringify(result, null, 2)}
-          </pre>
-        </DialogContent>
-      </Dialog>
+        </div>
+      )}
     </div>
   )
 }
 
-export function IssueInspectorCard({
-  configReady,
-  issueLookupId,
-  issueLookupPending,
-  issueLookupError,
-  issueLookupResult,
-  onIssueLookupIdChange,
-  onIssueLookup,
-  onIssueUpdate,
+export function CreateProjectDialog({
+  open,
+  onOpenChange,
+  onSubmit,
 }: {
-  configReady: boolean
-  issueLookupId: string
-  issueLookupPending: boolean
-  issueLookupError: string
-  issueLookupResult: Record<string, unknown> | null
-  onIssueLookupIdChange: (value: string) => void
-  onIssueLookup: () => Promise<void>
-  onIssueUpdate?: (identifier: string, updates: Record<string, unknown>) => Promise<void>
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onSubmit: (path: string) => Promise<void>
 }) {
+  const [path, setPath] = useState('')
+  const [pending, setPending] = useState(false)
+
+  useEffect(() => {
+    if (open) setPath('')
+  }, [open])
+
+  const handleBrowse = async () => {
+    const desktopBridge = (window as any).orchestraDesktop
+    if (desktopBridge && typeof desktopBridge.selectFolder === 'function') {
+      const selected = await desktopBridge.selectFolder()
+      if (selected) {
+        setPath(selected)
+      }
+    }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!path.trim()) return
+    setPending(true)
+    try {
+      await onSubmit(path.trim())
+      onOpenChange(false)
+    } catch (error) {
+      console.error('Project creation failed', error)
+    } finally {
+      setPending(false)
+    }
+  }
+
   return (
-    <Card className="border bg-card shadow-lg dark:bg-card">
-      <CardHeader>
-        <CardTitle>Issue Inspector</CardTitle>
-        <CardDescription>
-          Direct issue payload lookup mapped to <code>/api/v1/{'{'}issue_identifier{'}'}</code>.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            className="h-9 min-w-64 rounded-md border border-border bg-background px-3 text-sm"
-            value={issueLookupId}
-            onChange={(event) => onIssueLookupIdChange(event.target.value)}
-            placeholder="e.g. OPS-123"
-          />
-          <Button onClick={() => void onIssueLookup()} disabled={!configReady || issueLookupPending || issueLookupId.trim() === ''}>
-            {issueLookupPending ? 'Loading...' : 'Fetch Issue'}
-          </Button>
-        </div>
-
-        {issueLookupError ? (
-          <div className="rounded-md border border-red-300 bg-red-50 p-2 text-xs text-red-900 dark:border-red-900/70 dark:bg-red-950/35 dark:text-red-200">
-            {issueLookupError}
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md bg-card border-border shadow-2xl">
+        <DialogHeader className="border-b border-border/40 pb-4">
+          <DialogTitle className="text-xl font-bold tracking-tight">Add Project</DialogTitle>
+          <DialogDescription className="text-muted-foreground/70">
+            Enter the absolute path to your local git repository.
+          </DialogDescription>
+        </DialogHeader>
+        
+        <form onSubmit={handleSubmit} className="space-y-6 py-6">
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1">Workspace Root Path</label>
+            <div className="flex gap-2">
+              <input
+                autoFocus
+                className="h-11 flex-1 rounded-xl border border-border bg-background px-4 text-sm font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-sm"
+                placeholder="/home/user/projects/my-app"
+                value={path}
+                onChange={(e) => setPath(e.target.value)}
+                required
+              />
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={handleBrowse}
+                className="h-11 rounded-xl border-dashed px-3 text-muted-foreground hover:text-primary hover:border-primary/50"
+                tooltip="Browse filesystem"
+                aria-label="Browse filesystem"
+              >
+                <Folder className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
-        ) : null}
 
-        {issueLookupResult ? (
-          <IssueDetailView
-            result={issueLookupResult}
-            onUpdate={(updates) => (onIssueUpdate ? onIssueUpdate(issueLookupId, updates) : Promise.resolve())}
-          />
-        ) : null}
-      </CardContent>
-    </Card>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button 
+              type="button" 
+              variant="ghost" 
+              onClick={() => onOpenChange(false)} 
+              disabled={pending}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              Cancel
+            </Button>
+            <Button 
+              type="submit" 
+              disabled={pending || !path.trim()}
+              className="px-6 bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20"
+            >
+              {pending ? (
+                <div className="flex items-center gap-2">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <span>Adding...</span>
+                </div>
+              ) : 'Add Project'}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+export function CreateTaskDialog({
+  open,
+  onOpenChange,
+  initialState,
+  availableAgents,
+  projects = [],
+  initialProjectID = '',
+  onSubmit,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  initialState: string
+  availableAgents: string[]
+  projects?: any[]
+  initialProjectID?: string
+  onSubmit: (payload: { title: string; description: string; state: string; priority: number; assignee_id: string; project_id: string }) => Promise<void>
+}) {
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [state, setState] = useState(initialState)
+  const [priority, setPriority] = useState(0)
+  const [assignee, setAssignee] = useState('Unassigned')
+  const [projectID, setProjectID] = useState(initialProjectID)
+  const [pending, setPending] = useState(false)
+
+  useEffect(() => {
+    if (open) {
+      setState(initialState)
+      setProjectID(initialProjectID)
+      setTitle('')
+      setDescription('')
+      setPriority(0)
+      setAssignee('')
+    }
+  }, [open, initialState, initialProjectID])
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!title.trim()) return
+    setPending(true)
+    try {
+      await onSubmit({ title, description, state, priority, assignee_id: assignee, project_id: projectID })
+      onOpenChange(false)
+    } catch (error) {
+      console.error('Task creation failed', error)
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl bg-card border-border shadow-2xl">
+        <DialogHeader className="border-b border-border/40 pb-4">
+          <DialogTitle className="text-xl font-bold tracking-tight">Create New Task</DialogTitle>
+          <DialogDescription className="text-muted-foreground/70">
+            Define a new orchestration unit for agent execution.
+          </DialogDescription>
+        </DialogHeader>
+        
+        <form onSubmit={handleSubmit} className="space-y-6 py-6">
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1">Task Title</label>
+              <input
+                autoFocus
+                className="h-11 w-full rounded-xl border border-border bg-background px-4 text-sm font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-sm"
+                placeholder="Briefly describe the objective..."
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1">Detailed Description</label>
+              <textarea
+                className="min-h-[120px] w-full rounded-xl border border-border bg-background px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-sm resize-none"
+                placeholder="Provide additional context for the agent..."
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 bg-muted/20 p-4 rounded-2xl border border-border/40">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1">Link to Project</label>
+              <CustomDropdown
+                className="w-full"
+                value={projectID}
+                options={[
+                  { label: 'No Project Association', value: '', icon: <FolderTree className="h-3 w-3" /> },
+                  ...projects.map((p) => ({ label: p.name, value: p.id, icon: <Folder className="h-3 w-3" /> })),
+                ]}
+                onChange={setProjectID}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1">Assign Agent Runner</label>
+              <CustomDropdown
+                className="w-full"
+                value={assignee}
+                options={[
+                  { label: 'Leave Unassigned', value: '', icon: <Users className="h-3 w-3" /> },
+                  ...availableAgents.map((agent) => ({
+                    label: agent,
+                    value: agent,
+                    icon: <Activity className="h-3 w-3" />,
+                  })),
+                ]}
+                onChange={setAssignee}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1">Pipeline State</label>
+              <CustomDropdown
+                className="w-full"
+                value={state}
+                options={AGENT_STATES.map((s) => ({ label: s, value: s }))}
+                onChange={setState}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1">Priority Level</label>
+              <CustomDropdown
+                className="w-full"
+                value={priority}
+                options={[
+                  { label: 'No Priority', value: 0, icon: <PriorityIcon priority={0} className="h-3 w-3" /> },
+                  { label: 'Low', value: 1, icon: <PriorityIcon priority={1} className="h-3 w-3" /> },
+                  { label: 'Medium', value: 2, icon: <PriorityIcon priority={2} className="h-3 w-3" /> },
+                  { label: 'High', value: 3, icon: <PriorityIcon priority={3} className="h-3 w-3" /> },
+                  { label: 'Urgent', value: 4, icon: <PriorityIcon priority={4} className="h-3 w-3" /> },
+                ]}
+                onChange={setPriority}
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2">
+            <Button 
+              type="button" 
+              variant="ghost" 
+              onClick={() => onOpenChange(false)} 
+              disabled={pending}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              Discard
+            </Button>
+            <Button 
+              type="submit" 
+              disabled={pending || !title.trim()}
+              className="px-6 bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20"
+            >
+              {pending ? (
+                <div className="flex items-center gap-2">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <span>Creating...</span>
+                </div>
+              ) : 'Initialize Task'}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -518,6 +1321,7 @@ function BackendConfigForm({
   onSetActiveProfile,
   onCreateProfile,
   onDeleteProfile,
+  disabled,
 }: {
   loadingConfig: boolean
   savingConfig: boolean
@@ -529,6 +1333,7 @@ function BackendConfigForm({
   onSetActiveProfile: (profileId: string) => Promise<void>
   onCreateProfile: (name: string) => Promise<void>
   onDeleteProfile: (profileId: string) => Promise<void>
+  disabled?: boolean
 }) {
   const [baseUrl, setBaseUrl] = useState('')
   const [apiToken, setApiToken] = useState('')
@@ -544,40 +1349,33 @@ function BackendConfigForm({
     setApiToken(config?.apiToken ?? '')
   }
 
-  const disabled = loadingConfig || savingConfig || profilesPending
-
   return (
     <div className="space-y-2">
       <label className="block text-xs text-muted-foreground">
         Profile
         <div className="mt-1 flex gap-2">
-          <select
-            className="h-9 min-w-56 rounded-md border border-border bg-background px-3 text-sm"
+          <CustomDropdown
+            className="w-64"
             value={activeProfileId}
-            onChange={(event) => {
-              void onSetActiveProfile(event.target.value)
-            }}
+            options={backendProfiles.map((p) => ({ label: p.name, value: p.id, icon: <ShieldCheck className="h-3 w-3" /> }))}
+            onChange={(val) => void onSetActiveProfile(val)}
             disabled={disabled || backendProfiles.length === 0}
-          >
-            {backendProfiles.map((profile) => (
-              <option key={profile.id} value={profile.id}>
-                {profile.name}
-              </option>
-            ))}
-          </select>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9 rounded-full border bg-muted/50 px-4 text-foreground hover:bg-accent dark:text-foreground dark:hover:bg-accent"
-            disabled={disabled || backendProfiles.length <= 1 || activeProfileId === ''}
-            onClick={() => {
-              if (activeProfileId !== '') {
-                void onDeleteProfile(activeProfileId)
-              }
-            }}
-          >
-            Delete
-          </Button>
+          />
+          <AppTooltip content="Delete this profile">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 rounded-full border bg-muted/50 px-4 text-foreground hover:bg-accent dark:text-foreground dark:hover:bg-accent"
+              disabled={disabled || backendProfiles.length <= 1 || activeProfileId === ''}
+              onClick={() => {
+                if (activeProfileId !== '') {
+                  void onDeleteProfile(activeProfileId)
+                }
+              }}
+            >
+              Delete
+            </Button>
+          </AppTooltip>
         </div>
       </label>
       <label className="block text-xs text-muted-foreground">
@@ -794,165 +1592,411 @@ function queueRowsFromSnapshot(snapshot: SnapshotPayload | null): QueueRow[] {
 export function KanbanBoard({
   loadingState,
   snapshot,
-  doneItems = [],
+  boardIssues = [],
+  projects = [],
   onInspectIssue,
+  onIssueUpdate,
+  onCreateIssue,
 }: {
   loadingState: boolean
   snapshot: SnapshotPayload | null
-  doneItems?: any[]
+  boardIssues?: any[]
+  projects?: any[]
   onInspectIssue: (issueIdentifier: string) => Promise<void>
+  onIssueUpdate?: (identifier: string, updates: Record<string, unknown>) => Promise<void>
+  onCreateIssue?: (state: string) => void
 }) {
+  const handleCreateClick = (columnId: string) => {
+    if (!onCreateIssue) return
+    const stateMap: Record<string, string> = {
+      todo: 'Todo',
+      progress: 'In Progress',
+      done: 'Done',
+    }
+    onCreateIssue(stateMap[columnId] || 'Todo')
+  }
+
   const [stateFilter, setStateFilter] = useState<string>('all')
   const [priorityFilter, setPriorityFilter] = useState<string>('all')
+  const [projectFilter, setProjectFilter] = useState<string>(projects.length === 1 ? projects[0].id : 'all')
+  const [viewMode, setViewMode] = useState<'board' | 'list'>('board')
 
-  const allItems = [
-    ...(getSortedRetryEntries(snapshot?.retrying ?? []) as any[]),
-    ...(getSortedRunningEntries(snapshot?.running ?? []) as any[]),
-    ...doneItems,
-  ]
+  useEffect(() => {
+    if (projects.length === 1) {
+      setProjectFilter(projects[0].id)
+    }
+  }, [projects])
+  const [isDraggingOver, setIsDraggingOver] = useState<string | null>(null)
+  const [columnOrder, setColumnOrder] = useState<string[]>(['todo', 'progress', 'done'])
+  const [draggingColumnId, setDraggingColumnId] = useState<string | null>(null)
 
-  const uniqueStates = Array.from(new Set(allItems.map((item) => item.state))).sort()
+  const handleDragStart = (e: React.DragEvent, issueIdentifier: string) => {
+    e.dataTransfer.setData('issueIdentifier', issueIdentifier)
+    e.dataTransfer.setData('type', 'issue')
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const handleColumnDragStart = (e: React.DragEvent, columnId: string) => {
+    e.dataTransfer.setData('columnId', columnId)
+    e.dataTransfer.setData('type', 'column')
+    setDraggingColumnId(columnId)
+  }
+
+  const handleDragOver = (e: React.DragEvent, columnId: string) => {
+    e.preventDefault()
+    setIsDraggingOver(columnId)
+  }
+
+  const handleDrop = async (e: React.DragEvent, targetColumnId: string) => {
+    e.preventDefault()
+    setIsDraggingOver(null)
+    setDraggingColumnId(null)
+
+    const type = e.dataTransfer.getData('type')
+
+    if (type === 'column') {
+      const sourceColumnId = e.dataTransfer.getData('columnId')
+      if (!sourceColumnId || sourceColumnId === targetColumnId) return
+
+      const newOrder = [...columnOrder]
+      const sourceIdx = newOrder.indexOf(sourceColumnId)
+      const targetIdx = newOrder.indexOf(targetColumnId)
+      newOrder.splice(sourceIdx, 1)
+      newOrder.splice(targetIdx, 0, sourceColumnId)
+      setColumnOrder(newOrder)
+      return
+    }
+
+    const issueIdentifier = e.dataTransfer.getData('issueIdentifier')
+    if (!issueIdentifier || !onIssueUpdate) return
+
+    const stateMap: Record<string, string> = {
+      todo: 'Todo',
+      progress: 'In Progress',
+      done: 'Done',
+    }
+
+    const nextState = stateMap[targetColumnId]
+    if (nextState) {
+      await onIssueUpdate(issueIdentifier, { state: nextState })
+    }
+  }
+
+  // Merge tracker issues with runtime snapshot data
+  const enrichedIssues = boardIssues.map(issue => {
+    let lane = null
+    let detail = issue.title || issue.description || 'No Title'
+    let at = issue.created_at || ''
+
+    if (snapshot) {
+      const running = snapshot.running?.find(r => r.issue_id === issue.id)
+      if (running) {
+        lane = 'running'
+        detail = running.last_message || running.last_event || detail
+        at = running.last_event_at || running.started_at || at
+      } else {
+        const retrying = snapshot.retrying?.find(r => r.issue_id === issue.id)
+        if (retrying) {
+          lane = 'retrying'
+          detail = retrying.error || `attempt ${retrying.attempt}`
+          at = retrying.due_at || at
+        }
+      }
+    }
+
+    return {
+      ...issue,
+      issue_identifier: issue.identifier || issue.issue_identifier,
+      lane,
+      detail,
+      at,
+    }
+  })
+
+  const uniqueStates = Array.from(new Set(enrichedIssues.map((item) => item.state))).sort()
 
   const filterItem = (item: any) => {
     const stateMatch = stateFilter === 'all' || item.state === stateFilter
     const priorityMatch = priorityFilter === 'all' || String(item.priority ?? 0) === priorityFilter
-    return stateMatch && priorityMatch
+    const projectMatch = projectFilter === 'all' || item.project_id === projectFilter
+    return stateMatch && priorityMatch && projectMatch
   }
 
-  const todoItems = getSortedRetryEntries(snapshot?.retrying ?? []).filter(filterItem)
-  const inProgressItems = getSortedRunningEntries(snapshot?.running ?? []).filter(filterItem)
-  const filteredDoneItems = doneItems.filter(filterItem)
+  const todoItems = enrichedIssues.filter(i => i.state === 'Todo').filter(filterItem)
+  const inProgressItems = enrichedIssues.filter(i => i.state === 'In Progress').filter(filterItem)
+  const doneItemsList = enrichedIssues.filter(i => i.state === 'Done').filter(filterItem)
 
   const columns = [
     { id: 'todo', title: 'To Do', items: todoItems, icon: <div className="h-2 w-2 rounded-full border-2 border-muted-foreground" /> },
     { id: 'progress', title: 'In Progress', items: inProgressItems, icon: <div className="h-2 w-2 rounded-full border-2 border-amber-500 bg-amber-500" /> },
-    { id: 'done', title: 'Done', items: filteredDoneItems, icon: <div className="h-2 w-2 rounded-full bg-primary" /> },
+    { id: 'done', title: 'Done', items: doneItemsList, icon: <div className="h-2 w-2 rounded-full bg-primary" /> },
   ]
 
+  const orderedColumns = columnOrder.map((id) => columns.find((c) => c.id === id)!)
+
+  const filteredList = enrichedIssues.filter(filterItem)
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-3 border-b border-border/40 pb-4">
-        <div className="flex items-center gap-2 rounded-md border bg-muted/20 px-2 py-1">
-          <span className="text-[10px] font-bold uppercase tracking-tight text-muted-foreground/60">State</span>
-          <select
-            className="bg-transparent text-xs font-medium focus:outline-none"
-            value={stateFilter}
-            onChange={(e) => setStateFilter(e.target.value)}
-          >
-            <option value="all">All</option>
-            {uniqueStates.map((state) => (
-              <option key={state} value={state}>
-                {state}
-              </option>
-            ))}
-          </select>
-        </div>
+    <div className="flex-1 flex flex-col min-h-0 space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/40 pb-4 shrink-0">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 rounded-md border bg-muted/20 px-2 py-1">
+            <span className="text-[10px] font-bold uppercase tracking-tight text-muted-foreground/60">State</span>
+            <CustomDropdown
+              className="w-40"
+              value={stateFilter}
+              options={[
+                { label: 'All States', value: 'all', icon: <CircleDashed className="h-3 w-3" /> },
+                ...uniqueStates.map((s) => ({ label: s, value: s, icon: <div className="h-1.5 w-1.5 rounded-full bg-primary" /> })),
+              ]}
+              onChange={setStateFilter}
+            />
+          </div>
 
-        <div className="flex items-center gap-2 rounded-md border bg-muted/20 px-2 py-1">
-          <span className="text-[10px] font-bold uppercase tracking-tight text-muted-foreground/60">Priority</span>
-          <select
-            className="bg-transparent text-xs font-medium focus:outline-none"
-            value={priorityFilter}
-            onChange={(e) => setPriorityFilter(e.target.value)}
-          >
-            <option value="all">All</option>
-            <option value="0">No Priority</option>
-            <option value="1">Low</option>
-            <option value="2">Medium</option>
-            <option value="3">High</option>
-            <option value="4">Urgent</option>
-          </select>
-        </div>
+          <div className="flex items-center gap-2 rounded-md border bg-muted/20 px-2 py-1">
+            <span className="text-[10px] font-bold uppercase tracking-tight text-muted-foreground/60">Priority</span>
+            <CustomDropdown
+              className="w-40"
+              value={priorityFilter}
+              options={[
+                { label: 'All Priorities', value: 'all', icon: <MoreHorizontal className="h-3 w-3" /> },
+                { label: 'No Priority', value: '0', icon: <PriorityIcon priority={0} className="h-3 w-3" /> },
+                { label: 'Low', value: '1', icon: <PriorityIcon priority={1} className="h-3 w-3" /> },
+                { label: 'Medium', value: '2', icon: <PriorityIcon priority={2} className="h-3 w-3" /> },
+                { label: 'High', value: '3', icon: <PriorityIcon priority={3} className="h-3 w-3" /> },
+                { label: 'Urgent', value: '4', icon: <PriorityIcon priority={4} className="h-3 w-3" /> },
+              ]}
+              onChange={setPriorityFilter}
+            />
+          </div>
 
-        {stateFilter !== 'all' || priorityFilter !== 'all' ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-[10px] text-muted-foreground hover:text-foreground"
-            onClick={() => {
-              setStateFilter('all')
-              setPriorityFilter('all')
-            }}
-          >
-            Clear filters
-          </Button>
-        ) : null}
-      </div>
+          <div className="flex items-center gap-2 rounded-md border bg-muted/20 px-2 py-1">
+            <span className="text-[10px] font-bold uppercase tracking-tight text-muted-foreground/60">Project</span>
+            <CustomDropdown
+              className="w-56"
+              value={projectFilter}
+              options={[
+                { label: 'All Projects', value: 'all', icon: <FolderTree className="h-3 w-3" /> },
+                ...projects.map((p) => ({ label: p.name, value: p.id, icon: <Folder className="h-3 w-3" /> })),
+              ]}
+              onChange={setProjectFilter}
+            />
+          </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-      {columns.map((column) => (
-        <div key={column.id} className="flex flex-col gap-3">
-          <div className="flex items-center justify-between px-1">
-            <div className="flex items-center gap-2">
-              {column.icon}
-              <h3 className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">{column.title}</h3>
-              <span className="text-[11px] font-medium text-muted-foreground/50">{column.items.length}</span>
-            </div>
-            <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:bg-muted/50">
-              <span className="text-lg font-light">+</span>
+          {stateFilter !== 'all' || priorityFilter !== 'all' || projectFilter !== 'all' ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-[10px] text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                setStateFilter('all')
+                setPriorityFilter('all')
+                setProjectFilter('all')
+              }}
+            >
+              Clear filters
             </Button>
-          </div>
-
-          <div className="flex min-h-[500px] flex-col gap-2 rounded-xl bg-muted/10 p-1.5 transition-colors hover:bg-muted/20">
-            {loadingState ? (
-              Array.from({ length: 3 }).map((_, idx) => <Skeleton key={idx} className="h-28 w-full rounded-lg" />)
-            ) : column.items.length === 0 ? (
-              <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
-                <div className="mb-2 h-8 w-8 rounded-full border-2 border-dashed border-muted-foreground/20" />
-                <p className="text-[10px] uppercase tracking-widest text-muted-foreground/40">Empty</p>
-              </div>
-            ) : (
-              column.items.map((item) => (
-                <Card
-                  key={item.issue_id}
-                  className="group relative cursor-pointer border-transparent bg-card p-3 shadow-sm transition-all hover:border-primary/20 hover:shadow-md active:scale-[0.98]"
-                  onClick={() => void onInspectIssue(item.issue_identifier)}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-1.5">
-                      <PriorityIcon priority={Number((item as any).priority ?? 0)} className="h-3 w-3" />
-                      <span className="font-mono text-[10px] font-semibold tracking-tight text-muted-foreground/80">
-                        {item.issue_identifier}
-                      </span>
-                    </div>
-                    <span className="text-[9px] font-medium text-muted-foreground/40">
-                      {(item as any).at ? new Date((item as any).at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (item as any).due_at ? 'Retry' : ''}
-                    </span>
-                  </div>
-                  <p className="mt-2 line-clamp-2 text-[13px] font-medium leading-tight text-foreground/90">
-                    {(item as any).last_message || (item as any).error || 'No message'}
-                  </p>
-                  {Array.isArray((item as any).labels) && (item as any).labels.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {(item as any).labels.slice(0, 2).map((label: string) => (
-                        <Badge key={label} variant="secondary" className="px-1 py-0 text-[9px] font-normal text-muted-foreground/70">
-                          {label}
-                        </Badge>
-                      ))}
-                      {(item as any).labels.length > 2 && (
-                        <span className="text-[9px] text-muted-foreground/40">+{(item as any).labels.length - 2}</span>
-                      )}
-                    </div>
-                  )}
-                  <div className="mt-3 flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <div className="h-2 w-2 rounded-full bg-primary/20" />
-                      <span className="text-[10px] font-medium text-muted-foreground/60">{item.state}</span>
-                    </div>
-                    {(item as any).session_id ? (
-                      <div className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-tighter text-amber-500/80">
-                        <Activity className="h-2.5 w-2.5" />
-                        <span>Live</span>
-                      </div>
-                    ) : null}
-                  </div>
-                </Card>
-              ))
-            )}
-          </div>
+          ) : null}
         </div>
-      ))}
+
+        <div className="flex items-center gap-1 rounded-lg border bg-muted/20 p-1">
+          <AppTooltip content="Board View">
+            <button
+              onClick={() => setViewMode('board')}
+              className={`grid h-7 w-8 place-items-center rounded-md transition-all ${viewMode === 'board' ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                }`}
+            >
+              <Layout className="h-3.5 w-3.5" />
+            </button>
+          </AppTooltip>
+          <AppTooltip content="List View">
+            <button
+              onClick={() => setViewMode('list')}
+              className={`grid h-7 w-8 place-items-center rounded-md transition-all ${viewMode === 'list' ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                }`}
+            >
+              <Rows className="h-3.5 w-3.5" />
+            </button>
+          </AppTooltip>
+        </div>
       </div>
+
+      {viewMode === 'board' ? (
+        <div className="flex-1 grid grid-cols-1 gap-6 lg:grid-cols-3 min-h-0">
+          {orderedColumns.map((column) => (
+            <div
+              key={column.id}
+              className={`flex flex-col gap-3 transition-opacity min-h-0 ${draggingColumnId === column.id ? 'opacity-40' : ''}`}
+              onDragOver={(e) => handleDragOver(e, column.id)}
+              onDragLeave={() => setIsDraggingOver(null)}
+              onDrop={(e) => handleDrop(e, column.id)}
+            >
+              <div
+                className="flex cursor-grab items-center justify-between px-1 active:cursor-grabbing shrink-0"
+                draggable
+                onDragStart={(e) => handleColumnDragStart(e, column.id)}
+              >
+                <div className="flex items-center gap-2">
+                  {column.icon}
+                  <h3 className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">{column.title}</h3>
+                  <span className="text-[11px] font-medium text-muted-foreground/50">{column.items.length}</span>
+                </div>
+                <AppTooltip content={`Create Task in ${column.title}`}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0 text-muted-foreground hover:bg-muted/50"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleCreateClick(column.id)
+                    }}
+                  >
+                    <span className="text-lg font-light">+</span>
+                  </Button>
+                </AppTooltip>
+              </div>
+
+              <div className={`flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-2 rounded-xl p-1.5 transition-colors ${isDraggingOver === column.id ? 'bg-primary/5 ring-2 ring-primary/20 ring-inset' : 'bg-muted/10'}`}>
+                {loadingState ? (
+                  Array.from({ length: 3 }).map((_, idx) => <Skeleton key={idx} className="h-28 w-full rounded-lg" />)
+                ) : column.items.length === 0 ? (
+                  <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
+                    <div className="mb-2 h-8 w-8 rounded-full border-2 border-dashed border-muted-foreground/20" />
+                    <p className="text-[10px] uppercase tracking-widest text-muted-foreground/40">Empty</p>
+                  </div>
+                ) : (
+                  column.items.map((item) => (
+                    <Card
+                      key={item.issue_id}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, item.issue_identifier)}
+                      className="group relative cursor-grab border-transparent bg-card p-3 shadow-sm transition-all hover:border-primary/20 hover:shadow-md active:cursor-grabbing active:scale-[0.98]"
+                      onClick={() => void onInspectIssue(item.issue_identifier)}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <AppTooltip content={<PriorityLabel priority={Number((item as any).priority ?? 0)} />}>
+                            <div>
+                              <PriorityIcon priority={Number((item as any).priority ?? 0)} className="h-3 w-3" />
+                            </div>
+                          </AppTooltip>
+                          <span className="font-mono text-[10px] font-semibold tracking-tight text-muted-foreground/80">
+                            {item.issue_identifier}
+                          </span>
+                        </div>
+                        <span className="text-[9px] font-medium text-muted-foreground/40">
+                          {(item as any).at
+                            ? new Date((item as any).at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                            : (item as any).due_at
+                              ? 'Retry'
+                              : ''}
+                        </span>
+                      </div>
+                      <p className="mt-2 line-clamp-2 text-[13px] font-medium leading-tight text-foreground/90">
+                        {(item as any).last_message || (item as any).error || 'No message'}
+                      </p>
+                      {Array.isArray((item as any).labels) && (item as any).labels.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {(item as any).labels.slice(0, 2).map((label: string) => (
+                            <Badge key={label} variant="secondary" className="px-1 py-0 text-[9px] font-normal text-muted-foreground/70">
+                              {label}
+                            </Badge>
+                          ))}
+                          {(item as any).labels.length > 2 && <span className="text-[9px] text-muted-foreground/40">+{(item as any).labels.length - 2}</span>}
+                        </div>
+                      )}
+                      <div className="mt-3 flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <div className="h-2 w-2 rounded-full bg-primary/20" />
+                          <span className="text-[10px] font-medium text-muted-foreground/60">{item.state}</span>
+                        </div>
+                        {(item as any).session_id ? (
+                          <div className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-tighter text-amber-500/80">
+                            <Activity className="h-2.5 w-2.5" />
+                            <span>Live</span>
+                          </div>
+                        ) : null}
+                      </div>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="flex-1 rounded-xl border bg-card/50 shadow-lg overflow-hidden min-h-0 flex flex-col">
+          {filteredList.length === 0 ? (
+            <div className="flex flex-1 flex-col items-center justify-center p-12 text-center text-muted-foreground/40">
+              <Ticket className="h-12 w-12 mb-4 opacity-20" />
+              <p className="text-sm italic uppercase tracking-widest font-bold">No tasks match current filters</p>
+            </div>
+          ) : (
+            <div className="flex-1 overflow-auto custom-scrollbar">
+              <table className="w-full text-left border-collapse">
+                <thead className="sticky top-0 z-10">
+                  <tr className="border-b bg-muted/80 backdrop-blur text-[10px] uppercase tracking-wider font-bold text-muted-foreground">
+                    <th className="px-4 py-3 w-24">ID</th>
+                    <th className="px-4 py-3">Title</th>
+                    <th className="px-4 py-3 w-28">Status</th>
+                    <th className="px-4 py-3 w-28">Priority</th>
+                    <th className="px-4 py-3 w-32 text-right">Activity</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/40">
+                  {filteredList.map((item) => (
+                    <tr 
+                      key={item.issue_id} 
+                      className="group hover:bg-muted/30 transition-colors cursor-pointer"
+                      onClick={() => void onInspectIssue(item.issue_identifier)}
+                    >
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span className="font-mono text-xs font-bold text-primary">{item.issue_identifier}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
+                            {item.title || item.detail || 'No Title'}
+                          </span>
+                          {item.lane === 'running' && (
+                            <div className="flex items-center gap-1.5 text-[10px] text-amber-500 font-bold uppercase tracking-tighter">
+                              <Activity className="h-3 w-3" />
+                              Active session
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <div className={`h-1.5 w-1.5 rounded-full ${
+                            item.state === 'Done' ? 'bg-primary' : 
+                            item.state === 'In Progress' ? 'bg-amber-500 animate-pulse' : 
+                            'bg-muted-foreground/40'
+                          }`} />
+                          <span className="text-xs font-medium text-muted-foreground">{item.state}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <PriorityIcon priority={Number(item.priority ?? 0)} className="h-3.5 w-3.5" />
+                          <span className="text-xs text-muted-foreground">
+                            <PriorityLabel priority={Number(item.priority ?? 0)} />
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        <span className="text-[10px] font-mono text-muted-foreground/60">
+                          {item.at ? new Date(item.at).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -979,133 +2023,196 @@ export function OperationsQueueCard({
   })
 
   return (
-    <Card className="border bg-card shadow-lg dark:bg-card">
-      <CardHeader>
+    <Card className="border bg-card shadow-lg dark:bg-card flex flex-col h-full overflow-hidden">
+      <CardHeader className="pb-4 shrink-0">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <CardTitle>Operations Queue</CardTitle>
-            <CardDescription>Linear-style queue surface for active and retrying runtime work.</CardDescription>
+          <div className="space-y-1">
+            <CardTitle className="text-xl font-bold flex items-center gap-2">
+              <AppWindow className="h-5 w-5 text-primary" />
+              Operations Queue
+            </CardTitle>
+            <CardDescription className="text-xs">Live orchestrator surface for active and retrying issue sessions.</CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <select
-              className="h-8 rounded-md border border-border bg-background px-2 text-xs"
-              value={laneFilter}
-              onChange={(e) => setLaneFilter(e.target.value as any)}
-            >
-              <option value="all">All Lanes</option>
-              <option value="running">Running</option>
-              <option value="retrying">Retrying</option>
-            </select>
-            <select
-              className="h-8 rounded-md border border-border bg-background px-2 text-xs"
-              value={stateFilter}
-              onChange={(e) => setStateFilter(e.target.value)}
-            >
-              <option value="all">All States</option>
-              {uniqueStates.map((state) => (
-                <option key={state} value={state}>
-                  {state}
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center gap-2 rounded-lg border bg-muted/20 px-2 py-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Lane</span>
+              <CustomDropdown
+                className="w-36 h-8"
+                value={laneFilter}
+                options={[
+                  { label: 'All Lanes', value: 'all', icon: <Circle className="h-2 w-2" /> },
+                  { label: 'Running', value: 'running', icon: <Activity className="h-2 w-2 text-primary" /> },
+                  { label: 'Retrying', value: 'retrying', icon: <RefreshCcw className="h-2 w-2 text-amber-500" /> },
+                ]}
+                onChange={(value) => setLaneFilter(value as any)}
+              />
+            </div>
+            <div className="flex items-center gap-2 rounded-lg border bg-muted/20 px-2 py-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Status</span>
+              <CustomDropdown
+                className="w-44 h-8"
+                value={stateFilter}
+                options={[
+                  { label: 'All States', value: 'all', icon: <CircleDashed className="h-2 w-2" /> },
+                  ...uniqueStates.map((state) => ({ label: state, value: state })),
+                ]}
+                onChange={setStateFilter}
+              />
+            </div>
+            {(laneFilter !== 'all' || stateFilter !== 'all') && (
+              <IconButton 
+                icon={<RefreshCcw className="h-4 w-4" />} 
+                title="Clear Filters" 
+                onClick={() => { setLaneFilter('all'); setStateFilter('all') }} 
+              />
+            )}
           </div>
         </div>
       </CardHeader>
-      <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Issue</TableHead>
-              <TableHead>Lane</TableHead>
-              <TableHead>State</TableHead>
-              <TableHead>Session</TableHead>
-              <TableHead>Detail</TableHead>
-              <TableHead>At</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loadingState
-              ? Array.from({ length: 3 }).map((_, idx) => (
+      <CardContent className="flex-1 min-h-0 pb-4">
+        <div className="rounded-xl border border-border/40 overflow-y-auto bg-muted/5 shadow-inner h-full custom-scrollbar">
+          <Table className="relative">
+            <TableHeader className="bg-muted/30 sticky top-0 z-10">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="text-[10px] font-bold uppercase tracking-wider py-3">Issue</TableHead>
+                <TableHead className="text-[10px] font-bold uppercase tracking-wider py-3">Lane</TableHead>
+                <TableHead className="text-[10px] font-bold uppercase tracking-wider py-3">State</TableHead>
+                <TableHead className="text-[10px] font-bold uppercase tracking-wider py-3 text-center">Session</TableHead>
+                <TableHead className="text-[10px] font-bold uppercase tracking-wider py-3">Detail</TableHead>
+                <TableHead className="text-[10px] font-bold uppercase tracking-wider py-3 text-right">Activity</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loadingState
+                ? Array.from({ length: 3 }).map((_, idx) => (
                   <TableRow key={idx}>
                     <TableCell colSpan={6}>
-                      <Skeleton className="h-5 w-full" />
+                      <Skeleton className="h-10 w-full rounded-md" />
                     </TableCell>
                   </TableRow>
                 ))
-              : rows.map((row) => (
-                  <TableRow key={`${row.lane}-${row.issue_id}`}>
-                    <TableCell className="font-medium">
+                : rows.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="h-32 text-center text-muted-foreground italic text-xs uppercase tracking-widest opacity-40">
+                      No active sessions in queue
+                    </TableCell>
+                  </TableRow>
+                ) : rows.map((row) => (
+                  <TableRow key={`${row.lane}-${row.issue_id}`} className="group transition-colors hover:bg-muted/30">
+                    <TableCell className="font-bold font-mono text-xs">
                       <button
                         type="button"
-                        className="rounded px-1 py-0.5 text-left text-blue-700 underline-offset-2 hover:underline dark:text-blue-300"
+                        className="rounded px-1 py-0.5 text-left text-primary hover:bg-primary/10 transition-colors border border-transparent hover:border-primary/20"
                         onClick={() => void onInspectIssue(row.issue_identifier)}
-                        title="Inspect issue details"
                       >
                         {row.issue_identifier}
                       </button>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={row.lane === 'running' ? 'default' : 'outline'}>{row.lane}</Badge>
+                      <Badge variant={row.lane === 'running' ? 'default' : 'outline'} className={`text-[9px] uppercase tracking-tighter h-5 px-1.5 ${row.lane === 'running' ? '' : 'text-amber-600 border-amber-500/20'}`}>
+                        {row.lane}
+                      </Badge>
                     </TableCell>
-                    <TableCell>{row.state}</TableCell>
-                    <TableCell>{row.session_id}</TableCell>
-                    <TableCell className="max-w-[320px] truncate" title={row.detail}>
-                      {row.detail}
+                    <TableCell className="text-xs font-medium text-foreground/80">{row.state}</TableCell>
+                    <TableCell className="text-center">
+                      {row.session_id !== 'retry-queue' ? (
+                        <code className="text-[10px] bg-muted px-1.5 py-0.5 rounded border border-border/40 text-muted-foreground font-mono">
+                          {row.session_id.slice(0, 8)}
+                        </code>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground/40 italic">—</span>
+                      )}
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{row.at}</TableCell>
+                    <TableCell className="max-w-[280px] truncate group-hover:whitespace-normal group-hover:overflow-visible group-hover:z-50 relative">
+                      <AppTooltip content={row.detail}>
+                        <span className="text-xs text-muted-foreground transition-colors group-hover:text-foreground">
+                          {row.detail}
+                        </span>
+                      </AppTooltip>
+                    </TableCell>
+                    <TableCell className="text-right text-[10px] text-muted-foreground/60 font-medium whitespace-nowrap">
+                      {new Date(row.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </TableCell>
                   </TableRow>
                 ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
-  )
-}
-
-export function IntegrationUtilityCard({ tokenConfigured }: { tokenConfigured: boolean }) {
-  const rows = [
-    {
-      name: 'Codex',
-      role: 'Runtime orchestration provider and event source.',
-      status: 'connected via backend',
-    },
-    {
-      name: 'OpenCode',
-      role: 'Desktop operator surface and local workflow tooling.',
-      status: 'active in this app shell',
-    },
-    {
-      name: 'Claude Code',
-      role: 'Secondary coding/runtime workflow provider lane.',
-      status: 'supported through backend contracts',
-    },
-    {
-      name: 'Linear',
-      role: 'Tracker semantics for issue/project state workflows.',
-      status: 'clone phase in progress',
-    },
-  ]
-
-  return (
-    <Card className="border bg-card shadow-lg dark:bg-card">
-      <CardHeader>
-        <CardTitle>Integration Surface</CardTitle>
-        <CardDescription>Current implementation lanes and how they map to operator utility.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3 text-sm">
-        {rows.map((row) => (
-          <div key={row.name} className="rounded-md border bg-muted/40 p-3 dark:bg-muted/50">
-            <div className="mb-1 flex items-center gap-2">
-              <Badge variant="secondary">{row.name}</Badge>
-              <span className="text-xs text-muted-foreground">{row.status}</span>
-            </div>
-            <p className="text-muted-foreground">{row.role}</p>
-          </div>
-        ))}
-        <div className="rounded-md border border-dashed bg-muted/20 p-3 text-xs text-muted-foreground">
-          Auth mode: {tokenConfigured ? 'bearer token configured (polling fallback for SSE)' : 'local/no-token mode (SSE enabled when stream is healthy)'}.
+            </TableBody>
+          </Table>
         </div>
       </CardContent>
     </Card>
   )
 }
+
+function AgentTokensForm({
+  tokens,
+  onSave,
+  disabled,
+}: {
+  tokens: Record<string, string>
+  onSave: (name: string, value: string | null) => Promise<void>
+  disabled: boolean
+}) {
+  const [newTokenName, setNewTokenName] = useState('')
+  const [newTokenValue, setNewTokenValue] = useState('')
+
+  const handleAdd = async () => {
+    if (!newTokenName.trim() || !newTokenValue.trim()) return
+    await onSave(newTokenName.trim(), newTokenValue.trim())
+    setNewTokenName('')
+    setNewTokenValue('')
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        {Object.keys(tokens).length === 0 ? (
+          <p className="text-xs text-muted-foreground/50 italic">No secure tokens stored.</p>
+        ) : (
+          <div className="grid grid-cols-1 gap-2">
+            {Object.keys(tokens).map((name) => (
+              <div key={name} className="flex items-center justify-between rounded border bg-background px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+                  <span className="text-xs font-medium">{name}</span>
+                  <span className="text-[10px] text-muted-foreground font-mono">{tokens[name]}</span>
+                </div>
+                <button
+                  onClick={() => void onSave(name, null)}
+                  className="text-[10px] text-red-500 hover:text-red-600 font-medium"
+                  disabled={disabled}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-3 border-t border-border/40 pt-3">
+        <p className="text-[10px] font-bold uppercase text-muted-foreground/60">Add New Token</p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <input
+            className="h-9 rounded-md border border-border bg-background px-3 text-sm"
+            placeholder="Token Name (e.g. ANTHROPIC_API_KEY)"
+            value={newTokenName}
+            onChange={(e) => setNewTokenName(e.target.value)}
+            disabled={disabled}
+          />
+          <input
+            type="password"
+            className="h-9 rounded-md border border-border bg-background px-3 text-sm"
+            placeholder="Token Value"
+            value={newTokenValue}
+            onChange={(e) => setNewTokenValue(e.target.value)}
+            disabled={disabled}
+          />
+        </div>
+        <Button size="sm" onClick={() => void handleAdd()} disabled={disabled || !newTokenName || !newTokenValue}>
+          Store Encrypted Token
+        </Button>
+      </div>
+    </div>
+  )
+}
+

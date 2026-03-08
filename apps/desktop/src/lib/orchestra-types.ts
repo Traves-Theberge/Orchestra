@@ -71,3 +71,25 @@ export type IssueDetailPayload = {
   last_error: Record<string, unknown> | null
   tracked: Record<string, unknown>
 }
+
+export type Project = {
+  id: string
+  name: string
+  root_path: string
+  remote_url: string
+}
+
+export type ProjectStats = {
+  total_sessions: number
+  total_input: number
+  total_output: number
+  last_active: string
+}
+
+export type GlobalStats = {
+  total_tokens: number
+  total_input: number
+  total_output: number
+  provider_usage: Record<string, number>
+  recent_sessions: any[]
+}

@@ -1,4 +1,4 @@
-import type { APIErrorEnvelope, EventEnvelope, IssueDetailPayload, SnapshotPayload } from '@/lib/orchestra-types'
+import type { APIErrorEnvelope, EventEnvelope, GlobalStats, IssueDetailPayload, Project, ProjectStats, SnapshotPayload } from '@/lib/orchestra-types'
 
 export type BackendConfig = {
   baseUrl: string
@@ -47,31 +47,31 @@ export function normalizeSnapshotPayload(value: unknown): SnapshotPayload {
 
   const running = Array.isArray(root.running)
     ? root.running
-        .filter((entry): entry is Record<string, unknown> => isRecord(entry))
-        .map((entry) => ({
-          issue_id: asString(entry.issue_id),
-          issue_identifier: asString(entry.issue_identifier),
-          state: asString(entry.state),
-          session_id: asString(entry.session_id, ''),
-          turn_count: asNumber(entry.turn_count, 0),
-          last_event: asString(entry.last_event, ''),
-          last_message: asString(entry.last_message, ''),
-          last_event_at: asString(entry.last_event_at, ''),
-          started_at: asString(entry.started_at, ''),
-        }))
+      .filter((entry): entry is Record<string, unknown> => isRecord(entry))
+      .map((entry) => ({
+        issue_id: asString(entry.issue_id),
+        issue_identifier: asString(entry.issue_identifier),
+        state: asString(entry.state),
+        session_id: asString(entry.session_id, ''),
+        turn_count: asNumber(entry.turn_count, 0),
+        last_event: asString(entry.last_event, ''),
+        last_message: asString(entry.last_message, ''),
+        last_event_at: asString(entry.last_event_at, ''),
+        started_at: asString(entry.started_at, ''),
+      }))
     : []
 
   const retrying = Array.isArray(root.retrying)
     ? root.retrying
-        .filter((entry): entry is Record<string, unknown> => isRecord(entry))
-        .map((entry) => ({
-          issue_id: asString(entry.issue_id),
-          issue_identifier: asString(entry.issue_identifier),
-          state: asString(entry.state),
-          attempt: asNumber(entry.attempt, 0),
-          due_at: asString(entry.due_at),
-          error: asString(entry.error),
-        }))
+      .filter((entry): entry is Record<string, unknown> => isRecord(entry))
+      .map((entry) => ({
+        issue_id: asString(entry.issue_id),
+        issue_identifier: asString(entry.issue_identifier),
+        state: asString(entry.state),
+        attempt: asNumber(entry.attempt, 0),
+        due_at: asString(entry.due_at),
+        error: asString(entry.error),
+      }))
     : []
 
   return {
@@ -150,7 +150,7 @@ export async function updateIssue(
   if (normalized === '') {
     throw new APIError('invalid_request', 'issue identifier is required')
   }
-  return requestJSON<Record<string, unknown>>(config, `/api/v1/${encodeURIComponent(normalized)}`, {
+  return requestJSON<Record<string, unknown>>(config, `/api/v1/issues/${encodeURIComponent(normalized)}`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -159,9 +159,62 @@ export async function updateIssue(
   })
 }
 
+export async function stopIssueSession(config: BackendConfig, issueIdentifier: string): Promise<void> {
+  const normalized = issueIdentifier.trim()
+  if (normalized === '') {
+    throw new APIError('invalid_request', 'issue identifier is required')
+  }
+  await requestJSON<void>(config, `/api/v1/issues/${encodeURIComponent(normalized)}/session`, {
+    method: 'DELETE',
+  })
+}
+
 export async function fetchState(config: BackendConfig): Promise<SnapshotPayload> {
   const payload = await requestJSON<unknown>(config, '/api/v1/state')
   return normalizeSnapshotPayload(payload)
+}
+
+export async function fetchIssues(config: BackendConfig, states?: string[], projectID?: string, assigneeID?: string): Promise<any[]> {
+  const params = new URLSearchParams()
+  if (states && states.length > 0) params.set('states', states.join(','))
+  if (projectID) params.set('project_id', projectID)
+  if (assigneeID) params.set('assignee_id', assigneeID)
+  const payload = await requestJSON<{ issues: any[] }>(config, `/api/v1/issues?${params.toString()}`)
+  return payload.issues || []
+}
+
+export async function createIssue(
+  config: BackendConfig,
+  payload: { title: string; description: string; state: string; priority: number; assignee_id: string; project_id: string },
+): Promise<any> {
+  return requestJSON<any>(config, '/api/v1/issues', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function searchIssues(config: BackendConfig, query: string): Promise<any[]> {
+  const params = new URLSearchParams({ q: query })
+  const payload = await requestJSON<{ issues: any[] }>(config, `/api/v1/search?${params.toString()}`)
+  return payload.issues || []
+}
+
+export async function fetchAgents(config: BackendConfig): Promise<string[]> {
+  const payload = await requestJSON<{ agents: string[] }>(config, '/api/v1/agents')
+  return payload.agents || []
+}
+
+export async function fetchAgentConfig(config: BackendConfig): Promise<{ commands: Record<string, string>; agent_provider: string }> {
+  return requestJSON<{ commands: Record<string, string>; agent_provider: string }>(config, '/api/v1/config/agents')
+}
+
+export async function saveAgentConfig(config: BackendConfig, payload: { commands: Record<string, string>; agent_provider: string }): Promise<void> {
+  await requestJSON<void>(config, '/api/v1/config/agents', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
 }
 
 export async function postRefresh(config: BackendConfig): Promise<Record<string, unknown>> {
@@ -200,12 +253,90 @@ export async function applyWorkspaceMigration(
   })
 }
 
-export async function fetchIssueDetail(config: BackendConfig, issueIdentifier: string): Promise<IssueDetailPayload> {
+export async function fetchProjects(config: BackendConfig): Promise<any[]> {
+  const data = await requestJSON<any[]>(config, '/api/v1/projects')
+  return data || []
+}
+
+export async function fetchProjectStats(config: BackendConfig, projectID: string): Promise<any> {
+  return requestJSON<any>(config, `/api/v1/projects/${encodeURIComponent(projectID)}`)
+}
+
+export async function fetchWarehouseStats(config: BackendConfig): Promise<any> {
+  return requestJSON<any>(config, '/api/v1/warehouse/stats')
+}
+
+export async function createProject(config: BackendConfig, rootPath: string): Promise<any> {
+  return requestJSON<any>(config, '/api/v1/projects', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ root_path: rootPath }),
+  })
+}
+
+export async function fetchIssueDetail(config: BackendConfig, issueIdentifier: string): Promise<any> {
   const normalized = issueIdentifier.trim()
   if (normalized === '') {
     throw new APIError('invalid_request', 'issue identifier is required')
   }
-  return requestJSON<IssueDetailPayload>(config, `/api/v1/${encodeURIComponent(normalized)}`)
+  return requestJSON<any>(config, `/api/v1/issues/${encodeURIComponent(normalized)}`)
+}
+
+export async function fetchIssueLogs(config: BackendConfig, issueIdentifier: string): Promise<string> {
+  const normalized = issueIdentifier.trim()
+  if (normalized === '') {
+    throw new APIError('invalid_request', 'issue identifier is required')
+  }
+  const response = await fetch(new URL(`/api/v1/issues/${encodeURIComponent(normalized)}/logs`, config.baseUrl).toString(), {
+    headers: buildHeaders(config),
+  })
+
+  if (!response.ok) {
+    throw new APIError('logs_not_found', 'failed to fetch issue logs')
+  }
+
+  return response.text()
+}
+
+export async function fetchIssueDiff(config: BackendConfig, issueIdentifier: string): Promise<string> {
+  const normalized = issueIdentifier.trim()
+  if (normalized === '') {
+    throw new APIError('invalid_request', 'issue identifier is required')
+  }
+  const response = await fetch(new URL(`/api/v1/issues/${encodeURIComponent(normalized)}/diff`, config.baseUrl).toString(), {
+    headers: buildHeaders(config),
+  })
+
+  if (!response.ok) {
+    throw new APIError('diff_failed', 'failed to fetch workspace diff')
+  }
+
+  return response.text()
+}
+
+export async function fetchArtifacts(config: BackendConfig, issueIdentifier: string): Promise<string[]> {
+  const normalized = issueIdentifier.trim()
+  if (normalized === '') {
+    throw new APIError('invalid_request', 'issue identifier is required')
+  }
+  const payload = await requestJSON<{ artifacts: string[] }>(config, `/api/v1/issues/${encodeURIComponent(normalized)}/artifacts`)
+  return payload.artifacts || []
+}
+
+export async function fetchArtifactContent(config: BackendConfig, issueIdentifier: string, relPath: string): Promise<string> {
+  const normalized = issueIdentifier.trim()
+  if (normalized === '') {
+    throw new APIError('invalid_request', 'issue identifier is required')
+  }
+  const response = await fetch(new URL(`/api/v1/issues/${encodeURIComponent(normalized)}/artifacts/${relPath}`, config.baseUrl).toString(), {
+    headers: buildHeaders(config),
+  })
+
+  if (!response.ok) {
+    throw new APIError('fetch_failed', 'failed to fetch artifact content')
+  }
+
+  return response.text()
 }
 
 export function toDisplayError(error: unknown): string {
@@ -216,4 +347,36 @@ export function toDisplayError(error: unknown): string {
     return error.message
   }
   return 'unexpected error'
+}
+
+export async function fetchSessions(config: BackendConfig, projectId?: string): Promise<any[]> {
+  const url = projectId ? `/api/v1/sessions?project_id=${projectId}` : '/api/v1/sessions'
+  const data = await requestJSON<any[]>(config, url)
+  return data || []
+}
+
+export async function deleteProject(config: BackendConfig, projectId: string): Promise<void> {
+  return requestJSON<void>(config, `/api/v1/projects/${projectId}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function refreshProject(config: BackendConfig, projectId: string): Promise<void> {
+  return requestJSON<void>(config, `/api/v1/projects/${projectId}/refresh`, {
+    method: 'POST',
+  })
+}
+
+export async function fetchProjectTree(config: BackendConfig, projectId: string): Promise<any[]> {
+  const data = await requestJSON<any[]>(config, `/api/v1/projects/${projectId}/tree`)
+  return data || []
+}
+
+export async function fetchProjectGitHistory(config: BackendConfig, projectId: string): Promise<any[]> {
+  const data = await requestJSON<any[]>(config, `/api/v1/projects/${projectId}/git`)
+  return data || []
+}
+
+export async function fetchSessionDetail(config: BackendConfig, sessionId: string): Promise<any> {
+  return requestJSON<any>(config, `/api/v1/sessions/${sessionId}`)
 }

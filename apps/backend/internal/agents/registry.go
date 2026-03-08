@@ -45,3 +45,30 @@ func (r *Registry) HasProvider(provider Provider) bool {
 	_, ok := r.runners[provider]
 	return ok
 }
+
+func (r *Registry) Providers() []Provider {
+	providers := make([]Provider, 0, len(r.runners))
+	for p := range r.runners {
+		providers = append(providers, p)
+	}
+	return providers
+}
+
+func (r *Registry) SetCommand(provider Provider, command string) {
+	if strings.TrimSpace(command) == "" {
+		return
+	}
+	p := Provider(strings.ToLower(strings.TrimSpace(string(provider))))
+	if p == ProviderCodex && strings.Contains(strings.ToLower(command), "app-server") {
+		r.runners[p] = NewCodexAppServerRunner(command)
+		return
+	}
+	switch p {
+	case ProviderClaude:
+		r.runners[p] = NewClaudeRunner(command)
+	case ProviderOpenCode:
+		r.runners[p] = NewOpenCodeRunner(command)
+	default:
+		r.runners[p] = NewCommandRunner(p, command)
+	}
+}

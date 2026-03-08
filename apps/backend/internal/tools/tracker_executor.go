@@ -29,6 +29,20 @@ func TrackerToolSpecs() []map[string]any {
 			},
 		},
 		{
+			"name":        "update_issue",
+			"description": "Update an issue's state, priority, or assignee. Use this to transition an issue through the workflow or hand off to another agent.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"required": []string{"identifier"},
+				"properties": map[string]any{
+					"identifier":  map[string]any{"type": "string", "description": "The issue identifier (e.g. OPS-123)"},
+					"state":       map[string]any{"type": "string", "description": "The new state (e.g. In Progress, In Review, Done)"},
+					"assignee_id": map[string]any{"type": "string", "description": "The ID of the agent or user to assign (e.g. agent-claude, agent-codex)"},
+					"priority":    map[string]any{"type": "integer", "description": "The priority level (0-4)"},
+				},
+			},
+		},
+		{
 			"name":        "linear_graphql",
 			"description": "Linear-compatible GraphQL adapter. Accepts one query per call and returns tracker-backed results.",
 			"inputSchema": map[string]any{
@@ -63,6 +77,28 @@ func (e *TrackerToolExecutor) Execute(tool string, arguments map[string]any) map
 	}
 
 	switch name {
+	case "update_issue":
+		identifier, _ := arguments["identifier"].(string)
+		if strings.TrimSpace(identifier) == "" {
+			return failureResponse(map[string]any{"error": map[string]any{"message": "update_issue requires a non-empty `identifier` string."}})
+		}
+
+		updates := make(map[string]any)
+		if state, ok := arguments["state"].(string); ok && strings.TrimSpace(state) != "" {
+			updates["state"] = strings.TrimSpace(state)
+		}
+		if assignee, ok := arguments["assignee_id"].(string); ok && strings.TrimSpace(assignee) != "" {
+			updates["assignee_id"] = strings.TrimSpace(assignee)
+		}
+		if priority, ok := arguments["priority"].(float64); ok {
+			updates["priority"] = int(priority)
+		}
+
+		issue, err := e.tracker.UpdateIssue(context.Background(), identifier, updates)
+		if err != nil {
+			return failureResponse(map[string]any{"error": map[string]any{"message": "issue update failed", "reason": err.Error()}})
+		}
+		return successResponse(map[string]any{"issue": issue})
 	case "tracker_query", "linear_graphql":
 		if name == "linear_graphql" {
 			normalized, ok := normalizeLinearGraphQLArguments(arguments)

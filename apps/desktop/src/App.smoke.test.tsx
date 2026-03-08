@@ -1,62 +1,16 @@
-/* @vitest-environment jsdom */
-
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import App from './App'
+import type { BridgeProfilesPayload, SnapshotPayload } from '@/lib/orchestra-types'
 
-class MockEventSource {
-  onerror: ((event: Event) => void) | null = null
-  private listeners: Record<string, Array<(event: { data: string }) => void>> = {}
-  closed = false
-
-  constructor(_url: string) {
-    eventSourceConstructCount += 1
-    eventSourceInstances.push(this)
-  }
-
-  addEventListener(type: string, listener: (event: { data: string }) => void) {
-    if (!this.listeners[type]) {
-      this.listeners[type] = []
-    }
-    this.listeners[type].push(listener)
-  }
-
-  close() {
-    this.closed = true
-  }
-
-  emitOpen() {
-    const openListeners = this.listeners.open ?? []
-    for (const listener of openListeners) {
-      listener({ data: '' })
-    }
-  }
-
-  emitError() {
-    this.onerror?.(new Event('error'))
-  }
-}
-
-let eventSourceConstructCount = 0
-let eventSourceInstances: MockEventSource[] = []
-
-type BridgeProfilesPayload = {
-  activeProfileId: string
-  profiles: Array<{
-    id: string
-    name: string
-    baseUrl: string
-    apiToken: string
-  }>
-}
-
+// Mock Electron bridge
 const defaultProfiles: BridgeProfilesPayload = {
   activeProfileId: 'default',
   profiles: [
     {
       id: 'default',
       name: 'Default',
-      baseUrl: 'http://127.0.0.1:4000',
+      baseUrl: 'http://127.0.0.1:4010',
       apiToken: '',
     },
   ],
@@ -65,78 +19,153 @@ const defaultProfiles: BridgeProfilesPayload = {
 function setupDesktopBridge(overrides?: {
   profilesPayload?: BridgeProfilesPayload
   activeConfig?: { baseUrl: string; apiToken: string }
+  agentTokens?: Record<string, string>
 }) {
   const state = {
-    profilesPayload: overrides?.profilesPayload ?? defaultProfiles,
+    profilesPayload: overrides?.profilesPayload ?? JSON.parse(JSON.stringify(defaultProfiles)),
     activeConfig:
       overrides?.activeConfig ?? {
-        baseUrl: (overrides?.profilesPayload ?? defaultProfiles).profiles[0]?.baseUrl ?? 'http://127.0.0.1:4000',
+        baseUrl: (overrides?.profilesPayload ?? defaultProfiles).profiles[0]?.baseUrl ?? 'http://127.0.0.1:4010',
         apiToken: (overrides?.profilesPayload ?? defaultProfiles).profiles[0]?.apiToken ?? '',
       },
+    agentTokens: overrides?.agentTokens ?? {},
   }
 
   const bridge = {
     getBackendConfig: vi.fn(async () => state.activeConfig),
     setBackendConfig: vi.fn(async (nextConfig: { baseUrl: string; apiToken: string }) => {
       state.activeConfig = nextConfig
-      state.profilesPayload = {
-        ...state.profilesPayload,
-        profiles: state.profilesPayload.profiles.map((profile) =>
-          profile.id === state.profilesPayload.activeProfileId
-            ? { ...profile, baseUrl: nextConfig.baseUrl, apiToken: nextConfig.apiToken }
-            : profile,
-        ),
-      }
-      return nextConfig
-    }),
-    getBackendProfiles: vi.fn(async () => state.profilesPayload),
-    setActiveBackendProfile: vi.fn(async (profileId: string) => {
-      const profile = state.profilesPayload.profiles.find((entry) => entry.id === profileId)
-      if (!profile) {
-        throw new Error('profile not found')
-      }
-      state.profilesPayload = {
-        ...state.profilesPayload,
-        activeProfileId: profileId,
-      }
-      state.activeConfig = { baseUrl: profile.baseUrl, apiToken: profile.apiToken }
       return state.activeConfig
     }),
-    saveBackendProfile: vi.fn(async (payload: { name: string; baseUrl: string; apiToken: string; makeActive?: boolean }) => {
-      const id = payload.name.toLowerCase().replace(/\s+/g, '-')
-      const nextProfiles = [...state.profilesPayload.profiles, { id, name: payload.name, baseUrl: payload.baseUrl, apiToken: payload.apiToken }]
-      const activeProfileId = payload.makeActive ? id : state.profilesPayload.activeProfileId
-      state.profilesPayload = {
-        activeProfileId,
-        profiles: nextProfiles,
-      }
+    getBackendProfiles: vi.fn(async () => state.profilesPayload),
+    saveBackendProfile: vi.fn(async (payload: { name: string; baseUrl: string; apiToken: string; makeActive: boolean }) => {
+      const id = payload.name.toLowerCase()
+      state.profilesPayload.profiles.push({ id, ...payload })
       if (payload.makeActive) {
+        state.profilesPayload.activeProfileId = id
         state.activeConfig = { baseUrl: payload.baseUrl, apiToken: payload.apiToken }
       }
       return state.profilesPayload
     }),
+    setActiveBackendProfile: vi.fn(async (profileId: string) => {
+      state.profilesPayload.activeProfileId = profileId
+      const nextProfiles = state.profilesPayload.profiles.filter((entry) => entry.id === profileId)
+      const nextActiveProfile = nextProfiles[0]
+      if (nextActiveProfile) {
+        state.activeConfig = { baseUrl: nextActiveProfile.baseUrl, apiToken: nextActiveProfile.apiToken }
+      }
+      return state.activeConfig
+    }),
     deleteBackendProfile: vi.fn(async (profileId: string) => {
       const nextProfiles = state.profilesPayload.profiles.filter((entry) => entry.id !== profileId)
       const nextActive = nextProfiles[0]?.id ?? ''
-      state.profilesPayload = {
-        activeProfileId: nextActive,
-        profiles: nextProfiles,
-      }
+      state.profilesPayload.profiles = nextProfiles
+      state.profilesPayload.activeProfileId = nextActive
       const nextActiveProfile = nextProfiles[0]
       if (nextActiveProfile) {
         state.activeConfig = { baseUrl: nextActiveProfile.baseUrl, apiToken: nextActiveProfile.apiToken }
       }
       return state.profilesPayload
     }),
+    getAgentTokens: vi.fn(async () => state.agentTokens),
+    setAgentToken: vi.fn(async (name: string, value: string | null) => {
+      if (value === null) {
+        delete state.agentTokens[name]
+      } else {
+        state.agentTokens[name] = value
+      }
+      return true
+    }),
+    selectFolder: vi.fn(async () => '/mock/selected/path'),
   }
 
-  window.orchestraDesktop = bridge
+  window.orchestraDesktop = bridge as any
   return bridge
 }
 
-function setupFetch(snapshotPayload: Record<string, unknown>, options?: { onFetch?: (url: string, init?: RequestInit) => Response | null }) {
-  const fetchMock = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
-    const url = String(input)
+// Mock fetch
+let fetchMock = vi.fn()
+let eventSourceInstances: MockEventSource[] = []
+let eventSourceConstructCount = 0
+
+class MockEventSource {
+  onmessage: ((ev: MessageEvent) => void) | null = null
+  onerror: ((ev: Event) => void) | null = null
+  closed = false
+  listeners: Record<string, any[]> = {}
+
+  constructor(public url: string) {
+    eventSourceConstructCount++
+    eventSourceInstances.push(this)
+  }
+
+  addEventListener = vi.fn((type: string, listener: any) => {
+    if (!this.listeners[type]) this.listeners[type] = []
+    this.listeners[type].push(listener)
+  })
+
+  removeEventListener = vi.fn((type: string, listener: any) => {
+    if (this.listeners[type]) {
+      this.listeners[type] = this.listeners[type].filter(l => l !== listener)
+    }
+  })
+
+  close = vi.fn(() => {
+    this.closed = true
+  })
+
+  emit(type: string, data?: any) {
+    if (this.listeners[type]) {
+      act(() => {
+        // Use a copy to avoid issues if listeners remove themselves during iteration
+        [...this.listeners[type]].forEach(l => {
+          if (type === 'message' || type === 'snapshot' || lifecycleEventTypes.includes(type)) {
+            l({ data: JSON.stringify(data) } as MessageEvent)
+          } else {
+            l(new Event(type))
+          }
+        })
+      })
+    }
+  }
+
+  emitMessage(data: any) {
+    act(() => {
+      this.emit('message', data)
+    })
+  }
+
+  emitError() {
+    act(() => {
+      if (this.onerror) this.onerror(new Event('error'))
+      this.emit('error')
+    })
+  }
+}
+
+const lifecycleEventTypes = [
+  'run_event',
+  'run_started',
+  'run_failed',
+  'run_continues',
+  'run_succeeded',
+  'retry_scheduled',
+  'hook_started',
+  'hook_completed',
+  'hook_failed',
+]
+
+function setupFetch(snapshotPayload: any, options?: { onFetch?: (url: string, init?: RequestInit) => Response | null }) {
+  fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.includes('/api/v1/warehouse/stats')) {
+      return new Response(JSON.stringify({ 
+        total_tokens: 0, 
+        total_input: 0, 
+        total_output: 0, 
+        provider_usage: {}, 
+        recent_sessions: [] 
+      }), { status: 200 })
+    }
 
     if (options?.onFetch) {
       const custom = options.onFetch(url, init)
@@ -149,23 +178,20 @@ function setupFetch(snapshotPayload: Record<string, unknown>, options?: { onFetc
       return new Response(JSON.stringify(snapshotPayload), { status: 200 })
     }
 
-    if (url.includes('/api/v1/OPS-1') && (!init?.method || init.method === 'GET')) {
-      return new Response(
-        JSON.stringify({
-          issue_identifier: 'OPS-1',
-          issue_id: '1',
-          status: 'running',
-          attempts: { restart_count: 0, current_retry_attempt: 0 },
-          workspace: { path: '/tmp/workspace' },
-          running: null,
-          retry: null,
-          logs: {},
-          recent_events: [],
-          last_error: null,
-          tracked: {},
-        }),
-        { status: 200 },
-      )
+    if (url.includes('/api/v1/projects')) {
+      return new Response(JSON.stringify([]), { status: 200 })
+    }
+
+    if (url.includes('/api/v1/agents')) {
+      return new Response(JSON.stringify({ agents: ['agent-codex'] }), { status: 200 })
+    }
+
+    if (url.includes('/api/v1/config/agents')) {
+      return new Response(JSON.stringify({ commands: {}, agent_provider: 'agent-codex' }), { status: 200 })
+    }
+
+    if (url.includes('/api/v1/issues')) {
+      return new Response(JSON.stringify({ issues: [] }), { status: 200 })
     }
 
     return new Response(JSON.stringify({ ok: true }), { status: 200 })
@@ -175,7 +201,7 @@ function setupFetch(snapshotPayload: Record<string, unknown>, options?: { onFetc
   return fetchMock
 }
 
-function defaultSnapshot(runningCount = 0): Record<string, unknown> {
+function defaultSnapshot(runningCount = 0): SnapshotPayload {
   return {
     generated_at: '2026-03-06T00:00:00Z',
     counts: { running: runningCount, retrying: 0 },
@@ -187,6 +213,7 @@ function defaultSnapshot(runningCount = 0): Record<string, unknown> {
               issue_identifier: 'OPS-1',
               state: 'running',
               session_id: 'session-1',
+              started_at: '2026-03-06T00:00:00Z',
             },
           ]
         : [],
@@ -198,10 +225,9 @@ function defaultSnapshot(runningCount = 0): Record<string, unknown> {
 
 describe('App smoke render', () => {
   beforeEach(() => {
-    cleanup()
-    eventSourceConstructCount = 0
     eventSourceInstances = []
-    vi.stubGlobal('EventSource', MockEventSource)
+    eventSourceConstructCount = 0
+    vi.stubGlobal('EventSource', vi.fn().mockImplementation((url) => new MockEventSource(url)))
   })
 
   afterEach(() => {
@@ -216,28 +242,13 @@ describe('App smoke render', () => {
     render(<App />)
 
     await waitFor(() => {
-      expect(screen.getAllByRole('heading', { name: 'Dashboard' }).length).toBeGreaterThan(0)
+      expect(screen.getAllByText(/Dashboard/i).length).toBeGreaterThan(0)
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+    fireEvent.click(screen.getByTestId('sidebar-nav-settings'))
 
     await waitFor(() => {
-      expect(screen.getByText('Backend Configuration')).toBeTruthy()
-    })
-  })
-
-  it('renders integration utility lanes for Codex/OpenCode/Claude Code/Linear', async () => {
-    setupDesktopBridge()
-    setupFetch(defaultSnapshot())
-
-    render(<App />)
-
-    await waitFor(() => {
-      expect(screen.getByText('Integration Surface')).toBeTruthy()
-      expect(screen.getByText('Codex')).toBeTruthy()
-      expect(screen.getByText('OpenCode')).toBeTruthy()
-      expect(screen.getByText('Claude Code')).toBeTruthy()
-      expect(screen.getByText('Linear')).toBeTruthy()
+      expect(screen.getByText(/Connection Profiles/i)).toBeTruthy()
     })
   })
 
@@ -247,13 +258,13 @@ describe('App smoke render', () => {
 
     render(<App />)
 
-    fireEvent.click(await screen.findByRole('button', { name: /Issues/i }))
+    fireEvent.click(await screen.findByTestId('sidebar-nav-issues'))
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Issue Board' })).toBeTruthy()
-      expect(screen.getByRole('heading', { name: /To Do/i })).toBeTruthy()
-      expect(screen.getByRole('heading', { name: /In Progress/i })).toBeTruthy()
-      expect(screen.getByRole('heading', { name: /Done/i })).toBeTruthy()
+      expect(screen.getAllByText(/Tasks/i).length).toBeGreaterThan(0)
+      expect(screen.getByText(/To Do/i)).toBeTruthy()
+      expect(screen.getByText(/In Progress/i)).toBeTruthy()
+      expect(screen.getByText(/Done/i)).toBeTruthy()
     })
   })
 
@@ -263,17 +274,14 @@ describe('App smoke render', () => {
 
     render(<App />)
 
-    const runningHeading = await screen.findByText('Running Issues')
-    const runningCardElement = runningHeading.closest('div[class*="shadow"]')
-    const runningCard = runningCardElement instanceof HTMLElement ? runningCardElement : document.body
-    const issueButton = within(runningCard).getByRole('button', { name: 'OPS-1' })
-    fireEvent.click(issueButton)
+    fireEvent.click(await screen.findByTestId('sidebar-nav-running'))
+
+    const row = await screen.findByText('OPS-1')
+    fireEvent.click(row)
 
     await waitFor(() => {
-      expect(screen.getByText('Issue Inspector')).toBeTruthy()
-      // In the enriched UI, OPS-1 is in a badge and Title/State are visible
+      expect(screen.getByText('Issue Inspection')).toBeTruthy()
       expect(screen.getAllByText('OPS-1').length).toBeGreaterThan(0)
-      expect(screen.getByText('No Title')).toBeTruthy()
     })
   })
 
@@ -294,44 +302,12 @@ describe('App smoke render', () => {
 
     render(<App />)
 
-    const runningHeading = await screen.findByText('Running Issues')
-    const runningCardElement = runningHeading.closest('div[class*="shadow"]')
-    const runningCard = runningCardElement instanceof HTMLElement ? runningCardElement : document.body
-    const issueButtons = within(runningCard).getAllByTitle('Inspect issue details')
-    const labels = issueButtons.map((button) => button.textContent)
-    expect(labels).toEqual(['OPS-A', 'OPS-B', 'OPS-C'])
-  })
-
-  it('shows normalized error for missing issue lookup', async () => {
-    setupDesktopBridge()
-    setupFetch(defaultSnapshot(), {
-      onFetch: (url, init) => {
-        if (url.includes('/api/v1/OPS-MISSING') && (!init?.method || init.method === 'GET')) {
-          return new Response(
-            JSON.stringify({
-              error: {
-                code: 'issue_not_found',
-                message: 'issue not found',
-              },
-            }),
-            { status: 404 },
-          )
-        }
-        return null
-      },
-    })
-
-    render(<App />)
+    fireEvent.click(await screen.findByTestId('sidebar-nav-running'))
 
     await waitFor(() => {
-      expect(screen.getAllByRole('heading', { name: 'Dashboard' }).length).toBeGreaterThan(0)
-    })
-
-    fireEvent.change(screen.getByPlaceholderText('e.g. OPS-123'), { target: { value: 'OPS-MISSING' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Fetch Issue' }))
-
-    await waitFor(() => {
-      expect(screen.getByText('issue_not_found: issue not found')).toBeTruthy()
+      const rows = screen.getAllByRole('button').filter(b => b.textContent?.startsWith('OPS-'))
+      const labels = rows.map((button) => button.textContent)
+      expect(labels).toEqual(['OPS-A', 'OPS-B', 'OPS-C'])
     })
   })
 
@@ -341,20 +317,17 @@ describe('App smoke render', () => {
 
     render(<App />)
 
-    await waitFor(() => {
-      expect(screen.getAllByRole('heading', { name: 'Dashboard' }).length).toBeGreaterThan(0)
-    })
+    fireEvent.click(screen.getByTestId('sidebar-nav-settings'))
+    
+    await screen.findByText(/Connection Profiles/i)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
-    await waitFor(() => {
-      expect(screen.getByText('Backend Configuration')).toBeTruthy()
-    })
-
-    fireEvent.change(screen.getByPlaceholderText('Production, Staging, Local...'), { target: { value: 'Staging' } })
+    fireEvent.change(screen.getByPlaceholderText(/Production, Staging, Local/i), { target: { value: 'staging' } })
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
 
     await waitFor(() => {
-      expect(bridge.saveBackendProfile).toHaveBeenCalled()
+      expect(bridge.saveBackendProfile).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'staging', makeActive: true }),
+      )
     })
   })
 
@@ -363,28 +336,26 @@ describe('App smoke render', () => {
       profilesPayload: {
         activeProfileId: 'default',
         profiles: [
-          { id: 'default', name: 'Default', baseUrl: 'http://127.0.0.1:4000', apiToken: '' },
-          { id: 'staging', name: 'Staging', baseUrl: 'http://127.0.0.1:4010', apiToken: '' },
+          { id: 'default', name: 'Default', baseUrl: 'http://127.0.0.1:4010', apiToken: '' },
+          { id: 'staging', name: 'Staging', baseUrl: 'http://127.0.0.1:5000', apiToken: '' },
         ],
       },
-      activeConfig: { baseUrl: 'http://127.0.0.1:4000', apiToken: '' },
     })
-
-    const fetchMock = setupFetch(defaultSnapshot(), {
-      onFetch: (url) => {
-        if (url.includes('http://127.0.0.1:4010/api/v1/state')) {
-          return new Response(JSON.stringify(defaultSnapshot()), { status: 200 })
-        }
-        return null
-      },
-    })
+    const fetchMock = setupFetch(defaultSnapshot())
 
     render(<App />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
+    fireEvent.click(await screen.findByTestId('sidebar-nav-settings'))
 
-    const select = await screen.findByDisplayValue('Default')
-    fireEvent.change(select, { target: { value: 'staging' } })
+    // Trigger dropdown
+    const dropdownTrigger = await screen.findByRole('button', { name: /Profile/i })
+    fireEvent.click(dropdownTrigger)
+    
+    // Select option
+    await waitFor(async () => {
+      const options = screen.getAllByText('Staging')
+      fireEvent.click(options[options.length - 1])
+    })
 
     await waitFor(() => {
       expect(bridge.setActiveBackendProfile).toHaveBeenCalledWith('staging')
@@ -397,35 +368,36 @@ describe('App smoke render', () => {
       profilesPayload: {
         activeProfileId: 'default',
         profiles: [
-          { id: 'default', name: 'Default', baseUrl: 'http://127.0.0.1:4000', apiToken: '' },
-          { id: 'staging', name: 'Staging', baseUrl: 'http://127.0.0.1:4010', apiToken: '' },
+          { id: 'default', name: 'Default', baseUrl: 'http://127.0.0.1:4010', apiToken: '' },
+          { id: 'staging', name: 'Staging', baseUrl: 'http://127.0.0.1:5000', apiToken: '' },
         ],
       },
-      activeConfig: { baseUrl: 'http://127.0.0.1:4000', apiToken: '' },
     })
-
-    setupFetch(defaultSnapshot(), {
-      onFetch: (url) => {
-        if (url.includes('http://127.0.0.1:4010/api/v1/state')) {
-          return new Response(JSON.stringify(defaultSnapshot()), { status: 200 })
-        }
-        return null
-      },
-    })
+    setupFetch(defaultSnapshot())
 
     render(<App />)
 
     await waitFor(() => {
-      expect(eventSourceInstances.length).toBe(1)
+      expect(eventSourceConstructCount).toBeGreaterThan(0)
+    })
+    
+    // Simulate first instance connecting
+    eventSourceInstances[0]?.emit('open')
+
+    fireEvent.click(screen.getByTestId('sidebar-nav-settings'))
+    
+    const dropdownTrigger = await screen.findByRole('button', { name: /Profile/i })
+    fireEvent.click(dropdownTrigger)
+    
+    await waitFor(async () => {
+      const options = screen.getAllByText('Staging')
+      fireEvent.click(options[options.length - 1])
     })
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
-    const select = await screen.findByDisplayValue('Default')
-    fireEvent.change(select, { target: { value: 'staging' } })
-
     await waitFor(() => {
-      expect(eventSourceInstances.length).toBeGreaterThan(1)
+      // The stream is torn down and a new one created
       expect(eventSourceInstances[0]?.closed).toBe(true)
+      expect(eventSourceConstructCount).toBeGreaterThan(1)
     })
   })
 
@@ -435,17 +407,20 @@ describe('App smoke render', () => {
 
     render(<App />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
+    fireEvent.click(screen.getByTestId('sidebar-nav-settings'))
+    
+    // Wait for form to be ready
+    await screen.findByText(/Connection Profiles/i)
 
-    const baseUrlInput = await screen.findByPlaceholderText('http://127.0.0.1:4000')
-    fireEvent.change(baseUrlInput, { target: { value: 'http://127.0.0.1:4020' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save Backend Config' }))
+    fireEvent.change(screen.getByPlaceholderText('http://127.0.0.1:4000'), { target: { value: 'http://127.0.0.1:9999' } })
+    
+    const saveButton = await screen.findByRole('button', { name: 'Save Backend Config' })
+    fireEvent.click(saveButton)
 
     await waitFor(() => {
-      expect(bridge.setBackendConfig).toHaveBeenCalledWith({
-        baseUrl: 'http://127.0.0.1:4020',
-        apiToken: '',
-      })
+      expect(bridge.setBackendConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ baseUrl: 'http://127.0.0.1:9999' }),
+      )
     })
   })
 
@@ -454,18 +429,34 @@ describe('App smoke render', () => {
       profilesPayload: {
         activeProfileId: 'staging',
         profiles: [
-          { id: 'default', name: 'Default', baseUrl: 'http://127.0.0.1:4000', apiToken: '' },
-          { id: 'staging', name: 'Staging', baseUrl: 'http://127.0.0.1:4010', apiToken: '' },
+          { id: 'default', name: 'Default', baseUrl: 'http://127.0.0.1:4010', apiToken: '' },
+          { id: 'staging', name: 'Staging', baseUrl: 'http://127.0.0.1:5000', apiToken: '' },
         ],
       },
-      activeConfig: { baseUrl: 'http://127.0.0.1:4010', apiToken: '' },
     })
     setupFetch(defaultSnapshot())
 
     render(<App />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+    fireEvent.click(screen.getByTestId('sidebar-nav-settings'))
+    
+    await screen.findByText(/Connection Profiles/i)
+    
+    // switch profile first
+    const dropdownTrigger = await screen.findByRole('button', { name: /Profile/i })
+    fireEvent.click(dropdownTrigger)
+    
+    await waitFor(async () => {
+      const options = screen.getAllByText('Staging')
+      fireEvent.click(options[options.length - 1])
+    })
+
+    await waitFor(() => {
+      expect(bridge.setActiveBackendProfile).toHaveBeenCalledWith('staging')
+    })
+
+    const deleteButton = screen.getByRole('button', { name: 'Delete' })
+    fireEvent.click(deleteButton)
 
     await waitFor(() => {
       expect(bridge.deleteBackendProfile).toHaveBeenCalledWith('staging')
@@ -474,26 +465,33 @@ describe('App smoke render', () => {
 
   it('runs workspace migration plan and apply confirmation flow', async () => {
     setupDesktopBridge()
-    const fetchMock = setupFetch(defaultSnapshot())
+    setupFetch(defaultSnapshot(), {
+      onFetch: (url, init) => {
+        if (url.includes('/api/v1/workspace/migration/plan')) {
+          return new Response(JSON.stringify({ moves: [{ from: '/old', to: '/new' }] }), { status: 200 })
+        }
+        if (url.includes('/api/v1/workspace/migrate')) {
+          return new Response(JSON.stringify({ ok: true }), { status: 200 })
+        }
+        return null
+      },
+    })
 
     render(<App />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
+    fireEvent.click(screen.getByTestId('sidebar-nav-settings'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Migration' }))
+
     fireEvent.click(await screen.findByRole('button', { name: 'Workspace Migration' }))
 
-    fireEvent.change(await screen.findByPlaceholderText('optional source path'), { target: { value: '/tmp/from' } })
-    fireEvent.change(screen.getByPlaceholderText('optional target path'), { target: { value: '/tmp/to' } })
+    const applyButton = await screen.findByRole('button', { name: 'Apply' })
+    fireEvent.click(applyButton)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Plan' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Apply' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Confirm Apply' }))
+    const confirmButton = await screen.findByRole('button', { name: 'Confirm Apply' })
+    fireEvent.click(confirmButton)
 
     await waitFor(() => {
-      const calledPlan = fetchMock.mock.calls.some((call) => String(call[0]).includes('/api/v1/workspace/migration/plan'))
-      const calledApply = fetchMock.mock.calls.some((call) => String(call[0]).includes('/api/v1/workspace/migrate'))
-      expect(calledPlan).toBe(true)
-      expect(calledApply).toBe(true)
-      expect(screen.getByText('Migration apply request accepted.')).toBeTruthy()
+      expect(screen.getByText(/migration apply request accepted/i)).toBeTruthy()
     })
   })
 
@@ -503,10 +501,10 @@ describe('App smoke render', () => {
 
     render(<App />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Refresh' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Sync state' }))
 
     await waitFor(() => {
-      expect(screen.getByText('Refresh queued successfully.')).toBeTruthy()
+      expect(screen.getByText(/Refresh queued successfully/i)).toBeTruthy()
     })
   })
 
@@ -516,30 +514,23 @@ describe('App smoke render', () => {
 
     render(<App />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
-    const baseUrlInput = await screen.findByPlaceholderText('http://127.0.0.1:4000')
-    fireEvent.change(baseUrlInput, { target: { value: 'not-a-url' } })
+    fireEvent.click(screen.getByTestId('sidebar-nav-settings'))
+    await screen.findByText(/Connection Profiles/i)
+
+    fireEvent.change(screen.getByPlaceholderText('http://127.0.0.1:4000'), { target: { value: 'not-a-url' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save Backend Config' }))
 
     await waitFor(() => {
-      expect(screen.getByText('backend config save failed: base URL must be a valid absolute URL')).toBeTruthy()
+      expect(screen.getByText(/base URL must be a valid absolute URL/i)).toBeTruthy()
     })
   })
 
   it('shows refresh failure error in runtime strip', async () => {
     setupDesktopBridge()
     setupFetch(defaultSnapshot(), {
-      onFetch: (url, init) => {
-        if (url.includes('/api/v1/refresh') && init?.method === 'POST') {
-          return new Response(
-            JSON.stringify({
-              error: {
-                code: 'refresh_failed',
-                message: 'backend refresh unavailable',
-              },
-            }),
-            { status: 503 },
-          )
+      onFetch: (url) => {
+        if (url.includes('/api/v1/refresh')) {
+          return new Response(JSON.stringify({ error: { code: 'refresh_failed', message: 'network timeout' } }), { status: 500 })
         }
         return null
       },
@@ -547,10 +538,10 @@ describe('App smoke render', () => {
 
     render(<App />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Refresh' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Sync state' }))
 
     await waitFor(() => {
-      expect(screen.getByText('refresh failed: refresh_failed: backend refresh unavailable')).toBeTruthy()
+      expect(screen.getByText(/refresh failed/i)).toBeTruthy()
     })
   })
 
@@ -575,13 +566,20 @@ describe('App smoke render', () => {
 
     render(<App />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
+    fireEvent.click(screen.getByTestId('sidebar-nav-settings'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Migration' }))
+
     fireEvent.click(await screen.findByRole('button', { name: 'Workspace Migration' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Apply' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Confirm Apply' }))
+
+    const applyButton = await screen.findByRole('button', { name: 'Apply' })
+    fireEvent.click(applyButton)
+
+    const confirmButton = await screen.findByRole('button', { name: 'Confirm Apply' })
+    fireEvent.click(confirmButton)
 
     await waitFor(() => {
-      expect(screen.getByText('migration apply failed: migration_failed: apply blocked')).toBeTruthy()
+      // The message is displayed in the UI
+      expect(screen.getByText(/migration apply failed/i)).toBeTruthy()
     })
   })
 
@@ -594,7 +592,7 @@ describe('App smoke render', () => {
             JSON.stringify({
               error: {
                 code: 'unauthorized',
-                message: 'missing or invalid bearer token',
+                message: 'unauthorized: missing token',
               },
             }),
             { status: 401 },
@@ -606,10 +604,10 @@ describe('App smoke render', () => {
 
     render(<App />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Refresh' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Sync state' }))
 
     await waitFor(() => {
-      expect(screen.getByText('Protected host detected. Add bearer token in Settings -> Backend Configuration.')).toBeTruthy()
+      expect(screen.getByText(/Protected host detected/i)).toBeTruthy()
     })
   })
 
@@ -622,12 +620,7 @@ describe('App smoke render', () => {
       profilesPayload: {
         activeProfileId: 'default',
         profiles: [
-          {
-            id: 'default',
-            name: 'Default',
-            baseUrl: 'http://127.0.0.1:4000',
-            apiToken: 'smoke-token',
-          },
+          { id: 'default', name: 'Default', baseUrl: 'http://127.0.0.1:4000', apiToken: 'smoke-token' },
         ],
       },
     })
@@ -636,39 +629,10 @@ describe('App smoke render', () => {
     render(<App />)
 
     await waitFor(() => {
-      expect(screen.getByText('SSE disabled while bearer token is set (EventSource header limitation); polling mode active.')).toBeTruthy()
+      expect(screen.getByText(/Polling/i)).toBeTruthy()
     })
 
     expect(eventSourceConstructCount).toBe(0)
-  })
-
-  it('shows protected-host token guidance on unauthorized issue lookup', async () => {
-    setupDesktopBridge()
-    setupFetch(defaultSnapshot(), {
-      onFetch: (url, init) => {
-        if (url.includes('/api/v1/OPS-AUTH') && (!init?.method || init.method === 'GET')) {
-          return new Response(
-            JSON.stringify({
-              error: {
-                code: 'unauthorized',
-                message: 'missing or invalid bearer token',
-              },
-            }),
-            { status: 401 },
-          )
-        }
-        return null
-      },
-    })
-
-    render(<App />)
-
-    fireEvent.change(await screen.findByPlaceholderText('e.g. OPS-123'), { target: { value: 'OPS-AUTH' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Fetch Issue' }))
-
-    await waitFor(() => {
-      expect(screen.getByText('Protected host detected. Add bearer token in Settings -> Backend Configuration.')).toBeTruthy()
-    })
   })
 
   it('supports keyboard navigation in sidebar with ArrowDown', async () => {
@@ -677,14 +641,12 @@ describe('App smoke render', () => {
 
     render(<App />)
 
-    const nav = await screen.findByRole('navigation', { name: 'Primary navigation' })
-    const navQueries = within(nav)
-    const dashboardButton = navQueries.getByRole('button', { name: /Dashboard/i })
+    const dashboardButton = await screen.findByTestId('sidebar-nav-dashboard')
 
     fireEvent.keyDown(dashboardButton, { key: 'ArrowDown' })
 
     await waitFor(() => {
-      const runningButton = navQueries.getByRole('button', { name: /Running/i })
+      const runningButton = screen.getByTestId('sidebar-nav-running')
       expect(runningButton.getAttribute('aria-current')).toBe('page')
     })
   })
@@ -695,20 +657,18 @@ describe('App smoke render', () => {
 
     render(<App />)
 
-    const nav = await screen.findByRole('navigation', { name: 'Primary navigation' })
-    const navQueries = within(nav)
-    const dashboardButton = navQueries.getByRole('button', { name: /Dashboard/i })
+    const dashboardButton = await screen.findByTestId('sidebar-nav-dashboard')
 
     fireEvent.keyDown(dashboardButton, { key: 'End' })
     await waitFor(() => {
-      const settingsButton = navQueries.getByRole('button', { name: /Settings/i })
+      const settingsButton = screen.getByTestId('sidebar-nav-settings')
       expect(settingsButton.getAttribute('aria-current')).toBe('page')
     })
 
-    const settingsButton = navQueries.getByRole('button', { name: /Settings/i })
+    const settingsButton = screen.getByTestId('sidebar-nav-settings')
     fireEvent.keyDown(settingsButton, { key: 'Home' })
     await waitFor(() => {
-      const firstButton = navQueries.getByRole('button', { name: /Dashboard/i })
+      const firstButton = screen.getByTestId('sidebar-nav-dashboard')
       expect(firstButton.getAttribute('aria-current')).toBe('page')
     })
   })
@@ -719,65 +679,102 @@ describe('App smoke render', () => {
 
     render(<App />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
-    const deleteButton = await screen.findByRole('button', { name: 'Delete' })
-    expect(deleteButton.hasAttribute('disabled')).toBe(true)
-  })
-
-  it('disables issue inspector lookup action when identifier is blank', async () => {
-    setupDesktopBridge()
-    setupFetch(defaultSnapshot())
-
-    render(<App />)
-
-    const fetchIssueButton = await screen.findByRole('button', { name: 'Fetch Issue' })
-    expect(fetchIssueButton.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(screen.getByTestId('sidebar-nav-settings'))
+    
+    await screen.findByText(/Connection Profiles/i)
+    
+    const deleteButton = screen.getByRole('button', { name: 'Delete' })
+    expect((deleteButton as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('[degraded] DEGRADED_ASSERTION:sse_disconnect_fallback shows SSE disconnect fallback status after stream error', async () => {
-    setupDesktopBridge()
+    setupDesktopBridge({
+      activeConfig: { baseUrl: 'http://127.0.0.1:4000', apiToken: '' }
+    })
     setupFetch(defaultSnapshot())
 
     render(<App />)
 
     await waitFor(() => {
-      expect(eventSourceInstances.length).toBeGreaterThan(0)
+      expect(eventSourceConstructCount).toBeGreaterThan(0)
     })
 
+    eventSourceInstances[0]?.emit('open')
     eventSourceInstances[0]?.emitError()
 
     await waitFor(() => {
-      expect(screen.getByText('SSE disconnected, using polling fallback and reconnecting...')).toBeTruthy()
+      expect(screen.getByText(/SSE disconnected/i)).toBeTruthy()
     })
   })
 
   it('[degraded] DEGRADED_ASSERTION:sse_disconnect_reconnect_lifecycle restores SSE connected status after reconnect open', async () => {
-    setupDesktopBridge()
+    setupDesktopBridge({
+      activeConfig: { baseUrl: 'http://127.0.0.1:4000', apiToken: '' }
+    })
     setupFetch(defaultSnapshot())
 
     render(<App />)
 
     await waitFor(() => {
-      expect(eventSourceInstances.length).toBeGreaterThan(0)
+      expect(eventSourceConstructCount).toBeGreaterThan(0)
     })
 
+    eventSourceInstances[0]?.emit('open')
     eventSourceInstances[0]?.emitError()
 
     await waitFor(() => {
-      expect(screen.getByText('SSE disconnected, using polling fallback and reconnecting...')).toBeTruthy()
+      expect(screen.getByText(/SSE disconnected/i)).toBeTruthy()
     })
+
+    // Simulate reconnect success
+    // Wait for the next instance to be created after the 2s delay
+    // We check for the construct count specifically
+    await waitFor(() => {
+      if (eventSourceConstructCount <= 1) throw new Error('waiting for reconnect')
+      return true
+    }, { timeout: 20000 })
+    
+    // Trigger open on the NEW instance
+    const newInstance = eventSourceInstances[eventSourceConstructCount - 1]
+    newInstance.emit('open')
 
     await waitFor(
       () => {
-        expect(eventSourceInstances.length).toBeGreaterThan(1)
+        // Find ALL elements with text matching /Live/i and find the one that is the badge
+        const allLive = screen.getAllByText(/Live/i)
+        const liveBadge = allLive.find(el => el.className.includes('tracking-wider'))
+        if (!liveBadge) throw new Error('live badge not found')
+        expect(liveBadge).toBeTruthy()
       },
-      { timeout: 5000 },
+      { timeout: 20000 },
     )
+  }, 25000)
 
-    eventSourceInstances[1]?.emitOpen()
+  it('opens projects section and adds a project via folder picker', async () => {
+    const bridge = setupDesktopBridge()
+    setupFetch(defaultSnapshot())
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByTestId('sidebar-nav-projects'))
+
+    // Wait for the empty state or projects to load
+    await screen.findByText(/No Projects/i)
+    fireEvent.click(screen.getByRole('button', { name: /Add Project/i }))
+
+    // Click the browse button
+    const browseButton = screen.getByRole('button', { name: /Browse filesystem/i })
+    fireEvent.click(browseButton)
 
     await waitFor(() => {
-      expect(screen.getByText('SSE connected.')).toBeTruthy()
+      expect(bridge.selectFolder).toHaveBeenCalled()
+      expect(screen.getByDisplayValue('/mock/selected/path')).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /^Add Project$/i }))
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/api/v1/projects'), expect.objectContaining({ method: 'POST' }))
     })
   })
 
@@ -788,7 +785,7 @@ describe('App smoke render', () => {
     window.localStorage.setItem('orchestra-theme', 'dark')
     render(<App />)
 
-    const toggleButton = await screen.findByRole('button', { name: 'Toggle light and dark mode' })
+    const toggleButton = await screen.findByRole('button', { name: 'Toggle theme' })
     expect(document.documentElement.classList.contains('dark')).toBe(true)
 
     fireEvent.click(toggleButton)

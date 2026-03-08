@@ -28,7 +28,11 @@ export class CrashBoundary extends Component<CrashBoundaryProps, CrashBoundarySt
 
   private resetTheme = () => {
     try {
+      // Clear all possible stored state that might cause render loops
       window.localStorage.removeItem('orchestra-theme')
+      window.localStorage.removeItem('orchestra-sidebar-collapsed')
+      window.localStorage.removeItem('orchestra-active-section')
+      window.localStorage.clear() // Hard clear just in case
       window.location.reload()
     } catch {
       window.location.reload()

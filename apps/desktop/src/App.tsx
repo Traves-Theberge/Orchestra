@@ -1,18 +1,16 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Activity, Gauge, History, LayoutDashboard, ListTodo, RefreshCcw, Settings2, ShieldCheck, Ticket } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Activity, Database, FolderTree, Gauge, History, LayoutDashboard, ListTodo, RefreshCcw, Settings2, ShieldCheck, Ticket, Cpu, Zap } from 'lucide-react'
 import { SidebarNav } from '@/components/app-shell/sidebar-nav'
 import { TopBar } from '@/components/app-shell/top-bar'
 import {
-  IssueInspectorCard,
   IssueDetailView,
-  IntegrationUtilityCard,
+  CreateTaskDialog,
+  CreateProjectDialog,
+  DashboardOverview,
   KanbanBoard,
   MetricCard,
   OperationsQueueCard,
-  RetryQueueCard,
-  RunningIssuesCard,
   SettingsCard,
-  StatusStrip,
   TimelineCard,
 } from '@/components/app-shell/panels'
 import {
@@ -25,19 +23,38 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { periodFilters, type SidebarItem, type TimelineItem } from '@/components/app-shell/types'
 import {
   applyWorkspaceMigration,
+  fetchAgentConfig,
+  fetchAgents,
   fetchIssueDetail,
+  fetchIssues,
+  fetchProjectStats,
+  fetchProjects,
   fetchState,
+  fetchWarehouseStats,
   fetchWorkspaceMigrationPlan,
   isUnauthorizedError,
   normalizeEventEnvelope,
   normalizeSnapshotPayload,
   postRefresh,
+  saveAgentConfig,
+  searchIssues,
+  stopIssueSession,
   toDisplayError,
+  updateIssue,
+  createProject,
+  createIssue,
+  deleteProject,
+  fetchSessionDetail,
   type BackendConfig,
 } from '@/lib/orchestra-client'
 import { startRuntimeSync } from '@/lib/runtime-sync'
 import { appendTimelineEvent, applySnapshotUpdate } from '@/lib/runtime-store'
-import type { SnapshotPayload } from '@/lib/orchestra-types'
+import type { GlobalStats, Project, ProjectStats, SnapshotPayload } from '@/lib/orchestra-types'
+import { ProjectGrid } from '@/components/projects/ProjectGrid'
+import { ProjectDetailView } from '@/components/projects/ProjectDetailView'
+import { AnalyticsDashboard } from '@/components/warehouse/AnalyticsDashboard'
+import { SessionDetailView } from '@/components/warehouse/SessionDetailView'
+import { Command } from 'cmdk'
 
 type BackendProfile = {
   id: string
@@ -67,9 +84,21 @@ const sidebarItems: SidebarItem[] = [
   },
   {
     id: 'issues',
-    label: 'Issues',
-    description: 'Issue board and inspector',
+    label: 'Tasks',
+    description: 'Task board and inspector',
     icon: Ticket,
+  },
+  {
+    id: 'projects',
+    label: 'Projects',
+    description: 'Local workspace grouping',
+    icon: FolderTree,
+  },
+  {
+    id: 'warehouse',
+    label: 'Warehouse',
+    description: 'Token analytics and archives',
+    icon: Database,
   },
   {
     id: 'settings',
@@ -91,16 +120,21 @@ export default function App() {
   const [config, setConfig] = useState<BackendConfig | null>(null)
   const [snapshot, setSnapshot] = useState<SnapshotPayload | null>(null)
   const [timeline, setTimeline] = useState<TimelineItem[]>([])
-  const [doneIssues, setDoneIssues] = useState<any[]>([])
+  const [boardIssues, setBoardIssues] = useState<any[]>([])
   const [loadingConfig, setLoadingConfig] = useState(true)
   const [savingConfig, setSavingConfig] = useState(false)
   const [profilesPending, setProfilesPending] = useState(false)
   const [backendProfiles, setBackendProfiles] = useState<BackendProfile[]>([])
   const [activeProfileId, setActiveProfileId] = useState('')
+  const [agentConfig, setAgentConfig] = useState<{ commands: Record<string, string>; agent_provider: string } | null>(null)
+  const [availableAgents, setAvailableAgents] = useState<string[]>([])
+  const [agentTokens, setAgentTokens] = useState<Record<string, string>>({})
   const [loadingState, setLoadingState] = useState(true)
+  const [usePolling, setUsePolling] = useState(false)
+  const syncControls = useRef<{ startPolling: () => void; stopPolling: () => void } | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [statusMessage, setStatusMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
+  const [statusMessage, setStatusMessage] = useState('')
   const [migrationFrom, setMigrationFrom] = useState('')
   const [migrationTo, setMigrationTo] = useState('')
   const [migrationPlan, setMigrationPlan] = useState<Record<string, unknown> | null>(null)
@@ -109,23 +143,54 @@ export default function App() {
   const [issueLookupPending, setIssueLookupPending] = useState(false)
   const [issueLookupResult, setIssueLookupResult] = useState<Record<string, unknown> | null>(null)
   const [issueLookupError, setIssueLookupError] = useState('')
+  const [sessionLookupResult, setSessionLookupResult] = useState<any>(null)
+  const [sessionLookupPending, setSessionLookupPending] = useState(false)
+  const [sessionLookupError, setSessionLookupError] = useState('')
   const [refreshPending, setRefreshPending] = useState(false)
   const [inspectDialogOpen, setInspectDialogOpen] = useState(false)
+  const [sessionInspectDialogOpen, setSessionInspectDialogOpen] = useState(false)
+  const [createTaskDialogOpen, setCreateTaskDialogOpen] = useState(false)
+  const [createTaskInitialState, setCreateTaskInitialState] = useState('Todo')
+  const [createProjectDialogOpen, setCreateProjectDialogOpen] = useState(false)
   const [activeSection, setActiveSection] = useState('dashboard')
-  const [activePeriod, setActivePeriod] = useState<(typeof periodFilters)[number]>('Week')
+  const [activePeriod, setActivePeriod] = useState<'Today' | 'Week' | 'Month'>('Week')
+  const [paletteOpen, setPaletteOpen] = useState(false)
 
-  const sidebarWidth = sidebarCollapsed ? 76 : 264
-  const showDashboard = activeSection === 'dashboard'
-  const showRunning = activeSection === 'dashboard' || activeSection === 'running'
-  const showTimeline = activeSection === 'dashboard' || activeSection === 'timeline'
-  const showIssueBoard = activeSection === 'issues'
-  const showSettings = activeSection === 'settings'
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        setPaletteOpen((open) => !open)
+      }
+    }
+    document.addEventListener('keydown', down)
+    return () => document.removeEventListener('keydown', down)
+  }, [])
 
+  // Projects & Warehouse State
+  const [projects, setProjects] = useState<Project[]>([])
+  const [projectStats, setProjectStats] = useState<Record<string, ProjectStats>>({})
+  const [warehouseStats, setWarehouseStats] = useState<GlobalStats | null>(null)
+  const [selectedProjectID, setSelectedProjectID] = useState<string | null>(null)
+  const [dataLoading, setDataLoading] = useState(false)
+
+  const sidebarWidth = sidebarCollapsed ? 76 : 260
+  const sectionVisibility = {
+    showDashboard: activeSection === 'dashboard',
+    showRunning: activeSection === 'running',
+    showTimeline: activeSection === 'timeline',
+    showIssueBoard: activeSection === 'issues',
+    showProjects: activeSection === 'projects',
+    showWarehouse: activeSection === 'warehouse',
+    showSettings: activeSection === 'settings',
+  }
   const sectionMeta: Record<string, { label: string; title: string }> = {
     dashboard: { label: 'Operations', title: 'Dashboard' },
     running: { label: 'Operations', title: 'Running' },
     timeline: { label: 'Diagnostics', title: 'Timeline' },
-    issues: { label: 'Tracker', title: 'Issue Board' },
+    issues: { label: 'Tracker', title: 'Tasks' },
+    projects: { label: 'Workspace', title: 'Projects' },
+    warehouse: { label: 'Analytics', title: 'Warehouse' },
     settings: { label: 'System', title: 'Settings' },
   }
   const currentSectionMeta = sectionMeta[activeSection] ?? sectionMeta.dashboard
@@ -186,6 +251,83 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (!config) return
+
+    let mounted = true
+    
+    // Non-blocking metadata fetches
+    fetchAgentConfig(config)
+      .then(cfg => mounted && setAgentConfig(cfg))
+      .catch(() => mounted && setAgentConfig(null))
+
+    fetchAgents(config)
+      .then(agents => mounted && setAvailableAgents(agents))
+      .catch(() => mounted && setAvailableAgents([]))
+
+    // Section-specific data loading with global loading state
+    const loadRequiredData = async () => {
+      // Always fetch projects if we have none yet
+      const needsProjects = projects.length === 0 || activeSection === 'projects' || activeSection === 'dashboard'
+      const needsWarehouse = activeSection === 'warehouse' || activeSection === 'dashboard'
+
+      if (!needsProjects && !needsWarehouse) return
+
+      setDataLoading(true)
+      try {
+        if (needsProjects) {
+          const projs = await fetchProjects(config)
+          if (!mounted) return
+          setProjects(projs)
+          
+          // Fetch stats for projects that don't have them yet
+          const statsMap: Record<string, ProjectStats> = { ...projectStats }
+          let statsUpdated = false
+          for (const p of projs) {
+            if (statsMap[p.id]) continue
+            try {
+              const s = await fetchProjectStats(config, p.id)
+              statsMap[p.id] = s
+              statsUpdated = true
+            } catch (e) {
+              console.error(`failed to fetch stats for project ${p.id}`, e)
+            }
+          }
+          if (mounted && statsUpdated) setProjectStats(statsMap)
+        }
+
+        if (needsWarehouse) {
+          const stats = await fetchWarehouseStats(config)
+          if (mounted) setWarehouseStats(stats)
+        }
+      } catch (err) {
+        if (mounted) setOperatorError('failed to fetch section data', err)
+      } finally {
+        if (mounted) setDataLoading(false)
+      }
+    }
+
+    loadRequiredData()
+
+    return () => {
+      mounted = false
+    }
+  }, [config, activeSection])
+
+  const handleAgentConfigSave = async (nextAgentConfig: { commands: Record<string, string>; agent_provider: string }) => {
+    if (!config) return
+    setSavingConfig(true)
+    try {
+      await saveAgentConfig(config, nextAgentConfig)
+      setAgentConfig(nextAgentConfig)
+      setStatusMessage('Agent configuration updated.')
+    } catch (err) {
+      setOperatorError('save agent config failed', err)
+    } finally {
+      setSavingConfig(false)
+    }
+  }
+
+  useEffect(() => {
     if (!config) {
       return
     }
@@ -197,6 +339,10 @@ export default function App() {
           setSnapshot((previous) => applySnapshotUpdate(previous, next))
           setLoadingState(false)
           setErrorMessage('')
+          // Fetch board issues to populate the Kanban board persistence
+          fetchIssues(config)
+            .then(setBoardIssues)
+            .catch(() => { })
         },
         onTimelineEvent: (eventType, envelope) => {
           setTimeline((previous) => appendTimelineEvent(previous, { type: envelope.type, at: envelope.timestamp, data: envelope.data }))
@@ -204,7 +350,7 @@ export default function App() {
             const issueId = (envelope.data.issue_id as string) || ''
             const issueIdentifier = (envelope.data.issue_identifier as string) || ''
             if (issueId && issueIdentifier) {
-              setDoneIssues((prev) => {
+              setBoardIssues((prev) => {
                 if (prev.find((i) => i.issue_id === issueId)) {
                   return prev
                 }
@@ -213,8 +359,7 @@ export default function App() {
                   {
                     issue_id: issueId,
                     issue_identifier: issueIdentifier,
-                    state: 'Completed',
-                    at: envelope.timestamp,
+                    state: 'Done',
                   },
                 ]
               })
@@ -244,8 +389,11 @@ export default function App() {
       },
     )
 
+    syncControls.current = { startPolling: sync.startPolling, stopPolling: sync.stopPolling }
+
     return () => {
       sync.stop()
+      syncControls.current = null
     }
   }, [config])
 
@@ -293,6 +441,7 @@ export default function App() {
       setStatusMessage('Protected host detected. Add bearer token in Settings -> Backend Configuration.')
     }
   }
+
 
   const handleRefresh = async () => {
     if (!config) {
@@ -383,12 +532,50 @@ export default function App() {
     if (!config) return
     try {
       await updateIssue(config, identifier, updates)
+      
+      // Instantly update the board issues for snappy drag-and-drop
+      const updatedIssues = await fetchIssues(config)
+      setBoardIssues(updatedIssues)
+      
       // Refetch state immediately to show updates in Kanban/lists
       void handleRefresh()
       // Also refetch the specific issue to update the detail view if it's open
       void executeIssueLookup(identifier)
     } catch (err) {
-      setOperatorError('update issue failed', err)
+      setErrorMessage(`update issue failed: ${toDisplayError(err)}`)
+    }
+  }
+
+  const handleStopSession = async (identifier: string) => {
+    if (!config) return
+    try {
+      await stopIssueSession(config, identifier)
+      setStatusMessage(`Session for ${identifier} termination signaled.`)
+      void handleRefresh()
+      void executeIssueLookup(identifier)
+    } catch (err) {
+      setErrorMessage(`stop session failed: ${toDisplayError(err)}`)
+    }
+  }
+
+  const handleCreateIssue = (initialState: string) => {
+    setCreateTaskInitialState(initialState)
+    setCreateTaskDialogOpen(true)
+  }
+
+  const handleTaskSubmit = async (payload: { title: string; description: string; state: string; priority: number; assignee_id: string; project_id: string }) => {
+    if (!config) return
+    try {
+      await createIssue(config, payload)
+      setStatusMessage(`Task "${payload.title}" created.`)
+
+      // Instantly update the board issues so it appears without waiting for an SSE cycle
+      const updatedIssues = await fetchIssues(config)
+      setBoardIssues(updatedIssues)
+
+      void handleRefresh()
+    } catch (err) {
+      setErrorMessage(`create task failed: ${toDisplayError(err)}`)
     }
   }
 
@@ -396,6 +583,21 @@ export default function App() {
     setIssueLookupId(issueIdentifier)
     setInspectDialogOpen(true)
     await executeIssueLookup(issueIdentifier)
+  }
+
+  const handleInspectSession = async (sessionId: string) => {
+    if (!config) return
+    setSessionInspectDialogOpen(true)
+    setSessionLookupPending(true)
+    setSessionLookupError('')
+    try {
+      const result = await fetchSessionDetail(config, sessionId)
+      setSessionLookupResult(result)
+    } catch (err) {
+      setSessionLookupError(toDisplayError(err))
+    } finally {
+      setSessionLookupPending(false)
+    }
   }
 
   const handleBackendConfigSave = async (nextConfig: BackendConfig) => {
@@ -449,7 +651,7 @@ export default function App() {
       }
       setStatusMessage('Active backend profile switched.')
     } catch (err) {
-      setOperatorError('switch profile failed', err)
+      setErrorMessage(`switch profile failed: ${toDisplayError(err)}`)
     } finally {
       setProfilesPending(false)
     }
@@ -480,7 +682,7 @@ export default function App() {
       }
       setStatusMessage('Backend profile created and activated.')
     } catch (err) {
-      setOperatorError('create profile failed', err)
+      setErrorMessage(`create profile failed: ${toDisplayError(err)}`)
     } finally {
       setProfilesPending(false)
     }
@@ -505,9 +707,87 @@ export default function App() {
       }
       setStatusMessage('Backend profile deleted.')
     } catch (err) {
-      setOperatorError('delete profile failed', err)
+      setErrorMessage(`delete profile failed: ${toDisplayError(err)}`)
     } finally {
       setProfilesPending(false)
+    }
+  }
+
+  const handleAddProject = async (path: string) => {
+    if (!path || !config) return
+
+    try {
+      await createProject(config, path)
+      setStatusMessage(`Project at ${path} added successfully.`)
+
+      // Refresh projects
+      const projs = await fetchProjects(config)
+      setProjects(projs)
+
+      // Refresh stats for the new project
+      for (const p of projs) {
+        if (!projectStats[p.id]) {
+          try {
+            const s = await fetchProjectStats(config, p.id)
+            setProjectStats(prev => ({ ...prev, [p.id]: s }))
+          } catch (e) {
+            console.error('failed to fetch stats for new project', e)
+          }
+        }
+      }
+    } catch (err) {
+      setErrorMessage(`failed to add project: ${toDisplayError(err)}`)
+    }
+  }
+
+  const handleDeleteProject = async (projectId: string) => {
+    if (!config) return
+    try {
+      await deleteProject(config, projectId)
+      setStatusMessage('Project removed.')
+      setProjects(prev => prev.filter(p => p.id !== projectId))
+      setSelectedProjectID(null)
+    } catch (err) {
+      setErrorMessage(`failed to delete project: ${toDisplayError(err)}`)
+    }
+  }
+
+  const handleTogglePolling = () => {
+    if (!syncControls.current) return
+    if (usePolling) {
+      syncControls.current.stopPolling()
+      setStatusMessage('Switched to SSE live stream.')
+    } else {
+      syncControls.current.startPolling()
+      setStatusMessage('Switched to high-frequency polling.')
+    }
+    setUsePolling(!usePolling)
+  }
+
+  useEffect(() => {
+    let mounted = true
+    const desktopBridge = window.orchestraDesktop
+    if (!desktopBridge) return
+
+    desktopBridge.getAgentTokens().then((tokens) => {
+      if (mounted) setAgentTokens(tokens)
+    })
+
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  const handleSaveAgentToken = async (name: string, value: string | null) => {
+    const desktopBridge = window.orchestraDesktop
+    if (!desktopBridge) return
+    try {
+      await desktopBridge.setAgentToken(name, value)
+      const nextTokens = await desktopBridge.getAgentTokens()
+      setAgentTokens(nextTokens)
+      setStatusMessage(value ? `Token ${name} stored securely.` : `Token ${name} removed.`)
+    } catch (err) {
+      setOperatorError('save token failed', err)
     }
   }
 
@@ -546,8 +826,8 @@ export default function App() {
           sidebarWidth={sidebarWidth}
         />
 
-        <main className="min-w-0 flex-1 overflow-auto bg-gradient-to-b from-background via-background to-muted/30">
-          <div className="px-6 pb-8 pt-6 lg:px-8">
+        <main className="min-w-0 flex-1 flex flex-col bg-gradient-to-b from-background via-background to-muted/30">
+          <div className="flex-1 flex flex-col px-6 pb-8 pt-6 lg:px-8 min-h-0">
             <TopBar
               sectionLabel={currentSectionMeta.label}
               sectionTitle={currentSectionMeta.title}
@@ -559,72 +839,122 @@ export default function App() {
               configReady={Boolean(config)}
               onOpenSettings={() => setActiveSection('settings')}
               onRefresh={handleRefresh}
-            />
-
-            <StatusStrip
+              onSearch={(query) => (config ? searchIssues(config, query) : Promise.resolve([]))}
+              onResultClick={handleInspectIssueFromList}
               statusMessage={statusMessage}
               errorMessage={errorMessage}
               generatedAt={generatedAt}
+              usePolling={usePolling}
               onDownloadDiagnostics={handleDownloadDiagnostics}
+              onTogglePolling={handleTogglePolling}
             />
 
-            <div className="mt-5 grid min-w-0 grid-cols-12 gap-5">
-              {showDashboard ? (
-                <section className="col-span-12 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                  <MetricCard title="Running" value={metrics.running} icon={<Activity className="h-4 w-4" />} hint="Active sessions" />
-                  <MetricCard title="Retrying" value={metrics.retrying} icon={<RefreshCcw className="h-4 w-4" />} hint="Queue entries" />
-                  <MetricCard title="Codex Total Tokens" value={metrics.totalTokens} icon={<Gauge className="h-4 w-4" />} hint="Snapshot aggregate" />
-                  <MetricCard title="Rate Limits" value={metrics.rateLimits} icon={<ShieldCheck className="h-4 w-4" />} hint="Latest provider payload" />
-                </section>
+            <div className="mt-5 flex-1 min-h-0">
+              {sectionVisibility.showDashboard ? (
+                <div className="grid grid-cols-12 gap-5 overflow-y-auto h-full pr-1 custom-scrollbar">
+                  <section className="col-span-12 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <MetricCard title="Active Sessions" value={metrics.running} icon={<Activity className="h-4 w-4 text-primary" />} hint="Issues currently being processed" />
+                    <MetricCard title="Pending Retries" value={metrics.retrying} icon={<RefreshCcw className="h-4 w-4 text-amber-500" />} hint="Work items in backoff queue" />
+                    <MetricCard title="Fleet Token Usage" value={metrics.totalTokens} icon={<Zap className="h-4 w-4 text-blue-500" />} hint="Aggregate compute consumption" />
+                    <MetricCard title="Rate Buffers" value={metrics.rateLimits} icon={<ShieldCheck className="h-4 w-4 text-emerald-500" />} hint="Remaining provider throughput" />
+                  </section>
+                  
+                  <section className="col-span-12">
+                    <DashboardOverview 
+                      projects={projects} 
+                      stats={projectStats} 
+                      warehouseStats={warehouseStats} 
+                      onProjectClick={(id) => {
+                        if (id) {
+                          setSelectedProjectID(id)
+                          setActiveSection('projects')
+                        } else {
+                          setActiveSection('projects')
+                        }
+                      }} 
+                    />
+                  </section>
+
+                  <section className="col-span-12 xl:col-span-8">
+                    <OperationsQueueCard loadingState={loadingState} snapshot={snapshot} onInspectIssue={handleInspectIssueFromList} />
+                  </section>
+                  
+                  <section className="col-span-12 xl:col-span-4">
+                    <TimelineCard timeline={timeline.slice(0, 8)} />
+                  </section>
+                </div>
               ) : null}
 
-              {showDashboard ? (
-                <section className="col-span-12">
-                  <IntegrationUtilityCard tokenConfigured={Boolean(config?.apiToken?.trim())} />
-                </section>
+              {sectionVisibility.showProjects ? (
+                <div className="h-full overflow-hidden">
+                  {selectedProjectID && projects.find(p => p.id === selectedProjectID) ? (
+                    <div className="h-full overflow-hidden pr-1">
+                      <ProjectDetailView
+                        project={projects.find(p => p.id === selectedProjectID)!}
+                        stats={projectStats[selectedProjectID]}
+                        config={config}
+                        snapshot={snapshot}
+                        boardIssues={boardIssues}
+                        availableAgents={availableAgents}
+                        loadingState={loadingState}
+                        onBack={() => setSelectedProjectID(null)}
+                        onInspectIssue={handleInspectIssueFromList}
+                        onIssueUpdate={handleIssueUpdate}
+                        onCreateIssue={handleCreateIssue}
+                        onDeleteProject={handleDeleteProject}
+                      />
+                    </div>
+                  ) : (
+                    <ProjectGrid
+                      projects={projects}
+                      stats={projectStats}
+                      loading={dataLoading}
+                      onProjectClick={(id) => setSelectedProjectID(id)}
+                      onAddProject={() => setCreateProjectDialogOpen(true)}
+                      onDeleteProject={handleDeleteProject}
+                    />
+                  )}
+                </div>
               ) : null}
 
-              {showIssueBoard ? (
-                <section className="col-span-12">
-                  <KanbanBoard loadingState={loadingState} snapshot={snapshot} doneItems={doneIssues} onInspectIssue={handleInspectIssueFromList} />
-                </section>
-              ) : null}
-
-              {showRunning ? (
-                <section className="col-span-12 xl:col-span-8">
-                  <RunningIssuesCard loadingState={loadingState} snapshot={snapshot} onInspectIssue={handleInspectIssueFromList} />
-                </section>
-              ) : null}
-
-              {showRunning ? (
-                <section className="col-span-12 xl:col-span-4">
-                  <RetryQueueCard snapshot={snapshot} onInspectIssue={handleInspectIssueFromList} />
-                </section>
-              ) : null}
-
-              {showDashboard || showRunning || showIssueBoard ? (
-                <section className="col-span-12">
-                  <IssueInspectorCard
-                    configReady={Boolean(config)}
-                    issueLookupId={issueLookupId}
-                    issueLookupPending={issueLookupPending}
-                    issueLookupError={issueLookupError}
-                    issueLookupResult={issueLookupResult}
-                    onIssueLookupIdChange={setIssueLookupId}
-                    onIssueLookup={handleIssueLookup}
-                    onIssueUpdate={handleIssueUpdate}
+              {sectionVisibility.showWarehouse ? (
+                <div className="h-full overflow-y-auto custom-scrollbar pr-1">
+                  <AnalyticsDashboard 
+                    stats={warehouseStats} 
+                    loading={dataLoading} 
+                    onInspectSession={handleInspectSession}
                   />
-                </section>
+                </div>
               ) : null}
 
-              {showTimeline ? (
-                <section className="col-span-12">
+              {sectionVisibility.showIssueBoard ? (
+                <div className="h-full flex flex-col">
+                  <KanbanBoard
+                    loadingState={loadingState}
+                    snapshot={snapshot}
+                    boardIssues={boardIssues}
+                    projects={projects}
+                    onInspectIssue={handleInspectIssueFromList}
+                    onIssueUpdate={handleIssueUpdate}
+                    onCreateIssue={handleCreateIssue}
+                  />
+                </div>
+              ) : null}
+
+              {sectionVisibility.showRunning ? (
+                <div className="h-full overflow-hidden pr-1">
+                  <OperationsQueueCard loadingState={loadingState} snapshot={snapshot} onInspectIssue={handleInspectIssueFromList} />
+                </div>
+              ) : null}
+
+              {sectionVisibility.showTimeline ? (
+                <div className="h-full overflow-hidden pr-1">
                   <TimelineCard timeline={timeline} />
-                </section>
+                </div>
               ) : null}
 
-              {showSettings ? (
-                <section className="col-span-12">
+              {sectionVisibility.showSettings ? (
+                <div className="h-full overflow-hidden pr-1">
                   <SettingsCard
                     loadingConfig={loadingConfig}
                     savingConfig={savingConfig}
@@ -636,6 +966,8 @@ export default function App() {
                     migrationFrom={migrationFrom}
                     migrationTo={migrationTo}
                     migrationPlan={migrationPlan}
+                    agentConfig={agentConfig}
+                    agentTokens={agentTokens}
                     onMigrationFromChange={setMigrationFrom}
                     onMigrationToChange={setMigrationTo}
                     onMigrationPlan={handleMigrationPlan}
@@ -644,8 +976,10 @@ export default function App() {
                     onSetActiveProfile={handleSetActiveProfile}
                     onCreateProfile={handleCreateProfile}
                     onDeleteProfile={handleDeleteProfile}
+                    onSaveAgentConfig={handleAgentConfigSave}
+                    onSaveAgentToken={handleSaveAgentToken}
                   />
-                </section>
+                </div>
               ) : null}
             </div>
           </div>
@@ -656,6 +990,7 @@ export default function App() {
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Issue Inspection</DialogTitle>
+            <DialogDescription>View detailed status and diagnostics for this issue.</DialogDescription>
           </DialogHeader>
           <div className="py-2">
             {issueLookupPending ? (
@@ -668,13 +1003,143 @@ export default function App() {
                 {issueLookupError}
               </div>
             ) : issueLookupResult ? (
-              <IssueDetailView result={issueLookupResult} onUpdate={(updates) => handleIssueUpdate(issueLookupId, updates)} />
+              <IssueDetailView
+                result={issueLookupResult}
+                config={config}
+                timeline={timeline}
+                availableAgents={availableAgents}
+                onUpdate={(updates) => handleIssueUpdate(issueLookupId, updates)}
+                onStopSession={() => handleStopSession(issueLookupId)}
+              />
             ) : (
               <p className="text-center text-sm text-muted-foreground">No issue selected.</p>
             )}
           </div>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={sessionInspectDialogOpen} onOpenChange={setSessionInspectDialogOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Historical Session Analysis</DialogTitle>
+            <DialogDescription>Review historical execution logs and token usage for this session.</DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            {sessionLookupPending ? (
+              <div className="space-y-4">
+                <Skeleton className="h-8 w-[200px]" />
+                <Skeleton className="h-[200px] w-full" />
+              </div>
+            ) : sessionLookupError ? (
+              <div className="rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-900 dark:border-red-900/70 dark:bg-red-950/35 dark:text-red-200">
+                {sessionLookupError}
+              </div>
+            ) : sessionLookupResult ? (
+              <SessionDetailView session={sessionLookupResult} />
+            ) : (
+              <p className="text-center text-sm text-muted-foreground">No session selected.</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <CreateTaskDialog
+        open={createTaskDialogOpen}
+        onOpenChange={setCreateTaskDialogOpen}
+        initialState={createTaskInitialState}
+        availableAgents={availableAgents}
+        projects={projects}
+        initialProjectID={selectedProjectID || ''}
+        onSubmit={handleTaskSubmit}
+      />
+
+      <CreateProjectDialog
+        open={createProjectDialogOpen}
+        onOpenChange={setCreateProjectDialogOpen}
+        onSubmit={handleAddProject}
+      />
+
+      <Command.Dialog
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        label="Global Command Palette"
+        className="fixed top-1/2 left-1/2 w-full max-w-xl -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-card shadow-2xl z-[100] overflow-hidden"
+      >
+        <Command.Input 
+          autoFocus 
+          placeholder="Type a command or search..." 
+          className="w-full border-b border-border bg-transparent p-4 text-sm outline-none placeholder:text-muted-foreground"
+        />
+        <Command.List className="max-h-[300px] overflow-y-auto p-2">
+          <Command.Empty className="p-4 text-center text-sm text-muted-foreground">No results found.</Command.Empty>
+
+          <Command.Group heading="Navigation" className="px-2 py-1 text-xs font-semibold text-muted-foreground">
+            <Command.Item 
+              onSelect={() => { setActiveSection('dashboard'); setPaletteOpen(false) }}
+              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm text-foreground hover:bg-muted/50 data-[selected=true]:bg-muted/50"
+            >
+              <LayoutDashboard className="h-4 w-4" /> Go to Dashboard
+            </Command.Item>
+            <Command.Item 
+              onSelect={() => { setActiveSection('issues'); setPaletteOpen(false) }}
+              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm text-foreground hover:bg-muted/50 data-[selected=true]:bg-muted/50"
+            >
+              <Ticket className="h-4 w-4" /> Go to Tasks
+            </Command.Item>
+            <Command.Item 
+              onSelect={() => { setActiveSection('projects'); setPaletteOpen(false) }}
+              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm text-foreground hover:bg-muted/50 data-[selected=true]:bg-muted/50"
+            >
+              <FolderTree className="h-4 w-4" /> Go to Projects
+            </Command.Item>
+            <Command.Item 
+              onSelect={() => { setActiveSection('warehouse'); setPaletteOpen(false) }}
+              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm text-foreground hover:bg-muted/50 data-[selected=true]:bg-muted/50"
+            >
+              <Database className="h-4 w-4" /> Go to Analytics Warehouse
+            </Command.Item>
+          </Command.Group>
+
+          <Command.Group heading="Actions" className="px-2 py-1 mt-2 text-xs font-semibold text-muted-foreground border-t border-border/40">
+            <Command.Item 
+              onSelect={() => { handleCreateIssue('Todo'); setPaletteOpen(false) }}
+              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm text-foreground hover:bg-muted/50 data-[selected=true]:bg-muted/50"
+            >
+              <Ticket className="h-4 w-4" /> Create New Task
+            </Command.Item>
+            <Command.Item 
+              onSelect={() => { setTheme(theme === 'dark' ? 'light' : 'dark'); setPaletteOpen(false) }}
+              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm text-foreground hover:bg-muted/50 data-[selected=true]:bg-muted/50"
+            >
+              <Settings2 className="h-4 w-4" /> Toggle Theme
+            </Command.Item>
+            <Command.Item 
+              onSelect={() => { handleTogglePolling(); setPaletteOpen(false) }}
+              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm text-foreground hover:bg-muted/50 data-[selected=true]:bg-muted/50"
+            >
+              <Activity className="h-4 w-4" /> Toggle Connection Mode (SSE/Polling)
+            </Command.Item>
+          </Command.Group>
+
+          {projects.length > 0 && (
+            <Command.Group heading="Projects" className="px-2 py-1 mt-2 text-xs font-semibold text-muted-foreground border-t border-border/40">
+              {projects.map(p => (
+                <Command.Item 
+                  key={p.id}
+                  onSelect={() => { 
+                    setActiveSection('projects')
+                    setSelectedProjectID(p.id)
+                    setPaletteOpen(false) 
+                  }}
+                  className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm text-foreground hover:bg-muted/50 data-[selected=true]:bg-muted/50"
+                >
+                  <FolderTree className="h-4 w-4" /> {p.name}
+                </Command.Item>
+              ))}
+            </Command.Group>
+          )}
+        </Command.List>
+      </Command.Dialog>
     </div>
   )
 }

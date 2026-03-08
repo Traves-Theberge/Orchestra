@@ -24,6 +24,7 @@ type Config struct {
 	MaxConcurrent            int
 	MaxConcurrentByState     map[string]int
 	WorkspaceHooks           workspace.Hooks
+	ProjectRoots             []string
 }
 
 func (c Config) PortString() string {

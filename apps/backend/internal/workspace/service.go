@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 )
@@ -108,6 +109,90 @@ func (s Service) RunAfterRunHook(workspacePath string, hooks Hooks) error {
 	}
 	_, _ = RunHook("after_run", hooks.AfterRun, workspacePath, s.timeoutOrDefault())
 	return nil
+}
+
+func (s Service) ListArtifacts(issueIdentifier string) ([]string, error) {
+	path, err := WorkspacePath(s.Root, issueIdentifier)
+	if err != nil {
+		return nil, err
+	}
+
+	if !exists(path) {
+		return []string{}, nil
+	}
+
+	var artifacts []string
+	err = filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		rel, err := filepath.Rel(path, p)
+		if err != nil {
+			return err
+		}
+
+		if rel == ".orchestra" {
+			return nil
+		}
+
+		artifacts = append(artifacts, rel)
+		return nil
+	})
+
+	return artifacts, err
+}
+
+func (s Service) GetArtifactContent(issueIdentifier string, relPath string) ([]byte, error) {
+	root, err := WorkspacePath(s.Root, issueIdentifier)
+	if err != nil {
+		return nil, err
+	}
+
+	fullPath := filepath.Join(root, relPath)
+	if err := ValidateWorkspacePath(s.Root, fullPath); err != nil {
+		return nil, err
+	}
+
+	return os.ReadFile(fullPath)
+}
+
+func (s Service) GetDiff(issueIdentifier string) (string, error) {
+	path, err := WorkspacePath(s.Root, issueIdentifier)
+	if err != nil {
+		return "", err
+	}
+
+	if !exists(path) {
+		return "", nil
+	}
+
+	// Use git to get the diff of changes (including untracked files)
+	// We check if it's a git repo first
+	if !exists(filepath.Join(path, ".git")) {
+		return "", fmt.Errorf("workspace is not a git repository")
+	}
+
+	cmd := exec.Command("git", "diff", "HEAD")
+	cmd.Dir = path
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		// If HEAD doesn't exist yet (new repo), try just git diff
+		cmd = exec.Command("git", "diff")
+		cmd.Dir = path
+		out, err = cmd.CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("git diff failed: %w (output: %s)", err, string(out))
+		}
+	}
+
+	return string(out), nil
 }
 
 func (s Service) timeoutOrDefault() time.Duration {

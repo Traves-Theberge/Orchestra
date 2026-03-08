@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, ipcMain, safeStorage, shell, dialog } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs/promises')
 const crypto = require('node:crypto')
@@ -13,7 +13,7 @@ function createDefaultProfile() {
   return {
     id: 'default',
     name: 'Default',
-    baseUrl: process.env.ORCHESTRA_BASE_URL || 'http://127.0.0.1:4000',
+    baseUrl: process.env.ORCHESTRA_BASE_URL || 'http://127.0.0.1:4010',
     apiToken: process.env.ORCHESTRA_API_TOKEN || '',
   }
 }
@@ -50,6 +50,45 @@ let backendProfilesState = ensureProfilesState({
   activeProfileId: 'default',
   profiles: [createDefaultProfile()],
 })
+
+let agentTokens = {}
+
+function tokensFilePath() {
+  return path.join(app.getPath('userData'), 'agent-tokens.json')
+}
+
+async function persistTokens() {
+  const file = tokensFilePath()
+  const encrypted = {}
+  for (const [key, value] of Object.entries(agentTokens)) {
+    if (safeStorage.isEncryptionAvailable()) {
+      encrypted[key] = safeStorage.encryptString(value).toString('base64')
+    } else {
+      encrypted[key] = value // Fallback if encryption unavailable
+    }
+  }
+  await fs.writeFile(file, JSON.stringify(encrypted, null, 2), 'utf-8')
+}
+
+async function loadTokens() {
+  try {
+    const raw = await fs.readFile(tokensFilePath(), 'utf-8')
+    const encrypted = JSON.parse(raw)
+    for (const [key, value] of Object.entries(encrypted)) {
+      if (safeStorage.isEncryptionAvailable()) {
+        try {
+          agentTokens[key] = safeStorage.decryptString(Buffer.from(value, 'base64'))
+        } catch {
+          agentTokens[key] = ''
+        }
+      } else {
+        agentTokens[key] = value
+      }
+    }
+  } catch {
+    agentTokens = {}
+  }
+}
 
 function stateFilePath() {
   return path.join(app.getPath('userData'), 'backend-profiles.json')
@@ -115,9 +154,28 @@ function createWindow() {
   }
 }
 
+ipcMain.handle('orchestra:get-agent-tokens', () => {
+  const publicTokens = {}
+  for (const key of Object.keys(agentTokens)) {
+    publicTokens[key] = '********'
+  }
+  return publicTokens
+})
+
+ipcMain.handle('orchestra:set-agent-token', async (_event, { name, value }) => {
+  if (!name) throw new Error('token name required')
+  if (value === undefined || value === null) {
+    delete agentTokens[name]
+  } else {
+    agentTokens[name] = value
+  }
+  await persistTokens()
+  return true
+})
+
 ipcMain.handle('orchestra:get-backend-config', () => {
   const active = getActiveProfile()
-  return { baseUrl: active.baseUrl, apiToken: active.apiToken }
+  return { baseUrl: active.baseUrl, apiToken: active.apiToken, agentTokens }
 })
 
 ipcMain.handle('orchestra:set-backend-config', async (_event, nextConfig) => {
@@ -222,8 +280,21 @@ ipcMain.handle('orchestra:delete-backend-profile', async (_event, profileId) => 
   return getProfilesPayload()
 })
 
+ipcMain.handle('orchestra:open-external', async (_event, url) => {
+  if (url) await shell.openExternal(url)
+})
+
+ipcMain.handle('orchestra:select-folder', async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openDirectory'],
+  })
+  if (result.canceled || result.filePaths.length === 0) return null
+  return result.filePaths[0]
+})
+
 app.whenReady().then(async () => {
   await loadProfilesState()
+  await loadTokens()
   createWindow()
 
   app.on('activate', () => {

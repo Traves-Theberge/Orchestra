@@ -2,24 +2,30 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/orchestra/orchestra/apps/backend/internal/agents"
 	"github.com/orchestra/orchestra/apps/backend/internal/api"
 	"github.com/orchestra/orchestra/apps/backend/internal/config"
+	"github.com/orchestra/orchestra/apps/backend/internal/db"
 	"github.com/orchestra/orchestra/apps/backend/internal/logfile"
 	"github.com/orchestra/orchestra/apps/backend/internal/observability"
 	"github.com/orchestra/orchestra/apps/backend/internal/orchestrator"
 	"github.com/orchestra/orchestra/apps/backend/internal/prompt"
 	"github.com/orchestra/orchestra/apps/backend/internal/runtime"
+	"github.com/orchestra/orchestra/apps/backend/internal/telemetry"
 	"github.com/orchestra/orchestra/apps/backend/internal/tools"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
 	trackergraphql "github.com/orchestra/orchestra/apps/backend/internal/tracker/graphql"
-	"github.com/orchestra/orchestra/apps/backend/internal/tracker/memory"
+	trackersqlite "github.com/orchestra/orchestra/apps/backend/internal/tracker/sqlite"
 	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
+	"github.com/orchestra/orchestra/apps/backend/internal/utils/git"
 	"github.com/rs/zerolog"
 )
 
@@ -34,11 +40,24 @@ func Run(logger zerolog.Logger) error {
 	}
 
 	addr := cfg.Host + ":" + cfg.PortString()
+
+	dbPath := filepath.Join(cfg.WorkspaceRoot, ".orchestra", "warehouse.db")
+	warehouseDB, err := db.Connect(dbPath)
+	if err != nil {
+		return fmt.Errorf("connect to warehouse db: %w", err)
+	}
+
 	orchestratorService := orchestrator.NewService()
+	orchestratorService.SetDB(warehouseDB)
+	if err := orchestratorService.RestoreStateFromDB(context.Background()); err != nil {
+		logger.Warn().Err(err).Msg("failed to restore orchestrator state from DB")
+	}
+
 	orchestratorService.SetStateSets(cfg.ActiveStates, cfg.TerminalStates)
 	orchestratorService.SetMaxConcurrent(cfg.MaxConcurrent)
 	orchestratorService.SetMaxConcurrentByState(cfg.MaxConcurrentByState)
-	trackerClient := newTrackerClient(cfg)
+	
+	trackerClient := newTrackerClient(cfg, warehouseDB)
 	orchestratorService.SetTrackerClient(trackerClient)
 	pubsub := observability.NewPubSub()
 
@@ -47,16 +66,21 @@ func Run(logger zerolog.Logger) error {
 	if !agentRegistry.HasProvider(provider) {
 		return fmt.Errorf("agent provider %q is not configured", cfg.AgentProvider)
 	}
+	orchestratorService.SetAgentRegistry(agentRegistry, cfg.AgentCommands, cfg.AgentProvider)
+	
+	workspaceService := workspace.Service{Root: cfg.WorkspaceRoot}
+	orchestratorService.SetWorkspaceService(workspaceService)
 	logger.Info().Str("agent_provider", cfg.AgentProvider).Str("service_id", runtime.ServiceOrchestrator).Msg("agent provider configured")
 
-	router := api.NewRouterWithPubSub(logger, orchestratorService, cfg.WorkspaceRoot, cfg.Host, cfg.APIToken, pubsub)
+	router := api.NewRouterWithPubSub(logger, orchestratorService, cfg.WorkspaceRoot, cfg.Host, cfg.APIToken, pubsub, warehouseDB)
 
-	workspaceService := workspace.Service{Root: cfg.WorkspaceRoot}
 	cleanupTerminalWorkspaces(orchestratorService, trackerClient, workspaceService, cfg.WorkspaceHooks, logger)
 
 	go startRefreshWorker(orchestratorService, pubsub, logger)
+	go telemetry.StartWatcher(context.Background(), warehouseDB, cfg.ProjectRoots, logger)
+	
 	toolExecutor := tools.NewTrackerToolExecutor(trackerClient)
-	go startExecutionWorker(orchestratorService, agentRegistry, provider, cfg.AgentProvider, cfg.WorkspaceRoot, cfg.WorkflowFile, cfg.AgentMaxTurns, toolExecutor.Execute, tools.TrackerToolSpecs(), cfg.WorkspaceHooks, pubsub, logger)
+	go startExecutionWorker(orchestratorService, agentRegistry, provider, cfg.AgentProvider, cfg.WorkspaceRoot, cfg.WorkflowFile, cfg.AgentMaxTurns, toolExecutor.Execute, tools.TrackerToolSpecs(), cfg.WorkspaceHooks, pubsub, warehouseDB, logger)
 
 	logger.Info().Str("addr", addr).Str("service_id", runtime.ServiceOrchestrator).Msg("starting orchestrad")
 	if err := http.ListenAndServe(addr, router); err != nil {
@@ -66,11 +90,11 @@ func Run(logger zerolog.Logger) error {
 	return nil
 }
 
-func newTrackerClient(cfg config.Config) tracker.Client {
+func newTrackerClient(cfg config.Config, localDB *db.DB) tracker.Client {
 	if cfg.TrackerEndpoint != "" {
 		return trackergraphql.NewClient(cfg.TrackerEndpoint, cfg.TrackerToken, cfg.TrackerProject, cfg.TrackerWorkerAssigneeIDs, nil)
 	}
-	return memory.NewClientWithWorkerAssignees(nil, cfg.TrackerWorkerAssigneeIDs)
+	return trackersqlite.NewClient(localDB, cfg.TrackerWorkerAssigneeIDs)
 }
 
 func startExecutionWorker(
@@ -85,6 +109,7 @@ func startExecutionWorker(
 	toolSpecs []map[string]any,
 	workspaceHooks workspace.Hooks,
 	pubsub *observability.PubSub,
+	warehouseDB *db.DB,
 	logger zerolog.Logger,
 ) {
 	workspaceService := workspace.Service{Root: workspaceRoot}
@@ -92,7 +117,7 @@ func startExecutionWorker(
 	defer ticker.Stop()
 
 	for range ticker.C {
-		processExecutionTick(service, workspaceService, registry, provider, providerName, workspaceRoot, workflowFile, agentMaxTurns, toolExecutor, toolSpecs, workspaceHooks, pubsub, logger)
+		processExecutionTick(service, workspaceService, registry, provider, providerName, workspaceRoot, workflowFile, agentMaxTurns, toolExecutor, toolSpecs, workspaceHooks, pubsub, warehouseDB, logger)
 	}
 }
 
@@ -109,6 +134,7 @@ func processExecutionTick(
 	toolSpecs []map[string]any,
 	workspaceHooks workspace.Hooks,
 	pubsub *observability.PubSub,
+	warehouseDB *db.DB,
 	logger zerolog.Logger,
 ) {
 	entry, ok := service.ClaimNextRunnable()
@@ -143,8 +169,10 @@ func processExecutionTick(
 		}
 	}
 
-	workspacePath, _, err := workspaceService.EnsureIssueWorkspace(entry.IssueIdentifier, workspaceHooks)
+	publishLifecycleEvent(pubsub, "hook_started", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create"})
+	workspacePath, created, err := workspaceService.EnsureIssueWorkspace(entry.IssueIdentifier, workspaceHooks)
 	if err != nil {
+		publishLifecycleEvent(pubsub, "hook_failed", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create", "error": err.Error()})
 		attempt := entry.TurnCount + 1
 		dueAt := service.NextRetryDue(entry.IssueID, attempt)
 		publishLifecycleEvent(pubsub, "run_failed", map[string]any{
@@ -170,12 +198,25 @@ func processExecutionTick(
 		publishSnapshot(pubsub, service)
 		return
 	}
+	if created {
+		publishLifecycleEvent(pubsub, "hook_completed", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create"})
+	} else {
+		// Even if not created, we mark it as completed since we "ensured" it exists
+		publishLifecycleEvent(pubsub, "hook_completed", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create", "reused": true})
+	}
 	runAfterHook := func() {
-		_ = workspaceService.RunAfterRunHook(workspacePath, workspaceHooks)
+		publishLifecycleEvent(pubsub, "hook_started", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_run"})
+		if err := workspaceService.RunAfterRunHook(workspacePath, workspaceHooks); err != nil {
+			publishLifecycleEvent(pubsub, "hook_failed", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_run", "error": err.Error()})
+		} else {
+			publishLifecycleEvent(pubsub, "hook_completed", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_run"})
+		}
 	}
 
 	if entry.TurnCount == 0 {
+		publishLifecycleEvent(pubsub, "hook_started", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "before_run"})
 		if err := workspaceService.RunBeforeRunHook(workspacePath, workspaceHooks); err != nil {
+			publishLifecycleEvent(pubsub, "hook_failed", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "before_run", "error": err.Error()})
 			runAfterHook()
 			attempt := entry.TurnCount + 1
 			dueAt := service.NextRetryDue(entry.IssueID, attempt)
@@ -202,6 +243,7 @@ func processExecutionTick(
 			publishSnapshot(pubsub, service)
 			return
 		}
+		publishLifecycleEvent(pubsub, "hook_completed", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "before_run"})
 	}
 
 	attempt := entry.TurnCount + 1
@@ -220,7 +262,14 @@ func processExecutionTick(
 		renderedPrompt = buildExecutionPrompt(entry.IssueIdentifier, attempt)
 	}
 
-	result, runErr := registry.RunTurn(context.Background(), activeProvider, agents.TurnRequest{
+	runCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	service.RegisterCancel(entry.IssueID, cancel)
+	defer service.DeregisterCancel(entry.IssueID)
+
+	var eventsBuffer []agents.Event
+
+	result, runErr := registry.RunTurn(runCtx, activeProvider, agents.TurnRequest{
 		Workspace:       workspacePath,
 		WorkspaceRoot:   workspaceRoot,
 		Prompt:          renderedPrompt,
@@ -233,7 +282,23 @@ func processExecutionTick(
 	}, func(event agents.Event) {
 		service.RecordRunEvent(entry.IssueID, event)
 		publishRunEvent(pubsub, entry, activeProviderName, event)
+		eventsBuffer = append(eventsBuffer, event)
 	})
+
+	if warehouseDB != nil && result.SessionID != "" {
+		rootPath, remoteURL, _ := git.ProjectInfo(context.Background(), workspaceRoot)
+		projectID, err := warehouseDB.UpsertProject(context.Background(), rootPath, remoteURL)
+		if err == nil {
+			_ = warehouseDB.RecordSession(context.Background(), result.SessionID, projectID, result.SessionID, activeProviderName, "main")
+			for _, e := range eventsBuffer {
+				eventID := uuid.New().String()
+				raw, _ := json.Marshal(e.Raw)
+				_ = warehouseDB.RecordEvent(context.Background(), eventID, result.SessionID, e.Kind, e.Message, raw, int(e.Usage.InputTokens), int(e.Usage.OutputTokens), e.Timestamp.Format(time.RFC3339))
+			}
+		} else {
+			logger.Warn().Err(err).Msg("failed to upsert project for telemetry")
+		}
+	}
 
 	if runErr != nil {
 		runAfterHook()
@@ -373,6 +438,9 @@ func startRefreshWorker(service *orchestrator.Service, pubsub *observability.Pub
 		after := service.Snapshot()
 		publishRefreshRetryLifecycleEvents(pubsub, before, after)
 		publishSnapshot(pubsub, service)
+		if err := service.PersistStateToDB(context.Background()); err != nil {
+			logger.Warn().Err(err).Msg("failed to persist orchestrator state to DB")
+		}
 	}
 }
 

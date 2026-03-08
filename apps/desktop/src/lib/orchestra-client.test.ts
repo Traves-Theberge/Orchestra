@@ -124,7 +124,7 @@ describe('operator flow client calls', () => {
         )
       }
 
-      if (url.endsWith('/api/v1/OPS-1')) {
+      if (url.endsWith('/api/v1/issues/OPS-1')) {
         return new Response(
           JSON.stringify({
             issue_identifier: 'OPS-1',
@@ -158,7 +158,7 @@ describe('operator flow client calls', () => {
     expect(calls[1]?.url).toBe('http://127.0.0.1:4000/api/v1/refresh')
     expect(calls[2]?.url).toBe('http://127.0.0.1:4000/api/v1/workspace/migration/plan?from=%2Ftmp%2Ffrom&to=%2Ftmp%2Fto')
     expect(calls[3]?.url).toBe('http://127.0.0.1:4000/api/v1/workspace/migrate')
-    expect(calls[4]?.url).toBe('http://127.0.0.1:4000/api/v1/OPS-1')
+    expect(calls[4]?.url).toBe('http://127.0.0.1:4000/api/v1/issues/OPS-1')
 
     expect(calls[0]?.init?.headers).toMatchObject({ Accept: 'application/json', Authorization: 'Bearer token-123' })
     expect(calls[1]?.init?.method).toBe('POST')

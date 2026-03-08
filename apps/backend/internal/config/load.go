@@ -45,6 +45,7 @@ func Load() (Config, error) {
 	workspaceBeforeRemove := getenvOrEmpty("ORCHESTRA_WORKSPACE_BEFORE_REMOVE")
 	workspaceBeforeRun := getenvOrEmpty("ORCHESTRA_WORKSPACE_BEFORE_RUN")
 	workspaceAfterRun := getenvOrEmpty("ORCHESTRA_WORKSPACE_AFTER_RUN")
+	projectRootsRaw := getenvOrEmpty("ORCHESTRA_PROJECT_ROOTS")
 
 	workflowOverrides := loadWorkflowOverrides(strings.TrimSpace(workflowPath))
 	if host == "" {
@@ -100,6 +101,9 @@ func Load() (Config, error) {
 	}
 	if strings.TrimSpace(workspaceAfterRun) == "" {
 		workspaceAfterRun = workflowOverrides.WorkspaceAfterRun
+	}
+	if strings.TrimSpace(projectRootsRaw) == "" {
+		projectRootsRaw = workflowOverrides.ProjectRoots
 	}
 
 	if strings.TrimSpace(host) == "" {
@@ -178,6 +182,7 @@ func Load() (Config, error) {
 		terminalStates = []string{"Done", "Cancelled", "Canceled", "Closed", "Duplicate"}
 	}
 	trackerWorkerAssigneeIDs := parseStateList(trackerWorkerAssigneeIDsRaw)
+	projectRoots := parseStateList(projectRootsRaw)
 
 	return Config{
 		Host:                     strings.TrimSpace(host),
@@ -202,6 +207,7 @@ func Load() (Config, error) {
 			BeforeRun:    strings.TrimSpace(workspaceBeforeRun),
 			AfterRun:     strings.TrimSpace(workspaceAfterRun),
 		},
+		ProjectRoots: projectRoots,
 	}, nil
 }
 
@@ -228,6 +234,7 @@ type workflowConfigOverrides struct {
 	WorkspaceBeforeRemove    string
 	WorkspaceBeforeRun       string
 	WorkspaceAfterRun        string
+	ProjectRoots             string
 }
 
 func loadWorkflowOverrides(path string) workflowConfigOverrides {
@@ -306,6 +313,9 @@ func loadWorkflowOverrides(path string) workflowConfigOverrides {
 		),
 		WorkspaceAfterRun: firstStringValue(
 			lookupNested(doc.Config, []string{"workspace", "after_run"}),
+		),
+		ProjectRoots: firstCSVValue(
+			lookupNested(doc.Config, []string{"workspace", "project_roots"}),
 		),
 	}
 }

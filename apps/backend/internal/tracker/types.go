@@ -11,6 +11,7 @@ type Issue struct {
 	State            string    `json:"state"`
 	BranchName       string    `json:"branch_name,omitempty"`
 	URL              string    `json:"url,omitempty"`
+	ProjectID        string    `json:"project_id,omitempty"`
 	AssigneeID       string    `json:"assignee_id,omitempty"`
 	AssignedToWorker bool      `json:"assigned_to_worker"`
 	Labels           []string  `json:"labels,omitempty"`
@@ -25,10 +26,18 @@ type Blocker struct {
 	State      string `json:"state,omitempty"`
 }
 
+type IssueFilter struct {
+	States     []string
+	ProjectID  string
+	AssigneeID string
+}
+
 type Client interface {
 	FetchCandidateIssues(ctx context.Context, activeStates []string) ([]Issue, error)
 	FetchIssuesByIDs(ctx context.Context, issueIDs []string) ([]Issue, error)
 	FetchIssueStatesByIDs(ctx context.Context, issueIDs []string) (map[string]string, error)
-	FetchIssuesByStates(ctx context.Context, states []string) ([]Issue, error)
+	FetchIssues(ctx context.Context, filter IssueFilter) ([]Issue, error)
+	SearchIssues(ctx context.Context, query string) ([]Issue, error)
+	CreateIssue(ctx context.Context, title, description, state string, priority int, assigneeID, projectID string) (*Issue, error)
 	UpdateIssue(ctx context.Context, identifier string, updates map[string]any) (*Issue, error)
 }

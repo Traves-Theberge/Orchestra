@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/orchestra/orchestra/apps/backend/internal/agents"
+	"github.com/orchestra/orchestra/apps/backend/internal/db"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
+	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
 )
 
 type CodexTotals struct {
@@ -78,15 +80,21 @@ type Service struct {
 	rateLimits       any
 	refreshPending   bool
 	trackerClient    tracker.Client
+	agentRegistry    *agents.Registry
+	agentCommands    map[string]string
+	agentProvider    string
 	activeStates     []string
 	terminalStates   []string
 	maxConcurrent    int
 	maxByState       map[string]int
 	claimed          map[string]bool
+	cancels          map[string]context.CancelFunc
 	maxRetryAttempts int64
+	workspaceService workspace.Service
 	retryBaseDelay   time.Duration
 	retryMaxDelay    time.Duration
 	stallTimeout     time.Duration
+	db               *db.DB
 }
 
 type IssueRuntime struct {
@@ -105,11 +113,36 @@ func NewService() *Service {
 		maxConcurrent:    4,
 		maxByState:       map[string]int{},
 		claimed:          map[string]bool{},
+		cancels:          make(map[string]context.CancelFunc),
 		maxRetryAttempts: 5,
 		retryBaseDelay:   5 * time.Second,
 		retryMaxDelay:    10 * time.Minute,
 		stallTimeout:     20 * time.Minute,
 	}
+}
+
+func (s *Service) RegisterCancel(issueID string, cancel context.CancelFunc) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cancels[issueID] = cancel
+}
+
+func (s *Service) DeregisterCancel(issueID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.cancels, issueID)
+}
+
+func (s *Service) StopSession(issueID string) bool {
+	s.mu.Lock()
+	cancel, ok := s.cancels[issueID]
+	s.mu.Unlock()
+
+	if ok && cancel != nil {
+		cancel()
+		return true
+	}
+	return false
 }
 
 func (s *Service) Snapshot() Snapshot {
@@ -229,6 +262,86 @@ func (s *Service) SetTrackerClient(client tracker.Client) {
 	s.trackerClient = client
 }
 
+func (s *Service) SetDB(database *db.DB) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.db = database
+}
+
+func (s *Service) SetAgentRegistry(registry *agents.Registry, commands map[string]string, provider string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.agentRegistry = registry
+	s.agentCommands = make(map[string]string)
+	for k, v := range commands {
+		s.agentCommands[k] = v
+	}
+	s.agentProvider = provider
+}
+
+func (s *Service) GetAgentConfig() (map[string]string, string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	commands := make(map[string]string)
+	for k, v := range s.agentCommands {
+		commands[k] = v
+	}
+	return commands, s.agentProvider
+}
+
+func (s *Service) GetProviders() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.agentRegistry != nil {
+		providers := s.agentRegistry.Providers()
+		out := make([]string, len(providers))
+		for i, p := range providers {
+			out[i] = string(p)
+		}
+		return out
+	}
+	out := make([]string, 0, len(s.agentCommands))
+	for k := range s.agentCommands {
+		out = append(out, k)
+	}
+	return out
+}
+
+func (s *Service) SetWorkspaceService(svc workspace.Service) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.workspaceService = svc
+}
+
+func (s *Service) ListArtifacts(issueIdentifier string) ([]string, error) {
+	return s.workspaceService.ListArtifacts(issueIdentifier)
+}
+
+func (s *Service) GetArtifactContent(issueIdentifier string, relPath string) ([]byte, error) {
+	return s.workspaceService.GetArtifactContent(issueIdentifier, relPath)
+}
+
+func (s *Service) GetDiff(issueIdentifier string) (string, error) {
+	return s.workspaceService.GetDiff(issueIdentifier)
+}
+
+func (s *Service) UpdateAgentConfig(commands map[string]string, provider string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if provider != "" {
+		s.agentProvider = provider
+	}
+	if s.agentCommands == nil {
+		s.agentCommands = make(map[string]string)
+	}
+	for k, v := range commands {
+		s.agentCommands[k] = v
+		if s.agentRegistry != nil {
+			s.agentRegistry.SetCommand(agents.Provider(k), v)
+		}
+	}
+}
+
 func (s *Service) SetStateSets(activeStates []string, terminalStates []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -338,6 +451,42 @@ func (s *Service) PerformRefresh(ctx context.Context) error {
 	s.ReconcileRunningStates(activeStates, terminalStates, stateMap)
 	s.reconcileRunningDispatchConstraints(runningIssues, terminalStates)
 	return nil
+}
+
+func (s *Service) ListIssues(ctx context.Context, filter tracker.IssueFilter) ([]tracker.Issue, error) {
+	s.mu.RLock()
+	client := s.trackerClient
+	s.mu.RUnlock()
+
+	if client == nil {
+		return []tracker.Issue{}, nil
+	}
+
+	return client.FetchIssues(ctx, filter)
+}
+
+func (s *Service) SearchIssues(ctx context.Context, query string) ([]tracker.Issue, error) {
+	s.mu.RLock()
+	client := s.trackerClient
+	s.mu.RUnlock()
+
+	if client == nil {
+		return []tracker.Issue{}, nil
+	}
+
+	return client.SearchIssues(ctx, query)
+}
+
+func (s *Service) CreateIssue(ctx context.Context, title, description, state string, priority int, assigneeID, projectID string) (*tracker.Issue, error) {
+	s.mu.RLock()
+	client := s.trackerClient
+	s.mu.RUnlock()
+
+	if client == nil {
+		return nil, fmt.Errorf("tracker client not available")
+	}
+
+	return client.CreateIssue(ctx, title, description, state, priority, assigneeID, projectID)
 }
 
 func (s *Service) UpdateIssue(ctx context.Context, identifier string, updates map[string]any) (*tracker.Issue, error) {
@@ -1083,4 +1232,80 @@ func (s *Service) isRetryingLocked(issueID string) bool {
 		}
 	}
 	return false
+}
+
+func (s *Service) PersistStateToDB(ctx context.Context) error {
+	if s.db == nil {
+		return nil
+	}
+
+	s.mu.RLock()
+	running := append([]RunningEntry(nil), s.running...)
+	s.mu.RUnlock()
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	_, err = tx.ExecContext(ctx, "DELETE FROM runs")
+	if err != nil {
+		return err
+	}
+
+	stmt, err := tx.PrepareContext(ctx, `INSERT INTO runs (id, issue_id, session_id, state, last_event, last_message, turn_count, input_tokens, output_tokens, total_tokens) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, entry := range running {
+		runID := "run_" + entry.IssueID
+		_, err = stmt.ExecContext(ctx, runID, entry.IssueID, entry.SessionID, entry.State, entry.LastEvent, entry.LastMessage, entry.TurnCount, entry.Tokens.InputTokens, entry.Tokens.OutputTokens, entry.Tokens.TotalTokens)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (s *Service) RestoreStateFromDB(ctx context.Context) error {
+	if s.db == nil {
+		return nil
+	}
+
+	rows, err := s.db.QueryContext(ctx, `SELECT issue_id, session_id, state, last_event, last_message, turn_count, input_tokens, output_tokens, total_tokens FROM runs`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	var recovered []RunningEntry
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	for rows.Next() {
+		var entry RunningEntry
+		if err := rows.Scan(&entry.IssueID, &entry.SessionID, &entry.State, &entry.LastEvent, &entry.LastMessage, &entry.TurnCount, &entry.Tokens.InputTokens, &entry.Tokens.OutputTokens, &entry.Tokens.TotalTokens); err != nil {
+			return err
+		}
+		entry.StartedAt = now
+		entry.LastEventAt = now
+		entry.IssueIdentifier = entry.IssueID // Best effort fallback
+		recovered = append(recovered, entry)
+	}
+
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Only restore if we are currently empty (e.g. on boot)
+	if len(s.running) == 0 {
+		s.running = recovered
+	}
+
+	return nil
 }

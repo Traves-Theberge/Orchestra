@@ -1,5 +1,6 @@
 import { useRef, type KeyboardEvent } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import * as Tooltip from '@radix-ui/react-tooltip'
 import type { SidebarItem } from '@/components/app-shell/types'
 import { getNextSidebarIndex } from '@/lib/navigation'
 
@@ -40,68 +41,103 @@ export function SidebarNav({
       className="relative h-full border-r border-border bg-card shadow-[10px_0_40px_rgba(0,0,0,0.04)] transition-all duration-300 dark:border-border dark:bg-background dark:shadow-[10px_0_40px_rgba(0,0,0,0.2)]"
       style={{ width: `${sidebarWidth}px` }}
     >
-      <button
-        type="button"
-        onClick={onToggleCollapsed}
-        title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        className="absolute left-full top-6 z-20 grid h-7 w-7 -translate-x-1/2 place-items-center rounded-full border border-border bg-card text-foreground shadow-lg transition hover:bg-muted dark:border-border dark:bg-background dark:text-foreground dark:hover:bg-muted"
-      >
-        {sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-      </button>
+      <Tooltip.Provider delayDuration={300}>
+        <Tooltip.Root>
+          <Tooltip.Trigger asChild>
+            <button
+              type="button"
+              onClick={onToggleCollapsed}
+              className="absolute left-full top-6 z-20 grid h-7 w-7 -translate-x-1/2 place-items-center rounded-full border border-border bg-card text-foreground shadow-lg transition hover:bg-muted dark:border-border dark:bg-background dark:text-foreground dark:hover:bg-muted"
+            >
+              {sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+            </button>
+          </Tooltip.Trigger>
+          <Tooltip.Portal>
+            <Tooltip.Content
+              side="right"
+              sideOffset={10}
+              className="z-[110] select-none rounded-md bg-zinc-900 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest leading-none text-zinc-50 shadow-2xl animate-in fade-in zoom-in-95 dark:bg-zinc-100 dark:text-zinc-900 border border-white/10 dark:border-black/10"
+            >
+              {sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              <Tooltip.Arrow className="fill-zinc-900 dark:fill-zinc-100" />
+            </Tooltip.Content>
+          </Tooltip.Portal>
+        </Tooltip.Root>
 
-      <div className="flex h-full flex-col py-4">
-        <div className="mb-3 px-2">
-          <div className={`flex items-center gap-3 ${sidebarCollapsed ? 'justify-center' : ''}`}>
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-background text-foreground shadow-sm">
-              <AppMonogramIcon className="h-6 w-6" />
-            </span>
-            {!sidebarCollapsed ? (
-              <div className="min-w-0">
-                <p className="truncate text-xs font-semibold uppercase tracking-[0.2em] text-black dark:text-muted-foreground">Orchestra</p>
-                <p className="truncate text-[11px] text-black/60 dark:text-muted-foreground">Control Plane</p>
-              </div>
-            ) : null}
+        <div className="flex h-full flex-col py-4">
+          <div className="mb-3 px-2">
+            <div className={`flex items-center gap-3 ${sidebarCollapsed ? 'justify-center' : ''}`}>
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-background text-foreground shadow-sm">
+                <AppMonogramIcon className="h-6 w-6" />
+              </span>
+              {!sidebarCollapsed ? (
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-semibold uppercase tracking-[0.2em] text-black dark:text-muted-foreground">Orchestra</p>
+                  <p className="truncate text-[11px] text-black/60 dark:text-muted-foreground">Control Plane</p>
+                </div>
+              ) : null}
+            </div>
           </div>
-        </div>
 
-        <nav className="space-y-1 px-2 pt-1" aria-label="Primary navigation">
-          {items.map((item, index) => {
-            const ItemIcon = item.icon
-            const active = activeSection === item.id
-            return (
-              <button
-                key={item.id}
-                type="button"
-                ref={(node) => {
-                  buttonRefs.current[index] = node
-                }}
-                onClick={() => onSectionChange(item.id)}
-                onKeyDown={handleNavKeyDown(index)}
-                aria-current={active ? 'page' : undefined}
-                aria-label={sidebarCollapsed ? item.label : undefined}
-                className={`group relative flex w-full items-center gap-3 rounded-xl border px-2 py-2.5 text-left transition-all ${
-                  sidebarCollapsed ? 'justify-center' : ''
-                } ${
-                  active
-                    ? 'border-primary/20 bg-primary/10 text-primary shadow-sm dark:border-primary/30 dark:bg-primary/20'
-                    : 'border-transparent text-foreground hover:border-border hover:bg-muted/50 dark:text-muted-foreground dark:hover:border-border dark:hover:bg-muted/70'
-                }`}
-              >
-                {active ? <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r bg-primary" /> : null}
-                <span className="grid h-8 w-8 place-items-center rounded-lg bg-background text-foreground group-hover:text-foreground shadow-sm">
-                  <ItemIcon className="h-4 w-4" />
-                </span>
-                {!sidebarCollapsed ? (
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium text-black dark:text-foreground">{item.label}</span>
-                    <span className="block truncate text-xs text-black/50 dark:text-muted-foreground">{item.description}</span>
+          <nav className="space-y-1 px-2 pt-1" aria-label="Primary navigation">
+            {items.map((item, index) => {
+              const ItemIcon = item.icon
+              const active = activeSection === item.id
+              const button = (
+                <button
+                  key={item.id}
+                  type="button"
+                  ref={(node) => {
+                    buttonRefs.current[index] = node
+                  }}
+                  onClick={() => onSectionChange(item.id)}
+                  onKeyDown={handleNavKeyDown(index)}
+                  aria-current={active ? 'page' : undefined}
+                  data-testid={`sidebar-nav-${item.id}`}
+                  className={`group relative flex w-full items-center gap-3 rounded-xl border px-2 py-2.5 text-left transition-all ${
+                    sidebarCollapsed ? 'justify-center' : ''
+                  } ${
+                    active
+                      ? 'border-primary/20 bg-primary/10 text-primary shadow-sm dark:border-primary/30 dark:bg-primary/20'
+                      : 'border-transparent text-foreground hover:border-border hover:bg-muted/50 dark:text-muted-foreground dark:hover:border-border dark:hover:bg-muted/70'
+                  }`}
+                >
+                  {active ? <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r bg-primary" /> : null}
+                  <span className="grid h-8 w-8 place-items-center rounded-lg bg-background text-foreground group-hover:text-foreground shadow-sm">
+                    <ItemIcon className="h-4 w-4" />
                   </span>
-                ) : null}
-              </button>
-            )
-          })}
-        </nav>
-      </div>
+                  {!sidebarCollapsed ? (
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-black dark:text-foreground">{item.label}</span>
+                      <span className="block truncate text-xs text-black/50 dark:text-muted-foreground">{item.description}</span>
+                    </span>
+                  ) : null}
+                </button>
+              )
+
+              if (!sidebarCollapsed) return button
+
+              return (
+                <Tooltip.Root key={item.id}>
+                  <Tooltip.Trigger asChild>
+                    {button}
+                  </Tooltip.Trigger>
+                  <Tooltip.Portal>
+                    <Tooltip.Content
+                      side="right"
+                      sideOffset={10}
+                      className="z-[110] select-none rounded-md bg-zinc-900 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest leading-none text-zinc-50 shadow-2xl animate-in fade-in zoom-in-95 dark:bg-zinc-100 dark:text-zinc-900 border border-white/10 dark:border-black/10"
+                    >
+                      {item.label}
+                      <Tooltip.Arrow className="fill-zinc-900 dark:fill-zinc-100" />
+                    </Tooltip.Content>
+                  </Tooltip.Portal>
+                </Tooltip.Root>
+              )
+            })}
+          </nav>
+        </div>
+      </Tooltip.Provider>
     </aside>
   )
 }
