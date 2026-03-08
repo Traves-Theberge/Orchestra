@@ -90,3 +90,43 @@ func CreateBranch(ctx context.Context, dir, name string) error {
 	}
 	return nil
 }
+
+// ParseGitHubRemote extracts owner and repo from a GitHub URL
+func ParseGitHubRemote(remoteURL string) (owner string, repo string, ok bool) {
+	if remoteURL == "" {
+		return "", "", false
+	}
+
+	// Remove .git suffix
+	remoteURL = strings.TrimSuffix(remoteURL, ".git")
+
+	// Handing SSH: git@github.com:owner/repo
+	if strings.HasPrefix(remoteURL, "git@") {
+		parts := strings.Split(remoteURL, ":")
+		if len(parts) < 2 {
+			return "", "", false
+		}
+		path := parts[len(parts)-1]
+		pathParts := strings.Split(path, "/")
+		if len(pathParts) < 2 {
+			return "", "", false
+		}
+		return pathParts[0], pathParts[1], true
+	}
+
+	// Handling HTTPS: https://github.com/owner/repo
+	if strings.Contains(remoteURL, "github.com/") {
+		parts := strings.Split(remoteURL, "github.com/")
+		if len(parts) < 2 {
+			return "", "", false
+		}
+		path := parts[1]
+		pathParts := strings.Split(path, "/")
+		if len(pathParts) < 2 {
+			return "", "", false
+		}
+		return pathParts[0], pathParts[1], true
+	}
+
+	return "", "", false
+}

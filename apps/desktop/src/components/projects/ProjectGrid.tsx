@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Folder, Globe, History, Search, Zap, Plus, Trash2 } from 'lucide-react'
+import { Folder, Globe, History, Search, Zap, Plus, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { Project, ProjectStats } from '@/lib/orchestra-types'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
@@ -16,12 +16,12 @@ interface ProjectCardProps {
 const ProjectCard: React.FC<ProjectCardProps> = ({ project, stats, loading, onClick, onDelete }) => {
     if (loading) {
         return (
-            <div className="bg-background/40 backdrop-blur-md border border-white/10 rounded-xl p-6 h-44 animate-pulse">
-                <Skeleton className="h-6 w-3/4 mb-4" />
-                <Skeleton className="h-4 w-1/2 mb-8" />
-                <div className="flex gap-4">
-                    <Skeleton className="h-8 w-16" />
-                    <Skeleton className="h-8 w-16" />
+            <div className="bg-background/40 backdrop-blur-md border border-white/10 rounded-lg p-4 h-32 animate-pulse">
+                <Skeleton className="h-4 w-3/4 mb-3" />
+                <Skeleton className="h-3 w-1/2 mb-6" />
+                <div className="flex gap-3">
+                    <Skeleton className="h-6 w-12" />
+                    <Skeleton className="h-6 w-12" />
                 </div>
             </div>
         )
@@ -30,14 +30,14 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project, stats, loading, onCl
     return (
         <div
             onClick={() => onClick(project.id)}
-            className="group relative overflow-hidden bg-background/40 backdrop-blur-md border border-white/10 rounded-xl p-6 transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl hover:shadow-primary/20 cursor-pointer h-44 flex flex-col justify-between shadow-sm"
+            className="group relative overflow-hidden bg-card/40 backdrop-blur-md border border-border/50 rounded-lg p-4 transition-all duration-300 hover:scale-[1.01] hover:shadow-xl hover:shadow-primary/10 cursor-pointer h-32 flex flex-col justify-between shadow-sm"
         >
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary/50 to-transparent" />
 
             <div>
                 <div className="flex items-start justify-between mb-2">
-                    <div className="p-2 rounded-lg bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors duration-300">
-                        <Folder size={18} />
+                    <div className="p-1.5 rounded-md bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors duration-300">
+                        <Folder size={14} />
                     </div>
                     <div className="flex gap-1">
                         {project.remote_url && (
@@ -71,12 +71,12 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project, stats, loading, onCl
                     </div>
                 </div>
 
-                <h3 className="text-lg font-bold mb-0.5 truncate group-hover:text-primary transition-colors">{project.name}</h3>
-                <p className="text-[10px] text-muted-foreground mb-4 truncate font-mono opacity-60">{project.root_path}</p>
+                <h3 className="text-sm font-bold truncate group-hover:text-primary transition-colors">{project.name}</h3>
+                <p className="text-[9px] text-muted-foreground truncate font-mono opacity-50">{project.root_path}</p>
             </div>
 
             {stats && (
-                <div className="grid grid-cols-2 gap-2 mt-auto pt-2 border-t border-white/5">
+                <div className="grid grid-cols-2 gap-2 mt-auto pt-2 border-t border-border/40">
                     <div className="flex items-center gap-2">
                         <History size={12} className="text-primary/70" />
                         <span className="text-xs font-medium">{stats.total_sessions} Sessions</span>
@@ -100,20 +100,31 @@ interface ProjectGridProps {
     onDeleteProject?: (id: string) => void
 }
 
-export const ProjectGrid: React.FC<ProjectGridProps> = ({ 
-    projects, 
-    stats, 
-    loading, 
-    onProjectClick, 
-    onAddProject, 
-    onDeleteProject 
+export const ProjectGrid: React.FC<ProjectGridProps> = ({
+    projects,
+    stats,
+    loading,
+    onProjectClick,
+    onAddProject,
+    onDeleteProject
 }) => {
     const [search, setSearch] = useState('')
+    const [currentPage, setCurrentPage] = useState(1)
+    const ITEMS_PER_PAGE = 8
 
     const filtered = projects.filter(p =>
         p.name.toLowerCase().includes(search.toLowerCase()) ||
         p.root_path.toLowerCase().includes(search.toLowerCase())
     )
+
+    const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE)
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
+    const currentItems = filtered.slice(startIndex, startIndex + ITEMS_PER_PAGE)
+
+    const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setSearch(e.target.value)
+        setCurrentPage(1)
+    }
 
     if (loading && projects.length === 0) {
         return (
@@ -126,30 +137,30 @@ export const ProjectGrid: React.FC<ProjectGridProps> = ({
     }
 
     return (
-        <div className="flex flex-col h-full bg-background/20">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 sticky top-0 bg-background/60 backdrop-blur-xl z-20">
+        <div className="flex flex-col h-full bg-transparent">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border sticky top-0 bg-background/80 backdrop-blur-xl z-20">
                 <div className="relative w-72">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60" />
                     <input
                         type="text"
                         placeholder="Search workspace..."
                         value={search}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
-                        className="w-full pl-10 pr-4 h-10 bg-black/40 border border-white/10 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all placeholder:text-muted-foreground/40"
+                        onChange={handleSearchChange}
+                        className="w-full pl-10 pr-4 h-10 bg-muted/50 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all placeholder:text-muted-foreground/60"
                     />
                 </div>
                 <AppTooltip content="Add Local Repository">
-                    <Button variant="default" size="default" onClick={onAddProject} className="h-10 gap-2 bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20">
-                        <Plus size={18} />
-                        <span className="font-semibold">Add Project</span>
+                    <Button variant="default" size="default" onClick={onAddProject} className="h-9 gap-2 bg-primary text-xs hover:bg-primary/90 shadow-lg shadow-primary/20">
+                        <Plus size={16} />
+                        <span className="font-bold uppercase tracking-widest text-[10px]">Add Project</span>
                     </Button>
                 </AppTooltip>
             </div>
 
-            <div className="flex-1 overflow-y-auto min-h-0 custom-scrollbar">
+            <div className="flex-1 flex flex-col overflow-hidden min-h-0 custom-scrollbar">
                 {filtered.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-32 text-center">
-                        <div className="p-8 rounded-full bg-primary/5 mb-6 ring-1 ring-white/5">
+                        <div className="p-8 rounded-full bg-primary/10 mb-6 ring-1 ring-border/50">
                             <Folder size={64} className="text-muted-foreground/30" />
                         </div>
                         <h2 className="text-2xl font-bold mb-2 tracking-tight">{search ? 'No matches found' : 'No Projects Discovered'}</h2>
@@ -158,19 +169,65 @@ export const ProjectGrid: React.FC<ProjectGridProps> = ({
                         </p>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 p-6">
-                        {filtered.map((project) => (
-                            <ProjectCard
-                                key={project.id}
-                                project={project}
-                                stats={stats[project.id]}
-                                onClick={onProjectClick}
-                                onDelete={onDeleteProject}
-                            />
-                        ))}
+                    <div className="flex-1 flex flex-col justify-between">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 p-3">
+                            {currentItems.map((project) => (
+                                <ProjectCard
+                                    key={project.id}
+                                    project={project}
+                                    stats={stats[project.id]}
+                                    onClick={onProjectClick}
+                                    onDelete={onDeleteProject}
+                                />
+                            ))}
+                        </div>
                     </div>
                 )}
             </div>
+
+            {totalPages > 1 && filtered.length > 0 && (
+                <div className="flex items-center justify-between px-8 py-3 border-t border-border/50 bg-background/5">
+                    <div className="text-sm text-muted-foreground/80 font-medium">
+                        Showing <span className="font-mono text-foreground">{startIndex + 1}</span>–<span className="font-mono text-foreground">{Math.min(startIndex + ITEMS_PER_PAGE, filtered.length)}</span> <span className="opacity-40 mx-1">/</span> <span className="font-mono text-foreground">{filtered.length}</span> projects
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                            disabled={currentPage === 1}
+                            className="h-9 w-9 p-0 border-border/40 hover:bg-primary/10 hover:text-primary transition-all duration-300 disabled:opacity-30"
+                        >
+                            <ChevronLeft size={18} />
+                        </Button>
+
+                        <div className="flex items-center gap-1.5 px-1.5 py-1 rounded-full bg-muted/30 border border-border/20">
+                            {[...Array(totalPages)].map((_, i) => (
+                                <button
+                                    key={i}
+                                    onClick={() => setCurrentPage(i + 1)}
+                                    className={`h-8 min-w-[32px] px-2 rounded-full text-xs font-bold transition-all duration-300 ${currentPage === i + 1
+                                        ? 'bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-lg shadow-primary/25 scale-105'
+                                        : 'hover:bg-primary/10 text-muted-foreground hover:text-primary'
+                                        }`}
+                                >
+                                    {i + 1}
+                                </button>
+                            ))}
+                        </div>
+
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                            disabled={currentPage === totalPages}
+                            className="h-9 w-9 p-0 border-border/40 hover:bg-primary/10 hover:text-primary transition-all duration-300 disabled:opacity-30"
+                        >
+                            <ChevronRight size={18} />
+                        </Button>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

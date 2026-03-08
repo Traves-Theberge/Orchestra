@@ -5,7 +5,10 @@ CREATE TABLE IF NOT EXISTS projects (
 	id TEXT PRIMARY KEY,
 	name TEXT NOT NULL,
 	root_path TEXT UNIQUE NOT NULL,
-	remote_url TEXT NOT NULL
+	remote_url TEXT NOT NULL,
+	github_owner TEXT,
+	github_repo TEXT,
+	github_token TEXT
 );
 
 CREATE TABLE IF NOT EXISTS sessions (

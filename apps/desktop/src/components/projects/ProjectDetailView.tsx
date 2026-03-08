@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import {
     ArrowLeft, Folder, Globe, History, Zap, ExternalLink,
-    Calendar, Code, GitBranch, RefreshCcw, Trash2,
+    Calendar, Code, GitBranch, RefreshCcw, Trash2, Github,
     FileText, Activity, Layers, ChevronRight, File, Folder as FolderIcon, Info
 } from 'lucide-react'
 import type { Project, ProjectStats, SnapshotPayload, BackendConfig } from '@/lib/orchestra-types'
@@ -11,7 +11,6 @@ import { KanbanBoard } from '@/components/app-shell/panels'
 import { fetchProjectTree, fetchProjectGitHistory, refreshProject, gitCommit, gitPush, gitPull } from '@/lib/orchestra-client'
 import { Skeleton } from '@/components/ui/skeleton'
 import { OverlayScrollbarsComponent } from 'overlayscrollbars-react'
-import { useMemo } from 'react'
 
 interface ProjectDetailViewProps {
     project: Project
@@ -120,6 +119,12 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         }
     }
 
+    const handleConnectGitHub = () => {
+        if (!config || !project.id) return
+        const loginUrl = `${config.baseUrl}/api/v1/github/login?project_id=${project.id}`
+        window.open(loginUrl, 'GitHub Auth', 'width=600,height=800')
+    }
+
     const tabs = [
         { id: 'overview', label: 'Overview', icon: <Layers size={14} /> },
         { id: 'tasks', label: 'Board', icon: <Code size={14} /> },
@@ -188,6 +193,19 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                                         Git Managed
                                     </Badge>
                                 )}
+                                {project.github_token ? (
+                                    <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20 gap-1 h-5 px-1.5 cursor-default">
+                                        <Github size={10} />
+                                        Connected: {project.github_owner}/{project.github_repo}
+                                    </Badge>
+                                ) : (
+                                    project.github_owner && (
+                                        <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20 gap-1 h-5 px-1.5 cursor-default">
+                                            <Github size={10} />
+                                            {project.github_owner}/{project.github_repo}
+                                        </Badge>
+                                    )
+                                )}
                             </div>
                             <p className="text-sm text-muted-foreground font-mono opacity-60 flex items-center gap-2">
                                 {project.root_path}
@@ -199,6 +217,17 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                     </div>
 
                     <div className="flex gap-2">
+                        {!project.github_token && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-2 h-9 bg-black text-white hover:bg-zinc-800"
+                                onClick={handleConnectGitHub}
+                            >
+                                <Github size={16} />
+                                Connect GitHub
+                            </Button>
+                        )}
                         {project.remote_url && (
                             <Button variant="outline" size="sm" className="gap-2 h-9" asChild>
                                 <a href={project.remote_url} target="_blank" rel="noreferrer">

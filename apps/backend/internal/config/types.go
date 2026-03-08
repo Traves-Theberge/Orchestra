@@ -26,6 +26,8 @@ type Config struct {
 	MaxConcurrentByState     map[string]int
 	WorkspaceHooks           workspace.Hooks
 	ProjectRoots             []string
+	GitHubClientID           string
+	GitHubClientSecret       string
 }
 
 func (c Config) PortString() string {

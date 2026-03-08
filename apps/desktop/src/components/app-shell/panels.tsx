@@ -65,10 +65,10 @@ export function DashboardOverview({
   }).slice(0, 3)
 
   return (
-    <div className="grid grid-cols-1 gap-6 xl:grid-cols-3 min-h-0">
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-3 min-h-0">
       {/* Primary Analytics & Workspace Activity */}
-      <div className="xl:col-span-2 space-y-6 flex flex-col">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="xl:col-span-2 space-y-4 flex flex-col">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card className="bg-background/40 backdrop-blur-xl border-white/5 shadow-2xl overflow-hidden group relative">
             <div className="absolute top-0 left-0 w-1 h-full bg-primary/50" />
             <CardHeader className="pb-2">
@@ -79,7 +79,7 @@ export function DashboardOverview({
             </CardHeader>
             <CardContent>
               <div className="flex items-baseline gap-2">
-                <span className="text-4xl font-black tracking-tighter">
+                <span className="text-3xl font-black tracking-tighter">
                   {warehouseStats ? ((warehouseStats.total_input + warehouseStats.total_output) / 1000).toFixed(1) : '--'}
                 </span>
                 <span className="text-sm font-bold text-muted-foreground uppercase">k Tokens</span>
@@ -98,7 +98,7 @@ export function DashboardOverview({
             </CardHeader>
             <CardContent>
               <div className="flex items-baseline gap-2">
-                <span className="text-4xl font-black tracking-tighter">
+                <span className="text-3xl font-black tracking-tighter">
                   {warehouseStats ? ((warehouseStats.total_output / Math.max(warehouseStats.total_input, 1)) * 100).toFixed(0) : '--'}
                 </span>
                 <span className="text-sm font-bold text-muted-foreground">%</span>
@@ -127,7 +127,7 @@ export function DashboardOverview({
             </Button>
           </CardHeader>
           <CardContent className="flex-1 min-h-0">
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {sortedProjects.length === 0 ? (
                 <div className="py-12 text-center border border-dashed border-white/10 rounded-2xl bg-white/[0.02]">
                   <Folder size={32} className="mx-auto mb-3 opacity-10" />
@@ -137,7 +137,7 @@ export function DashboardOverview({
                 <button
                   key={p.id}
                   onClick={() => onProjectClick(p.id)}
-                  className="flex w-full items-center justify-between rounded-xl border border-transparent bg-white/[0.03] p-4 transition-all hover:bg-white/[0.06] hover:border-white/10 group shadow-sm"
+                  className="flex w-full items-center justify-between rounded-xl border border-transparent bg-white/[0.03] p-3 transition-all hover:bg-white/[0.06] hover:border-white/10 group shadow-sm"
                 >
                   <div className="flex items-center gap-4">
                     <div className="rounded-lg bg-primary/10 p-2.5 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all duration-300">
@@ -181,7 +181,7 @@ export function DashboardOverview({
               <p className="text-[10px] font-black uppercase tracking-[0.2em]">Telemetry Pending</p>
             </div>
           ) : (
-            <div className="space-y-6">
+            <div className="space-y-4">
               {Object.entries(warehouseStats.provider_usage)
                 .sort((a, b) => b[1] - a[1])
                 .map(([name, tokens]) => {
@@ -266,7 +266,7 @@ export function TimelineCard({ timeline }: { timeline: TimelineItem[] }) {
               <p className="text-xs italic uppercase tracking-wider">Awaiting telemetry...</p>
             </div>
           ) : (
-            <div className="relative space-y-4 before:absolute before:left-[11px] before:top-2 before:h-[calc(100%-16px)] before:w-[1px] before:bg-border/60">
+            <div className="relative space-y-3 before:absolute before:left-[11px] before:top-2 before:h-[calc(100%-16px)] before:w-[1px] before:bg-border/60">
               {timeline.map((item, idx) => (
                 <div key={`${item.type}-${idx}`} className="relative pl-8 group">
                   <div className="absolute left-0 top-0.5 z-10 grid h-6 w-6 place-items-center rounded-full border bg-card shadow-sm group-hover:border-primary/40 transition-colors">
@@ -287,7 +287,7 @@ export function TimelineCard({ timeline }: { timeline: TimelineItem[] }) {
                       </div>
                     )}
 
-                    <div className="rounded-lg border bg-muted/30 p-2 group-hover:bg-muted/50 transition-colors">
+                    <div className="rounded-lg border bg-muted/30 p-1.5 group-hover:bg-muted/50 transition-colors">
                       <pre className="max-h-24 overflow-auto text-[10px] text-muted-foreground leading-relaxed whitespace-pre-wrap">
                         {typeof (item.data as any).last_message === 'string'
                           ? (item.data as any).last_message
@@ -1613,7 +1613,7 @@ export function MetricCard({ title, value, hint, icon }: { title: string; value:
           <span>{title}</span>
           {icon}
         </CardDescription>
-        <CardTitle>{value}</CardTitle>
+        <CardTitle className="text-xl">{value}</CardTitle>
       </CardHeader>
       <CardContent>
         <p className="text-xs text-muted-foreground">{hint}</p>

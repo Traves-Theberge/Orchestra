@@ -94,6 +94,9 @@ export type Project = {
   name: string
   root_path: string
   remote_url: string
+  github_owner?: string
+  github_repo?: string
+  github_token?: string
 }
 
 export type ProjectStats = {
@@ -109,4 +112,11 @@ export type GlobalStats = {
   total_output: number
   provider_usage: Record<string, number>
   recent_sessions: any[]
+}
+
+export type AgentConfig = {
+  name: string
+  content: string
+  path: string
+  category: 'core' | 'skill'
 }

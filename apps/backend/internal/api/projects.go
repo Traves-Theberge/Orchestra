@@ -184,12 +184,27 @@ func (s *Server) CreateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get Git Info
+	gitRoot, remoteURL, err := git.ProjectInfo(r.Context(), req.RootPath)
+	if err == nil {
+		req.RootPath = gitRoot
+	} else {
+		// Not a git repo or other error, but we can still create the project
+		s.logger.Warn().Err(err).Str("path", req.RootPath).Msg("could not get git info for project")
+	}
+
 	// Attempt to upsert
-	id, err := s.db.UpsertProject(r.Context(), req.RootPath, "")
+	id, err := s.db.UpsertProject(r.Context(), req.RootPath, remoteURL)
 	if err != nil {
 		s.logger.Error().Err(err).Str("path", req.RootPath).Msg("failed to create project")
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
+	}
+
+	// Try to link GitHub if potential
+	if owner, repo, ok := git.ParseGitHubRemote(remoteURL); ok {
+		s.logger.Info().Str("project_id", id).Str("owner", owner).Str("repo", repo).Msg("auto-detected github repo")
+		_ = s.db.UpdateProjectGitHubInfo(r.Context(), id, owner, repo)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -324,14 +339,18 @@ func (s *Server) GetProjectGitStats(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
 	project, err := s.db.GetProjectByID(r.Context(), projectID)
 	if err != nil {
+		s.logger.Error().Err(err).Str("project_id", projectID).Msg("failed to get project for git stats")
 		http.Error(w, "Project not found", http.StatusNotFound)
 		return
 	}
 
+	s.logger.Info().Str("project_id", projectID).Str("root_path", project.RootPath).Msg("fetching git log")
+
 	cmd := exec.CommandContext(r.Context(), "git", "log", "-n", "20", "--pretty=format:%H|%an|%at|%s")
 	cmd.Dir = project.RootPath
-	out, err := cmd.Output()
+	out, err := cmd.CombinedOutput()
 	if err != nil {
+		s.logger.Warn().Err(err).Str("project_id", projectID).Str("output", string(out)).Msg("git log failed")
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode([]interface{}{})
 		return
@@ -340,6 +359,10 @@ func (s *Server) GetProjectGitStats(w http.ResponseWriter, r *http.Request) {
 	lines := strings.Split(string(out), "\n")
 	var history []map[string]string
 	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
 		parts := strings.Split(line, "|")
 		if len(parts) >= 4 {
 			history = append(history, map[string]string{
@@ -351,6 +374,7 @@ func (s *Server) GetProjectGitStats(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	s.logger.Info().Str("project_id", projectID).Int("history_count", len(history)).Msg("returning git history")
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(history)
 }

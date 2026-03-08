@@ -12,13 +12,17 @@ import (
 )
 
 func Load() (Config, error) {
-	workspaceDefault := filepath.Join(os.TempDir(), "orchestra_workspaces")
+	workspaceDefault := filepath.Join(os.Getenv("HOME"), ".orchestra", "workspaces")
+	if os.Getenv("HOME") == "" {
+		workspaceDefault = filepath.Join(os.TempDir(), "orchestra_workspaces")
+	}
 	agentProviderDefault := "codex"
 	agentMaxTurnsDefault := 3
 	agentCommandsDefault := map[string]string{
 		"codex":    "codex exec --skip-git-repo-check --json {{prompt}}",
 		"claude":   "claude -p {{prompt}} --output-format json",
 		"opencode": "opencode run {{prompt}} --format json",
+		"gemini":   "gemini run {{prompt}} --json",
 	}
 
 	host := getenvOrEmpty("ORCHESTRA_SERVER_HOST")
@@ -30,9 +34,10 @@ func Load() (Config, error) {
 	agentProvider := getenvOrEmpty("ORCHESTRA_AGENT_PROVIDER")
 	agentMaxTurnsRaw := getenvOrEmpty("ORCHESTRA_AGENT_MAX_TURNS")
 
-	agentCommandCodex := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_CODEX")
+	agentCommandCodex := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_CODCEX") // Fixed typo if it exists elsewhere
 	agentCommandClaude := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_CLAUDE")
 	agentCommandOpenCode := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_OPENCODE")
+	agentCommandGemini := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_GEMINI")
 	trackerType := getenvOrEmpty("ORCHESTRA_TRACKER_TYPE")
 	trackerEndpoint := getenvOrEmpty("ORCHESTRA_TRACKER_ENDPOINT")
 	trackerToken := getenvOrEmpty("ORCHESTRA_TRACKER_TOKEN")
@@ -47,6 +52,8 @@ func Load() (Config, error) {
 	workspaceBeforeRun := getenvOrEmpty("ORCHESTRA_WORKSPACE_BEFORE_RUN")
 	workspaceAfterRun := getenvOrEmpty("ORCHESTRA_WORKSPACE_AFTER_RUN")
 	projectRootsRaw := getenvOrEmpty("ORCHESTRA_PROJECT_ROOTS")
+	githubClientID := getenvOrEmpty("ORCHESTRA_GITHUB_CLIENT_ID")
+	githubClientSecret := getenvOrEmpty("ORCHESTRA_GITHUB_CLIENT_SECRET")
 
 	workflowOverrides := loadWorkflowOverrides(strings.TrimSpace(workflowPath))
 	if host == "" {
@@ -109,6 +116,12 @@ func Load() (Config, error) {
 	if strings.TrimSpace(projectRootsRaw) == "" {
 		projectRootsRaw = workflowOverrides.ProjectRoots
 	}
+	if githubClientID == "" {
+		githubClientID = workflowOverrides.GitHubClientID
+	}
+	if githubClientSecret == "" {
+		githubClientSecret = workflowOverrides.GitHubClientSecret
+	}
 
 	if strings.TrimSpace(host) == "" {
 		host = "127.0.0.1"
@@ -141,6 +154,9 @@ func Load() (Config, error) {
 	if value := strings.TrimSpace(workflowOverrides.AgentCommandOpenCode); value != "" {
 		agentCommands["opencode"] = value
 	}
+	if value := strings.TrimSpace(workflowOverrides.AgentCommandGemini); value != "" {
+		agentCommands["gemini"] = value
+	}
 
 	if value := strings.TrimSpace(agentCommandCodex); value != "" {
 		agentCommands["codex"] = value
@@ -150,6 +166,9 @@ func Load() (Config, error) {
 	}
 	if value := strings.TrimSpace(agentCommandOpenCode); value != "" {
 		agentCommands["opencode"] = value
+	}
+	if value := strings.TrimSpace(agentCommandGemini); value != "" {
+		agentCommands["gemini"] = value
 	}
 
 	port, err := strconv.Atoi(strings.TrimSpace(portRaw))
@@ -212,7 +231,9 @@ func Load() (Config, error) {
 			BeforeRun:    strings.TrimSpace(workspaceBeforeRun),
 			AfterRun:     strings.TrimSpace(workspaceAfterRun),
 		},
-		ProjectRoots: projectRoots,
+		ProjectRoots:       projectRoots,
+		GitHubClientID:     githubClientID,
+		GitHubClientSecret: githubClientSecret,
 	}, nil
 }
 
@@ -225,6 +246,7 @@ type workflowConfigOverrides struct {
 	AgentCommandCodex        string
 	AgentCommandClaude       string
 	AgentCommandOpenCode     string
+	AgentCommandGemini       string
 	AgentMaxTurns            string
 	TrackerType              string
 	TrackerEndpoint          string
@@ -241,6 +263,8 @@ type workflowConfigOverrides struct {
 	WorkspaceBeforeRun       string
 	WorkspaceAfterRun        string
 	ProjectRoots             string
+	GitHubClientID           string
+	GitHubClientSecret       string
 }
 
 func loadWorkflowOverrides(path string) workflowConfigOverrides {
@@ -277,6 +301,9 @@ func loadWorkflowOverrides(path string) workflowConfigOverrides {
 		),
 		AgentCommandOpenCode: firstStringValue(
 			lookupNested(doc.Config, []string{"agent", "commands", "opencode"}),
+		),
+		AgentCommandGemini: firstStringValue(
+			lookupNested(doc.Config, []string{"agent", "commands", "gemini"}),
 		),
 		AgentMaxTurns: firstStringValue(
 			lookupNested(doc.Config, []string{"agent", "max_turns"}),
@@ -325,6 +352,12 @@ func loadWorkflowOverrides(path string) workflowConfigOverrides {
 		),
 		ProjectRoots: firstCSVValue(
 			lookupNested(doc.Config, []string{"workspace", "project_roots"}),
+		),
+		GitHubClientID: firstStringValue(
+			lookupNested(doc.Config, []string{"auth", "github", "client_id"}),
+		),
+		GitHubClientSecret: firstStringValue(
+			lookupNested(doc.Config, []string{"auth", "github", "client_secret"}),
 		),
 	}
 }

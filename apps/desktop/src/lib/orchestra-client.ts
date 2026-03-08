@@ -1,4 +1,4 @@
-import type { APIErrorEnvelope, EventEnvelope, GlobalStats, IssueDetailPayload, Project, ProjectStats, SnapshotPayload } from '@/lib/orchestra-types'
+import type { APIErrorEnvelope, EventEnvelope, GlobalStats, IssueDetailPayload, Project, ProjectStats, SnapshotPayload, AgentConfig } from '@/lib/orchestra-types'
 
 export type BackendConfig = {
   baseUrl: string
@@ -209,14 +209,6 @@ export async function fetchAgentConfig(config: BackendConfig): Promise<{ command
   return requestJSON<{ commands: Record<string, string>; agent_provider: string }>(config, '/api/v1/config/agents')
 }
 
-export async function saveAgentConfig(config: BackendConfig, payload: { commands: Record<string, string>; agent_provider: string }): Promise<void> {
-  await requestJSON<void>(config, '/api/v1/config/agents', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-}
-
 export async function postRefresh(config: BackendConfig): Promise<Record<string, unknown>> {
   return requestJSON<Record<string, unknown>>(config, '/api/v1/refresh', {
     method: 'POST',
@@ -411,6 +403,35 @@ export async function createGitHubPR(
   payload: { title: string; body: string; head: string; base: string; owner?: string; repo?: string; token?: string }
 ): Promise<any> {
   return requestJSON<any>(config, `/api/v1/issues/${encodeURIComponent(issueIdentifier)}/pr`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function updateAgentConfig(config: BackendConfig, payload: { commands: Record<string, string>, agent_provider: string }): Promise<void> {
+  await requestJSON<void>(config, '/api/v1/config/agents', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+export async function fetchAgentConfigs(config: BackendConfig, projectID?: string): Promise<AgentConfig[]> {
+  const url = projectID ? `/api/v1/config/agents/items?project_id=${encodeURIComponent(projectID)}` : '/api/v1/config/agents/items'
+  const data = await requestJSON<{ configs: AgentConfig[] }>(config, url)
+  return data.configs || []
+}
+
+export async function updateAgentConfigByPath(config: BackendConfig, path: string, content: string): Promise<void> {
+  await requestJSON<void>(config, '/api/v1/config/agents/items', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, content }),
+  })
+}
+
+export async function createAgentResource(config: BackendConfig, payload: { provider: string, type: string, name: string, scope: string, project_id?: string }): Promise<{ path: string }> {
+  return requestJSON<{ path: string }>(config, '/api/v1/config/agents/new', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),

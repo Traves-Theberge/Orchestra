@@ -84,11 +84,11 @@ export function TopBar({
   }, [searchQuery, onSearch])
 
   return (
-    <div className="mb-6 space-y-3">
+    <div className="mb-2 space-y-1">
       <header className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="min-w-[220px]">
-            <h1 className="text-3xl font-semibold tracking-tight text-foreground dark:text-foreground">{sectionTitle}</h1>
+        <div className="flex items-center gap-3">
+          <div className="min-w-[180px]">
+            <h1 className="text-lg font-black tracking-tight text-foreground dark:text-foreground leading-none">{sectionTitle}</h1>
             <div className="flex items-center gap-2 mt-1">
               <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground">{sectionLabel}</p>
               {generatedAt && (
@@ -103,14 +103,14 @@ export function TopBar({
               )}
             </div>
           </div>
-          
+
           {onTogglePolling !== undefined && usePolling !== undefined && (
             <Tooltip.Provider delayDuration={300}>
               <Tooltip.Root>
                 <Tooltip.Trigger asChild>
                   <button
                     onClick={onTogglePolling}
-                    className="flex items-center gap-1.5 rounded-full border border-border/50 bg-card px-2.5 py-1 shadow-sm transition hover:bg-muted/50"
+                    className="flex items-center gap-1.5 rounded-full border border-border/50 bg-card px-2 py-0.5 shadow-sm transition hover:bg-muted/50"
                   >
                     <div className={`h-1.5 w-1.5 rounded-full ${usePolling ? 'bg-amber-500' : 'bg-primary animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]'}`} />
                     <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
@@ -131,7 +131,7 @@ export function TopBar({
             </Tooltip.Provider>
           )}
 
-          <div className="flex-1 flex items-center px-4 overflow-hidden min-w-0">
+          <div className="flex-1 flex items-center px-2 overflow-hidden min-w-0">
             {statusMessage && (
               <div className="flex items-center gap-2 text-[11px] font-medium text-primary animate-in fade-in slide-in-from-left-2 duration-300 truncate" role="status" aria-live="polite">
                 <Activity className="h-3 w-3 shrink-0" />
@@ -150,20 +150,20 @@ export function TopBar({
         <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap shrink-0">
           <div className="relative" ref={searchRef}>
             <div
-              className="flex h-8 min-w-[200px] items-center gap-2 rounded-lg bg-muted/50 px-3 text-muted-foreground border border-border/50 transition-colors focus-within:border-primary/50 focus-within:bg-background"
+              className="flex h-9 min-w-[200px] items-center gap-2 rounded-full bg-muted/50 px-3 text-muted-foreground border border-transparent shadow-inner transition-colors focus-within:bg-muted/80 focus-within:border-primary/20"
               role="search"
             >
-              {searchPending ? <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" /> : <Search className="h-3.5 w-3.5" />}
+              {searchPending ? <Loader2 className="h-4 w-4 animate-spin text-primary" /> : <Search className="h-4 w-4" />}
               <input
                 type="text"
-                className="w-full bg-transparent text-xs text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
+                className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
                 placeholder="Search issues..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onFocus={() => searchQuery.trim().length >= 2 && setShowResults(true)}
               />
-              <kbd className="ml-auto pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground opacity-100 shadow-sm border-border/50">
-                <span className="text-xs">⌘</span>K
+              <kbd className="ml-auto pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded bg-card px-1.5 font-mono text-[10px] font-medium text-muted-foreground opacity-100 shadow-sm border border-border/50 uppercase">
+                <span className="text-[11px]">⌘</span>K
               </kbd>
             </div>
 
@@ -192,21 +192,28 @@ export function TopBar({
             )}
           </div>
 
-          <div className="flex items-center gap-1 border-l border-border/50 pl-2 ml-1">
+          <div className="flex items-center gap-2 border-l border-border/50 pl-3 ml-1">
             {onDownloadDiagnostics && (
               <IconButton icon={<Download className="h-4 w-4" />} title="Download Diagnostics" onClick={onDownloadDiagnostics} />
             )}
             <IconButton icon={<Settings2 className="h-4 w-4" />} title="Settings" onClick={onOpenSettings} />
-            <IconButton 
-              icon={theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />} 
-              title="Toggle theme" 
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} 
+            <IconButton
+              icon={theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              title="Toggle theme"
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             />
-            <IconButton 
-              icon={<RefreshCcw className={`h-4 w-4 ${refreshPending ? 'animate-spin' : ''}`} />} 
-              title="Sync state" 
-              onClick={() => void onRefresh()} 
-            />
+            <Button
+              onClick={onRefresh}
+              disabled={refreshPending}
+              className="h-9 rounded-full bg-primary px-4 font-bold uppercase tracking-widest text-[10px] text-primary-foreground shadow-lg shadow-primary/20 transition-all hover:-translate-y-0.5 hover:shadow-xl active:translate-y-0"
+            >
+              {refreshPending ? (
+                <Loader2 className="mr-2 h-3.5 w-3.5" />
+              ) : (
+                <Activity className="mr-2 h-3.5 w-3.5" />
+              )}
+              {refreshPending ? 'Refreshing' : 'Refresh'}
+            </Button>
           </div>
         </div>
       </header>
@@ -223,7 +230,7 @@ function IconButton({ icon, title, onClick }: { icon: ReactNode; title: string; 
             type="button"
             aria-label={title}
             onClick={onClick}
-            className="grid h-8 w-8 place-items-center rounded-lg bg-transparent text-muted-foreground transition hover:bg-muted hover:text-foreground"
+            className="grid h-7 w-7 place-items-center rounded-md bg-transparent text-muted-foreground transition hover:bg-muted hover:text-foreground"
           >
             {icon}
           </button>

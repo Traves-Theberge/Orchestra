@@ -80,6 +80,9 @@ func NewRouterWithPubSub(
 	r.Get("/api/v1/workspace/migration/plan", server.GetWorkspaceMigrationPlan)
 	r.Get("/api/v1/config/agents", server.GetAgentConfig)
 	r.Post("/api/v1/config/agents", server.PostAgentConfig)
+	r.Get("/api/v1/config/agents/items", server.GetAgentConfigs)
+	r.Post("/api/v1/config/agents/new", server.PostAgentConfigNew)
+	r.Post("/api/v1/config/agents/items", server.PostAgentConfigUpdate)
 	r.Get("/api/v1/agents", server.GetAgents)
 
 	r.Get("/api/v1/projects", server.GetProjects)
@@ -96,6 +99,8 @@ func NewRouterWithPubSub(
 	r.Get("/api/v1/sessions/{session_id}", server.GetSessionDetail)
 	r.Post("/api/v1/issues/{issue_identifier}/pr", server.CreateGitHubPR)
 	r.Get("/api/v1/warehouse/stats", server.GetWarehouseStats)
+	r.Get("/api/v1/github/login", server.HandleGitHubLogin)
+	r.Get("/api/v1/github/callback", server.HandleGitHubCallback)
 
 	requiresAuth := hostRequiresProtectedAuth(cfg.Host)
 	if requiresAuth && strings.TrimSpace(cfg.APIToken) != "" {

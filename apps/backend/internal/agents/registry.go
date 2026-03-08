@@ -26,6 +26,8 @@ func NewRegistry(commandByProvider map[string]string) *Registry {
 			runners[p] = NewClaudeRunner(command)
 		case ProviderOpenCode:
 			runners[p] = NewOpenCodeRunner(command)
+		case ProviderGemini:
+			runners[p] = NewCommandRunner(p, command)
 		default:
 			runners[p] = NewCommandRunner(p, command)
 		}
@@ -68,6 +70,8 @@ func (r *Registry) SetCommand(provider Provider, command string) {
 		r.runners[p] = NewClaudeRunner(command)
 	case ProviderOpenCode:
 		r.runners[p] = NewOpenCodeRunner(command)
+	case ProviderGemini:
+		r.runners[p] = NewCommandRunner(p, command)
 	default:
 		r.runners[p] = NewCommandRunner(p, command)
 	}

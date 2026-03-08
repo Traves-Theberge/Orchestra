@@ -72,6 +72,7 @@ func Run(logger zerolog.Logger) error {
 	
 	workspaceService := workspace.Service{Root: cfg.WorkspaceRoot}
 	orchestratorService.SetWorkspaceService(workspaceService)
+	orchestratorService.SetWorkspaceRoot(cfg.WorkspaceRoot)
 	logger.Info().Str("agent_provider", cfg.AgentProvider).Str("service_id", runtime.ServiceOrchestrator).Msg("agent provider configured")
 
 	router := api.NewRouterWithPubSub(logger, orchestratorService, &cfg, pubsub, warehouseDB)

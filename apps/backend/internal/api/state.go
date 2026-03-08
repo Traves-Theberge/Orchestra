@@ -396,6 +396,64 @@ func (s *Server) GetAgents(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
+func (s *Server) GetAgentConfigs(w http.ResponseWriter, r *http.Request) {
+	projectID := r.URL.Query().Get("project_id")
+	configs, err := s.orchestrator.ListAgentConfigs(projectID)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "configs_failed", err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"configs": configs,
+	})
+}
+
+func (s *Server) PostAgentConfigNew(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Provider string      `json:"provider"`
+		Type     string      `json:"type"` // "core", "skill", "mcp"
+		Name     string      `json:"name"`
+		Scope    string      `json:"scope"`
+		Project  string      `json:"project_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid_json", "failed to decode request body")
+		return
+	}
+
+	// Implementation detail: orchestrator resolves the directory and creates the file
+	path, err := s.orchestrator.CreateAgentResource(body.Provider, body.Type, body.Name, body.Scope, body.Project)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "create_failed", err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(map[string]string{"path": path})
+}
+
+func (s *Server) PostAgentConfigUpdate(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid_json", "failed to decode request body")
+		return
+	}
+
+	if err := s.orchestrator.UpdateConfigByPath(body.Path, body.Content); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "update_failed", err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) PostAgentConfig(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Commands      map[string]string `json:"commands"`

@@ -92,6 +92,7 @@ type Service struct {
 	cancels          map[string]context.CancelFunc
 	maxRetryAttempts int64
 	workspaceService workspace.Service
+	workspaceRoot    string
 	retryBaseDelay   time.Duration
 	retryMaxDelay    time.Duration
 	stallTimeout     time.Duration
@@ -314,6 +315,12 @@ func (s *Service) SetWorkspaceService(svc workspace.Service) {
 	s.workspaceService = svc
 }
 
+func (s *Service) SetWorkspaceRoot(root string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.workspaceRoot = root
+}
+
 func (s *Service) ListArtifacts(issueIdentifier string) ([]string, error) {
 	return s.workspaceService.ListArtifacts(issueIdentifier)
 }
@@ -341,6 +348,96 @@ func (s *Service) UpdateAgentConfig(commands map[string]string, provider string)
 			s.agentRegistry.SetCommand(agents.Provider(k), v)
 		}
 	}
+}
+
+func (s *Service) ListAgentConfigs(projectID string) ([]agents.AgentConfig, error) {
+	projectRoot := ""
+	if projectID != "" && s.db != nil {
+		if p, err := s.db.GetProjectByID(context.Background(), projectID); err == nil {
+			projectRoot = p.RootPath
+		}
+	}
+	s.mu.RLock()
+	workspaceRoot := s.workspaceRoot
+	s.mu.RUnlock()
+	return agents.ListAgentConfigs(workspaceRoot, projectRoot)
+}
+
+func (s *Service) UpdateConfigByPath(path string, content string) error {
+	return agents.UpdateConfigByPath(path, content)
+}
+
+func (s *Service) CreateAgentResource(provider, resourceType, name, scope, projectID string) (string, error) {
+	home, _ := os.UserHomeDir()
+	var baseDir string
+
+	// 1. Resolve Base Directory
+	if scope == "project" && projectID != "" {
+		if p, err := s.db.GetProjectByID(context.Background(), projectID); err == nil {
+			baseDir = p.RootPath
+		} else {
+			return "", fmt.Errorf("project not found: %w", err)
+		}
+	} else {
+		baseDir = home
+	}
+
+	// 2. Resolve Sub-directory based on agent metadata
+	meta, ok := agents.AgentMeta[provider]
+	if !ok {
+		// Fallback for internal orchestra files
+		if provider == "Orchestra" {
+			if resourceType == "skill" {
+				baseDir = filepath.Join(s.workspaceRoot, ".codex", "skills")
+			} else {
+				baseDir = filepath.Join(s.workspaceRoot, ".orchestra", "agents")
+			}
+		} else {
+			return "", fmt.Errorf("unknown provider: %s", provider)
+		}
+	} else {
+		// Use first skill path as default for new skills
+		if len(meta.SkillPaths) > 0 {
+			if scope == "project" {
+				// For project scope, we use relative paths if they don't start with .config
+				rel := meta.SkillPaths[0]
+				if strings.HasPrefix(rel, ".config") {
+					// Hack: OpenCode uses .config in home but usually .opencode in projects
+					baseDir = filepath.Join(baseDir, ".opencode", "skills")
+				} else {
+					baseDir = filepath.Join(baseDir, rel)
+				}
+			} else {
+				baseDir = filepath.Join(home, meta.SkillPaths[0])
+			}
+		}
+	}
+
+	// 3. Ensure extension
+	ext := ".json"
+	if resourceType == "skill" {
+		ext = ".md"
+	}
+	if !strings.HasSuffix(name, ext) {
+		name += ext
+	}
+
+	fullPath := filepath.Join(baseDir, name)
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+		return "", err
+	}
+
+	// 4. Initial Content
+	content := "{}"
+	if resourceType == "skill" {
+		content = "---\nname: " + strings.TrimSuffix(name, ".md") + "\ndescription: New agent skill\n---\n\n# New Skill\n"
+	}
+
+	if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
+		return "", err
+	}
+
+	return fullPath, nil
 }
 
 func (s *Service) SetStateSets(activeStates []string, terminalStates []string) {

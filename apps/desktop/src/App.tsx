@@ -37,7 +37,7 @@ import {
   normalizeEventEnvelope,
   normalizeSnapshotPayload,
   postRefresh,
-  saveAgentConfig,
+  updateAgentConfig,
   searchIssues,
   stopIssueSession,
   toDisplayError,
@@ -55,6 +55,7 @@ import { ProjectGrid } from '@/components/projects/ProjectGrid'
 import { ProjectDetailView } from '@/components/projects/ProjectDetailView'
 import { AnalyticsDashboard } from '@/components/warehouse/AnalyticsDashboard'
 import { SessionDetailView } from '@/components/warehouse/SessionDetailView'
+import { AgentsDashboard } from '@/components/agents/AgentsDashboard'
 import { Command } from 'cmdk'
 import { OverlayScrollbarsComponent } from 'overlayscrollbars-react'
 
@@ -80,8 +81,8 @@ const sidebarItems: SidebarItem[] = [
   },
   {
     id: 'timeline',
-    label: 'Timeline',
-    description: 'Lifecycle event stream',
+    label: 'Activity Feed',
+    description: 'Real-time lifecycle events',
     icon: History,
   },
   {
@@ -95,6 +96,12 @@ const sidebarItems: SidebarItem[] = [
     label: 'Projects',
     description: 'Local workspace grouping',
     icon: FolderTree,
+  },
+  {
+    id: 'agents',
+    label: 'Agents',
+    description: 'Global agent configurations',
+    icon: Cpu,
   },
   {
     id: 'warehouse',
@@ -176,22 +183,24 @@ export default function App() {
   const [selectedProjectID, setSelectedProjectID] = useState<string | null>(null)
   const [dataLoading, setDataLoading] = useState(false)
 
-  const sidebarWidth = sidebarCollapsed ? 76 : 260
+  const sidebarWidth = sidebarCollapsed ? 64 : 220
   const sectionVisibility = {
     showDashboard: activeSection === 'dashboard',
     showRunning: activeSection === 'running',
     showTimeline: activeSection === 'timeline',
     showIssueBoard: activeSection === 'issues',
     showProjects: activeSection === 'projects',
+    showAgents: activeSection === 'agents',
     showWarehouse: activeSection === 'warehouse',
     showSettings: activeSection === 'settings',
   }
   const sectionMeta: Record<string, { label: string; title: string }> = {
     dashboard: { label: 'Operations', title: 'Dashboard' },
     running: { label: 'Operations', title: 'Running' },
-    timeline: { label: 'Diagnostics', title: 'Timeline' },
+    timeline: { label: 'Diagnostics', title: 'Activity Feed' },
     issues: { label: 'Tracker', title: 'Tasks' },
     projects: { label: 'Workspace', title: 'Projects' },
+    agents: { label: 'Compute', title: 'Agents' },
     warehouse: { label: 'Analytics', title: 'Warehouse' },
     settings: { label: 'System', title: 'Settings' },
   }
@@ -324,7 +333,7 @@ export default function App() {
     if (!config) return
     setSavingConfig(true)
     try {
-      await saveAgentConfig(config, nextAgentConfig)
+      await updateAgentConfig(config, nextAgentConfig)
       setAgentConfig(nextAgentConfig)
       setStatusMessage('Agent configuration updated.')
     } catch (err) {
@@ -836,7 +845,7 @@ export default function App() {
           options={osOptions}
           className="min-w-0 flex-1 bg-gradient-to-b from-background via-background to-muted/30 h-full"
         >
-          <div className="px-6 pb-24 pt-6 lg:px-8 w-full flex flex-col min-h-full origin-top-left" style={{ zoom: 0.7 }}>
+          <div className="px-3 pb-4 pt-1 lg:px-6 w-full max-w-[1700px] mx-auto flex flex-col min-h-full transition-all duration-500">
             <TopBar
               sectionLabel={currentSectionMeta.label}
               sectionTitle={currentSectionMeta.title}
@@ -858,13 +867,13 @@ export default function App() {
               onTogglePolling={handleTogglePolling}
             />
 
-            <div className="mt-5 grid min-w-0 grid-cols-12 gap-5 flex-1">
+            <div className="mt-1 grid min-w-0 grid-cols-12 gap-1.5 flex-1">
               {sectionVisibility.showDashboard ? (
                 <>
-                  <section className="col-span-12 grid gap-4 md:grid-cols-2 xl:grid-cols-3 h-fit">
-                    <MetricCard title="Active Sessions" value={metrics.running} icon={<Activity className="h-4 w-4 text-primary" />} hint="Issues currently being processed" />
-                    <MetricCard title="Pending Retries" value={metrics.retrying} icon={<RefreshCcw className="h-4 w-4 text-amber-500" />} hint="Work items in backoff queue" />
-                    <MetricCard title="Fleet Token Usage" value={metrics.totalTokens} icon={<Zap className="h-4 w-4 text-blue-500" />} hint="Aggregate compute consumption" />
+                  <section className="col-span-12 grid gap-1.5 md:grid-cols-2 xl:grid-cols-3 h-fit">
+                    <MetricCard title="Active Sessions" value={metrics.running} icon={<Activity className="h-3.5 w-3.5 text-primary" />} hint="Issues currently being processed" />
+                    <MetricCard title="Pending Retries" value={metrics.retrying} icon={<RefreshCcw className="h-3.5 w-3.5 text-amber-500" />} hint="Work items in backoff queue" />
+                    <MetricCard title="Fleet Token Usage" value={metrics.totalTokens} icon={<Zap className="h-3.5 w-3.5 text-blue-500" />} hint="Aggregate compute consumption" />
                   </section>
 
                   <section className="col-span-12 h-fit">
@@ -872,6 +881,7 @@ export default function App() {
                       projects={projects}
                       stats={projectStats}
                       warehouseStats={warehouseStats}
+                      onCreateTask={() => setCreateTaskDialogOpen(true)}
                       onProjectClick={(id) => {
                         if (id) {
                           setSelectedProjectID(id)
@@ -920,6 +930,12 @@ export default function App() {
                       onDeleteProject={handleDeleteProject}
                     />
                   )}
+                </section>
+              ) : null}
+
+              {sectionVisibility.showAgents ? (
+                <section className="col-span-12 flex flex-col flex-1">
+                  <AgentsDashboard config={config} />
                 </section>
               ) : null}
 

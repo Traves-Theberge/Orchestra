@@ -11,6 +11,7 @@ const (
 	ProviderCodex    Provider = "codex"
 	ProviderClaude   Provider = "claude"
 	ProviderOpenCode Provider = "opencode"
+	ProviderGemini   Provider = "gemini"
 )
 
 type TurnRequest struct {

@@ -29,13 +29,16 @@ func (db *DB) UpsertProject(ctx context.Context, rootPath string, remoteURL stri
 	}
 
 	query := `
-		INSERT INTO projects (id, name, root_path, remote_url)
-		VALUES (?, ?, ?, ?)
+		INSERT INTO projects (id, name, root_path, remote_url, github_owner, github_repo, github_token)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name = CASE WHEN excluded.name != '' AND projects.name = 'Workspace' THEN excluded.name ELSE projects.name END,
-			remote_url = CASE WHEN excluded.remote_url != '' THEN excluded.remote_url ELSE projects.remote_url END
+			remote_url = CASE WHEN excluded.remote_url != '' THEN excluded.remote_url ELSE projects.remote_url END,
+			github_owner = CASE WHEN excluded.github_owner != '' THEN excluded.github_owner ELSE projects.github_owner END,
+			github_repo = CASE WHEN excluded.github_repo != '' THEN excluded.github_repo ELSE projects.github_repo END,
+			github_token = CASE WHEN excluded.github_token != '' THEN excluded.github_token ELSE projects.github_token END
 	`
-	_, err := db.ExecContext(ctx, query, id, name, cleanPath, remoteURL)
+	_, err := db.ExecContext(ctx, query, id, name, cleanPath, remoteURL, "", "", "")
 	if err != nil {
 		return "", fmt.Errorf("upsert project: %w", err)
 	}
@@ -93,10 +96,13 @@ func (db *DB) RecordEvent(ctx context.Context, eventID, sessionID, kind, message
 }
 
 type Project struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	RootPath  string `json:"root_path"`
-	RemoteURL string `json:"remote_url"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	RootPath    string `json:"root_path"`
+	RemoteURL   string `json:"remote_url"`
+	GitHubOwner string `json:"github_owner"`
+	GitHubRepo  string `json:"github_repo"`
+	GitHubToken string `json:"github_token"`
 }
 
 type ProjectStats struct {
@@ -107,7 +113,7 @@ type ProjectStats struct {
 }
 
 func (db *DB) GetProjects(ctx context.Context) ([]Project, error) {
-	rows, err := db.QueryContext(ctx, "SELECT id, name, root_path, remote_url FROM projects ORDER BY name ASC")
+	rows, err := db.QueryContext(ctx, "SELECT id, name, root_path, remote_url, COALESCE(github_owner, ''), COALESCE(github_repo, ''), COALESCE(github_token, '') FROM projects ORDER BY name ASC")
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +122,7 @@ func (db *DB) GetProjects(ctx context.Context) ([]Project, error) {
 	var projects []Project
 	for rows.Next() {
 		var p Project
-		if err := rows.Scan(&p.ID, &p.Name, &p.RootPath, &p.RemoteURL); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.RootPath, &p.RemoteURL, &p.GitHubOwner, &p.GitHubRepo, &p.GitHubToken); err != nil {
 			return nil, err
 		}
 		projects = append(projects, p)
@@ -154,9 +160,14 @@ func (db *DB) DeleteProject(ctx context.Context, projectID string) error {
 
 func (db *DB) GetProjectByID(ctx context.Context, id string) (Project, error) {
 	var p Project
-	err := db.QueryRowContext(ctx, "SELECT id, name, root_path, remote_url FROM projects WHERE id = ?", id).
-		Scan(&p.ID, &p.Name, &p.RootPath, &p.RemoteURL)
+	err := db.QueryRowContext(ctx, "SELECT id, name, root_path, remote_url, COALESCE(github_owner, ''), COALESCE(github_repo, ''), COALESCE(github_token, '') FROM projects WHERE id = ?", id).
+		Scan(&p.ID, &p.Name, &p.RootPath, &p.RemoteURL, &p.GitHubOwner, &p.GitHubRepo, &p.GitHubToken)
 	return p, err
+}
+
+func (db *DB) UpdateProjectGitHubInfo(ctx context.Context, id, owner, repo string) error {
+	_, err := db.ExecContext(ctx, "UPDATE projects SET github_owner = ?, github_repo = ? WHERE id = ?", owner, repo, id)
+	return err
 }
 
 type Session struct {

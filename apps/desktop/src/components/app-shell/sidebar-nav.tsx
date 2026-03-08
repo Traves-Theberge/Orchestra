@@ -53,9 +53,9 @@ export function SidebarNav({
             <button
               type="button"
               onClick={onToggleCollapsed}
-              className="absolute left-full top-6 z-20 grid h-7 w-7 -translate-x-1/2 place-items-center rounded-full border border-border bg-card text-foreground shadow-lg transition hover:bg-muted dark:border-border dark:bg-background dark:text-foreground dark:hover:bg-muted"
+              className="absolute left-full top-6 z-20 grid h-6 w-6 -translate-x-1/2 place-items-center rounded-full border border-border bg-card text-foreground shadow-lg transition hover:bg-muted dark:border-border dark:bg-background dark:text-foreground dark:hover:bg-muted"
             >
-              {sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+              {sidebarCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
             </button>
           </Tooltip.Trigger>
           <Tooltip.Portal>
@@ -73,13 +73,13 @@ export function SidebarNav({
         <div className="flex h-full flex-col py-3">
           <div className="mb-2 px-2">
             <div className={`flex items-center gap-2 ${sidebarCollapsed ? 'justify-center' : ''}`}>
-              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-background text-foreground shadow-sm">
-                <AppMonogramIcon className="h-5 w-5" />
+              <span className="grid h-6 w-6 shrink-0 place-items-center rounded bg-background text-foreground shadow-sm">
+                <AppMonogramIcon className="h-4 w-4" />
               </span>
               {!sidebarCollapsed ? (
                 <div className="min-w-0">
-                  <p className="truncate text-[10px] font-semibold uppercase tracking-[0.2em] text-black dark:text-muted-foreground">Orchestra</p>
-                  <p className="truncate text-[9px] text-black/60 dark:text-muted-foreground">Control Plane</p>
+                  <p className="truncate text-[9px] font-bold uppercase tracking-[0.15em] text-black dark:text-muted-foreground leading-none">Orchestra</p>
+                  <p className="truncate text-[8px] text-black/40 dark:text-muted-foreground mt-0.5">Control Plane</p>
                 </div>
               ) : null}
             </div>
@@ -105,22 +105,20 @@ export function SidebarNav({
                     onKeyDown={handleNavKeyDown(index)}
                     aria-current={active ? 'page' : undefined}
                     data-testid={`sidebar-nav-${item.id}`}
-                    className={`group relative flex w-full items-center gap-2.5 rounded-lg border px-2 py-1.5 text-left transition-all ${
-                      sidebarCollapsed ? 'justify-center' : ''
-                    } ${
-                      active
+                    className={`group relative flex w-full items-center gap-2 rounded border px-2 py-1 text-left transition-all ${sidebarCollapsed ? 'justify-center' : ''
+                      } ${active
                         ? 'border-primary/20 bg-primary/10 text-primary shadow-sm dark:border-primary/30 dark:bg-primary/20'
                         : 'border-transparent text-foreground hover:border-border hover:bg-muted/50 dark:text-muted-foreground dark:hover:border-border dark:hover:bg-muted/70'
-                    }`}
+                      }`}
                   >
-                    {active ? <span className="absolute left-0 top-1/2 h-4 w-1 -translate-y-1/2 rounded-r bg-primary" /> : null}
-                    <span className="grid h-7 w-7 place-items-center rounded-lg bg-background text-foreground group-hover:text-foreground shadow-sm">
-                      <ItemIcon className="h-3.5 w-3.5" />
+                    {active ? <span className="absolute left-0 top-1/2 h-3 w-0.5 -translate-y-1/2 rounded-r bg-primary" /> : null}
+                    <span className="grid h-6 w-6 place-items-center rounded bg-background text-foreground group-hover:text-foreground shadow-sm">
+                      <ItemIcon className="h-3 w-3" />
                     </span>
                     {!sidebarCollapsed ? (
                       <span className="min-w-0">
-                        <span className="block truncate text-xs font-medium text-black dark:text-foreground">{item.label}</span>
-                        <span className="block truncate text-[10px] text-black/50 dark:text-muted-foreground">{item.description}</span>
+                        <span className="block truncate text-[11px] font-semibold text-black dark:text-foreground">{item.label}</span>
+                        <span className="block truncate text-[9px] text-black/40 dark:text-muted-foreground leading-tight">{item.description}</span>
                       </span>
                     ) : null}
                   </button>
