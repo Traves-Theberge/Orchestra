@@ -86,3 +86,58 @@ body {
     radial-gradient(1100px 520px at 110% -10%, hsl(var(--muted-foreground) / 0.12), transparent 70%),
     linear-gradient(180deg, hsl(var(--background)), hsl(var(--background)));
 }
+
+/* Premium Wiki Typography */
+.prose-wiki {
+  --tw-prose-body: hsl(var(--foreground) / 0.85);
+  --tw-prose-headings: hsl(var(--foreground));
+  --tw-prose-links: hsl(var(--primary));
+  --tw-prose-bold: hsl(var(--foreground));
+  --tw-prose-counters: hsl(var(--muted-foreground));
+  --tw-prose-bullets: hsl(var(--primary) / 0.5);
+  --tw-prose-hr: border-white/5;
+  --tw-prose-quotes: hsl(var(--foreground));
+  --tw-prose-quote-borders: hsl(var(--primary));
+  --tw-prose-captions: hsl(var(--muted-foreground));
+  --tw-prose-code: hsl(var(--primary));
+  --tw-prose-pre-code: hsl(var(--foreground) / 0.9);
+  --tw-prose-pre-bg: transparent;
+  --tw-prose-th-borders: border-white/10;
+  --tw-prose-td-borders: border-white/5;
+}
+
+.prose-wiki h1 {
+  @apply text-4xl font-black tracking-tighter mb-10 pb-6 border-b border-white/10 text-foreground;
+}
+
+.prose-wiki h2 {
+  @apply text-2xl font-bold tracking-tight mt-16 mb-6 flex items-center gap-3 text-foreground/90;
+}
+
+.prose-wiki h3 {
+  @apply text-xl font-bold tracking-tight mt-10 mb-4 text-foreground/80;
+}
+
+.prose-wiki p {
+  @apply leading-relaxed text-[15px] mb-6 text-foreground/75;
+}
+
+.prose-wiki ul, .prose-wiki ol {
+  @apply my-6 ml-6 space-y-2;
+}
+
+.prose-wiki li {
+  @apply text-foreground/75;
+}
+
+.prose-wiki blockquote {
+  @apply italic border-l-4 pl-8 my-10 py-4 bg-primary/5 rounded-r-2xl border-primary/40 text-foreground/80;
+}
+
+.prose-wiki strong {
+  @apply font-bold text-foreground;
+}
+
+.prose-wiki a {
+  @apply no-underline border-b border-primary/30 hover:border-primary transition-colors;
+}

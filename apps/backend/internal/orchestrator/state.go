@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/orchestra/orchestra/apps/backend/internal/agents"
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
+	"github.com/orchestra/orchestra/apps/backend/internal/mcp"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
 	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
 )
@@ -29,6 +32,7 @@ type RunningEntry struct {
 	State           string `json:"state"`
 	AssigneeID      string `json:"assignee_id,omitempty"`
 	SessionID       string `json:"session_id"`
+	Provider        string `json:"provider"`
 	SessionLogPath  string `json:"session_log_path,omitempty"`
 	TurnCount       int64  `json:"turn_count"`
 	LastEvent       string `json:"last_event"`
@@ -47,18 +51,20 @@ type RetryEntry struct {
 	IssueIdentifier string `json:"issue_identifier"`
 	State           string `json:"state,omitempty"`
 	AssigneeID      string `json:"assignee_id,omitempty"`
+	Provider        string `json:"provider,omitempty"`
 	Attempt         int64  `json:"attempt"`
 	DueAt           string `json:"due_at"`
 	Error           string `json:"error"`
 }
 
 type Snapshot struct {
-	GeneratedAt string         `json:"generated_at"`
-	Counts      SnapshotCount  `json:"counts"`
-	Running     []RunningEntry `json:"running"`
-	Retrying    []RetryEntry   `json:"retrying"`
-	CodexTotals CodexTotals    `json:"codex_totals"`
-	RateLimits  any            `json:"rate_limits"`
+	GeneratedAt string            `json:"generated_at"`
+	Counts      SnapshotCount     `json:"counts"`
+	Running     []RunningEntry    `json:"running"`
+	Retrying    []RetryEntry      `json:"retrying"`
+	CodexTotals CodexTotals       `json:"codex_totals"`
+	RateLimits  any               `json:"rate_limits"`
+	MCPServers  map[string]string `json:"mcp_servers,omitempty"`
 }
 
 type SnapshotCount struct {
@@ -97,6 +103,8 @@ type Service struct {
 	retryMaxDelay    time.Duration
 	stallTimeout     time.Duration
 	db               *db.DB
+	mcpRegistry      *mcp.Registry
+	mcpServers       map[string]string
 }
 
 type IssueRuntime struct {
@@ -163,6 +171,11 @@ func (s *Service) Snapshot() Snapshot {
 	totals := s.codexTotals
 	totals.SecondsRun = s.codexTotals.SecondsRun + runningSecondsNow(running)
 
+	mcpServers := make(map[string]string)
+	for k, v := range s.mcpServers {
+		mcpServers[k] = v
+	}
+
 	return Snapshot{
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 		Counts: SnapshotCount{
@@ -173,6 +186,7 @@ func (s *Service) Snapshot() Snapshot {
 		Retrying:    retrying,
 		CodexTotals: totals,
 		RateLimits:  s.rateLimits,
+		MCPServers:  mcpServers,
 	}
 }
 
@@ -588,9 +602,27 @@ func (s *Service) CreateIssue(ctx context.Context, title, description, state str
 }
 
 func (s *Service) UpdateIssue(ctx context.Context, identifier string, updates map[string]any) (*tracker.Issue, error) {
-	s.mu.RLock()
+	s.mu.Lock()
 	client := s.trackerClient
-	s.mu.RUnlock()
+	
+	// Handle manual provider override
+	if provider, ok := updates["provider"].(string); ok {
+		// Update in running entries
+		for i, entry := range s.running {
+			if entry.IssueIdentifier == identifier {
+				s.running[i].Provider = provider
+				break
+			}
+		}
+		// Update in retrying entries
+		for i, entry := range s.retrying {
+			if entry.IssueIdentifier == identifier {
+				s.retrying[i].Provider = provider
+				break
+			}
+		}
+	}
+	s.mu.Unlock()
 
 	if client == nil {
 		return nil, nil
@@ -604,6 +636,28 @@ func (s *Service) UpdateIssue(ctx context.Context, identifier string, updates ma
 	// Trigger refresh to reflect changes immediately in snapshot
 	s.QueueRefresh()
 	return issue, nil
+}
+
+func (s *Service) DeleteIssue(ctx context.Context, identifier string) error {
+	s.mu.RLock()
+	client := s.trackerClient
+	s.mu.RUnlock()
+
+	if client == nil {
+		return fmt.Errorf("tracker client not available")
+	}
+
+	// 1. Stop any active session for this issue
+	s.StopSession(identifier)
+
+	// 2. Delete the issue from the tracker
+	if err := client.DeleteIssue(ctx, identifier); err != nil {
+		return err
+	}
+
+	// 3. Trigger refresh to reflect changes
+	s.QueueRefresh()
+	return nil
 }
 
 func (s *Service) enqueueCandidates(candidates []tracker.Issue) {
@@ -639,6 +693,7 @@ func (s *Service) enqueueCandidates(candidates []tracker.Issue) {
 			Title:           issue.Title,
 			State:           issue.State,
 			AssigneeID:      issue.AssigneeID,
+			Provider:        s.agentProvider,
 			StartedAt:       now,
 			LastEventAt:     now,
 			LastEvent:       "dispatch_queued",
@@ -712,6 +767,7 @@ func (s *Service) releaseDueRetries() {
 			Title:           "",
 			State:           state,
 			AssigneeID:      retry.AssigneeID,
+			Provider:        retry.Provider,
 			StartedAt:       now.Format(time.RFC3339),
 			LastEventAt:     now.Format(time.RFC3339),
 			LastEvent:       "retry_due",
@@ -793,6 +849,7 @@ func (s *Service) RecordRunFailure(issueID string, issueIdentifier string, attem
 	filtered := make([]RunningEntry, 0, len(s.running))
 	issueState := ""
 	issueAssigneeID := ""
+	lastProvider := ""
 	for _, entry := range s.running {
 		if entry.IssueID != issueID {
 			filtered = append(filtered, entry)
@@ -800,6 +857,7 @@ func (s *Service) RecordRunFailure(issueID string, issueIdentifier string, attem
 		}
 		issueState = entry.State
 		issueAssigneeID = entry.AssigneeID
+		lastProvider = entry.Provider
 		s.accumulateEntryTotalsLocked(entry)
 	}
 	s.running = filtered
@@ -814,11 +872,28 @@ func (s *Service) RecordRunFailure(issueID string, issueIdentifier string, attem
 		return
 	}
 
+	nextProvider := lastProvider
+	if attempt >= 3 && s.agentRegistry != nil {
+		// Cascade: Try a different provider if the current one has failed multiple times
+		allProviders := s.agentRegistry.Providers()
+		if len(allProviders) > 1 {
+			for i, p := range allProviders {
+				if string(p) == lastProvider {
+					// Pick the next one in the ring
+					next := allProviders[(i+1)%len(allProviders)]
+					nextProvider = string(next)
+					break
+				}
+			}
+		}
+	}
+
 	s.retrying = append(s.retrying, RetryEntry{
 		IssueID:         issueID,
 		IssueIdentifier: issueIdentifier,
 		State:           issueState,
 		AssigneeID:      issueAssigneeID,
+		Provider:        nextProvider,
 		Attempt:         attempt,
 		DueAt:           dueAt.UTC().Format(time.RFC3339),
 		Error:           message,
@@ -1406,4 +1481,20 @@ func (s *Service) RestoreStateFromDB(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (s *Service) SetMCPRegistry(r *mcp.Registry, servers map[string]string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.mcpRegistry = r
+	s.mcpServers = make(map[string]string)
+	for k, v := range servers {
+		s.mcpServers[k] = v
+	}
+}
+
+func (s *Service) GetMCPRegistry() *mcp.Registry {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.mcpRegistry
 }

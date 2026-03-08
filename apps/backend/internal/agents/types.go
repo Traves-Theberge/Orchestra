@@ -25,6 +25,7 @@ type TurnRequest struct {
 	AutoApprove     bool
 	ToolExecutor    ToolExecutor
 	ToolSpecs       []map[string]any
+	ResourceSpecs   []map[string]any
 }
 
 type TokenUsage struct {

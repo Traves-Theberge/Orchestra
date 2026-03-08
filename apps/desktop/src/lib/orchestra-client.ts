@@ -1,8 +1,9 @@
-import type { APIErrorEnvelope, EventEnvelope, GlobalStats, IssueDetailPayload, Project, ProjectStats, SnapshotPayload, AgentConfig } from '@/lib/orchestra-types'
+import type { APIErrorEnvelope, EventEnvelope, GlobalStats, IssueDetailPayload, Project, ProjectStats, SnapshotPayload, AgentConfig, DocItem } from '@/lib/orchestra-types'
 
 export type BackendConfig = {
   baseUrl: string
   apiToken: string
+  mcpServers?: Record<string, string>
 }
 
 class APIError extends Error {
@@ -89,6 +90,7 @@ export function normalizeSnapshotPayload(value: unknown): SnapshotPayload {
       seconds_run: asNumber(totals.seconds_run, 0),
     },
     rate_limits: rateLimits,
+    mcp_servers: isRecord(root.mcp_servers) ? (root.mcp_servers as Record<string, string>) : undefined,
   }
 }
 
@@ -156,6 +158,17 @@ export async function updateIssue(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(updates),
+  })
+}
+
+export async function deleteIssue(config: BackendConfig, issueIdentifier: string): Promise<void> {
+  const normalized = issueIdentifier.trim()
+  if (normalized === '') {
+    throw new APIError('invalid_request', 'issue identifier is required')
+  }
+  await fetch(new URL(`/api/v1/issues/${encodeURIComponent(normalized)}`, config.baseUrl).toString(), {
+    method: 'DELETE',
+    headers: buildHeaders(config),
   })
 }
 
@@ -436,4 +449,24 @@ export async function createAgentResource(config: BackendConfig, payload: { prov
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
+}
+
+export async function fetchDocs(config: BackendConfig): Promise<DocItem[]> {
+  const data = await requestJSON<{ docs: DocItem[] }>(config, '/api/v1/docs')
+  return data.docs || []
+}
+
+export async function fetchDocContent(config: BackendConfig, path: string): Promise<string> {
+  const response = await fetch(new URL(`/api/v1/docs/${path}`, config.baseUrl).toString(), {
+    headers: buildHeaders(config),
+  })
+  if (!response.ok) {
+    throw new Error(`failed to fetch doc content: ${response.statusText}`)
+  }
+  return response.text()
+}
+
+export async function fetchMCPTools(config: BackendConfig): Promise<any[]> {
+  const data = await requestJSON<{ tools: any[] }>(config, '/api/v1/mcp/tools')
+  return data.tools || []
 }

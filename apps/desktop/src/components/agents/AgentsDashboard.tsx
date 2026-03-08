@@ -1,17 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import {
     Cpu, Save, RefreshCcw, Info, Terminal,
-    ShieldCheck, Zap, Activity, Code,
+    ShieldCheck, Zap, Activity, Code as CodeIcon,
     ChevronRight, FileText, Layout,
     CheckCircle2, AlertCircle, Wrench, ListTree, Sparkles,
     Settings, Globe, Layers, Folder, Plus, Loader2
 } from 'lucide-react'
-import type { AgentConfig, BackendConfig, Project } from '@/lib/orchestra-types'
+import type { AgentConfig, BackendConfig, Project, SnapshotPayload } from '@/lib/orchestra-types'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { AppTooltip } from '../ui/tooltip-wrapper'
-import { fetchAgentConfigs, updateAgentConfigByPath, fetchProjects, createAgentResource } from '@/lib/orchestra-client'
+import { fetchAgentConfigs, updateAgentConfigByPath, fetchProjects, createAgentResource, fetchMCPTools } from '@/lib/orchestra-client'
 import { OverlayScrollbarsComponent } from 'overlayscrollbars-react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -24,11 +24,13 @@ import {
 } from '@/components/ui/dialog'
 interface AgentsDashboardProps {
     config: BackendConfig | null
+    snapshot: SnapshotPayload | null
 }
 
-export const AgentsDashboard: React.FC<AgentsDashboardProps> = ({ config }) => {
+export const AgentsDashboard: React.FC<AgentsDashboardProps> = ({ config, snapshot }) => {
     const [configs, setConfigs] = useState<AgentConfig[]>([])
     const [projects, setProjects] = useState<Project[]>([])
+    const [mcpTools, setMcpTools] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState<string | null>(null)
     const [selectedConfig, setSelectedConfig] = useState<AgentConfig | null>(null)
@@ -56,12 +58,14 @@ export const AgentsDashboard: React.FC<AgentsDashboardProps> = ({ config }) => {
         if (!config) return
         setLoading(true)
         try {
-            const [configsData, projectsData] = await Promise.all([
+            const [configsData, projectsData, mcpToolsData] = await Promise.all([
                 fetchAgentConfigs(config, scope === 'project' ? selectedProjectID : undefined),
-                fetchProjects(config)
+                fetchProjects(config),
+                fetchMCPTools(config)
             ])
             setConfigs(configsData)
             setProjects(projectsData)
+            setMcpTools(mcpToolsData)
 
             if (configsData.length > 0) {
                 const initial = selectedConfig
@@ -170,90 +174,95 @@ export const AgentsDashboard: React.FC<AgentsDashboardProps> = ({ config }) => {
     return (
         <div className="flex flex-col h-full bg-background/20 overflow-hidden">
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-white/5 bg-background/40 backdrop-blur-xl shrink-0">
-                <div className="flex items-center gap-3">
-                    <div className="h-9 w-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shadow-lg shadow-primary/5">
-                        <Cpu className="text-primary h-5 w-5" />
+            <div className="flex items-center justify-between px-8 py-6 border-b border-white/5 bg-background/40 backdrop-blur-xl shrink-0">
+                <div className="flex items-center gap-4">
+                    <div className="h-12 w-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center shadow-lg shadow-primary/5">
+                        <Cpu className="text-primary h-7 w-7" />
                     </div>
                     <div>
-                        <h1 className="text-base font-bold tracking-tight flex items-center gap-2">
+                        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
                             Agent Control Plane
-                            <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 text-[8px] font-black uppercase tracking-widest h-4 px-1.5">
+                            <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 text-[9px] font-black uppercase tracking-widest h-5 px-2">
                                 {scope === 'global' ? 'Global' : 'Project'}
                             </Badge>
                         </h1>
-                        <p className="text-[9px] text-muted-foreground font-semibold uppercase tracking-widest opacity-50">Orchestration & Specialized Skills</p>
+                        <p className="text-xs text-muted-foreground font-medium uppercase tracking-[0.2em] opacity-60">Global implementation dotfiles & specialized skills</p>
                     </div>
                 </div>
-                <div className="flex items-center gap-3">
-                    {/* Scope Selector */}
-                    <div className="flex items-center gap-1 bg-black/40 rounded-xl p-1 border border-white/5 mr-4">
-                        <button
-                            onClick={() => setScope('global')}
-                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${scope === 'global' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'text-muted-foreground hover:bg-white/5'}`}
-                        >
-                            <Globe size={14} />
-                            Global
-                        </button>
-                        <button
-                            onClick={() => setScope('project')}
-                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${scope === 'project' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'text-muted-foreground hover:bg-white/5'}`}
-                        >
-                            <Layers size={14} />
-                            Project
-                        </button>
+                <div className="flex items-center gap-4">
+                    {/* Scope Switcher Group */}
+                    <div className="flex items-center gap-2 pr-4 border-r border-white/10">
+                        <div className="flex items-center gap-1 bg-black/40 rounded-xl p-1 border border-white/5">
+                            <button
+                                onClick={() => setScope('global')}
+                                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${scope === 'global' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'text-muted-foreground hover:bg-white/5'}`}
+                            >
+                                <Globe size={14} />
+                                Global
+                            </button>
+                            <button
+                                onClick={() => setScope('project')}
+                                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${scope === 'project' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'text-muted-foreground hover:bg-white/5'}`}
+                            >
+                                <Layers size={14} />
+                                Project
+                            </button>
+                        </div>
+
+                        {scope === 'project' && (
+                            <select
+                                value={selectedProjectID}
+                                onChange={(e) => setSelectedProjectID(e.target.value)}
+                                className="h-10 px-3 bg-black/40 border border-white/10 rounded-xl text-xs font-bold text-foreground/80 focus:outline-none focus:ring-2 focus:ring-primary/20 min-w-[180px] appearance-none cursor-pointer hover:border-white/20 transition-colors"
+                            >
+                                <option value="">Select Project...</option>
+                                {projects.map(p => (
+                                    <option key={p.id} value={p.id}>{p.name}</option>
+                                ))}
+                            </select>
+                        )}
                     </div>
 
-                    {scope === 'project' && (
-                        <select
-                            value={selectedProjectID}
-                            onChange={(e) => setSelectedProjectID(e.target.value)}
-                            className="h-9 px-3 bg-black/40 border border-white/10 rounded-lg text-xs font-bold text-foreground/80 focus:outline-none focus:ring-2 focus:ring-primary/20 mr-4"
-                        >
-                            <option value="">Select Project...</option>
-                            {projects.map(p => (
-                                <option key={p.id} value={p.id}>{p.name}</option>
-                            ))}
-                        </select>
-                    )}
-
-                    {selectedConfig?.category === 'core' && (
+                    {/* Actions Group */}
+                    <div className="flex items-center gap-3">
+                        {selectedConfig?.category === 'core' && (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={handleFormatJson}
+                                className="h-10 px-3 text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-primary transition-all"
+                            >
+                                <Sparkles size={14} className="mr-2" />
+                                Format
+                            </Button>
+                        )}
                         <Button
-                            variant="ghost"
+                            variant="outline"
                             size="sm"
-                            onClick={handleFormatJson}
-                            className="h-9 px-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:text-primary"
+                            onClick={loadData}
+                            disabled={loading}
+                            className="h-10 px-4 gap-2 text-[10px] font-black uppercase tracking-widest border-white/10 hover:bg-white/5"
                         >
-                            <Sparkles size={14} className="mr-2" />
-                            Format JSON
+                            <RefreshCcw size={14} className={loading ? 'animate-spin' : ''} />
+                            Reload
                         </Button>
-                    )}
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={loadData}
-                        disabled={loading}
-                        className="h-9 gap-2"
-                    >
-                        <RefreshCcw size={14} className={loading ? 'animate-spin' : ''} />
-                        Reload
-                    </Button>
-                    <Button
-                        variant="default"
-                        size="sm"
-                        onClick={handleSave}
-                        disabled={!isDirty || !!saving}
-                        className="h-9 gap-2 bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20 px-6"
-                    >
-                        <Save size={14} className={saving ? 'animate-pulse' : ''} />
-                        <span className="font-bold uppercase tracking-wider text-xs">{saving ? 'Syncing...' : 'Save Changes'}</span>
-                    </Button>
+                        <Button
+                            variant="default"
+                            size="sm"
+                            onClick={handleSave}
+                            disabled={!isDirty || !!saving}
+                            className="h-10 px-6 gap-2 bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20"
+                        >
+                            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                            <span className="font-black uppercase tracking-widest text-[10px]">{saving ? 'Saving...' : 'Save Changes'}</span>
+                        </Button>
+                    </div>
                 </div>
             </div>
 
             <div className="flex-1 flex overflow-hidden min-h-0">
                 {/* File Sidebar */}
-                <div className="w-52 border-r border-white/5 bg-black/20 flex flex-col min-h-0">
+                <div className="w-72 border-r border-white/5 bg-black/20 flex flex-col min-h-0">
                     <OverlayScrollbarsComponent
                         element="div"
                         options={osOptions}
@@ -324,14 +333,14 @@ export const AgentsDashboard: React.FC<AgentsDashboardProps> = ({ config }) => {
                                             <button
                                                 key={conf.path}
                                                 onClick={() => handleSelectConfig(conf)}
-                                                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-left group ${selectedConfig?.path === conf.path
+                                                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg transition-all text-left group ${selectedConfig?.path === conf.path
                                                     ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20 shadow-inner'
                                                     : 'text-muted-foreground hover:bg-white/5 border border-transparent hover:text-foreground'
                                                     }`}
                                             >
                                                 {getIcon(conf)}
-                                                <span className="flex-1 text-sm font-bold tracking-tight capitalize truncate">{conf.name}</span>
-                                                {selectedConfig?.path === conf.path && <ChevronRight size={14} className="opacity-50" />}
+                                                <span className="flex-1 text-[11px] font-bold tracking-tight capitalize truncate">{conf.name}</span>
+                                                {selectedConfig?.path === conf.path && <ChevronRight size={12} className="opacity-50" />}
                                             </button>
                                         ))}
                                     </div>
@@ -395,7 +404,7 @@ export const AgentsDashboard: React.FC<AgentsDashboardProps> = ({ config }) => {
                                         <OverlayScrollbarsComponent
                                             element="div"
                                             options={osOptions}
-                                            className="h-full p-4"
+                                            className="h-full p-2"
                                         >
                                             <div className="max-w-3xl mx-auto prose prose-invert prose-sm">
                                                 <SyntaxHighlighter
@@ -428,7 +437,7 @@ export const AgentsDashboard: React.FC<AgentsDashboardProps> = ({ config }) => {
                                         <p className="text-sm text-red-400 font-medium leading-relaxed">{error}</p>
                                     </div>
                                     <button onClick={() => setError('')} className="text-red-500/50 hover:text-red-500 transition-colors self-start pt-1">
-                                        <Code size={16} />
+                                        <CodeIcon size={16} />
                                     </button>
                                 </div>
                             )}
@@ -476,6 +485,43 @@ export const AgentsDashboard: React.FC<AgentsDashboardProps> = ({ config }) => {
                                             Selecting <strong>Project</strong> allows you to edit local <code className="text-amber-500/80">.claude/settings.json</code> or <code className="text-amber-500/80">opencode.json</code> files.
                                         </p>
                                     </div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-3">
+                                <h3 className="text-[10px] font-black uppercase tracking-widest text-blue-400/60 px-1">MCP Status</h3>
+                                <div className="space-y-1.5">
+                                    {!snapshot?.mcp_servers || Object.keys(snapshot.mcp_servers).length === 0 ? (
+                                        <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 text-[9px] text-muted-foreground italic">
+                                            No active MCP servers.
+                                        </div>
+                                    ) : Object.entries(snapshot.mcp_servers).map(([name, cmd]) => {
+                                        const serverTools = mcpTools.filter(t => t.name.startsWith(name + "_"))
+                                        return (
+                                            <div key={name} className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-2 group hover:bg-white/[0.05] transition-all">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-[10px] font-bold text-foreground/80">{name}</span>
+                                                    <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                                                </div>
+                                                <p className="text-[9px] text-muted-foreground font-mono truncate opacity-40 mb-2">{cmd}</p>
+                                                
+                                                {serverTools.length > 0 && (
+                                                    <div className="pt-2 border-t border-white/5 space-y-1">
+                                                        <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/40 mb-1.5">Available Tools</p>
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {serverTools.map(tool => (
+                                                                <AppTooltip key={tool.name} content={tool.description || 'No description provided'}>
+                                                                    <Badge variant="outline" className="text-[8px] h-4 px-1.5 border-primary/10 bg-primary/5 text-primary/70 hover:bg-primary/10 cursor-help">
+                                                                        {tool.name.replace(name + "_", "")}
+                                                                    </Badge>
+                                                                </AppTooltip>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )
+                                    })}
                                 </div>
                             </div>
 

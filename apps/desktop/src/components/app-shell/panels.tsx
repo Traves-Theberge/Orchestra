@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Ansi from 'ansi-to-react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { Activity, AlertCircle, AlertTriangle, AppWindow, CheckCircle2, ChevronDown, Circle, CircleDashed, Cpu, FileText, Folder, FolderTree, GitBranch, Loader2, MoreHorizontal, ShieldCheck, SignalHigh, SignalLow, SignalMedium, Terminal, Users, Wrench, Clock, Search, LayoutDashboard, ListTodo, History, Ticket, Database, Settings2, Sun, Moon, Download, RefreshCcw, Info, BarChart3, Zap, Layout, Rows, Play, ChevronRight, File, ExternalLink } from 'lucide-react'
+import { Activity, AlertCircle, AlertTriangle, AppWindow, CheckCircle2, ChevronDown, Circle, CircleDashed, Cpu, FileText, Folder, FolderTree, GitBranch, Loader2, MoreHorizontal, ShieldCheck, SignalHigh, SignalLow, SignalMedium, Square, Terminal, Users, Wrench, Clock, Search, LayoutDashboard, ListTodo, History, Ticket, Database, Settings2, Sun, Moon, Download, RefreshCcw, Info, BarChart3, Zap, Layout, Rows, Play, ChevronRight, File, ExternalLink, Plus, Trash2 } from 'lucide-react'
 import * as Tooltip from '@radix-ui/react-tooltip'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -52,11 +52,13 @@ export function DashboardOverview({
   stats,
   warehouseStats,
   onProjectClick,
+  onCreateTask,
 }: {
   projects: Project[]
   stats: Record<string, ProjectStats>
   warehouseStats: GlobalStats | null
   onProjectClick: (id: string) => void
+  onCreateTask?: () => void
 }) {
   const sortedProjects = [...projects].sort((a, b) => {
     const sA = stats[a.id]?.total_sessions ?? 0
@@ -65,51 +67,11 @@ export function DashboardOverview({
   }).slice(0, 3)
 
   return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-3 min-h-0">
-      {/* Primary Analytics & Workspace Activity */}
-      <div className="xl:col-span-2 space-y-4 flex flex-col">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Card className="bg-background/40 backdrop-blur-xl border-white/5 shadow-2xl overflow-hidden group relative">
-            <div className="absolute top-0 left-0 w-1 h-full bg-primary/50" />
-            <CardHeader className="pb-2">
-              <CardTitle className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2">
-                <Zap size={14} className="text-primary" />
-                Fleet Throughput
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-black tracking-tighter">
-                  {warehouseStats ? ((warehouseStats.total_input + warehouseStats.total_output) / 1000).toFixed(1) : '--'}
-                </span>
-                <span className="text-sm font-bold text-muted-foreground uppercase">k Tokens</span>
-              </div>
-              <p className="text-[10px] text-muted-foreground/60 mt-1 font-medium italic">Aggregated compute load</p>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-background/40 backdrop-blur-xl border-white/5 shadow-2xl overflow-hidden group relative">
-            <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/50" />
-            <CardHeader className="pb-2">
-              <CardTitle className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2">
-                <Activity size={14} className="text-blue-500" />
-                Operational Efficiency
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-black tracking-tighter">
-                  {warehouseStats ? ((warehouseStats.total_output / Math.max(warehouseStats.total_input, 1)) * 100).toFixed(0) : '--'}
-                </span>
-                <span className="text-sm font-bold text-muted-foreground">%</span>
-              </div>
-              <p className="text-[10px] text-muted-foreground/60 mt-1 font-medium italic">Output-to-input ratio</p>
-            </CardContent>
-          </Card>
-        </div>
-
+    <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 min-h-0">
+      {/* Workspace Activity (Left) */}
+      <div className="lg:col-span-2 flex flex-col">
         <Card className="bg-background/40 backdrop-blur-xl border-white/5 shadow-2xl flex-1 flex flex-col min-h-0">
-          <CardHeader className="flex flex-row items-center justify-between pb-4 shrink-0">
+          <CardHeader className="flex flex-row items-center justify-between pb-2 px-3 pt-3 shrink-0">
             <div className="space-y-1">
               <CardTitle className="text-sm font-bold flex items-center gap-2 text-foreground/90">
                 <FolderTree size={16} className="text-primary/70" />
@@ -117,14 +79,25 @@ export function DashboardOverview({
               </CardTitle>
               <CardDescription className="text-[11px]">Recent activity across managed projects</CardDescription>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 px-3 text-[10px] uppercase font-black tracking-widest text-primary hover:bg-primary/10 transition-all"
-              onClick={() => onProjectClick('')}
-            >
-              Explore All
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 px-3 text-[10px] uppercase font-black tracking-widest bg-primary/5 border-primary/20 text-primary hover:bg-primary/10 transition-all"
+                onClick={onCreateTask}
+              >
+                <Plus size={14} className="mr-1.5" />
+                New Task
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-3 text-[10px] uppercase font-black tracking-widest text-primary hover:bg-primary/10 transition-all"
+                onClick={() => onProjectClick('')}
+              >
+                Explore All
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="flex-1 min-h-0">
             <div className="space-y-1.5">
@@ -137,7 +110,7 @@ export function DashboardOverview({
                 <button
                   key={p.id}
                   onClick={() => onProjectClick(p.id)}
-                  className="flex w-full items-center justify-between rounded-xl border border-transparent bg-white/[0.03] p-3 transition-all hover:bg-white/[0.06] hover:border-white/10 group shadow-sm"
+                  className="flex w-full items-center justify-between rounded-xl border border-transparent bg-white/[0.03] p-2 transition-all hover:bg-white/[0.06] hover:border-white/10 group shadow-sm"
                 >
                   <div className="flex items-center gap-4">
                     <div className="rounded-lg bg-primary/10 p-2.5 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all duration-300">
@@ -162,65 +135,54 @@ export function DashboardOverview({
         </Card>
       </div>
 
-      {/* Fleet Distribution */}
-      <Card className="bg-background/40 backdrop-blur-xl border-white/5 shadow-2xl flex flex-col h-full overflow-hidden relative">
-        <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
-          <Cpu size={120} />
-        </div>
-        <CardHeader className="pb-4 shrink-0 relative z-10">
-          <CardTitle className="text-sm font-bold flex items-center gap-2 text-foreground/90">
-            <Cpu size={16} className="text-amber-500/70" />
-            Agent Distribution
-          </CardTitle>
-          <CardDescription className="text-[11px]">Provider workload across historical sessions</CardDescription>
-        </CardHeader>
-        <CardContent className="flex-1 flex flex-col justify-between min-h-0 relative z-10">
-          {!warehouseStats || !warehouseStats.provider_usage || Object.entries(warehouseStats.provider_usage).length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center py-12 opacity-20 grayscale">
-              <Activity size={48} className="mb-4" />
-              <p className="text-[10px] font-black uppercase tracking-[0.2em]">Telemetry Pending</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {Object.entries(warehouseStats.provider_usage)
-                .sort((a, b) => b[1] - a[1])
-                .map(([name, tokens]) => {
-                  const percentage = Math.max(5, (tokens / warehouseStats.total_tokens) * 100)
-                  return (
-                    <div key={name} className="space-y-2 group/bar">
-                      <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest">
-                        <span className="flex items-center gap-2">
-                          <div className={`h-1.5 w-1.5 rounded-full ${name.includes('claude') ? 'bg-orange-500' : 'bg-primary'} shadow-[0_0_8px_rgba(var(--primary),0.4)]`} />
-                          {name}
-                        </span>
-                        <span className="text-muted-foreground group-hover/bar:text-primary transition-colors">{(tokens / 1000).toFixed(1)}k</span>
-                      </div>
-                      <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
-                        <div
-                          className={`h-full transition-all duration-1000 ease-out shadow-lg ${name.includes('claude') ? 'bg-gradient-to-r from-orange-600/50 to-orange-400/50' : 'bg-gradient-to-r from-primary/60 to-primary/30'}`}
-                          style={{ width: `${percentage}%` }}
-                        />
-                      </div>
-                    </div>
-                  )
-                })}
-            </div>
-          )}
-
-          <div className="mt-auto pt-6">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5">
-                <p className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground/60 mb-1 text-center">Stability</p>
-                <p className="text-xs font-black text-center text-primary">100.0%</p>
-              </div>
-              <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5">
-                <p className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground/60 mb-1 text-center">Avg Response</p>
-                <p className="text-xs font-black text-center text-blue-400">1.2s</p>
-              </div>
-            </div>
+      {/* Fleet Distribution (Right) */}
+      <div className="flex flex-col">
+        <Card className="bg-background/40 backdrop-blur-xl border-white/5 shadow-2xl flex-1 flex flex-col min-h-0 overflow-hidden relative">
+          <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
+            <Cpu size={120} />
           </div>
-        </CardContent>
-      </Card>
+          <CardHeader className="pb-4 shrink-0 relative z-10">
+            <CardTitle className="text-sm font-bold flex items-center gap-2 text-foreground/90">
+              <Cpu size={16} className="text-amber-500/70" />
+              Agent Distribution
+            </CardTitle>
+            <CardDescription className="text-[11px]">Provider workload across historical sessions</CardDescription>
+          </CardHeader>
+          <CardContent className="flex-1 min-h-0 relative z-10">
+            {!warehouseStats || !warehouseStats.provider_usage || Object.entries(warehouseStats.provider_usage).length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center py-12 opacity-20 grayscale">
+                <Activity size={48} className="mb-4" />
+                <p className="text-[10px] font-black uppercase tracking-[0.2em]">Telemetry Pending</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {Object.entries(warehouseStats.provider_usage)
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([name, tokens]) => {
+                    const percentage = Math.max(5, (tokens / warehouseStats.total_tokens) * 100)
+                    return (
+                      <div key={name} className="space-y-2 group/bar">
+                        <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest">
+                          <span className="flex items-center gap-2">
+                            <div className={`h-1.5 w-1.5 rounded-full ${name.includes('claude') ? 'bg-orange-500' : 'bg-primary'} shadow-[0_0_8px_rgba(var(--primary),0.4)]`} />
+                            {name}
+                          </span>
+                          <span className="text-muted-foreground group-hover/bar:text-primary transition-colors">{(tokens / 1000).toFixed(1)}k</span>
+                        </div>
+                        <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
+                          <div
+                            className={`h-full transition-all duration-1000 ease-out shadow-lg ${name.includes('claude') ? 'bg-gradient-to-r from-orange-600/50 to-orange-400/50' : 'bg-gradient-to-r from-primary/60 to-primary/30'}`}
+                            style={{ width: `${percentage}%` }}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   )
 }
@@ -561,6 +523,8 @@ function CustomDropdown({
   className = '',
   disabled = false,
   placeholder = 'Select...',
+  triggerContent,
+  direction = "down",
 }: {
   value: string | number
   options: { label: string; value: string | number; icon?: ReactNode }[]
@@ -568,6 +532,8 @@ function CustomDropdown({
   className?: string
   disabled?: boolean
   placeholder?: string
+  triggerContent?: ReactNode
+  direction?: "up" | "down"
 }) {
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -590,18 +556,22 @@ function CustomDropdown({
         type="button"
         disabled={disabled}
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium transition-all hover:border-primary/40 focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50 ${isOpen ? 'border-primary ring-2 ring-primary/20' : ''
+        className={triggerContent ? "flex items-center w-full h-full" : `flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium transition-all hover:border-primary/40 focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50 ${isOpen ? 'border-primary ring-2 ring-primary/20' : ''
           }`}
       >
-        <div className="flex items-center gap-2 truncate">
-          {selectedOption?.icon}
-          <span className="truncate">{selectedOption?.label || placeholder}</span>
-        </div>
-        <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+        {triggerContent || (
+          <>
+            <div className="flex items-center gap-2 truncate">
+              {selectedOption?.icon}
+              <span className="truncate">{selectedOption?.label || placeholder}</span>
+            </div>
+            <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+          </>
+        )}
       </button>
 
       {isOpen && (
-        <div className="absolute left-0 top-full z-[100] mt-1 w-full min-w-[160px] overflow-hidden rounded-xl border border-border bg-card p-1 shadow-2xl animate-in fade-in zoom-in-95 duration-100">
+        <div className={`absolute left-0 z-[100] w-full min-w-[160px] overflow-hidden rounded-xl border border-border bg-card p-1 shadow-2xl animate-in fade-in zoom-in-95 duration-100 ${direction === "up" ? "bottom-full mb-1 origin-bottom" : "top-full mt-1 origin-top"}`}>
           <div className="max-h-[300px] overflow-auto">
             {options.map((option) => (
               <button
@@ -636,13 +606,17 @@ export function IssueDetailView({
   timeline = [],
   availableAgents = [],
 }: {
-  result: Record<string, unknown>
+  result: Record<string, unknown> | null
   onUpdate?: (updates: Record<string, unknown>) => Promise<void>
   onStopSession?: () => Promise<void>
   config: BackendConfig | null
   timeline?: TimelineItem[]
   availableAgents?: string[]
 }) {
+  if (!result || typeof result !== 'object') {
+    return <div className="p-8 text-center text-muted-foreground italic">Invalid issue data provided.</div>
+  }
+
   const [localState, setLocalState] = useState((result.state as string) || 'Todo')
   const [localAssignee, setLocalAssignee] = useState((result.assignee_id as string) || 'Unassigned')
   const [activeTab, setActiveTab] = useState<'overview' | 'changes' | 'logs' | 'artifacts'>('overview')
@@ -1261,123 +1235,146 @@ export function CreateTaskDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl bg-card border-border shadow-2xl">
-        <DialogHeader className="border-b border-border/40 pb-4">
-          <DialogTitle className="text-xl font-bold tracking-tight">Create New Task</DialogTitle>
-          <DialogDescription className="text-muted-foreground/70">
-            Define a new orchestration unit for agent execution.
-          </DialogDescription>
-        </DialogHeader>
-
-        <form onSubmit={handleSubmit} className="space-y-6 py-6">
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1">Task Title</label>
+      <DialogContent className="max-w-2xl bg-card border-none shadow-[0_32px_64px_-12px_rgba(0,0,0,0.5)] p-0 overflow-hidden max-h-[90vh] flex flex-col rounded-2xl">
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-0">
+          <form onSubmit={handleSubmit} className="flex flex-col h-full min-h-[400px]">
+            {/* Main Content Area */}
+            <div className="flex-1 p-8 space-y-4">
               <input
                 autoFocus
-                className="h-11 w-full rounded-xl border border-border bg-background px-4 text-sm font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-sm"
-                placeholder="Briefly describe the objective..."
+                className="w-full bg-transparent border-none text-2xl font-semibold placeholder:text-muted-foreground/30 focus:ring-0 p-0 selection:bg-primary/30"
+                placeholder="Task Title"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 required
               />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1">Detailed Description</label>
               <textarea
-                className="min-h-[120px] w-full rounded-xl border border-border bg-background px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-sm resize-none"
-                placeholder="Provide additional context for the agent..."
+                className="w-full bg-transparent border-none text-base placeholder:text-muted-foreground/20 focus:ring-0 p-0 resize-none min-h-[120px] selection:bg-primary/20 leading-relaxed"
+                placeholder="Add a description..."
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
               />
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 bg-muted/20 p-4 rounded-2xl border border-border/40">
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1">Link to Project</label>
-              <CustomDropdown
-                className="w-full"
-                value={projectID}
-                options={[
-                  { label: 'No Project Association', value: '', icon: <FolderTree className="h-3 w-3" /> },
-                  ...projects.map((p) => ({ label: p.name, value: p.id, icon: <Folder className="h-3 w-3" /> })),
-                ]}
-                onChange={setProjectID}
-              />
+            {/* Attribute & Action Bar */}
+            <div className="border-t border-border/10 p-4 bg-muted/20 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ProjectSelector
+                  value={projectID}
+                  projects={projects}
+                  onChange={setProjectID}
+                />
+
+                <AgentSelector
+                  value={assignee}
+                  agents={availableAgents}
+                  onChange={setAssignee}
+                />
+
+                <PrioritySelector
+                  value={priority}
+                  onChange={setPriority}
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onOpenChange(false)}
+                  disabled={pending}
+                  className="text-muted-foreground/50 hover:text-foreground h-8 px-3 font-semibold text-[11px] uppercase tracking-wider"
+                >
+                  Discard
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={pending || !title.trim()}
+                  className="h-8 px-5 bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20 font-bold uppercase tracking-widest text-[11px]"
+                >
+                  {pending ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    'Create Task'
+                  )}
+                </Button>
+              </div>
             </div>
-
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1">Assign Agent Runner</label>
-              <CustomDropdown
-                className="w-full"
-                value={assignee}
-                options={[
-                  { label: 'Leave Unassigned', value: '', icon: <Users className="h-3 w-3" /> },
-                  ...availableAgents.map((agent) => ({
-                    label: agent,
-                    value: agent,
-                    icon: <Activity className="h-3 w-3" />,
-                  })),
-                ]}
-                onChange={setAssignee}
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1">Pipeline State</label>
-              <CustomDropdown
-                className="w-full"
-                value={state}
-                options={AGENT_STATES.map((s) => ({ label: s, value: s }))}
-                onChange={setState}
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1">Priority Level</label>
-              <CustomDropdown
-                className="w-full"
-                value={priority}
-                options={[
-                  { label: 'No Priority', value: 0, icon: <PriorityIcon priority={0} className="h-3 w-3" /> },
-                  { label: 'Low', value: 1, icon: <PriorityIcon priority={1} className="h-3 w-3" /> },
-                  { label: 'Medium', value: 2, icon: <PriorityIcon priority={2} className="h-3 w-3" /> },
-                  { label: 'High', value: 3, icon: <PriorityIcon priority={3} className="h-3 w-3" /> },
-                  { label: 'Urgent', value: 4, icon: <PriorityIcon priority={4} className="h-3 w-3" /> },
-                ]}
-                onChange={setPriority}
-              />
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-3 pt-2">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => onOpenChange(false)}
-              disabled={pending}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              Discard
-            </Button>
-            <Button
-              type="submit"
-              disabled={pending || !title.trim()}
-              className="px-6 bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20"
-            >
-              {pending ? (
-                <div className="flex items-center gap-2">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  <span>Creating...</span>
-                </div>
-              ) : 'Initialize Task'}
-            </Button>
-          </div>
-        </form>
+          </form>
+        </div>
       </DialogContent>
     </Dialog>
+  )
+}
+
+// Minimalist Attribute Selectors
+function ProjectSelector({ value, projects, onChange }: { value: string, projects: any[], onChange: (id: string) => void }) {
+  const project = projects.find(p => p.id === value)
+  return (
+    <CustomDropdown
+      className="bg-transparent border-none hover:bg-white/5 !h-7 !px-2 rounded-md transition-colors shadow-none"
+      value={value}
+      direction="up"
+      options={[
+        { label: 'Select Project', value: '', icon: <FolderTree className="h-3 w-3 opacity-40" /> },
+        ...projects.map((p) => ({ label: p.name, value: p.id, icon: <Folder className="h-3 w-3 text-primary/60" /> })),
+      ]}
+      onChange={onChange}
+      triggerContent={
+        <div className="flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground/70 uppercase">
+          {project ? <Folder size={12} className="text-primary/60" /> : <FolderTree size={12} className="opacity-40" />}
+          <span className="truncate max-w-[80px]">{project ? project.name : 'Project'}</span>
+        </div>
+      }
+    />
+  )
+}
+
+function AgentSelector({ value, agents, onChange }: { value: string, agents: string[], onChange: (a: string) => void }) {
+  return (
+    <CustomDropdown
+      className="bg-transparent border-none hover:bg-white/5 !h-7 !px-2 rounded-md transition-colors shadow-none"
+      value={value}
+      direction="up"
+      options={[
+        { label: 'Assign Agent', value: '', icon: <Users className="h-3 w-3 opacity-40" /> },
+        ...agents.map((agent) => ({ label: agent, value: agent, icon: <Activity className="h-3 w-3 text-amber-500/60" /> })),
+      ]}
+      onChange={onChange}
+      triggerContent={
+        <div className="flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground/70 uppercase">
+          {value ? <Activity size={12} className="text-amber-500/60" /> : <Users size={12} className="opacity-40" />}
+          <span className="truncate max-w-[80px]">{value || 'Assign'}</span>
+        </div>
+      }
+    />
+  )
+}
+
+function PrioritySelector({ value, onChange }: { value: number, onChange: (p: number) => void }) {
+  const priorities = [
+    { label: 'No Priority', value: 0, icon: <CircleDashed size={12} className="opacity-40" /> },
+    { label: 'Low', value: 1, icon: <SignalLow size={12} className="text-blue-500/60" /> },
+    { label: 'Medium', value: 2, icon: <SignalMedium size={12} className="text-amber-500/60" /> },
+    { label: 'High', value: 3, icon: <SignalHigh size={12} className="text-red-500/60" /> },
+  ]
+  const current = priorities.find(p => p.value === value) || priorities[0]
+
+  return (
+    <CustomDropdown
+      className="bg-transparent border-none hover:bg-white/5 !h-7 !px-2 rounded-md transition-colors shadow-none"
+      value={value.toString()}
+      direction="up"
+      options={priorities.map(p => ({ label: p.label, value: p.value.toString(), icon: p.icon }))}
+      onChange={(v) => onChange(parseInt(v))}
+      triggerContent={
+        <div className="flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground/70 uppercase">
+          {current.icon}
+          <span>{value > 0 ? current.label : 'Priority'}</span>
+        </div>
+      }
+    />
   )
 }
 
@@ -1607,16 +1604,16 @@ function WorkspaceMigrationDialog({
 export function MetricCard({ title, value, hint, icon }: { title: string; value: string; hint: string; icon: ReactNode }) {
   return (
     <Card className="relative overflow-hidden border bg-card shadow-lg dark:bg-card">
-      <div className="pointer-events-none absolute -right-10 -top-10 h-24 w-24 rotate-12 rounded-xl border bg-muted/50 dark:bg-muted/50" />
-      <CardHeader className="pb-2">
-        <CardDescription className="flex items-center justify-between">
+      <div className="pointer-events-none absolute -right-10 -top-10 h-16 w-16 rotate-12 rounded-xl border bg-muted/50 dark:bg-muted/50" />
+      <CardHeader className="p-5 pb-2">
+        <CardDescription className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider">
           <span>{title}</span>
           {icon}
         </CardDescription>
-        <CardTitle className="text-xl">{value}</CardTitle>
+        <CardTitle className="text-3xl font-black tracking-tight">{value}</CardTitle>
       </CardHeader>
-      <CardContent>
-        <p className="text-xs text-muted-foreground">{hint}</p>
+      <CardContent className="px-5 pb-5 pt-0">
+        <p className="text-[11px] text-muted-foreground font-medium leading-none">{hint}</p>
       </CardContent>
     </Card>
   )
@@ -1665,16 +1662,22 @@ export function KanbanBoard({
   snapshot,
   boardIssues = [],
   projects = [],
+  availableAgents = [],
   onInspectIssue,
   onIssueUpdate,
+  onIssueDelete,
+  onStopSession,
   onCreateIssue,
 }: {
   loadingState: boolean
   snapshot: SnapshotPayload | null
   boardIssues?: any[]
   projects?: any[]
+  availableAgents?: string[]
   onInspectIssue: (issueIdentifier: string) => Promise<void>
   onIssueUpdate?: (identifier: string, updates: Record<string, unknown>) => Promise<void>
+  onIssueDelete?: (identifier: string) => Promise<void>
+  onStopSession?: (identifier: string) => Promise<void>
   onCreateIssue?: (state: string) => void
 }) {
   const handleCreateClick = (columnId: string) => {
@@ -1964,13 +1967,53 @@ export function KanbanBoard({
                             {item.issue_identifier}
                           </span>
                         </div>
-                        <span className="text-[9px] font-medium text-muted-foreground/40">
-                          {(item as any).at
-                            ? new Date((item as any).at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                            : (item as any).due_at
-                              ? 'Retry'
-                              : ''}
-                        </span>
+                        <div className="flex flex-col items-end gap-1">
+                          <span className="text-[9px] font-medium text-muted-foreground/40 leading-none">
+                            {(item as any).at
+                              ? new Date((item as any).at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                              : (item as any).due_at
+                                ? 'Retry'
+                                : ''}
+                          </span>
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {item.state !== 'In Progress' && item.assignee_id && item.assignee_id !== 'Unassigned' && onIssueUpdate && (
+                              <button
+                                type="button"
+                                className="p-1 rounded-md text-emerald-500/60 hover:text-emerald-500 hover:bg-emerald-500/10 transition-all active:scale-95"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  void onIssueUpdate(item.issue_identifier, { state: 'In Progress' })
+                                }}
+                              >
+                                <Play className="h-3 w-3 fill-current" />
+                              </button>
+                            )}
+                            {item.state === 'In Progress' && onStopSession && (
+                              <button
+                                type="button"
+                                className="p-1 rounded-md text-amber-500/60 hover:text-amber-500 hover:bg-amber-500/10 transition-all active:scale-95"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  void onStopSession(item.issue_identifier)
+                                }}
+                              >
+                                <Square className="h-2.5 w-2.5 fill-current" />
+                              </button>
+                            )}
+                            {onIssueDelete && (
+                              <button
+                                type="button"
+                                className="p-1 rounded-md text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-all active:scale-95"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  void onIssueDelete(item.issue_identifier)
+                                }}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       </div>
                       <p className="mt-2 line-clamp-2 text-[13px] font-medium leading-tight text-foreground/90">
                         {(item as any).last_message || (item as any).error || 'No message'}
@@ -1985,14 +2028,19 @@ export function KanbanBoard({
                           {(item as any).labels.length > 2 && <span className="text-[9px] text-muted-foreground/40">+{(item as any).labels.length - 2}</span>}
                         </div>
                       )}
-                      <div className="mt-3 flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <div className="h-2 w-2 rounded-full bg-primary/20" />
-                          <span className="text-[10px] font-medium text-muted-foreground/60">{item.state}</span>
-                        </div>
+                      <div className="mt-3 flex items-center justify-between border-t border-border/10 pt-2">
+                        <AgentSelector
+                          value={item.assignee_id || ''}
+                          agents={availableAgents}
+                          onChange={(val) => {
+                            if (onIssueUpdate) {
+                              void onIssueUpdate(item.issue_identifier, { assignee_id: val })
+                            }
+                          }}
+                        />
                         {(item as any).session_id ? (
                           <div className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-tighter text-amber-500/80">
-                            <Activity className="h-2.5 w-2.5" />
+                            <Activity className="h-2.5 w-2.5 animate-pulse" />
                             <span>Live</span>
                           </div>
                         ) : null}
@@ -2018,9 +2066,11 @@ export function KanbanBoard({
                   <tr className="border-b bg-muted/80 backdrop-blur text-[10px] uppercase tracking-wider font-bold text-muted-foreground">
                     <th className="px-4 py-3 w-24">ID</th>
                     <th className="px-4 py-3">Title</th>
+                    <th className="px-4 py-3 w-32">Assignee</th>
                     <th className="px-4 py-3 w-28">Status</th>
                     <th className="px-4 py-3 w-28">Priority</th>
                     <th className="px-4 py-3 w-32 text-right">Activity</th>
+                    <th className="px-4 py-3 w-20 text-right"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/40">
@@ -2046,6 +2096,17 @@ export function KanbanBoard({
                           )}
                         </div>
                       </td>
+                      <td className="px-4 py-3">
+                        <AgentSelector
+                          value={item.assignee_id || ''}
+                          agents={availableAgents}
+                          onChange={(val) => {
+                            if (onIssueUpdate) {
+                              void onIssueUpdate(item.issue_identifier, { assignee_id: val })
+                            }
+                          }}
+                        />
+                      </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="flex items-center gap-2">
                           <div className={`h-1.5 w-1.5 rounded-full ${item.state === 'Done' ? 'bg-primary' :
@@ -2067,6 +2128,46 @@ export function KanbanBoard({
                         <span className="text-[10px] font-mono text-muted-foreground/60">
                           {item.at ? new Date(item.at).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
                         </span>
+                      </td>
+                      <td className="px-2 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          {item.state !== 'In Progress' && item.assignee_id && item.assignee_id !== 'Unassigned' && onIssueUpdate && (
+                            <button
+                              type="button"
+                              className="p-1 rounded-md text-emerald-500/60 hover:text-emerald-500 hover:bg-emerald-500/10 transition-all active:scale-95"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                void onIssueUpdate(item.issue_identifier, { state: 'In Progress' })
+                              }}
+                            >
+                              <Play className="h-3.5 w-3.5 fill-current" />
+                            </button>
+                          )}
+                          {item.state === 'In Progress' && onStopSession && (
+                            <button
+                              type="button"
+                              className="p-1 rounded-md text-amber-500/60 hover:text-amber-500 hover:bg-amber-500/10 transition-all active:scale-95"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                void onStopSession(item.issue_identifier)
+                              }}
+                            >
+                              <Square className="h-3 w-3 fill-current" />
+                            </button>
+                          )}
+                          {onIssueDelete && (
+                            <button
+                              type="button"
+                              className="p-1 rounded-md text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-all opacity-0 group-hover:opacity-100"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                void onIssueDelete(item.issue_identifier)
+                              }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}

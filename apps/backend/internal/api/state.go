@@ -387,6 +387,16 @@ func (s *Server) DeleteIssueSession(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *Server) DeleteIssue(w http.ResponseWriter, r *http.Request) {
+	identifier := chi.URLParam(r, "issue_identifier")
+	if err := s.orchestrator.DeleteIssue(r.Context(), identifier); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "delete_failed", err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) GetAgents(w http.ResponseWriter, _ *http.Request) {
 	providers := s.orchestrator.GetProviders()
 	w.Header().Set("Content-Type", "application/json")
@@ -466,4 +476,27 @@ func (s *Server) PostAgentConfig(w http.ResponseWriter, r *http.Request) {
 
 	s.orchestrator.UpdateAgentConfig(body.Commands, body.AgentProvider)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) GetMCPTools(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	mcpReg := s.orchestrator.GetMCPRegistry()
+	if mcpReg == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{"tools": []any{}})
+		return
+	}
+
+	tools, err := mcpReg.ListTools(ctx)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "mcp_failed", err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"tools": tools,
+	})
 }

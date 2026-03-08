@@ -28,6 +28,7 @@ var AgentMeta = map[string]struct {
 	GlobalPaths []string
 	LocalPaths  []string
 	Format      string // "json" or "toml"
+	SkillPaths  []string
 }{
 	"claude": {
 		GlobalPaths: []string{".claude/settings.json", ".claude.json"},
@@ -45,6 +46,7 @@ var AgentMeta = map[string]struct {
 		GlobalPaths: []string{".gemini/settings.json"},
 		LocalPaths:  []string{".gemini/settings.json"},
 		Format:      "json",
+		SkillPaths:  []string{},
 	},
 	"opencode": {
 		GlobalPaths: []string{".config/opencode/opencode.json"},
@@ -52,6 +54,18 @@ var AgentMeta = map[string]struct {
 		Format:      "json",
 		SkillPaths:  []string{".config/opencode/agents", ".config/opencode/skills", ".config/opencode/tools"},
 	},
+}
+
+func GetHomeDir() string {
+	home, _ := os.UserHomeDir()
+	return home
+}
+
+func resolvePath(p string) string {
+	if strings.HasPrefix(p, "~/") {
+		return filepath.Join(GetHomeDir(), p[2:])
+	}
+	return p
 }
 
 func ListAgentConfigs(workspaceRoot string, projectRoot string) ([]AgentConfig, error) {

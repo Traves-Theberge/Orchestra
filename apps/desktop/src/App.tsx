@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Activity, Database, FolderTree, Gauge, History, LayoutDashboard, ListTodo, RefreshCcw, Settings2, ShieldCheck, Ticket, Cpu, Zap } from 'lucide-react'
+import { Activity, Database, FolderTree, Gauge, History, LayoutDashboard, ListTodo, RefreshCcw, Settings2, ShieldCheck, Ticket, Cpu, Zap, FileText } from 'lucide-react'
 import { SidebarNav } from '@/components/app-shell/sidebar-nav'
 import { TopBar } from '@/components/app-shell/top-bar'
 import {
@@ -45,6 +45,7 @@ import {
   createProject,
   createIssue,
   deleteProject,
+  deleteIssue,
   fetchSessionDetail,
   type BackendConfig,
 } from '@/lib/orchestra-client'
@@ -56,6 +57,7 @@ import { ProjectDetailView } from '@/components/projects/ProjectDetailView'
 import { AnalyticsDashboard } from '@/components/warehouse/AnalyticsDashboard'
 import { SessionDetailView } from '@/components/warehouse/SessionDetailView'
 import { AgentsDashboard } from '@/components/agents/AgentsDashboard'
+import { DocsDashboard } from '@/components/docs/DocsDashboard'
 import { Command } from 'cmdk'
 import { OverlayScrollbarsComponent } from 'overlayscrollbars-react'
 
@@ -74,18 +76,6 @@ const sidebarItems: SidebarItem[] = [
     icon: LayoutDashboard,
   },
   {
-    id: 'running',
-    label: 'Running',
-    description: 'Active issue sessions',
-    icon: ListTodo,
-  },
-  {
-    id: 'timeline',
-    label: 'Activity Feed',
-    description: 'Real-time lifecycle events',
-    icon: History,
-  },
-  {
     id: 'issues',
     label: 'Tasks',
     description: 'Task board and inspector',
@@ -96,6 +86,18 @@ const sidebarItems: SidebarItem[] = [
     label: 'Projects',
     description: 'Local workspace grouping',
     icon: FolderTree,
+  },
+  {
+    id: 'running',
+    label: 'Running',
+    description: 'Active issue sessions',
+    icon: ListTodo,
+  },
+  {
+    id: 'timeline',
+    label: 'Activity Feed',
+    description: 'Real-time lifecycle events',
+    icon: History,
   },
   {
     id: 'agents',
@@ -114,6 +116,12 @@ const sidebarItems: SidebarItem[] = [
     label: 'Settings',
     description: 'Backend and migration controls',
     icon: Settings2,
+  },
+  {
+    id: 'docs',
+    label: 'Documentation',
+    description: 'User & engineering guides',
+    icon: FileText,
   },
 ]
 
@@ -193,6 +201,7 @@ export default function App() {
     showAgents: activeSection === 'agents',
     showWarehouse: activeSection === 'warehouse',
     showSettings: activeSection === 'settings',
+    showDocs: activeSection === 'docs',
   }
   const sectionMeta: Record<string, { label: string; title: string }> = {
     dashboard: { label: 'Operations', title: 'Dashboard' },
@@ -203,6 +212,7 @@ export default function App() {
     agents: { label: 'Compute', title: 'Agents' },
     warehouse: { label: 'Analytics', title: 'Warehouse' },
     settings: { label: 'System', title: 'Settings' },
+    docs: { label: 'Knowledge', title: 'Documentation' },
   }
   const currentSectionMeta = sectionMeta[activeSection] ?? sectionMeta.dashboard
 
@@ -593,6 +603,28 @@ export default function App() {
     }
   }
 
+  const handleIssueDelete = async (identifier: string) => {
+    if (!config) return
+    if (!window.confirm(`Are you sure you want to delete task ${identifier}?`)) return
+
+    try {
+      await deleteIssue(config, identifier)
+      setStatusMessage(`Task ${identifier} deleted.`)
+
+      // Instantly update the board issues
+      const updatedIssues = await fetchIssues(config)
+      setBoardIssues(updatedIssues)
+
+      void handleRefresh()
+      if (issueLookupId === identifier) {
+        setIssueLookupResult(null)
+        setIssueLookupId('')
+      }
+    } catch (err) {
+      setErrorMessage(`delete issue failed: ${toDisplayError(err)}`)
+    }
+  }
+
   const handleInspectIssueFromList = async (issueIdentifier: string) => {
     setIssueLookupId(issueIdentifier)
     setInspectDialogOpen(true)
@@ -845,7 +877,7 @@ export default function App() {
           options={osOptions}
           className="min-w-0 flex-1 bg-gradient-to-b from-background via-background to-muted/30 h-full"
         >
-          <div className="px-3 pb-4 pt-1 lg:px-6 w-full max-w-[1700px] mx-auto flex flex-col min-h-full transition-all duration-500">
+          <div className="px-6 pb-6 pt-4 lg:px-8 w-full max-w-[1800px] mx-auto flex flex-col min-h-full transition-all duration-500 origin-top-left" style={{ zoom: 0.6 }}>
             <TopBar
               sectionLabel={currentSectionMeta.label}
               sectionTitle={currentSectionMeta.title}
@@ -867,10 +899,10 @@ export default function App() {
               onTogglePolling={handleTogglePolling}
             />
 
-            <div className="mt-1 grid min-w-0 grid-cols-12 gap-1.5 flex-1">
+            <div className="mt-4 grid min-w-0 grid-cols-12 gap-3 flex-1">
               {sectionVisibility.showDashboard ? (
                 <>
-                  <section className="col-span-12 grid gap-1.5 md:grid-cols-2 xl:grid-cols-3 h-fit">
+                  <section className="col-span-12 grid grid-cols-3 gap-3 h-fit">
                     <MetricCard title="Active Sessions" value={metrics.running} icon={<Activity className="h-3.5 w-3.5 text-primary" />} hint="Issues currently being processed" />
                     <MetricCard title="Pending Retries" value={metrics.retrying} icon={<RefreshCcw className="h-3.5 w-3.5 text-amber-500" />} hint="Work items in backoff queue" />
                     <MetricCard title="Fleet Token Usage" value={metrics.totalTokens} icon={<Zap className="h-3.5 w-3.5 text-blue-500" />} hint="Aggregate compute consumption" />
@@ -893,12 +925,12 @@ export default function App() {
                     />
                   </section>
 
-                  <section className="col-span-12 xl:col-span-8 min-h-[400px]">
+                  <section className="col-span-12 lg:col-span-8 min-h-[450px] flex flex-col">
                     <OperationsQueueCard loadingState={loadingState} snapshot={snapshot} onInspectIssue={handleInspectIssueFromList} />
                   </section>
 
-                  <section className="col-span-12 xl:col-span-4 min-h-[400px]">
-                    <TimelineCard timeline={timeline.slice(0, 8)} />
+                  <section className="col-span-12 lg:col-span-4 min-h-[450px] flex flex-col">
+                    <TimelineCard timeline={timeline.slice(0, 15)} />
                   </section>
                 </>
               ) : null}
@@ -935,7 +967,7 @@ export default function App() {
 
               {sectionVisibility.showAgents ? (
                 <section className="col-span-12 flex flex-col flex-1">
-                  <AgentsDashboard config={config} />
+                  <AgentsDashboard config={config} snapshot={snapshot} />
                 </section>
               ) : null}
 
@@ -956,8 +988,11 @@ export default function App() {
                     snapshot={snapshot}
                     boardIssues={boardIssues}
                     projects={projects}
+                    availableAgents={availableAgents}
                     onInspectIssue={handleInspectIssueFromList}
                     onIssueUpdate={handleIssueUpdate}
+                    onIssueDelete={handleIssueDelete}
+                    onStopSession={handleStopSession}
                     onCreateIssue={handleCreateIssue}
                   />
                 </section>
@@ -972,6 +1007,12 @@ export default function App() {
               {sectionVisibility.showTimeline ? (
                 <section className="col-span-12 flex flex-col">
                   <TimelineCard timeline={timeline} />
+                </section>
+              ) : null}
+
+              {sectionVisibility.showDocs ? (
+                <section className="col-span-12 flex flex-col flex-1">
+                  <DocsDashboard config={config} />
                 </section>
               ) : null}
 
@@ -1024,7 +1065,7 @@ export default function App() {
               <div className="rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-900 dark:border-red-900/70 dark:bg-red-950/35 dark:text-red-200">
                 {issueLookupError}
               </div>
-            ) : issueLookupResult ? (
+            ) : (issueLookupResult && typeof issueLookupResult === 'object') ? (
               <IssueDetailView
                 result={issueLookupResult}
                 config={config}
@@ -1034,7 +1075,7 @@ export default function App() {
                 onStopSession={() => handleStopSession(issueLookupId)}
               />
             ) : (
-              <p className="text-center text-sm text-muted-foreground">No issue selected.</p>
+              <p className="text-center text-sm text-muted-foreground py-10">No issue data available.</p>
             )}
           </div>
         </DialogContent>

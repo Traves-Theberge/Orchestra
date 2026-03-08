@@ -54,6 +54,7 @@ func Load() (Config, error) {
 	projectRootsRaw := getenvOrEmpty("ORCHESTRA_PROJECT_ROOTS")
 	githubClientID := getenvOrEmpty("ORCHESTRA_GITHUB_CLIENT_ID")
 	githubClientSecret := getenvOrEmpty("ORCHESTRA_GITHUB_CLIENT_SECRET")
+	mcpServersRaw := getenvOrEmpty("ORCHESTRA_MCP_SERVERS")
 
 	workflowOverrides := loadWorkflowOverrides(strings.TrimSpace(workflowPath))
 	if host == "" {
@@ -206,6 +207,7 @@ func Load() (Config, error) {
 	}
 	trackerWorkerAssigneeIDs := parseStateList(trackerWorkerAssigneeIDsRaw)
 	projectRoots := parseStateList(projectRootsRaw)
+	mcpServers := parseMCPServers(mcpServersRaw)
 
 	return Config{
 		Host:                     strings.TrimSpace(host),
@@ -234,7 +236,23 @@ func Load() (Config, error) {
 		ProjectRoots:       projectRoots,
 		GitHubClientID:     githubClientID,
 		GitHubClientSecret: githubClientSecret,
+		MCPServers:         mcpServers,
 	}, nil
+}
+
+func parseMCPServers(raw string) map[string]string {
+	out := make(map[string]string)
+	if strings.TrimSpace(raw) == "" {
+		return out
+	}
+	parts := strings.Split(raw, ",")
+	for _, p := range parts {
+		kv := strings.SplitN(p, "=", 2)
+		if len(kv) == 2 {
+			out[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+		}
+	}
+	return out
 }
 
 type workflowConfigOverrides struct {
@@ -265,6 +283,7 @@ type workflowConfigOverrides struct {
 	ProjectRoots             string
 	GitHubClientID           string
 	GitHubClientSecret       string
+	MCPServersRaw            string
 }
 
 func loadWorkflowOverrides(path string) workflowConfigOverrides {
@@ -350,14 +369,17 @@ func loadWorkflowOverrides(path string) workflowConfigOverrides {
 		WorkspaceAfterRun: firstStringValue(
 			lookupNested(doc.Config, []string{"workspace", "after_run"}),
 		),
-		ProjectRoots: firstCSVValue(
+		ProjectRoots: firstStringValue(
 			lookupNested(doc.Config, []string{"workspace", "project_roots"}),
 		),
 		GitHubClientID: firstStringValue(
-			lookupNested(doc.Config, []string{"auth", "github", "client_id"}),
+			lookupNested(doc.Config, []string{"github", "client_id"}),
 		),
 		GitHubClientSecret: firstStringValue(
-			lookupNested(doc.Config, []string{"auth", "github", "client_secret"}),
+			lookupNested(doc.Config, []string{"github", "client_secret"}),
+		),
+		MCPServersRaw: firstStringValue(
+			lookupNested(doc.Config, []string{"mcp", "servers"}),
 		),
 	}
 }

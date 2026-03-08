@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -37,6 +38,20 @@ func (r *CommandRunner) RunTurn(ctx context.Context, request TurnRequest, onEven
 	}
 	if commandLine == "" {
 		return TurnResult{}, fmt.Errorf("agent command missing for provider %s", r.provider)
+	}
+
+	// Inject ToolSpecs as a JSON file if present
+	if len(request.ToolSpecs) > 0 {
+		toolsPath := filepath.Join(request.Workspace, "tools.json")
+		toolsData, _ := json.MarshalIndent(request.ToolSpecs, "", "  ")
+		_ = os.WriteFile(toolsPath, toolsData, 0o644)
+	}
+
+	// Inject ResourceSpecs as a JSON file if present
+	if len(request.ResourceSpecs) > 0 {
+		resPath := filepath.Join(request.Workspace, "resources.json")
+		resData, _ := json.MarshalIndent(request.ResourceSpecs, "", "  ")
+		_ = os.WriteFile(resPath, resData, 0o644)
 	}
 
 	finalPrompt := strings.TrimSpace(request.Prompt)

@@ -15,6 +15,7 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/config"
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
 	"github.com/orchestra/orchestra/apps/backend/internal/logfile"
+	"github.com/orchestra/orchestra/apps/backend/internal/mcp"
 	"github.com/orchestra/orchestra/apps/backend/internal/observability"
 	"github.com/orchestra/orchestra/apps/backend/internal/orchestrator"
 	"github.com/orchestra/orchestra/apps/backend/internal/prompt"
@@ -73,6 +74,12 @@ func Run(logger zerolog.Logger) error {
 	workspaceService := workspace.Service{Root: cfg.WorkspaceRoot}
 	orchestratorService.SetWorkspaceService(workspaceService)
 	orchestratorService.SetWorkspaceRoot(cfg.WorkspaceRoot)
+
+	// Initialize MCP
+	mcpRegistry := mcp.NewRegistry(cfg.MCPServers, logger)
+	mcpRegistry.StartAll(context.Background())
+	orchestratorService.SetMCPRegistry(mcpRegistry, cfg.MCPServers)
+
 	logger.Info().Str("agent_provider", cfg.AgentProvider).Str("service_id", runtime.ServiceOrchestrator).Msg("agent provider configured")
 
 	router := api.NewRouterWithPubSub(logger, orchestratorService, &cfg, pubsub, warehouseDB)
@@ -168,12 +175,18 @@ func processExecutionTick(
 		return
 	}
 
-	// Resolve provider from assignee if possible, otherwise fallback to default
+	// Resolve provider from entry or configuration
 	activeProvider := provider
 	activeProviderName := providerName
 
-	if entry.AssigneeID != "" {
-		// Strip "agent-" prefix if present from UI identifiers
+	if entry.Provider != "" {
+		candidate := agents.Provider(strings.ToLower(entry.Provider))
+		if registry.HasProvider(candidate) {
+			activeProvider = candidate
+			activeProviderName = string(candidate)
+		}
+	} else if entry.AssigneeID != "" {
+		// Fallback: Resolve provider from assignee if possible
 		p := strings.TrimPrefix(entry.AssigneeID, "agent-")
 		candidate := agents.Provider(strings.ToLower(p))
 		if registry.HasProvider(candidate) {
@@ -282,6 +295,36 @@ func processExecutionTick(
 
 	var eventsBuffer []agents.Event
 
+	// Fetch MCP tools and resources
+	allToolSpecs := make([]map[string]any, len(toolSpecs))
+	copy(allToolSpecs, toolSpecs)
+	var allResourceSpecs []map[string]any
+
+	if mcpReg := service.GetMCPRegistry(); mcpReg != nil {
+		mcpTools, _ := mcpReg.ListTools(runCtx)
+		allToolSpecs = append(allToolSpecs, mcpTools...)
+		
+		mcpResources, _ := mcpReg.ListResources(runCtx)
+		allResourceSpecs = append(allResourceSpecs, mcpResources...)
+	}
+
+	// Create a tool executor that can route to MCP
+	mcpAwareExecutor := func(tool string, args map[string]any) map[string]any {
+		// Check if it's an MCP tool (prefixed with server name)
+		if mcpReg := service.GetMCPRegistry(); mcpReg != nil {
+			if strings.Contains(tool, "_") {
+				parts := strings.SplitN(tool, "_", 2)
+				serverName := parts[0]
+				toolName := parts[1]
+				res, err := mcpReg.ExecuteTool(context.Background(), serverName, toolName, args)
+				if err == nil {
+					return res
+				}
+			}
+		}
+		return toolExecutor(tool, args)
+	}
+
 	result, runErr := registry.RunTurn(runCtx, activeProvider, agents.TurnRequest{
 		Workspace:       workspacePath,
 		WorkspaceRoot:   workspaceRoot,
@@ -290,9 +333,10 @@ func processExecutionTick(
 		Attempt:         int(attempt),
 		Timeout:         30 * time.Minute,
 		AutoApprove:     true,
-		ToolExecutor:    toolExecutor,
-		ToolSpecs:       toolSpecs,
-	}, func(event agents.Event) {
+		ToolExecutor:    mcpAwareExecutor,
+		ToolSpecs:       allToolSpecs,
+		ResourceSpecs:   allResourceSpecs,
+	}, func(e agents.Event) {
 		service.RecordRunEvent(entry.IssueID, event)
 		publishRunEvent(pubsub, entry, activeProviderName, event)
 		eventsBuffer = append(eventsBuffer, event)

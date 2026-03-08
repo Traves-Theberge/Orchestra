@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import {
     ArrowLeft, Folder, Globe, History, Zap, ExternalLink,
-    Calendar, Code, GitBranch, RefreshCcw, Trash2, Github,
+    Calendar, Code as CodeIcon, GitBranch, RefreshCcw, Trash2, Github,
     FileText, Activity, Layers, ChevronRight, File, Folder as FolderIcon, Info
 } from 'lucide-react'
 import type { Project, ProjectStats, SnapshotPayload, BackendConfig } from '@/lib/orchestra-types'
@@ -127,7 +127,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
     const tabs = [
         { id: 'overview', label: 'Overview', icon: <Layers size={14} /> },
-        { id: 'tasks', label: 'Board', icon: <Code size={14} /> },
+        { id: 'tasks', label: 'Board', icon: <CodeIcon size={14} /> },
         { id: 'files', label: 'Files', icon: <FileText size={14} /> },
         { id: 'git', label: 'Git', icon: <GitBranch size={14} /> },
     ] as const
@@ -271,7 +271,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                                 <StatCard title="Total Sessions" value={stats?.total_sessions || 0} icon={<History size={20} />} color="blue" />
                                 <StatCard title="Token Throughput" value={((stats?.total_input || 0) + (stats?.total_output || 0)).toLocaleString()} icon={<Zap size={20} />} color="amber" />
                                 <StatCard title="Last Active" value={stats?.last_active ? new Date(stats.last_active).toLocaleDateString() : 'N/A'} icon={<Calendar size={20} />} color="green" />
-                                <StatCard title="Files Impacted" value="--" icon={<Code size={20} />} color="primary" />
+                                <StatCard title="Files Impacted" value="--" icon={<CodeIcon size={20} />} color="primary" />
                             </div>
 
                             {/* Recent Activity Mini-Timeline */}

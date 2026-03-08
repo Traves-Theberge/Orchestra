@@ -176,3 +176,31 @@ func TestMemoryClientPreservesRichIssueFields(t *testing.T) {
 		t.Fatalf("expected timestamps preserved, got created=%q updated=%q", issue.CreatedAt, issue.UpdatedAt)
 	}
 }
+
+func TestDeleteIssue(t *testing.T) {
+	client := NewClient([]tracker.Issue{
+		{ID: "1", Identifier: "ORC-1", State: "Todo"},
+		{ID: "2", Identifier: "ORC-2", State: "Done"},
+	})
+
+	if err := client.DeleteIssue(context.Background(), "ORC-1"); err != nil {
+		t.Fatalf("delete issue: %v", err)
+	}
+
+	issues, err := client.FetchCandidateIssues(context.Background(), []string{"todo"})
+	if err != nil {
+		t.Fatalf("fetch candidates: %v", err)
+	}
+	if len(issues) != 0 {
+		t.Fatalf("expected 0 issues, got %d", len(issues))
+	}
+
+	// Verify other issues remain
+	issues2, err := client.FetchIssuesByIDs(context.Background(), []string{"2"})
+	if err != nil {
+		t.Fatalf("fetch issues by ids: %v", err)
+	}
+	if len(issues2) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(issues2))
+	}
+}

@@ -196,6 +196,10 @@ func (c *Client) UpdateIssue(ctx context.Context, identifier string, updates map
 	return c.fetchIssue(ctx, issueNumber)
 }
 
+func (c *Client) DeleteIssue(ctx context.Context, identifier string) error {
+	return fmt.Errorf("GitHub DeleteIssue not implemented yet")
+}
+
 func (c *Client) fetchIssue(ctx context.Context, id string) (*tracker.Issue, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/issues/%s", c.owner, c.repo, id)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)

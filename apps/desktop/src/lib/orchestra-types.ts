@@ -55,6 +55,7 @@ export type SnapshotPayload = {
   retrying: RetryEntry[]
   codex_totals: CodexTotals
   rate_limits: Record<string, unknown> | null
+  mcp_servers?: Record<string, string>
 }
 
 export type EventEnvelope = {
@@ -119,4 +120,13 @@ export type AgentConfig = {
   content: string
   path: string
   category: 'core' | 'skill'
+  scope: 'global' | 'project'
+}
+
+export type DocItem = {
+  name: string
+  path: string
+  category: string
+  is_folder: boolean
+  children?: DocItem[]
 }

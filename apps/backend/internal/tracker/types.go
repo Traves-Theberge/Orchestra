@@ -41,4 +41,5 @@ type Client interface {
 	SearchIssues(ctx context.Context, query string) ([]Issue, error)
 	CreateIssue(ctx context.Context, title, description, state string, priority int, assigneeID, projectID string) (*Issue, error)
 	UpdateIssue(ctx context.Context, identifier string, updates map[string]any) (*Issue, error)
+	DeleteIssue(ctx context.Context, identifier string) error
 }

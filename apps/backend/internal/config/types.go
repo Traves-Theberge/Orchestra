@@ -28,6 +28,7 @@ type Config struct {
 	ProjectRoots             []string
 	GitHubClientID           string
 	GitHubClientSecret       string
+	MCPServers               map[string]string // Name -> Command or URL
 }
 
 func (c Config) PortString() string {

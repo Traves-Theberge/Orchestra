@@ -85,6 +85,11 @@ func NewRouterWithPubSub(
 	r.Post("/api/v1/config/agents/items", server.PostAgentConfigUpdate)
 	r.Get("/api/v1/agents", server.GetAgents)
 
+	r.Get("/api/v1/docs", server.GetDocs)
+	r.Get("/api/v1/docs/*", server.GetDocContent)
+
+	r.Get("/api/v1/mcp/tools", server.GetMCPTools)
+
 	r.Get("/api/v1/projects", server.GetProjects)
 	r.Post("/api/v1/projects", server.CreateProject)
 	r.Get("/api/v1/projects/{project_id}", server.GetProject)
@@ -117,6 +122,7 @@ func NewRouterWithPubSub(
 	r.Get("/api/v1/issues/{issue_identifier}/artifacts", server.GetArtifacts)
 	r.Get("/api/v1/issues/{issue_identifier}/artifacts/*", server.GetArtifactContent)
 	r.Patch("/api/v1/issues/{issue_identifier}", server.PatchIssue)
+	r.Delete("/api/v1/issues/{issue_identifier}", server.DeleteIssue)
 	r.Delete("/api/v1/issues/{issue_identifier}/session", server.DeleteIssueSession)
 
 	return r

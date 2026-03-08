@@ -215,6 +215,20 @@ func (c *Client) UpdateIssue(_ context.Context, identifier string, updates map[s
 	return target, nil
 }
 
+func (c *Client) DeleteIssue(_ context.Context, identifier string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for id, issue := range c.issues {
+		if issue.Identifier == identifier || issue.ID == identifier {
+			delete(c.issues, id)
+			return nil
+		}
+	}
+
+	return nil
+}
+
 func normalizeStateSet(values []string) map[string]struct{} {
 	out := map[string]struct{}{}
 	for _, value := range values {

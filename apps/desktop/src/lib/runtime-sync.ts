@@ -82,7 +82,7 @@ export function startRuntimeSync(config: BackendConfig, handlers: RuntimeSyncHan
 
   const attachStream = () => {
     if (config.apiToken && config.apiToken.trim() !== '') {
-      handlers.onStatus('SSE disabled while bearer token is set (EventSource header limitation); polling mode active.')
+      handlers.onStatus('Polling Mode (SSE Disabled)')
       startPolling()
       return
     }
@@ -107,7 +107,7 @@ export function startRuntimeSync(config: BackendConfig, handlers: RuntimeSyncHan
       const wasReconnecting = reconnectAttempt > 0
       reconnectAttempt = 0
       stopPolling()
-      handlers.onStatus('SSE connected.')
+      handlers.onStatus('SSE Live')
       // Spec 5.1: Refetch full state on reconnect to ensure consistency after a disconnect span.
       if (wasReconnecting) {
         void loadSnapshot()
@@ -126,7 +126,7 @@ export function startRuntimeSync(config: BackendConfig, handlers: RuntimeSyncHan
     const pushEnvelope = (eventType: string, dataText: string) => {
       try {
         const parsed = deps.normalizeEnvelope(JSON.parse(dataText), eventType)
-        
+
         // Spec 5.3: Deduplicate retry events by (issue_id, attempt, error) identity.
         if (eventType === 'retry_scheduled') {
           const issueId = (parsed.data.issue_id as string) || ''
@@ -156,7 +156,7 @@ export function startRuntimeSync(config: BackendConfig, handlers: RuntimeSyncHan
     }
 
     stream.onerror = () => {
-      handlers.onStatus('SSE disconnected, using polling fallback and reconnecting...')
+      handlers.onStatus('SSE Offline (Polling)')
       startPolling()
       if (stream) {
         stream.close()

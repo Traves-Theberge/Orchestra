@@ -172,6 +172,15 @@ func (c *Client) UpdateIssue(ctx context.Context, identifier string, updates map
 	return c.fetchSingleIssue(ctx, identifier)
 }
 
+func (c *Client) DeleteIssue(ctx context.Context, identifier string) error {
+	query := "DELETE FROM issues WHERE id = ? OR identifier = ?;"
+	_, err := c.db.ExecContext(ctx, query, identifier, identifier)
+	if err != nil {
+		return fmt.Errorf("delete issue: %w", err)
+	}
+	return nil
+}
+
 func (c *Client) fetchSingleIssue(ctx context.Context, identifier string) (*tracker.Issue, error) {
 	query := "SELECT id, identifier, title, description, state, assignee_id, project_id, priority, created_at FROM issues WHERE id = ? OR identifier = ?;"
 	issues, err := c.queryIssues(ctx, query, identifier, identifier)
