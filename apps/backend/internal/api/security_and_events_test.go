@@ -12,6 +12,7 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/agents"
 	"github.com/orchestra/orchestra/apps/backend/internal/observability"
 	"github.com/orchestra/orchestra/apps/backend/internal/orchestrator"
+	"github.com/orchestra/orchestra/apps/backend/internal/config"
 	"github.com/rs/zerolog"
 )
 
@@ -46,7 +47,7 @@ func parseSSEFrames(body string) []sseFrame {
 }
 
 func TestProtectedEndpointsRequireBearerTokenOnNonLoopbackHost(t *testing.T) {
-	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), t.TempDir(), "0.0.0.0", "top-secret")
+	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), &config.Config{WorkspaceRoot: t.TempDir(), Host: "0.0.0.0", APIToken: "top-secret"})
 
 	refreshNoAuth := httptest.NewRequest(http.MethodPost, "/api/v1/refresh", nil)
 	refreshNoAuthRes := httptest.NewRecorder()
@@ -87,7 +88,7 @@ func TestProtectedEndpointsRequireBearerTokenOnNonLoopbackHost(t *testing.T) {
 }
 
 func TestProtectedEndpointsRemainOpenOnLoopbackHost(t *testing.T) {
-	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), t.TempDir(), "127.0.0.1", "top-secret")
+	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: "top-secret"})
 
 	refreshReq := httptest.NewRequest(http.MethodPost, "/api/v1/refresh", nil)
 	refreshRes := httptest.NewRecorder()
@@ -105,7 +106,7 @@ func TestProtectedEndpointsRemainOpenOnLoopbackHost(t *testing.T) {
 }
 
 func TestAPICorsPreflightAllowsLoopbackOrigin(t *testing.T) {
-	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), t.TempDir(), "127.0.0.1", "")
+	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""})
 	req := httptest.NewRequest(http.MethodOptions, "/api/v1/state", nil)
 	req.Header.Set("Origin", "http://127.0.0.1:3000")
 	req.Header.Set("Access-Control-Request-Method", http.MethodGet)
@@ -124,7 +125,7 @@ func TestAPICorsPreflightAllowsLoopbackOrigin(t *testing.T) {
 }
 
 func TestEventsEndpointStreamsSnapshotFrame(t *testing.T) {
-	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), t.TempDir(), "127.0.0.1", "")
+	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events?once=1", nil)
 	res := httptest.NewRecorder()
 	router.ServeHTTP(res, req)
@@ -159,7 +160,7 @@ func TestEventsEndpointSnapshotIncludesRateLimits(t *testing.T) {
 		},
 	})
 
-	router := NewRouter(zerolog.Nop(), service, t.TempDir(), "127.0.0.1", "")
+	router := NewRouter(zerolog.Nop(), service, &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events?once=1", nil)
 	res := httptest.NewRecorder()
 	router.ServeHTTP(res, req)
@@ -180,7 +181,7 @@ func TestEventsEndpointStreamingSnapshotReflectsUpdatedRateLimits(t *testing.T) 
 	service := orchestrator.NewService()
 	service.SetRunningForTest([]orchestrator.RunningEntry{{IssueID: "1", IssueIdentifier: "ORC-1"}})
 	pubsub := observability.NewPubSub()
-	router := NewRouterWithPubSub(zerolog.Nop(), service, t.TempDir(), "127.0.0.1", "", pubsub)
+	router := NewRouterWithPubSub(zerolog.Nop(), service, &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""}, pubsub, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil).WithContext(ctx)
@@ -209,7 +210,7 @@ func TestEventsEndpointStreamingSnapshotReflectsUpdatedRateLimits(t *testing.T) 
 }
 
 func TestWorkspaceMigrationPlanEndpoint(t *testing.T) {
-	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), t.TempDir(), "127.0.0.1", "")
+	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspace/migration/plan", nil)
 	res := httptest.NewRecorder()
 	router.ServeHTTP(res, req)
@@ -228,7 +229,7 @@ func TestWorkspaceMigrationPlanEndpoint(t *testing.T) {
 
 func TestEventsEndpointStreamsPubSubEvent(t *testing.T) {
 	pubsub := observability.NewPubSub()
-	router := NewRouterWithPubSub(zerolog.Nop(), orchestrator.NewService(), t.TempDir(), "127.0.0.1", "", pubsub)
+	router := NewRouterWithPubSub(zerolog.Nop(), orchestrator.NewService(), &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""}, pubsub, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil).WithContext(ctx)
@@ -252,7 +253,7 @@ func TestEventsEndpointPublishesImmediateSnapshotAfterPubSubEvent(t *testing.T) 
 	service := orchestrator.NewService()
 	service.SetRunningForTest([]orchestrator.RunningEntry{{IssueID: "1", IssueIdentifier: "ORC-1"}})
 	pubsub := observability.NewPubSub()
-	router := NewRouterWithPubSub(zerolog.Nop(), service, t.TempDir(), "127.0.0.1", "", pubsub)
+	router := NewRouterWithPubSub(zerolog.Nop(), service, &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""}, pubsub, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil).WithContext(ctx)
@@ -287,7 +288,7 @@ func TestEventsEndpointPublishesImmediateSnapshotAfterPubSubEvent(t *testing.T) 
 
 func TestEventsEndpointStreamsLifecycleEvents(t *testing.T) {
 	pubsub := observability.NewPubSub()
-	router := NewRouterWithPubSub(zerolog.Nop(), orchestrator.NewService(), t.TempDir(), "127.0.0.1", "", pubsub)
+	router := NewRouterWithPubSub(zerolog.Nop(), orchestrator.NewService(), &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""}, pubsub, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil).WithContext(ctx)
@@ -316,7 +317,7 @@ func TestEventsEndpointStreamsLifecycleEvents(t *testing.T) {
 
 func TestEventsEndpointDoesNotSynthesizeRetryScheduled(t *testing.T) {
 	pubsub := observability.NewPubSub()
-	router := NewRouterWithPubSub(zerolog.Nop(), orchestrator.NewService(), t.TempDir(), "127.0.0.1", "", pubsub)
+	router := NewRouterWithPubSub(zerolog.Nop(), orchestrator.NewService(), &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""}, pubsub, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil).WithContext(ctx)
@@ -341,7 +342,7 @@ func TestEventsEndpointDoesNotSynthesizeRetryScheduled(t *testing.T) {
 
 func TestEventsEndpointStreamsRefreshLifecyclePair(t *testing.T) {
 	pubsub := observability.NewPubSub()
-	router := NewRouterWithPubSub(zerolog.Nop(), orchestrator.NewService(), t.TempDir(), "127.0.0.1", "", pubsub)
+	router := NewRouterWithPubSub(zerolog.Nop(), orchestrator.NewService(), &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""}, pubsub, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil).WithContext(ctx)
@@ -402,7 +403,7 @@ func TestWriteEventEnvelopePreservesProvidedEventTimestamp(t *testing.T) {
 
 func TestEventsEndpointNonSnapshotFramesUseStableEnvelopeShape(t *testing.T) {
 	pubsub := observability.NewPubSub()
-	router := NewRouterWithPubSub(zerolog.Nop(), orchestrator.NewService(), t.TempDir(), "127.0.0.1", "", pubsub)
+	router := NewRouterWithPubSub(zerolog.Nop(), orchestrator.NewService(), &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""}, pubsub, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil).WithContext(ctx)
@@ -472,7 +473,7 @@ func TestEventsEndpointSnapshotFrameCarriesExpectedShape(t *testing.T) {
 		Raw:       map[string]any{"rate_limits": map[string]any{"remaining": 6}},
 	})
 
-	router := NewRouter(zerolog.Nop(), service, t.TempDir(), "127.0.0.1", "")
+	router := NewRouter(zerolog.Nop(), service, &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events?once=1", nil)
 	res := httptest.NewRecorder()
 	router.ServeHTTP(res, req)
@@ -519,7 +520,8 @@ func TestEventsEndpointSnapshotFrameCarriesExpectedShape(t *testing.T) {
 
 func TestEventsEndpointLifecycleEnvelopeCarriesExpectedDataFields(t *testing.T) {
 	pubsub := observability.NewPubSub()
-	router := NewRouterWithPubSub(zerolog.Nop(), orchestrator.NewService(), t.TempDir(), "127.0.0.1", "", pubsub)
+	service := orchestrator.NewService()
+	router := NewRouterWithPubSub(zerolog.Nop(), service, &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""}, pubsub, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil).WithContext(ctx)
@@ -582,7 +584,7 @@ func TestEventsEndpointLifecycleEnvelopeCarriesExpectedDataFields(t *testing.T) 
 }
 
 func TestNotFoundReturnsJSONForAPIPaths(t *testing.T) {
-	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), t.TempDir(), "127.0.0.1", "")
+	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""})
 	res := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/does-not-exist/extra", nil)
 	router.ServeHTTP(res, req)
@@ -604,7 +606,7 @@ func TestNotFoundReturnsJSONForAPIPaths(t *testing.T) {
 }
 
 func TestNotFoundReturnsHTMLForNonAPIPaths(t *testing.T) {
-	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), t.TempDir(), "127.0.0.1", "")
+	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""})
 	res := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/does-not-exist", nil)
 	router.ServeHTTP(res, req)
@@ -621,7 +623,7 @@ func TestNotFoundReturnsHTMLForNonAPIPaths(t *testing.T) {
 }
 
 func TestMethodNotAllowedReturnsJSONForAPIPaths(t *testing.T) {
-	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), t.TempDir(), "127.0.0.1", "")
+	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""})
 	res := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/state", nil)
 	router.ServeHTTP(res, req)
@@ -643,7 +645,7 @@ func TestMethodNotAllowedReturnsJSONForAPIPaths(t *testing.T) {
 }
 
 func TestMethodNotAllowedReturnsHTMLForNonAPIPaths(t *testing.T) {
-	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), t.TempDir(), "127.0.0.1", "")
+	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""})
 	res := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/", nil)
 	router.ServeHTTP(res, req)
@@ -657,7 +659,7 @@ func TestMethodNotAllowedReturnsHTMLForNonAPIPaths(t *testing.T) {
 }
 
 func TestPostAPIRejectsNonJSONContentType(t *testing.T) {
-	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), t.TempDir(), "127.0.0.1", "")
+	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""})
 	res := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/refresh", strings.NewReader("ignored"))
 	req.Header.Set("Content-Type", "text/plain")
@@ -680,7 +682,7 @@ func TestPostAPIRejectsNonJSONContentType(t *testing.T) {
 }
 
 func TestPostAPIAcceptsJSONContentType(t *testing.T) {
-	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), t.TempDir(), "127.0.0.1", "")
+	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""})
 	res := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/refresh", strings.NewReader("{}"))
 	req.Header.Set("Content-Type", "application/json")

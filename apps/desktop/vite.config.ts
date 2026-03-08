@@ -4,6 +4,7 @@ import path from 'node:path'
 
 export default defineConfig({
   plugins: [react()],
+  // @ts-ignore
   test: {
     environment: 'jsdom',
     globals: true,

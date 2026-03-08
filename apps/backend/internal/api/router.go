@@ -13,6 +13,7 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/observability"
 	"github.com/orchestra/orchestra/apps/backend/internal/orchestrator"
 	"github.com/orchestra/orchestra/apps/backend/internal/staticassets"
+	"github.com/orchestra/orchestra/apps/backend/internal/config"
 	"github.com/rs/zerolog"
 )
 
@@ -23,34 +24,32 @@ type Server struct {
 	authToken     string
 	pubsub        *observability.PubSub
 	db            *db.DB
+	config        *config.Config
 }
 
 func NewRouter(
 	logger zerolog.Logger,
 	orchestratorService *orchestrator.Service,
-	workspaceRoot string,
-	host string,
-	apiToken string,
+	cfg *config.Config,
 ) http.Handler {
-	return NewRouterWithPubSub(logger, orchestratorService, workspaceRoot, host, apiToken, nil, nil)
+	return NewRouterWithPubSub(logger, orchestratorService, cfg, nil, nil)
 }
 
 func NewRouterWithPubSub(
 	logger zerolog.Logger,
 	orchestratorService *orchestrator.Service,
-	workspaceRoot string,
-	host string,
-	apiToken string,
+	cfg *config.Config,
 	pubsub *observability.PubSub,
 	warehouseDB *db.DB,
 ) http.Handler {
 	server := &Server{
 		logger:        logger,
 		orchestrator:  orchestratorService,
-		workspaceRoot: workspaceRoot,
-		authToken:     apiToken,
+		workspaceRoot: cfg.WorkspaceRoot,
+		authToken:     cfg.APIToken,
 		pubsub:        pubsub,
 		db:            warehouseDB,
+		config:        cfg,
 	}
 	r := chi.NewRouter()
 
@@ -90,14 +89,18 @@ func NewRouterWithPubSub(
 	r.Post("/api/v1/projects/{project_id}/refresh", server.RefreshProject)
 	r.Get("/api/v1/projects/{project_id}/tree", server.GetProjectFileTree)
 	r.Get("/api/v1/projects/{project_id}/git", server.GetProjectGitStats)
+	r.Post("/api/v1/projects/{project_id}/git/commit", server.PostGitCommit)
+	r.Post("/api/v1/projects/{project_id}/git/push", server.PostGitPush)
+	r.Post("/api/v1/projects/{project_id}/git/pull", server.PostGitPull)
 	r.Get("/api/v1/sessions", server.GetSessions)
 	r.Get("/api/v1/sessions/{session_id}", server.GetSessionDetail)
+	r.Post("/api/v1/issues/{issue_identifier}/pr", server.CreateGitHubPR)
 	r.Get("/api/v1/warehouse/stats", server.GetWarehouseStats)
 
-	requiresAuth := hostRequiresProtectedAuth(host)
-	if requiresAuth && strings.TrimSpace(apiToken) != "" {
-		r.With(requireBearerToken(apiToken)).Post("/api/v1/refresh", server.PostRefresh)
-		r.With(requireBearerToken(apiToken)).Post("/api/v1/workspace/migrate", server.PostWorkspaceMigrate)
+	requiresAuth := hostRequiresProtectedAuth(cfg.Host)
+	if requiresAuth && strings.TrimSpace(cfg.APIToken) != "" {
+		r.With(requireBearerToken(cfg.APIToken)).Post("/api/v1/refresh", server.PostRefresh)
+		r.With(requireBearerToken(cfg.APIToken)).Post("/api/v1/workspace/migrate", server.PostWorkspaceMigrate)
 	} else {
 		r.Post("/api/v1/refresh", server.PostRefresh)
 		r.Post("/api/v1/workspace/migrate", server.PostWorkspaceMigrate)

@@ -17,14 +17,14 @@ import (
 )
 
 func TestNewTrackerClientUsesMemoryWhenEndpointUnset(t *testing.T) {
-	client := newTrackerClient(config.Config{})
+	client := newTrackerClient(config.Config{}, nil)
 	if _, ok := client.(*memory.Client); !ok {
 		t.Fatalf("expected memory tracker client when endpoint is unset")
 	}
 }
 
 func TestNewTrackerClientUsesGraphQLWhenEndpointSet(t *testing.T) {
-	client := newTrackerClient(config.Config{TrackerEndpoint: "http://tracker.local/graphql", TrackerToken: "token"})
+	client := newTrackerClient(config.Config{TrackerEndpoint: "http://tracker.local/graphql", TrackerToken: "token"}, nil)
 	if _, ok := client.(*trackergraphql.Client); !ok {
 		t.Fatalf("expected graphql tracker client when endpoint is set")
 	}
@@ -109,6 +109,7 @@ func TestProcessExecutionTickPublishesSuccessLifecycleEvents(t *testing.T) {
 		nil,
 		workspace.Hooks{},
 		pubsub,
+		nil,
 		zerolog.Nop(),
 	)
 
@@ -167,6 +168,7 @@ func TestProcessExecutionTickPublishesFailureAndRetryLifecycleEvents(t *testing.
 		nil,
 		workspace.Hooks{},
 		pubsub,
+		nil,
 		zerolog.Nop(),
 	)
 
@@ -242,6 +244,7 @@ func TestProcessExecutionTickDoesNotPublishRetryWhenAttemptExceedsMax(t *testing
 		nil,
 		workspace.Hooks{},
 		pubsub,
+		nil,
 		zerolog.Nop(),
 	)
 
@@ -380,6 +383,7 @@ func TestProcessExecutionTickPreservesRateLimitsFromMixedNestedEnvelope(t *testi
 		nil,
 		workspace.Hooks{},
 		nil,
+		nil,
 		zerolog.Nop(),
 	)
 
@@ -422,6 +426,7 @@ func TestProcessExecutionTickSkipsBeforeRunHookAfterFirstTurn(t *testing.T) {
 		nil,
 		hooks,
 		nil,
+		nil,
 		zerolog.Nop(),
 	)
 
@@ -462,6 +467,7 @@ func TestProcessExecutionTickPublishesBeforeRunHookFailureCause(t *testing.T) {
 		nil,
 		workspace.Hooks{BeforeRun: "exit 14"},
 		pubsub,
+		nil,
 		zerolog.Nop(),
 	)
 

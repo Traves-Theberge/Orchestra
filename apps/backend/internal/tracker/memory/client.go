@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -107,6 +108,10 @@ func (c *Client) FetchIssues(_ context.Context, filter tracker.IssueFilter) ([]t
 	sortIssues(out)
 
 	return out, nil
+}
+
+func (c *Client) FetchIssuesByStates(ctx context.Context, states []string) ([]tracker.Issue, error) {
+	return c.FetchIssues(ctx, tracker.IssueFilter{States: states})
 }
 
 func (c *Client) SetIssueState(issueID string, state string) {

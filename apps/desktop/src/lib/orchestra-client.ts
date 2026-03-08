@@ -380,3 +380,39 @@ export async function fetchProjectGitHistory(config: BackendConfig, projectId: s
 export async function fetchSessionDetail(config: BackendConfig, sessionId: string): Promise<any> {
   return requestJSON<any>(config, `/api/v1/sessions/${sessionId}`)
 }
+
+export async function gitCommit(config: BackendConfig, projectId: string, message: string): Promise<void> {
+  await requestJSON<void>(config, `/api/v1/projects/${projectId}/git/commit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message }),
+  })
+}
+
+export async function gitPush(config: BackendConfig, projectId: string, remote = 'origin', branch = 'main'): Promise<void> {
+  await requestJSON<void>(config, `/api/v1/projects/${projectId}/git/push`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ remote, branch }),
+  })
+}
+
+export async function gitPull(config: BackendConfig, projectId: string, remote = 'origin', branch = 'main'): Promise<void> {
+  await requestJSON<void>(config, `/api/v1/projects/${projectId}/git/pull`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ remote, branch }),
+  })
+}
+
+export async function createGitHubPR(
+  config: BackendConfig,
+  issueIdentifier: string,
+  payload: { title: string; body: string; head: string; base: string; owner?: string; repo?: string; token?: string }
+): Promise<any> {
+  return requestJSON<any>(config, `/api/v1/issues/${encodeURIComponent(issueIdentifier)}/pr`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}

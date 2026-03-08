@@ -1,6 +1,7 @@
-import { useRef, type KeyboardEvent } from 'react'
+import { useMemo, useRef, type KeyboardEvent } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import * as Tooltip from '@radix-ui/react-tooltip'
+import { OverlayScrollbarsComponent } from 'overlayscrollbars-react'
 import type { SidebarItem } from '@/components/app-shell/types'
 import { getNextSidebarIndex } from '@/lib/navigation'
 
@@ -14,12 +15,17 @@ export function SidebarNav({
 }: {
   items: SidebarItem[]
   activeSection: string
-  onSectionChange: (id: string) => void
+  onSectionChange: (section: string) => void
   sidebarCollapsed: boolean
   onToggleCollapsed: () => void
   sidebarWidth: number
 }) {
-  const buttonRefs = useRef<Array<HTMLButtonElement | null>>([])
+  const buttonRefs = useRef<(HTMLButtonElement | null)[]>([])
+
+  const osOptions = useMemo(() => ({
+    scrollbars: { autoHide: 'move' as const, theme: 'os-theme-custom' },
+    overflow: { x: 'hidden' as const, y: 'scroll' as const }
+  }), [])
 
   const handleNavKeyDown = (index: number) => (event: KeyboardEvent<HTMLButtonElement>) => {
     const nextIndex = getNextSidebarIndex(event.key, index, items.length)
@@ -64,78 +70,84 @@ export function SidebarNav({
           </Tooltip.Portal>
         </Tooltip.Root>
 
-        <div className="flex h-full flex-col py-4">
-          <div className="mb-3 px-2">
-            <div className={`flex items-center gap-3 ${sidebarCollapsed ? 'justify-center' : ''}`}>
-              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-background text-foreground shadow-sm">
-                <AppMonogramIcon className="h-6 w-6" />
+        <div className="flex h-full flex-col py-3">
+          <div className="mb-2 px-2">
+            <div className={`flex items-center gap-2 ${sidebarCollapsed ? 'justify-center' : ''}`}>
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-background text-foreground shadow-sm">
+                <AppMonogramIcon className="h-5 w-5" />
               </span>
               {!sidebarCollapsed ? (
                 <div className="min-w-0">
-                  <p className="truncate text-xs font-semibold uppercase tracking-[0.2em] text-black dark:text-muted-foreground">Orchestra</p>
-                  <p className="truncate text-[11px] text-black/60 dark:text-muted-foreground">Control Plane</p>
+                  <p className="truncate text-[10px] font-semibold uppercase tracking-[0.2em] text-black dark:text-muted-foreground">Orchestra</p>
+                  <p className="truncate text-[9px] text-black/60 dark:text-muted-foreground">Control Plane</p>
                 </div>
               ) : null}
             </div>
           </div>
 
-          <nav className="space-y-1 px-2 pt-1" aria-label="Primary navigation">
-            {items.map((item, index) => {
-              const ItemIcon = item.icon
-              const active = activeSection === item.id
-              const button = (
-                <button
-                  key={item.id}
-                  type="button"
-                  ref={(node) => {
-                    buttonRefs.current[index] = node
-                  }}
-                  onClick={() => onSectionChange(item.id)}
-                  onKeyDown={handleNavKeyDown(index)}
-                  aria-current={active ? 'page' : undefined}
-                  data-testid={`sidebar-nav-${item.id}`}
-                  className={`group relative flex w-full items-center gap-3 rounded-xl border px-2 py-2.5 text-left transition-all ${
-                    sidebarCollapsed ? 'justify-center' : ''
-                  } ${
-                    active
-                      ? 'border-primary/20 bg-primary/10 text-primary shadow-sm dark:border-primary/30 dark:bg-primary/20'
-                      : 'border-transparent text-foreground hover:border-border hover:bg-muted/50 dark:text-muted-foreground dark:hover:border-border dark:hover:bg-muted/70'
-                  }`}
-                >
-                  {active ? <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r bg-primary" /> : null}
-                  <span className="grid h-8 w-8 place-items-center rounded-lg bg-background text-foreground group-hover:text-foreground shadow-sm">
-                    <ItemIcon className="h-4 w-4" />
-                  </span>
-                  {!sidebarCollapsed ? (
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium text-black dark:text-foreground">{item.label}</span>
-                      <span className="block truncate text-xs text-black/50 dark:text-muted-foreground">{item.description}</span>
+          <OverlayScrollbarsComponent
+            element="div"
+            options={osOptions}
+            className="flex-1 px-2 pt-1 min-h-0"
+          >
+            <nav className="space-y-0.5" aria-label="Primary navigation">
+              {items.map((item, index) => {
+                const ItemIcon = item.icon
+                const active = activeSection === item.id
+                const button = (
+                  <button
+                    key={item.id}
+                    type="button"
+                    ref={(node) => {
+                      buttonRefs.current[index] = node
+                    }}
+                    onClick={() => onSectionChange(item.id)}
+                    onKeyDown={handleNavKeyDown(index)}
+                    aria-current={active ? 'page' : undefined}
+                    data-testid={`sidebar-nav-${item.id}`}
+                    className={`group relative flex w-full items-center gap-2.5 rounded-lg border px-2 py-1.5 text-left transition-all ${
+                      sidebarCollapsed ? 'justify-center' : ''
+                    } ${
+                      active
+                        ? 'border-primary/20 bg-primary/10 text-primary shadow-sm dark:border-primary/30 dark:bg-primary/20'
+                        : 'border-transparent text-foreground hover:border-border hover:bg-muted/50 dark:text-muted-foreground dark:hover:border-border dark:hover:bg-muted/70'
+                    }`}
+                  >
+                    {active ? <span className="absolute left-0 top-1/2 h-4 w-1 -translate-y-1/2 rounded-r bg-primary" /> : null}
+                    <span className="grid h-7 w-7 place-items-center rounded-lg bg-background text-foreground group-hover:text-foreground shadow-sm">
+                      <ItemIcon className="h-3.5 w-3.5" />
                     </span>
-                  ) : null}
-                </button>
-              )
+                    {!sidebarCollapsed ? (
+                      <span className="min-w-0">
+                        <span className="block truncate text-xs font-medium text-black dark:text-foreground">{item.label}</span>
+                        <span className="block truncate text-[10px] text-black/50 dark:text-muted-foreground">{item.description}</span>
+                      </span>
+                    ) : null}
+                  </button>
+                )
 
-              if (!sidebarCollapsed) return button
+                if (!sidebarCollapsed) return button
 
-              return (
-                <Tooltip.Root key={item.id}>
-                  <Tooltip.Trigger asChild>
-                    {button}
-                  </Tooltip.Trigger>
-                  <Tooltip.Portal>
-                    <Tooltip.Content
-                      side="right"
-                      sideOffset={10}
-                      className="z-[110] select-none rounded-md bg-zinc-900 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest leading-none text-zinc-50 shadow-2xl animate-in fade-in zoom-in-95 dark:bg-zinc-100 dark:text-zinc-900 border border-white/10 dark:border-black/10"
-                    >
-                      {item.label}
-                      <Tooltip.Arrow className="fill-zinc-900 dark:fill-zinc-100" />
-                    </Tooltip.Content>
-                  </Tooltip.Portal>
-                </Tooltip.Root>
-              )
-            })}
-          </nav>
+                return (
+                  <Tooltip.Root key={item.id}>
+                    <Tooltip.Trigger asChild>
+                      {button}
+                    </Tooltip.Trigger>
+                    <Tooltip.Portal>
+                      <Tooltip.Content
+                        side="right"
+                        sideOffset={10}
+                        className="z-[110] select-none rounded-md bg-zinc-900 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest leading-none text-zinc-50 shadow-2xl animate-in fade-in zoom-in-95 dark:bg-zinc-100 dark:text-zinc-900 border border-white/10 dark:border-black/10"
+                      >
+                        {item.label}
+                        <Tooltip.Arrow className="fill-zinc-900 dark:fill-zinc-100" />
+                      </Tooltip.Content>
+                    </Tooltip.Portal>
+                  </Tooltip.Root>
+                )
+              })}
+            </nav>
+          </OverlayScrollbarsComponent>
         </div>
       </Tooltip.Provider>
     </aside>

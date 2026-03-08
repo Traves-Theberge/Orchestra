@@ -28,6 +28,22 @@ func (failingTrackerClient) FetchIssuesByStates(context.Context, []string) ([]tr
 	return nil, errors.New("issues failure")
 }
 
+func (failingTrackerClient) FetchIssues(context.Context, tracker.IssueFilter) ([]tracker.Issue, error) {
+	return nil, errors.New("fetch-issues failure")
+}
+
+func (failingTrackerClient) SearchIssues(context.Context, string) ([]tracker.Issue, error) {
+	return nil, errors.New("search-issues failure")
+}
+
+func (failingTrackerClient) CreateIssue(ctx context.Context, title, description, state string, priority int, assigneeID, projectID string) (*tracker.Issue, error) {
+	return nil, errors.New("create-issue failure")
+}
+
+func (failingTrackerClient) UpdateIssue(context.Context, string, map[string]any) (*tracker.Issue, error) {
+	return nil, errors.New("update-issue failure")
+}
+
 func TestPerformRefreshReconcilesRunningEntries(t *testing.T) {
 	service := NewService()
 	service.SetRunningForTest([]RunningEntry{

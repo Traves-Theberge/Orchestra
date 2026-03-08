@@ -16,9 +16,9 @@ func Load() (Config, error) {
 	agentProviderDefault := "codex"
 	agentMaxTurnsDefault := 3
 	agentCommandsDefault := map[string]string{
-		"codex":    "codex exec {{prompt}}",
-		"claude":   "claude -p {{prompt}}",
-		"opencode": "opencode run {{prompt}}",
+		"codex":    "codex exec --skip-git-repo-check --json {{prompt}}",
+		"claude":   "claude -p {{prompt}} --output-format json",
+		"opencode": "opencode run {{prompt}} --format json",
 	}
 
 	host := getenvOrEmpty("ORCHESTRA_SERVER_HOST")
@@ -33,6 +33,7 @@ func Load() (Config, error) {
 	agentCommandCodex := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_CODEX")
 	agentCommandClaude := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_CLAUDE")
 	agentCommandOpenCode := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_OPENCODE")
+	trackerType := getenvOrEmpty("ORCHESTRA_TRACKER_TYPE")
 	trackerEndpoint := getenvOrEmpty("ORCHESTRA_TRACKER_ENDPOINT")
 	trackerToken := getenvOrEmpty("ORCHESTRA_TRACKER_TOKEN")
 	trackerProject := getenvOrEmpty("ORCHESTRA_TRACKER_PROJECT")
@@ -65,6 +66,9 @@ func Load() (Config, error) {
 	}
 	if strings.TrimSpace(agentMaxTurnsRaw) == "" {
 		agentMaxTurnsRaw = workflowOverrides.AgentMaxTurns
+	}
+	if strings.TrimSpace(trackerType) == "" {
+		trackerType = workflowOverrides.TrackerType
 	}
 	if strings.TrimSpace(trackerEndpoint) == "" {
 		trackerEndpoint = workflowOverrides.TrackerEndpoint
@@ -193,6 +197,7 @@ func Load() (Config, error) {
 		AgentProvider:            strings.TrimSpace(strings.ToLower(agentProvider)),
 		AgentCommands:            agentCommands,
 		AgentMaxTurns:            agentMaxTurns,
+		TrackerType:              strings.TrimSpace(strings.ToLower(trackerType)),
 		TrackerEndpoint:          strings.TrimSpace(trackerEndpoint),
 		TrackerToken:             strings.TrimSpace(trackerToken),
 		TrackerProject:           strings.TrimSpace(trackerProject),
@@ -221,6 +226,7 @@ type workflowConfigOverrides struct {
 	AgentCommandClaude       string
 	AgentCommandOpenCode     string
 	AgentMaxTurns            string
+	TrackerType              string
 	TrackerEndpoint          string
 	TrackerToken             string
 	TrackerProject           string
@@ -274,6 +280,9 @@ func loadWorkflowOverrides(path string) workflowConfigOverrides {
 		),
 		AgentMaxTurns: firstStringValue(
 			lookupNested(doc.Config, []string{"agent", "max_turns"}),
+		),
+		TrackerType: firstStringValue(
+			lookupNested(doc.Config, []string{"tracker", "type"}),
 		),
 		TrackerEndpoint: firstStringValue(
 			lookupNested(doc.Config, []string{"tracker", "endpoint"}),

@@ -7,8 +7,62 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/orchestra/orchestra/apps/backend/internal/presenter"
+	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
 	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
+	githubutils "github.com/orchestra/orchestra/apps/backend/internal/utils/github"
+	"path/filepath"
 )
+
+func (s *Server) CreateGitHubPR(w http.ResponseWriter, r *http.Request) {
+	identifier := chi.URLParam(r, "issue_identifier")
+	s.logger.Info().Str("issue_identifier", identifier).Msg("received request to create github pull request")
+	
+	var body struct {
+		Title string `json:"title"`
+		Body  string `json:"body"`
+		Head  string `json:"head"`
+		Base  string `json:"base"`
+		Owner string `json:"owner"`
+		Repo  string `json:"repo"`
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid_json", "failed to decode request body")
+		return
+	}
+
+	// Default to project-level settings if missing in request
+	if body.Owner == "" && body.Repo == "" {
+		parts := strings.Split(s.config.TrackerEndpoint, "/")
+		if len(parts) == 2 {
+			body.Owner = parts[0]
+			body.Repo = parts[1]
+		}
+	}
+	if body.Token == "" {
+		body.Token = s.config.TrackerToken
+	}
+	
+	if body.Owner == "" || body.Repo == "" || body.Token == "" {
+		writeJSONError(w, http.StatusBadRequest, "missing_params", "owner, repo, and token are required (could not be inferred from config)")
+		return
+	}
+
+	pr, err := githubutils.CreatePullRequest(r.Context(), body.Owner, body.Repo, body.Token, githubutils.PRRequest{
+		Title: body.Title,
+		Body:  body.Body,
+		Head:  body.Head,
+		Base:  body.Base,
+	})
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "pr_creation_failed", err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(pr)
+}
 
 func (s *Server) GetState(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -115,6 +169,12 @@ func (s *Server) GetIssue(w http.ResponseWriter, r *http.Request) {
 		}
 		issue := issues[0]
 		w.Header().Set("Content-Type", "application/json")
+
+		logPath := ""
+		if wsPath, err := workspace.WorkspacePath(s.workspaceRoot, issue.Identifier); err == nil {
+			logPath = filepath.Join(wsPath, "_logs", issue.Identifier, "latest.log")
+		}
+
 		json.NewEncoder(w).Encode(map[string]any{
 			"issue_id":         issue.ID,
 			"issue_identifier": issue.Identifier,
@@ -134,7 +194,7 @@ func (s *Server) GetIssue(w http.ResponseWriter, r *http.Request) {
 				"codex_session_logs": []map[string]any{
 					{
 						"label": "latest",
-						"path":  "",
+						"path":  logPath,
 						"url":   nil,
 					},
 				},
@@ -150,7 +210,6 @@ func (s *Server) GetIssue(w http.ResponseWriter, r *http.Request) {
 	if runtime.Retry != nil {
 		currentRetryAttempt = runtime.Retry.Attempt
 	}
-
 	recentEvents := make([]map[string]any, 0, 1)
 	logPath := ""
 	if runtime.Running != nil && runtime.Running.LastEvent != "" {
@@ -160,6 +219,10 @@ func (s *Server) GetIssue(w http.ResponseWriter, r *http.Request) {
 			"message": runtime.Running.LastMessage,
 		})
 		logPath = runtime.Running.SessionLogPath
+	} else {
+		if wsPath, err := workspace.WorkspacePath(s.workspaceRoot, identifier); err == nil {
+			logPath = filepath.Join(wsPath, "_logs", identifier, "latest.log")
+		}
 	}
 
 	workspacePath, workspaceErr := workspace.WorkspacePath(s.workspaceRoot, runtime.IssueIdentifier)
@@ -234,12 +297,23 @@ func (s *Server) PatchIssue(w http.ResponseWriter, r *http.Request) {
 func (s *Server) GetIssueLogs(w http.ResponseWriter, r *http.Request) {
 	identifier := chi.URLParam(r, "issue_identifier")
 	runtime, ok := s.orchestrator.LookupIssue(identifier)
-	if !ok || runtime.Running == nil || runtime.Running.SessionLogPath == "" {
-		writeJSONError(w, http.StatusNotFound, "logs_not_found", "no active logs found for this issue")
+
+	logPath := ""
+	if ok && runtime.Running != nil && runtime.Running.SessionLogPath != "" {
+		logPath = runtime.Running.SessionLogPath
+	} else {
+		// Try fallback to disk
+		if wsPath, err := workspace.WorkspacePath(s.workspaceRoot, identifier); err == nil {
+			logPath = filepath.Join(wsPath, "_logs", identifier, "latest.log")
+		}
+	}
+
+	if logPath == "" {
+		writeJSONError(w, http.StatusNotFound, "logs_not_found", "no logs found for this issue")
 		return
 	}
 
-	http.ServeFile(w, r, runtime.Running.SessionLogPath)
+	http.ServeFile(w, r, logPath)
 }
 
 func (s *Server) GetArtifacts(w http.ResponseWriter, r *http.Request) {

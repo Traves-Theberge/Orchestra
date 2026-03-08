@@ -49,7 +49,7 @@ function setupDesktopBridge(overrides?: {
     }),
     setActiveBackendProfile: vi.fn(async (profileId: string) => {
       state.profilesPayload.activeProfileId = profileId
-      const nextProfiles = state.profilesPayload.profiles.filter((entry) => entry.id === profileId)
+      const nextProfiles = state.profilesPayload.profiles.filter((entry: any) => entry.id === profileId)
       const nextActiveProfile = nextProfiles[0]
       if (nextActiveProfile) {
         state.activeConfig = { baseUrl: nextActiveProfile.baseUrl, apiToken: nextActiveProfile.apiToken }
@@ -57,7 +57,7 @@ function setupDesktopBridge(overrides?: {
       return state.activeConfig
     }),
     deleteBackendProfile: vi.fn(async (profileId: string) => {
-      const nextProfiles = state.profilesPayload.profiles.filter((entry) => entry.id !== profileId)
+      const nextProfiles = state.profilesPayload.profiles.filter((entry: any) => entry.id !== profileId)
       const nextActive = nextProfiles[0]?.id ?? ''
       state.profilesPayload.profiles = nextProfiles
       state.profilesPayload.activeProfileId = nextActive

@@ -185,6 +185,10 @@ func (c *Client) FetchIssues(ctx context.Context, filter tracker.IssueFilter) ([
 	return out, nil
 }
 
+func (c *Client) FetchIssuesByStates(ctx context.Context, states []string) ([]tracker.Issue, error) {
+	return c.FetchIssues(ctx, tracker.IssueFilter{States: states})
+}
+
 type pageInfo struct {
 	HasNextPage bool
 	EndCursor   string

@@ -176,7 +176,7 @@ func (s Service) GetDiff(issueIdentifier string) (string, error) {
 	// Use git to get the diff of changes (including untracked files)
 	// We check if it's a git repo first
 	if !exists(filepath.Join(path, ".git")) {
-		return "", fmt.Errorf("workspace is not a git repository")
+		return "", nil
 	}
 
 	cmd := exec.Command("git", "diff", "HEAD")

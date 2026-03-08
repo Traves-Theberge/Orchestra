@@ -7,11 +7,12 @@ import (
 	"testing"
 
 	"github.com/orchestra/orchestra/apps/backend/internal/orchestrator"
+	"github.com/orchestra/orchestra/apps/backend/internal/config"
 	"github.com/rs/zerolog"
 )
 
 func TestGetDashboardServesHTML(t *testing.T) {
-	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), t.TempDir(), "127.0.0.1", "")
+	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""})
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	res := httptest.NewRecorder()
 	router.ServeHTTP(res, req)
@@ -40,7 +41,7 @@ func TestGetDashboardServesHTML(t *testing.T) {
 }
 
 func TestDashboardIncludesCoreLiveStatusSections(t *testing.T) {
-	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), t.TempDir(), "127.0.0.1", "")
+	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""})
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	res := httptest.NewRecorder()
 	router.ServeHTTP(res, req)

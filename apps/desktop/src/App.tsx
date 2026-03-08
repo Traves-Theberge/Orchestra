@@ -18,6 +18,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { periodFilters, type SidebarItem, type TimelineItem } from '@/components/app-shell/types'
@@ -55,6 +56,7 @@ import { ProjectDetailView } from '@/components/projects/ProjectDetailView'
 import { AnalyticsDashboard } from '@/components/warehouse/AnalyticsDashboard'
 import { SessionDetailView } from '@/components/warehouse/SessionDetailView'
 import { Command } from 'cmdk'
+import { OverlayScrollbarsComponent } from 'overlayscrollbars-react'
 
 type BackendProfile = {
   id: string
@@ -195,6 +197,11 @@ export default function App() {
   }
   const currentSectionMeta = sectionMeta[activeSection] ?? sectionMeta.dashboard
 
+  const osOptions = useMemo(() => ({
+    scrollbars: { autoHide: 'move' as const, theme: 'os-theme-custom' },
+    overflow: { x: 'hidden' as const, y: 'scroll' as const }
+  }), [])
+
   useEffect(() => {
     const root = document.documentElement
     if (theme === 'dark') {
@@ -254,7 +261,7 @@ export default function App() {
     if (!config) return
 
     let mounted = true
-    
+
     // Non-blocking metadata fetches
     fetchAgentConfig(config)
       .then(cfg => mounted && setAgentConfig(cfg))
@@ -278,7 +285,7 @@ export default function App() {
           const projs = await fetchProjects(config)
           if (!mounted) return
           setProjects(projs)
-          
+
           // Fetch stats for projects that don't have them yet
           const statsMap: Record<string, ProjectStats> = { ...projectStats }
           let statsUpdated = false
@@ -419,16 +426,14 @@ export default function App() {
         running: '0',
         retrying: '0',
         totalTokens: '0',
-        rateLimits: 'n/a',
       }
     }
 
-    const remaining = typeof snapshot.rate_limits?.remaining === 'number' ? String(snapshot.rate_limits.remaining) : 'n/a'
+    const remaining = typeof snapshot.rate_limits?.remaining === 'number' ? String(snapshot.rate_limits.remaining) : ''
     return {
       running: String(snapshot.counts.running ?? 0),
       retrying: String(snapshot.counts.retrying ?? 0),
       totalTokens: String(snapshot.codex_totals?.total_tokens ?? 0),
-      rateLimits: remaining,
     }
   }, [snapshot])
 
@@ -532,11 +537,11 @@ export default function App() {
     if (!config) return
     try {
       await updateIssue(config, identifier, updates)
-      
+
       // Instantly update the board issues for snappy drag-and-drop
       const updatedIssues = await fetchIssues(config)
       setBoardIssues(updatedIssues)
-      
+
       // Refetch state immediately to show updates in Kanban/lists
       void handleRefresh()
       // Also refetch the specific issue to update the detail view if it's open
@@ -816,7 +821,7 @@ export default function App() {
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-background text-foreground">
-      <div className="flex h-full w-full">
+      <div className="flex h-full w-full relative">
         <SidebarNav
           items={sidebarItems}
           activeSection={activeSection}
@@ -826,8 +831,12 @@ export default function App() {
           sidebarWidth={sidebarWidth}
         />
 
-        <main className="min-w-0 flex-1 flex flex-col bg-gradient-to-b from-background via-background to-muted/30">
-          <div className="flex-1 flex flex-col px-6 pb-8 pt-6 lg:px-8 min-h-0">
+        <OverlayScrollbarsComponent
+          element="main"
+          options={osOptions}
+          className="min-w-0 flex-1 bg-gradient-to-b from-background via-background to-muted/30 h-full"
+        >
+          <div className="px-6 pb-24 pt-6 lg:px-8 w-full flex flex-col min-h-full origin-top-left" style={{ zoom: 0.7 }}>
             <TopBar
               sectionLabel={currentSectionMeta.label}
               sectionTitle={currentSectionMeta.title}
@@ -849,21 +858,20 @@ export default function App() {
               onTogglePolling={handleTogglePolling}
             />
 
-            <div className="mt-5 flex-1 min-h-0">
+            <div className="mt-5 grid min-w-0 grid-cols-12 gap-5 flex-1">
               {sectionVisibility.showDashboard ? (
-                <div className="grid grid-cols-12 gap-5 overflow-y-auto h-full pr-1 custom-scrollbar">
-                  <section className="col-span-12 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <>
+                  <section className="col-span-12 grid gap-4 md:grid-cols-2 xl:grid-cols-3 h-fit">
                     <MetricCard title="Active Sessions" value={metrics.running} icon={<Activity className="h-4 w-4 text-primary" />} hint="Issues currently being processed" />
                     <MetricCard title="Pending Retries" value={metrics.retrying} icon={<RefreshCcw className="h-4 w-4 text-amber-500" />} hint="Work items in backoff queue" />
                     <MetricCard title="Fleet Token Usage" value={metrics.totalTokens} icon={<Zap className="h-4 w-4 text-blue-500" />} hint="Aggregate compute consumption" />
-                    <MetricCard title="Rate Buffers" value={metrics.rateLimits} icon={<ShieldCheck className="h-4 w-4 text-emerald-500" />} hint="Remaining provider throughput" />
                   </section>
-                  
-                  <section className="col-span-12">
-                    <DashboardOverview 
-                      projects={projects} 
-                      stats={projectStats} 
-                      warehouseStats={warehouseStats} 
+
+                  <section className="col-span-12 h-fit">
+                    <DashboardOverview
+                      projects={projects}
+                      stats={projectStats}
+                      warehouseStats={warehouseStats}
                       onProjectClick={(id) => {
                         if (id) {
                           setSelectedProjectID(id)
@@ -871,39 +879,37 @@ export default function App() {
                         } else {
                           setActiveSection('projects')
                         }
-                      }} 
+                      }}
                     />
                   </section>
 
-                  <section className="col-span-12 xl:col-span-8">
+                  <section className="col-span-12 xl:col-span-8 min-h-[400px]">
                     <OperationsQueueCard loadingState={loadingState} snapshot={snapshot} onInspectIssue={handleInspectIssueFromList} />
                   </section>
-                  
-                  <section className="col-span-12 xl:col-span-4">
+
+                  <section className="col-span-12 xl:col-span-4 min-h-[400px]">
                     <TimelineCard timeline={timeline.slice(0, 8)} />
                   </section>
-                </div>
+                </>
               ) : null}
 
               {sectionVisibility.showProjects ? (
-                <div className="h-full overflow-hidden">
+                <section className="col-span-12 flex flex-col flex-1">
                   {selectedProjectID && projects.find(p => p.id === selectedProjectID) ? (
-                    <div className="h-full overflow-hidden pr-1">
-                      <ProjectDetailView
-                        project={projects.find(p => p.id === selectedProjectID)!}
-                        stats={projectStats[selectedProjectID]}
-                        config={config}
-                        snapshot={snapshot}
-                        boardIssues={boardIssues}
-                        availableAgents={availableAgents}
-                        loadingState={loadingState}
-                        onBack={() => setSelectedProjectID(null)}
-                        onInspectIssue={handleInspectIssueFromList}
-                        onIssueUpdate={handleIssueUpdate}
-                        onCreateIssue={handleCreateIssue}
-                        onDeleteProject={handleDeleteProject}
-                      />
-                    </div>
+                    <ProjectDetailView
+                      project={projects.find(p => p.id === selectedProjectID)!}
+                      stats={projectStats[selectedProjectID]}
+                      config={config}
+                      snapshot={snapshot}
+                      boardIssues={boardIssues}
+                      availableAgents={availableAgents}
+                      loadingState={loadingState}
+                      onBack={() => setSelectedProjectID(null)}
+                      onInspectIssue={handleInspectIssueFromList}
+                      onIssueUpdate={handleIssueUpdate}
+                      onCreateIssue={handleCreateIssue}
+                      onDeleteProject={handleDeleteProject}
+                    />
                   ) : (
                     <ProjectGrid
                       projects={projects}
@@ -914,21 +920,21 @@ export default function App() {
                       onDeleteProject={handleDeleteProject}
                     />
                   )}
-                </div>
+                </section>
               ) : null}
 
               {sectionVisibility.showWarehouse ? (
-                <div className="h-full overflow-y-auto custom-scrollbar pr-1">
-                  <AnalyticsDashboard 
-                    stats={warehouseStats} 
-                    loading={dataLoading} 
+                <section className="col-span-12 flex flex-col">
+                  <AnalyticsDashboard
+                    stats={warehouseStats}
+                    loading={dataLoading}
                     onInspectSession={handleInspectSession}
                   />
-                </div>
+                </section>
               ) : null}
 
               {sectionVisibility.showIssueBoard ? (
-                <div className="h-full flex flex-col">
+                <section className="col-span-12 flex flex-col min-h-[600px]">
                   <KanbanBoard
                     loadingState={loadingState}
                     snapshot={snapshot}
@@ -938,23 +944,23 @@ export default function App() {
                     onIssueUpdate={handleIssueUpdate}
                     onCreateIssue={handleCreateIssue}
                   />
-                </div>
+                </section>
               ) : null}
 
               {sectionVisibility.showRunning ? (
-                <div className="h-full overflow-hidden pr-1">
+                <section className="col-span-12 flex flex-col">
                   <OperationsQueueCard loadingState={loadingState} snapshot={snapshot} onInspectIssue={handleInspectIssueFromList} />
-                </div>
+                </section>
               ) : null}
 
               {sectionVisibility.showTimeline ? (
-                <div className="h-full overflow-hidden pr-1">
+                <section className="col-span-12 flex flex-col">
                   <TimelineCard timeline={timeline} />
-                </div>
+                </section>
               ) : null}
 
               {sectionVisibility.showSettings ? (
-                <div className="h-full overflow-hidden pr-1">
+                <section className="col-span-12 flex flex-col">
                   <SettingsCard
                     loadingConfig={loadingConfig}
                     savingConfig={savingConfig}
@@ -979,11 +985,11 @@ export default function App() {
                     onSaveAgentConfig={handleAgentConfigSave}
                     onSaveAgentToken={handleSaveAgentToken}
                   />
-                </div>
+                </section>
               ) : null}
             </div>
           </div>
-        </main>
+        </OverlayScrollbarsComponent>
       </div>
 
       <Dialog open={inspectDialogOpen} onOpenChange={setInspectDialogOpen}>
@@ -1065,34 +1071,34 @@ export default function App() {
         label="Global Command Palette"
         className="fixed top-1/2 left-1/2 w-full max-w-xl -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-card shadow-2xl z-[100] overflow-hidden"
       >
-        <Command.Input 
-          autoFocus 
-          placeholder="Type a command or search..." 
+        <Command.Input
+          autoFocus
+          placeholder="Type a command or search..."
           className="w-full border-b border-border bg-transparent p-4 text-sm outline-none placeholder:text-muted-foreground"
         />
         <Command.List className="max-h-[300px] overflow-y-auto p-2">
           <Command.Empty className="p-4 text-center text-sm text-muted-foreground">No results found.</Command.Empty>
 
           <Command.Group heading="Navigation" className="px-2 py-1 text-xs font-semibold text-muted-foreground">
-            <Command.Item 
+            <Command.Item
               onSelect={() => { setActiveSection('dashboard'); setPaletteOpen(false) }}
               className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm text-foreground hover:bg-muted/50 data-[selected=true]:bg-muted/50"
             >
               <LayoutDashboard className="h-4 w-4" /> Go to Dashboard
             </Command.Item>
-            <Command.Item 
+            <Command.Item
               onSelect={() => { setActiveSection('issues'); setPaletteOpen(false) }}
               className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm text-foreground hover:bg-muted/50 data-[selected=true]:bg-muted/50"
             >
               <Ticket className="h-4 w-4" /> Go to Tasks
             </Command.Item>
-            <Command.Item 
+            <Command.Item
               onSelect={() => { setActiveSection('projects'); setPaletteOpen(false) }}
               className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm text-foreground hover:bg-muted/50 data-[selected=true]:bg-muted/50"
             >
               <FolderTree className="h-4 w-4" /> Go to Projects
             </Command.Item>
-            <Command.Item 
+            <Command.Item
               onSelect={() => { setActiveSection('warehouse'); setPaletteOpen(false) }}
               className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm text-foreground hover:bg-muted/50 data-[selected=true]:bg-muted/50"
             >
@@ -1101,19 +1107,19 @@ export default function App() {
           </Command.Group>
 
           <Command.Group heading="Actions" className="px-2 py-1 mt-2 text-xs font-semibold text-muted-foreground border-t border-border/40">
-            <Command.Item 
+            <Command.Item
               onSelect={() => { handleCreateIssue('Todo'); setPaletteOpen(false) }}
               className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm text-foreground hover:bg-muted/50 data-[selected=true]:bg-muted/50"
             >
               <Ticket className="h-4 w-4" /> Create New Task
             </Command.Item>
-            <Command.Item 
+            <Command.Item
               onSelect={() => { setTheme(theme === 'dark' ? 'light' : 'dark'); setPaletteOpen(false) }}
               className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm text-foreground hover:bg-muted/50 data-[selected=true]:bg-muted/50"
             >
               <Settings2 className="h-4 w-4" /> Toggle Theme
             </Command.Item>
-            <Command.Item 
+            <Command.Item
               onSelect={() => { handleTogglePolling(); setPaletteOpen(false) }}
               className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm text-foreground hover:bg-muted/50 data-[selected=true]:bg-muted/50"
             >
@@ -1124,12 +1130,12 @@ export default function App() {
           {projects.length > 0 && (
             <Command.Group heading="Projects" className="px-2 py-1 mt-2 text-xs font-semibold text-muted-foreground border-t border-border/40">
               {projects.map(p => (
-                <Command.Item 
+                <Command.Item
                   key={p.id}
-                  onSelect={() => { 
+                  onSelect={() => {
                     setActiveSection('projects')
                     setSelectedProjectID(p.id)
-                    setPaletteOpen(false) 
+                    setPaletteOpen(false)
                   }}
                   className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm text-foreground hover:bg-muted/50 data-[selected=true]:bg-muted/50"
                 >

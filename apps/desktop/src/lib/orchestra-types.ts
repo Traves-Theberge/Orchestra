@@ -1,3 +1,20 @@
+export type BackendConfig = {
+  baseUrl: string
+  apiToken: string
+}
+
+export type BackendProfile = {
+  id: string
+  name: string
+  baseUrl: string
+  apiToken: string
+}
+
+export type BridgeProfilesPayload = {
+  activeProfileId: string
+  profiles: BackendProfile[]
+}
+
 export type SnapshotCounts = {
   running: number
   retrying: number

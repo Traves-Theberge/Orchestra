@@ -7,11 +7,12 @@ import (
 	"testing"
 
 	"github.com/orchestra/orchestra/apps/backend/internal/orchestrator"
+	"github.com/orchestra/orchestra/apps/backend/internal/config"
 	"github.com/rs/zerolog"
 )
 
 func TestGetState(t *testing.T) {
-	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), t.TempDir(), "127.0.0.1", "")
+	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""})
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/state", nil)
 	recorder := httptest.NewRecorder()
 
@@ -35,7 +36,7 @@ func TestGetState(t *testing.T) {
 }
 
 func TestHealthzEndpoints(t *testing.T) {
-	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), t.TempDir(), "127.0.0.1", "")
+	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""})
 	paths := []string{"/healthz", "/api/v1/healthz"}
 	for _, path := range paths {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -57,7 +58,7 @@ func TestHealthzEndpoints(t *testing.T) {
 
 func TestPostRefresh(t *testing.T) {
 	orch := orchestrator.NewService()
-	router := NewRouter(zerolog.Nop(), orch, t.TempDir(), "127.0.0.1", "")
+	router := NewRouter(zerolog.Nop(), orch, &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""})
 
 	reqOne := httptest.NewRequest(http.MethodPost, "/api/v1/refresh", nil)
 	resOne := httptest.NewRecorder()
@@ -92,7 +93,7 @@ func TestPostRefresh(t *testing.T) {
 }
 
 func TestMethodNotAllowedReturnsJSONEnvelope(t *testing.T) {
-	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), t.TempDir(), "127.0.0.1", "")
+	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""})
 	request := httptest.NewRequest(http.MethodDelete, "/api/v1/state", nil)
 	recorder := httptest.NewRecorder()
 
@@ -123,8 +124,8 @@ func TestGetIssueReturnsRunningIssue(t *testing.T) {
 	}})
 
 	root := t.TempDir()
-	router := NewRouter(zerolog.Nop(), orch, root, "127.0.0.1", "")
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/MT-649", nil)
+	router := NewRouter(zerolog.Nop(), orch, &config.Config{WorkspaceRoot: root, Host: "127.0.0.1", APIToken: ""})
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/issues/MT-649", nil)
 	recorder := httptest.NewRecorder()
 
 	router.ServeHTTP(recorder, request)
@@ -150,8 +151,8 @@ func TestGetIssueReturnsRunningIssue(t *testing.T) {
 }
 
 func TestGetIssueReturnsNotFoundEnvelope(t *testing.T) {
-	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), t.TempDir(), "127.0.0.1", "")
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/UNKNOWN-1", nil)
+	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""})
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/issues/UNKNOWN-1", nil)
 	recorder := httptest.NewRecorder()
 
 	router.ServeHTTP(recorder, request)

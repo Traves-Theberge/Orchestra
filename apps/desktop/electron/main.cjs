@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, safeStorage, shell, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain, safeStorage, shell, dialog, Menu } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs/promises')
 const crypto = require('node:crypto')
@@ -130,6 +130,7 @@ function createWindow() {
     minHeight: 720,
     title: 'Orchestra Desktop',
     backgroundColor: '#0d1117',
+    autoHideMenuBar: true, // Hide the File/Edit/View menu bar
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
@@ -137,6 +138,9 @@ function createWindow() {
       sandbox: false,
     },
   })
+
+  // Remove the menu entirely for a cleaner look
+  Menu.setApplicationMenu(null)
 
   win.webContents.on('did-fail-load', (_event, code, description, url) => {
     console.error('did-fail-load', { code, description, url })

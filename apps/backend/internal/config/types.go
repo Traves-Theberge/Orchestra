@@ -15,6 +15,7 @@ type Config struct {
 	AgentProvider            string
 	AgentCommands            map[string]string
 	AgentMaxTurns            int
+	TrackerType              string
 	TrackerEndpoint          string
 	TrackerToken             string
 	TrackerProject           string

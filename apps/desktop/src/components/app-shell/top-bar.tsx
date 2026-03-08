@@ -87,10 +87,10 @@ export function TopBar({
     <div className="mb-6 space-y-3">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <div className="min-w-[160px]">
-            <h1 className="text-2xl font-bold tracking-tight text-foreground dark:text-foreground">{sectionTitle}</h1>
+          <div className="min-w-[220px]">
+            <h1 className="text-3xl font-semibold tracking-tight text-foreground dark:text-foreground">{sectionTitle}</h1>
             <div className="flex items-center gap-2 mt-1">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{sectionLabel}</p>
+              <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground">{sectionLabel}</p>
               {generatedAt && (
                 <>
                   <span className="text-muted-foreground/30">•</span>

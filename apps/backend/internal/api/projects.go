@@ -9,7 +9,104 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/orchestra/orchestra/apps/backend/internal/utils/git"
 )
+
+func (s *Server) PostGitCommit(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "project_id")
+	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	if err != nil {
+		http.Error(w, "Project not found", http.StatusNotFound)
+		return
+	}
+
+	var req struct {
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Message == "" {
+		http.Error(w, "Message is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := git.Commit(r.Context(), project.RootPath, req.Message); err != nil {
+		s.logger.Error().Err(err).Str("project_id", projectID).Msg("git commit failed")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) PostGitPush(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "project_id")
+	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	if err != nil {
+		http.Error(w, "Project not found", http.StatusNotFound)
+		return
+	}
+
+	var req struct {
+		Remote string `json:"remote"`
+		Branch string `json:"branch"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Remote == "" {
+		req.Remote = "origin"
+	}
+	if req.Branch == "" {
+		req.Branch = "main" // Defaulting to main for now, ideally we resolve current branch
+	}
+
+	if err := git.Push(r.Context(), project.RootPath, req.Remote, req.Branch); err != nil {
+		s.logger.Error().Err(err).Str("project_id", projectID).Msg("git push failed")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) PostGitPull(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "project_id")
+	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	if err != nil {
+		http.Error(w, "Project not found", http.StatusNotFound)
+		return
+	}
+
+	var req struct {
+		Remote string `json:"remote"`
+		Branch string `json:"branch"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Remote == "" {
+		req.Remote = "origin"
+	}
+	if req.Branch == "" {
+		req.Branch = "main"
+	}
+
+	if err := git.Pull(r.Context(), project.RootPath, req.Remote, req.Branch); err != nil {
+		s.logger.Error().Err(err).Str("project_id", projectID).Msg("git pull failed")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
 
 func (s *Server) GetProjects(w http.ResponseWriter, r *http.Request) {
 	if s.db == nil {
@@ -249,15 +346,11 @@ func (s *Server) GetProjectGitStats(w http.ResponseWriter, r *http.Request) {
 				"hash":    parts[0],
 				"author":  parts[1],
 				"date":    parts[2],
-				"subject": parts[3],
+				"message": parts[3],
 			})
 		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(history)
-}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(sessions)
 }

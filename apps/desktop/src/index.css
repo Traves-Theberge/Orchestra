@@ -30,6 +30,53 @@
   @apply border-border;
 }
 
+/* Custom Themed Scrollbar (Legacy/Fallback) */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 10px;
+}
+
+/* OverlayScrollbars Slim Mini Theme */
+.os-theme-custom {
+  --os-size: 6px;
+  --os-padding-perpendicular: 2px;
+  --os-padding-axis: 2px;
+  --os-track-border-radius: 10px;
+  --os-track-bg: transparent;
+  --os-handle-border-radius: 10px;
+  --os-handle-bg: hsl(var(--muted-foreground) / 0.4);
+  --os-handle-bg-hover: hsl(var(--muted-foreground) / 0.6);
+  --os-handle-bg-active: hsl(var(--muted-foreground) / 0.8);
+  --os-handle-min-size: 40px;
+  --os-handle-interactive-area-expand: 10px;
+}
+
+.dark .os-theme-custom {
+  --os-handle-bg: hsl(var(--muted-foreground) / 0.3);
+  --os-handle-bg-hover: hsl(var(--muted-foreground) / 0.5);
+  --os-handle-bg-active: hsl(var(--muted-foreground) / 0.7);
+}
+
+/* For Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+}
+
+html, body {
+  overflow: hidden !important;
+  height: 100%;
+}
+
 body {
   @apply bg-background text-foreground antialiased;
   margin: 0;

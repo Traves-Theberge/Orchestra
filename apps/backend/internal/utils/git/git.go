@@ -42,3 +42,51 @@ func ProjectInfo(ctx context.Context, dir string) (rootPath string, remoteURL st
 
 	return rootPath, remoteURL, nil
 }
+
+// Commit creates a new commit with the given message
+func Commit(ctx context.Context, dir, message string) error {
+	cmd := exec.CommandContext(ctx, "git", "commit", "-am", message)
+	cmd.Dir = dir
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git commit failed: %v - %s", err, stderr.String())
+	}
+	return nil
+}
+
+// Push pushes the current branch to the given remote
+func Push(ctx context.Context, dir, remote, branch string) error {
+	cmd := exec.CommandContext(ctx, "git", "push", remote, branch)
+	cmd.Dir = dir
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git push failed: %v - %s", err, stderr.String())
+	}
+	return nil
+}
+
+// Pull pulls the given branch from the given remote
+func Pull(ctx context.Context, dir, remote, branch string) error {
+	cmd := exec.CommandContext(ctx, "git", "pull", remote, branch)
+	cmd.Dir = dir
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git pull failed: %v - %s", err, stderr.String())
+	}
+	return nil
+}
+
+// CreateBranch creates a new branch
+func CreateBranch(ctx context.Context, dir, name string) error {
+	cmd := exec.CommandContext(ctx, "git", "checkout", "-b", name)
+	cmd.Dir = dir
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git checkout -b failed: %v - %s", err, stderr.String())
+	}
+	return nil
+}

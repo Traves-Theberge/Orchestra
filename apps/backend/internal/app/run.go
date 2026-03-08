@@ -23,7 +23,9 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/tools"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
 	trackergraphql "github.com/orchestra/orchestra/apps/backend/internal/tracker/graphql"
+	trackergithub "github.com/orchestra/orchestra/apps/backend/internal/tracker/github"
 	trackersqlite "github.com/orchestra/orchestra/apps/backend/internal/tracker/sqlite"
+	"github.com/orchestra/orchestra/apps/backend/internal/tracker/memory"
 	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
 	"github.com/orchestra/orchestra/apps/backend/internal/utils/git"
 	"github.com/rs/zerolog"
@@ -72,7 +74,7 @@ func Run(logger zerolog.Logger) error {
 	orchestratorService.SetWorkspaceService(workspaceService)
 	logger.Info().Str("agent_provider", cfg.AgentProvider).Str("service_id", runtime.ServiceOrchestrator).Msg("agent provider configured")
 
-	router := api.NewRouterWithPubSub(logger, orchestratorService, cfg.WorkspaceRoot, cfg.Host, cfg.APIToken, pubsub, warehouseDB)
+	router := api.NewRouterWithPubSub(logger, orchestratorService, &cfg, pubsub, warehouseDB)
 
 	cleanupTerminalWorkspaces(orchestratorService, trackerClient, workspaceService, cfg.WorkspaceHooks, logger)
 
@@ -91,8 +93,18 @@ func Run(logger zerolog.Logger) error {
 }
 
 func newTrackerClient(cfg config.Config, localDB *db.DB) tracker.Client {
+	if strings.ToLower(cfg.TrackerType) == "github" {
+		// For GitHub, Endpoint is owner/repo
+		parts := strings.Split(cfg.TrackerEndpoint, "/")
+		if len(parts) == 2 {
+			return trackergithub.NewClient(parts[0], parts[1], cfg.TrackerToken, nil)
+		}
+	}
 	if cfg.TrackerEndpoint != "" {
 		return trackergraphql.NewClient(cfg.TrackerEndpoint, cfg.TrackerToken, cfg.TrackerProject, cfg.TrackerWorkerAssigneeIDs, nil)
+	}
+	if localDB == nil {
+		return memory.NewClient(nil)
 	}
 	return trackersqlite.NewClient(localDB, cfg.TrackerWorkerAssigneeIDs)
 }

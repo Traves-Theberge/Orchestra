@@ -35,6 +35,7 @@ type IssueFilter struct {
 type Client interface {
 	FetchCandidateIssues(ctx context.Context, activeStates []string) ([]Issue, error)
 	FetchIssuesByIDs(ctx context.Context, issueIDs []string) ([]Issue, error)
+	FetchIssuesByStates(ctx context.Context, states []string) ([]Issue, error)
 	FetchIssueStatesByIDs(ctx context.Context, issueIDs []string) (map[string]string, error)
 	FetchIssues(ctx context.Context, filter IssueFilter) ([]Issue, error)
 	SearchIssues(ctx context.Context, query string) ([]Issue, error)

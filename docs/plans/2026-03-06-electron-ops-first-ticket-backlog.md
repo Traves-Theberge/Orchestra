@@ -37,7 +37,7 @@ State rules:
 
 ### P0-01 Electron Shell and Secure Bridge
 
-Status: In progress (scaffold completed)
+Status: Complete
 
 Deliverables:
 
@@ -52,7 +52,7 @@ Acceptance criteria:
 
 ### P0-02 Design System and Layout Foundation (shadcn/ui)
 
-Status: In progress (base components and shell layout completed)
+Status: Complete
 
 Deliverables:
 
@@ -66,7 +66,7 @@ Acceptance criteria:
 
 ### P0-03 Typed Orchestra API Client
 
-Status: In progress (implemented base client for state/refresh/workspace migration endpoints)
+Status: Complete
 
 Deliverables:
 
@@ -80,7 +80,7 @@ Acceptance criteria:
 
 ### P0-04 SSE Client with Reconnect + Fallback Polling
 
-Status: In progress (implemented named event handling, reconnect path, and polling fallback)
+Status: Complete
 
 Deliverables:
 
@@ -95,7 +95,7 @@ Acceptance criteria:
 
 ### P0-05 Runtime Snapshot Store and Event Timeline Store
 
-Status: In progress (store semantics extracted and tested for idempotent snapshot updates and bounded timeline append)
+Status: Complete
 
 Deliverables:
 
@@ -109,7 +109,7 @@ Acceptance criteria:
 
 ### P0-06 Dashboard View (Ops)
 
-Status: In progress (live cards/lists/timeline backed by state + events contracts)
+Status: Complete
 
 Note: issue inspector panel added for direct issue contract lookup (`/api/v1/{issue_identifier}`) and error envelope visibility.
 Note: running and retry lists are rendered in deterministic sorted order for stable operator scanning.
@@ -127,7 +127,7 @@ Acceptance criteria:
 
 ### P0-07 Refresh Action Flow
 
-Status: In progress (refresh action wired with pending/success/failure UX; covered in Go-backed smoke)
+Status: Complete
 
 Deliverables:
 
@@ -140,7 +140,7 @@ Acceptance criteria:
 
 ### P0-08 Workspace Migration Plan/Apply Flow
 
-Status: In progress (plan/apply wired with confirmation UX and covered in Go-backed smoke, including auth-host mode)
+Status: Complete
 
 Deliverables:
 
@@ -154,7 +154,7 @@ Acceptance criteria:
 
 ### P0-09 Issue Inspector Flow
 
-Status: In progress (issue inspector panel wired and row-click drilldown from running/retry views implemented)
+Status: Complete
 
 Deliverables:
 
@@ -171,6 +171,8 @@ Acceptance criteria:
 
 ### P1-01 Contract and Parser Tests
 
+Status: In progress
+
 Deliverables:
 
 - Snapshot schema tests.
@@ -182,7 +184,7 @@ Acceptance criteria:
 
 ### P1-02 Reconnect Resilience Tests
 
-Status: In progress (unit tests cover reconnect backoff/reset; Go-backed smoke now validates SSE snapshot path and protected-host auth behavior)
+Status: Complete
 
 Deliverables:
 
@@ -195,10 +197,7 @@ Acceptance criteria:
 
 ### P1-03 Accessibility and Operator UX Pass
 
-Status: In progress (keyboard and live-region semantics in place; renderer smoke suite now verifies key status/error strip operator messages)
-
-Note: renderer smoke now also verifies sidebar keyboard traversal and theme toggle root-class persistence behavior.
-Note: unauthorized action paths now show explicit protected-host token guidance and are covered by renderer smoke.
+Status: Complete
 
 Deliverables:
 

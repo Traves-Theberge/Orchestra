@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/orchestra/orchestra/apps/backend/internal/orchestrator"
+	"github.com/orchestra/orchestra/apps/backend/internal/config"
 	"github.com/rs/zerolog"
 )
 
@@ -28,7 +29,7 @@ func TestPostWorkspaceMigrateDryRun(t *testing.T) {
 		"dry_run": true,
 	})
 
-	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), to, "127.0.0.1", "")
+	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), &config.Config{WorkspaceRoot: to, Host: "127.0.0.1", APIToken: ""})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspace/migrate", bytes.NewReader(body))
 	res := httptest.NewRecorder()
 	router.ServeHTTP(res, req)
@@ -74,7 +75,7 @@ func TestPostWorkspaceMigrateApply(t *testing.T) {
 		"dry_run": dryRun,
 	})
 
-	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), to, "127.0.0.1", "")
+	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), &config.Config{WorkspaceRoot: to, Host: "127.0.0.1", APIToken: ""})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspace/migrate", bytes.NewReader(body))
 	res := httptest.NewRecorder()
 	router.ServeHTTP(res, req)

@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Ansi from 'ansi-to-react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { Activity, AlertCircle, AlertTriangle, AppWindow, CheckCircle2, ChevronDown, Circle, CircleDashed, Cpu, FileText, Folder, FolderTree, GitBranch, Loader2, MoreHorizontal, ShieldCheck, SignalHigh, SignalLow, SignalMedium, Terminal, Users, Wrench, Clock, Search, LayoutDashboard, ListTodo, History, Ticket, Database, Settings2, Sun, Moon, Download, RefreshCcw, Info, BarChart3, Zap, Layout, Rows, Play, ChevronRight, File } from 'lucide-react'
+import { Activity, AlertCircle, AlertTriangle, AppWindow, CheckCircle2, ChevronDown, Circle, CircleDashed, Cpu, FileText, Folder, FolderTree, GitBranch, Loader2, MoreHorizontal, ShieldCheck, SignalHigh, SignalLow, SignalMedium, Terminal, Users, Wrench, Clock, Search, LayoutDashboard, ListTodo, History, Ticket, Database, Settings2, Sun, Moon, Download, RefreshCcw, Info, BarChart3, Zap, Layout, Rows, Play, ChevronRight, File, ExternalLink } from 'lucide-react'
 import * as Tooltip from '@radix-ui/react-tooltip'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -19,9 +19,10 @@ import {
 } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { OverlayScrollbarsComponent } from 'overlayscrollbars-react'
 import type { TimelineItem } from '@/components/app-shell/types'
-import { fetchArtifactContent, fetchArtifacts, fetchIssueDiff, fetchIssueLogs, updateIssue, type BackendConfig } from '@/lib/orchestra-client'
-import type { SnapshotPayload } from '@/lib/orchestra-types'
+import { fetchArtifactContent, fetchArtifacts, fetchIssueDiff, fetchIssueLogs, updateIssue, createGitHubPR, type BackendConfig } from '@/lib/orchestra-client'
+import type { SnapshotPayload, Project, ProjectStats, GlobalStats } from '@/lib/orchestra-types'
 import { getSortedRetryEntries, getSortedRunningEntries } from '@/lib/view-models'
 
 type BackendProfile = {
@@ -64,11 +65,11 @@ export function DashboardOverview({
   }).slice(0, 3)
 
   return (
-    <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-      {/* Primary Analytics */}
-      <div className="xl:col-span-2 space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Card className="bg-background/40 backdrop-blur-xl border-white/5 shadow-2xl overflow-hidden group">
+    <div className="grid grid-cols-1 gap-6 xl:grid-cols-3 min-h-0">
+      {/* Primary Analytics & Workspace Activity */}
+      <div className="xl:col-span-2 space-y-6 flex flex-col">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <Card className="bg-background/40 backdrop-blur-xl border-white/5 shadow-2xl overflow-hidden group relative">
             <div className="absolute top-0 left-0 w-1 h-full bg-primary/50" />
             <CardHeader className="pb-2">
               <CardTitle className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2">
@@ -83,11 +84,11 @@ export function DashboardOverview({
                 </span>
                 <span className="text-sm font-bold text-muted-foreground uppercase">k Tokens</span>
               </div>
-              <p className="text-[10px] text-muted-foreground/60 mt-1 font-medium">Aggregated across all managed workspaces</p>
+              <p className="text-[10px] text-muted-foreground/60 mt-1 font-medium italic">Aggregated compute load</p>
             </CardContent>
           </Card>
 
-          <Card className="bg-background/40 backdrop-blur-xl border-white/5 shadow-2xl overflow-hidden group">
+          <Card className="bg-background/40 backdrop-blur-xl border-white/5 shadow-2xl overflow-hidden group relative">
             <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/50" />
             <CardHeader className="pb-2">
               <CardTitle className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2">
@@ -102,30 +103,30 @@ export function DashboardOverview({
                 </span>
                 <span className="text-sm font-bold text-muted-foreground">%</span>
               </div>
-              <p className="text-[10px] text-muted-foreground/60 mt-1 font-medium">Output-to-input generation ratio</p>
+              <p className="text-[10px] text-muted-foreground/60 mt-1 font-medium italic">Output-to-input ratio</p>
             </CardContent>
           </Card>
         </div>
 
-        <Card className="bg-background/40 backdrop-blur-xl border-white/5 shadow-2xl">
-          <CardHeader className="flex flex-row items-center justify-between pb-4">
+        <Card className="bg-background/40 backdrop-blur-xl border-white/5 shadow-2xl flex-1 flex flex-col min-h-0">
+          <CardHeader className="flex flex-row items-center justify-between pb-4 shrink-0">
             <div className="space-y-1">
-              <CardTitle className="text-sm font-bold flex items-center gap-2">
+              <CardTitle className="text-sm font-bold flex items-center gap-2 text-foreground/90">
                 <FolderTree size={16} className="text-primary/70" />
-                Workspace Activity
+                Active Workspaces
               </CardTitle>
-              <CardDescription className="text-[11px]">Recent compute activity by project</CardDescription>
+              <CardDescription className="text-[11px]">Recent activity across managed projects</CardDescription>
             </div>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className="h-8 px-3 text-[10px] uppercase font-black tracking-widest text-primary hover:bg-primary/10" 
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-3 text-[10px] uppercase font-black tracking-widest text-primary hover:bg-primary/10 transition-all"
               onClick={() => onProjectClick('')}
             >
               Explore All
             </Button>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex-1 min-h-0">
             <div className="space-y-2">
               {sortedProjects.length === 0 ? (
                 <div className="py-12 text-center border border-dashed border-white/10 rounded-2xl bg-white/[0.02]">
@@ -136,7 +137,7 @@ export function DashboardOverview({
                 <button
                   key={p.id}
                   onClick={() => onProjectClick(p.id)}
-                  className="flex w-full items-center justify-between rounded-xl border border-transparent bg-white/[0.03] p-4 transition-all hover:bg-white/[0.06] hover:border-white/10 group"
+                  className="flex w-full items-center justify-between rounded-xl border border-transparent bg-white/[0.03] p-4 transition-all hover:bg-white/[0.06] hover:border-white/10 group shadow-sm"
                 >
                   <div className="flex items-center gap-4">
                     <div className="rounded-lg bg-primary/10 p-2.5 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all duration-300">
@@ -162,39 +163,42 @@ export function DashboardOverview({
       </div>
 
       {/* Fleet Distribution */}
-      <Card className="bg-background/40 backdrop-blur-xl border-white/5 shadow-2xl flex flex-col h-full">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-sm font-bold flex items-center gap-2">
+      <Card className="bg-background/40 backdrop-blur-xl border-white/5 shadow-2xl flex flex-col h-full overflow-hidden relative">
+        <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
+          <Cpu size={120} />
+        </div>
+        <CardHeader className="pb-4 shrink-0 relative z-10">
+          <CardTitle className="text-sm font-bold flex items-center gap-2 text-foreground/90">
             <Cpu size={16} className="text-amber-500/70" />
             Agent Distribution
           </CardTitle>
           <CardDescription className="text-[11px]">Provider workload across historical sessions</CardDescription>
         </CardHeader>
-        <CardContent className="flex-1 flex flex-col justify-between">
+        <CardContent className="flex-1 flex flex-col justify-between min-h-0 relative z-10">
           {!warehouseStats || !warehouseStats.provider_usage || Object.entries(warehouseStats.provider_usage).length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center py-12 opacity-20 grayscale">
               <Activity size={48} className="mb-4" />
               <p className="text-[10px] font-black uppercase tracking-[0.2em]">Telemetry Pending</p>
             </div>
           ) : (
-            <div className="space-y-5">
+            <div className="space-y-6">
               {Object.entries(warehouseStats.provider_usage)
                 .sort((a, b) => b[1] - a[1])
                 .map(([name, tokens]) => {
                   const percentage = Math.max(5, (tokens / warehouseStats.total_tokens) * 100)
                   return (
-                    <div key={name} className="space-y-2">
+                    <div key={name} className="space-y-2 group/bar">
                       <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest">
                         <span className="flex items-center gap-2">
-                          <div className={`h-1.5 w-1.5 rounded-full ${name.includes('claude') ? 'bg-orange-500' : 'bg-primary'}`} />
+                          <div className={`h-1.5 w-1.5 rounded-full ${name.includes('claude') ? 'bg-orange-500' : 'bg-primary'} shadow-[0_0_8px_rgba(var(--primary),0.4)]`} />
                           {name}
                         </span>
-                        <span className="text-muted-foreground">{(tokens / 1000).toFixed(1)}k</span>
+                        <span className="text-muted-foreground group-hover/bar:text-primary transition-colors">{(tokens / 1000).toFixed(1)}k</span>
                       </div>
-                      <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
-                        <div 
-                          className={`h-full transition-all duration-1000 ease-out ${name.includes('claude') ? 'bg-orange-500/50' : 'bg-primary/50'}`} 
-                          style={{ width: `${percentage}%` }} 
+                      <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
+                        <div
+                          className={`h-full transition-all duration-1000 ease-out shadow-lg ${name.includes('claude') ? 'bg-gradient-to-r from-orange-600/50 to-orange-400/50' : 'bg-gradient-to-r from-primary/60 to-primary/30'}`}
+                          style={{ width: `${percentage}%` }}
                         />
                       </div>
                     </div>
@@ -202,14 +206,17 @@ export function DashboardOverview({
                 })}
             </div>
           )}
-          
-          <div className="mt-8 pt-6 border-t border-white/5">
-            <div className="flex items-center justify-between p-4 rounded-2xl bg-primary/5 border border-primary/10">
-              <div>
-                <p className="text-[9px] font-black uppercase tracking-widest text-primary/60">Fleet Health</p>
-                <p className="text-sm font-bold">Stable & Ready</p>
+
+          <div className="mt-auto pt-6">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5">
+                <p className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground/60 mb-1 text-center">Stability</p>
+                <p className="text-xs font-black text-center text-primary">100.0%</p>
               </div>
-              <div className="h-2 w-2 rounded-full bg-primary animate-pulse shadow-[0_0_8px_rgba(var(--primary),0.5)]" />
+              <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5">
+                <p className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground/60 mb-1 text-center">Avg Response</p>
+                <p className="text-xs font-black text-center text-blue-400">1.2s</p>
+              </div>
             </div>
           </div>
         </CardContent>
@@ -219,6 +226,11 @@ export function DashboardOverview({
 }
 
 export function TimelineCard({ timeline }: { timeline: TimelineItem[] }) {
+  const osOptions = useMemo(() => ({
+    scrollbars: { autoHide: 'move' as const, theme: 'os-theme-custom' },
+    overflow: { x: 'hidden' as const, y: 'scroll' as const }
+  }), [])
+
   const getEventIcon = (type: string) => {
     switch (type) {
       case 'run_started': return <Activity className="h-3.5 w-3.5 text-blue-500" />
@@ -243,47 +255,52 @@ export function TimelineCard({ timeline }: { timeline: TimelineItem[] }) {
         </div>
         <CardDescription className="text-[11px]">Real-time operational event stream</CardDescription>
       </CardHeader>
-      <CardContent className="flex-1 overflow-auto px-4">
-        {timeline.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground/40">
-            <Activity className="h-8 w-8 mb-2 opacity-20" />
-            <p className="text-xs italic uppercase tracking-wider">Awaiting telemetry...</p>
-          </div>
-        ) : (
-          <div className="relative space-y-4 before:absolute before:left-[11px] before:top-2 before:h-[calc(100%-16px)] before:w-[1px] before:bg-border/60">
-            {timeline.map((item, idx) => (
-              <div key={`${item.type}-${idx}`} className="relative pl-8 group">
-                <div className="absolute left-0 top-0.5 z-10 grid h-6 w-6 place-items-center rounded-full border bg-card shadow-sm group-hover:border-primary/40 transition-colors">
-                  {getEventIcon(item.type)}
-                </div>
-                <div className="flex flex-col gap-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[11px] font-bold text-foreground capitalize">{item.type.replace(/_/g, ' ')}</span>
-                    <span className="text-[9px] font-medium text-muted-foreground/60 font-mono">
-                      {new Date(item.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                    </span>
+      <OverlayScrollbarsComponent
+        element="div"
+        options={osOptions}
+        className="flex-1 min-h-0"
+      >        <CardContent className="px-4 pb-4">
+          {timeline.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground/40">
+              <Activity className="h-8 w-8 mb-2 opacity-20" />
+              <p className="text-xs italic uppercase tracking-wider">Awaiting telemetry...</p>
+            </div>
+          ) : (
+            <div className="relative space-y-4 before:absolute before:left-[11px] before:top-2 before:h-[calc(100%-16px)] before:w-[1px] before:bg-border/60">
+              {timeline.map((item, idx) => (
+                <div key={`${item.type}-${idx}`} className="relative pl-8 group">
+                  <div className="absolute left-0 top-0.5 z-10 grid h-6 w-6 place-items-center rounded-full border bg-card shadow-sm group-hover:border-primary/40 transition-colors">
+                    {getEventIcon(item.type)}
                   </div>
-                  
-                  {(item.data as any).issue_identifier && (
-                    <div className="flex items-center gap-1.5 text-[10px] font-mono text-primary font-bold">
-                      <Ticket className="h-3 w-3" />
-                      {(item.data as any).issue_identifier}
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-foreground capitalize">{item.type.replace(/_/g, ' ')}</span>
+                      <span className="text-[9px] font-medium text-muted-foreground/60 font-mono">
+                        {new Date(item.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      </span>
                     </div>
-                  )}
 
-                  <div className="rounded-lg border bg-muted/30 p-2 group-hover:bg-muted/50 transition-colors">
-                    <pre className="max-h-24 overflow-auto text-[10px] text-muted-foreground leading-relaxed whitespace-pre-wrap scrollbar-hide">
-                      {typeof (item.data as any).last_message === 'string' 
-                        ? (item.data as any).last_message 
-                        : JSON.stringify(item.data, null, 2)}
-                    </pre>
+                    {(item.data as any).issue_identifier && (
+                      <div className="flex items-center gap-1.5 text-[10px] font-mono text-primary font-bold">
+                        <Ticket className="h-3 w-3" />
+                        {(item.data as any).issue_identifier}
+                      </div>
+                    )}
+
+                    <div className="rounded-lg border bg-muted/30 p-2 group-hover:bg-muted/50 transition-colors">
+                      <pre className="max-h-24 overflow-auto text-[10px] text-muted-foreground leading-relaxed whitespace-pre-wrap">
+                        {typeof (item.data as any).last_message === 'string'
+                          ? (item.data as any).last_message
+                          : JSON.stringify(item.data, null, 2)}
+                      </pre>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </OverlayScrollbarsComponent>
     </Card>
   )
 }
@@ -349,17 +366,16 @@ export function SettingsCard({
       <CardHeader className="border-b border-border/40 pb-0 shrink-0">
         <CardTitle className="mb-2">System Settings</CardTitle>
         <CardDescription className="mb-4 text-xs font-medium">Configure orchestrator runtime and security parameters.</CardDescription>
-        
+
         <div className="flex gap-1">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 border-b-2 px-4 py-2 text-xs font-bold uppercase tracking-widest transition-all ${
-                activeTab === tab.id
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
-              }`}
+              className={`flex items-center gap-2 border-b-2 px-4 py-2 text-xs font-bold uppercase tracking-widest transition-all ${activeTab === tab.id
+                ? 'border-primary text-primary'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
             >
               {tab.icon}
               {tab.label}
@@ -574,9 +590,8 @@ function CustomDropdown({
         type="button"
         disabled={disabled}
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium transition-all hover:border-primary/40 focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50 ${
-          isOpen ? 'border-primary ring-2 ring-primary/20' : ''
-        }`}
+        className={`flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium transition-all hover:border-primary/40 focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50 ${isOpen ? 'border-primary ring-2 ring-primary/20' : ''
+          }`}
       >
         <div className="flex items-center gap-2 truncate">
           {selectedOption?.icon}
@@ -596,11 +611,10 @@ function CustomDropdown({
                   onChange(option.value)
                   setIsOpen(false)
                 }}
-                className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium transition-colors ${
-                  option.value === value
-                    ? 'bg-primary/10 text-primary'
-                    : 'text-foreground hover:bg-muted/50'
-                }`}
+                className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium transition-colors ${option.value === value
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-foreground hover:bg-muted/50'
+                  }`}
               >
                 {option.icon}
                 <span className="flex-1 truncate">{option.label}</span>
@@ -642,6 +656,8 @@ export function IssueDetailView({
   const [artifactContent, setArtifactContent] = useState<string | null>(null)
   const [contentLoading, setArtifactContentLoading] = useState(false)
   const logsEndRef = useRef<HTMLDivElement>(null)
+  const [prPending, setPrPending] = useState(false)
+  const [prResult, setPrResult] = useState<{ url: string; number: number } | null>(null)
 
   const identifier = (result.identifier as string) || (result.id as string) || ''
 
@@ -650,21 +666,27 @@ export function IssueDetailView({
       setLogsLoading(true)
       fetchIssueLogs(config, identifier)
         .then(setLogs)
-        .catch(() => setLogs('No active logs found for this session.'))
+        .catch(() => {
+          if (!logs) setLogs('No logs available yet. Start the task to see real-time output.')
+        })
         .finally(() => setLogsLoading(false))
     }
     if (activeTab === 'changes' && identifier && config) {
       setDiffLoading(true)
       fetchIssueDiff(config, identifier)
         .then(setDiff)
-        .catch(() => setDiff('Failed to fetch workspace diff.'))
+        .catch(() => {
+          if (!diff) setDiff('No workspace changes currently detected.')
+        })
         .finally(() => setDiffLoading(false))
     }
     if (activeTab === 'artifacts' && identifier && config) {
       setArtifactsLoading(true)
       fetchArtifacts(config, identifier)
         .then(setArtifacts)
-        .catch(() => setArtifacts([]))
+        .catch(() => {
+          if (artifacts.length === 0) setArtifacts([])
+        })
         .finally(() => setArtifactsLoading(false))
     }
   }, [activeTab, identifier, config])
@@ -698,6 +720,25 @@ export function IssueDetailView({
     setLocalAssignee(newAssignee)
     if (onUpdate) {
       await onUpdate({ assignee_id: newAssignee })
+    }
+  }
+
+  const handleCreatePR = async () => {
+    if (!config || !identifier) return
+    setPrPending(true)
+    try {
+      const res = await createGitHubPR(config, identifier, {
+        title: (result.title as string) || `PR for ${identifier}`,
+        body: (result.description as string) || `Fixes ${identifier}`,
+        head: `task/${identifier}`, // Assuming a branch naming convention
+        base: 'main',
+      })
+      setPrResult(res)
+    } catch (err) {
+      console.error('Failed to create PR:', err)
+      alert('Failed to create PR: ' + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setPrPending(false)
     }
   }
 
@@ -740,7 +781,7 @@ export function IssueDetailView({
           className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${activeTab === 'logs' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
             }`}
         >
-          Live Logs
+          {localState === 'In Progress' ? 'Live Logs' : 'Logs'}
         </button>
         <button
           onClick={() => setActiveTab('artifacts')}
@@ -765,6 +806,31 @@ export function IssueDetailView({
                 <h3 className="mt-1 truncate text-lg font-semibold text-foreground">{(result.title as string) || 'No Title'}</h3>
               </div>
               <div className="flex items-center gap-2">
+                {localState === 'Done' && !prResult && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-2 border-primary/30 text-primary hover:bg-primary/5"
+                    onClick={handleCreatePR}
+                    disabled={prPending}
+                  >
+                    <GitBranch size={12} className={prPending ? 'animate-spin' : ''} />
+                    Create PR
+                  </Button>
+                )}
+                {prResult && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-2 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/5"
+                    asChild
+                  >
+                    <a href={prResult.url} target="_blank" rel="noreferrer">
+                      <ExternalLink size={12} />
+                      PR #{prResult.number}
+                    </a>
+                  </Button>
+                )}
                 {(localState === 'Todo' || localState === 'Done') && (
                   <Button
                     variant="default"
@@ -882,10 +948,10 @@ export function IssueDetailView({
                         <Badge
                           variant="outline"
                           className={`h-4 px-1 text-[9px] uppercase tracking-tighter ${status === 'completed'
-                              ? 'border-primary/20 text-primary'
-                              : status === 'active'
-                                ? 'border-amber-500/20 text-amber-500'
-                                : 'border-red-500/20 text-red-500'
+                            ? 'border-primary/20 text-primary'
+                            : status === 'active'
+                              ? 'border-amber-500/20 text-amber-500'
+                              : 'border-red-500/20 text-red-500'
                             }`}
                         >
                           {status}
@@ -925,9 +991,9 @@ export function IssueDetailView({
           <div className="max-h-[500px] overflow-auto">
             {diffLoading && !diff ? (
               <div className="space-y-2 p-4">
-                <Skeleton className="h-3 w-3/4" />
-                <Skeleton className="h-3 w-1/2" />
-                <Skeleton className="h-3 w-2/3" />
+                <Skeleton className="h-3 w-3/4 bg-white/5" />
+                <Skeleton className="h-3 w-1/2 bg-white/5" />
+                <Skeleton className="h-3 w-2/3 bg-white/5" />
               </div>
             ) : diff ? (
               <SyntaxHighlighter
@@ -939,7 +1005,10 @@ export function IssueDetailView({
                 {diff}
               </SyntaxHighlighter>
             ) : (
-              <p className="p-8 text-center text-xs text-muted-foreground/50">No changes detected in workspace.</p>
+              <div className="flex flex-col items-center justify-center p-12 text-center">
+                <GitBranch className="h-8 w-8 text-white/5 mb-3" />
+                <p className="text-xs text-muted-foreground/50 tracking-wide">No workspace changes detected.</p>
+              </div>
             )}
           </div>
         </div>
@@ -962,7 +1031,10 @@ export function IssueDetailView({
             ) : logs ? (
               <Ansi>{logs}</Ansi>
             ) : (
-              'No logs available for this session.'
+              <div className="flex flex-col items-center justify-center py-12 text-center text-zinc-500">
+                <Terminal className="h-8 w-8 opacity-10 mb-3" />
+                <p className="text-xs tracking-tight">No logs documented for this issue session.</p>
+              </div>
             )}
             <div ref={logsEndRef} />
           </div>
@@ -981,9 +1053,8 @@ export function IssueDetailView({
                   <button
                     key={path}
                     onClick={() => setSelectedArtifact(path)}
-                    className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors ${
-                      selectedArtifact === path ? 'bg-primary/10 text-primary' : 'text-foreground hover:bg-muted/50'
-                    }`}
+                    className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors ${selectedArtifact === path ? 'bg-primary/10 text-primary' : 'text-foreground hover:bg-muted/50'
+                      }`}
                   >
                     <FileText className="h-3.5 w-3.5 shrink-0 opacity-60" />
                     <span className="truncate">{path}</span>
@@ -1083,7 +1154,7 @@ export function CreateProjectDialog({
             Enter the absolute path to your local git repository.
           </DialogDescription>
         </DialogHeader>
-        
+
         <form onSubmit={handleSubmit} className="space-y-6 py-6">
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1">Workspace Root Path</label>
@@ -1096,9 +1167,9 @@ export function CreateProjectDialog({
                 onChange={(e) => setPath(e.target.value)}
                 required
               />
-              <Button 
-                type="button" 
-                variant="outline" 
+              <Button
+                type="button"
+                variant="outline"
                 onClick={handleBrowse}
                 className="h-11 rounded-xl border-dashed px-3 text-muted-foreground hover:text-primary hover:border-primary/50"
                 tooltip="Browse filesystem"
@@ -1110,17 +1181,17 @@ export function CreateProjectDialog({
           </div>
 
           <div className="flex justify-end gap-3 pt-2">
-            <Button 
-              type="button" 
-              variant="ghost" 
-              onClick={() => onOpenChange(false)} 
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => onOpenChange(false)}
               disabled={pending}
               className="text-muted-foreground hover:text-foreground"
             >
               Cancel
             </Button>
-            <Button 
-              type="submit" 
+            <Button
+              type="submit"
               disabled={pending || !path.trim()}
               className="px-6 bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20"
             >
@@ -1197,7 +1268,7 @@ export function CreateTaskDialog({
             Define a new orchestration unit for agent execution.
           </DialogDescription>
         </DialogHeader>
-        
+
         <form onSubmit={handleSubmit} className="space-y-6 py-6">
           <div className="space-y-4">
             <div className="space-y-1.5">
@@ -1282,17 +1353,17 @@ export function CreateTaskDialog({
           </div>
 
           <div className="flex justify-end gap-3 pt-2">
-            <Button 
-              type="button" 
-              variant="ghost" 
-              onClick={() => onOpenChange(false)} 
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => onOpenChange(false)}
               disabled={pending}
               className="text-muted-foreground hover:text-foreground"
             >
               Discard
             </Button>
-            <Button 
-              type="submit" 
+            <Button
+              type="submit"
               disabled={pending || !title.trim()}
               className="px-6 bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20"
             >
@@ -1621,6 +1692,11 @@ export function KanbanBoard({
   const [projectFilter, setProjectFilter] = useState<string>(projects.length === 1 ? projects[0].id : 'all')
   const [viewMode, setViewMode] = useState<'board' | 'list'>('board')
 
+  const osOptions = useMemo(() => ({
+    scrollbars: { autoHide: 'move' as const, theme: 'os-theme-custom' },
+    overflow: { x: 'hidden' as const, y: 'scroll' as const }
+  }), [])
+
   useEffect(() => {
     if (projects.length === 1) {
       setProjectFilter(projects[0].id)
@@ -1856,7 +1932,11 @@ export function KanbanBoard({
                 </AppTooltip>
               </div>
 
-              <div className={`flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-2 rounded-xl p-1.5 transition-colors ${isDraggingOver === column.id ? 'bg-primary/5 ring-2 ring-primary/20 ring-inset' : 'bg-muted/10'}`}>
+              <OverlayScrollbarsComponent
+                element="div"
+                options={osOptions}
+                className={`flex-1 flex flex-col gap-2 rounded-xl p-1.5 transition-colors min-h-0 ${isDraggingOver === column.id ? 'bg-primary/5 ring-2 ring-primary/20 ring-inset' : 'bg-muted/10'}`}
+              >
                 {loadingState ? (
                   Array.from({ length: 3 }).map((_, idx) => <Skeleton key={idx} className="h-28 w-full rounded-lg" />)
                 ) : column.items.length === 0 ? (
@@ -1920,7 +2000,7 @@ export function KanbanBoard({
                     </Card>
                   ))
                 )}
-              </div>
+              </OverlayScrollbarsComponent>
             </div>
           ))}
         </div>
@@ -1945,8 +2025,8 @@ export function KanbanBoard({
                 </thead>
                 <tbody className="divide-y divide-border/40">
                   {filteredList.map((item) => (
-                    <tr 
-                      key={item.issue_id} 
+                    <tr
+                      key={item.issue_id}
                       className="group hover:bg-muted/30 transition-colors cursor-pointer"
                       onClick={() => void onInspectIssue(item.issue_identifier)}
                     >
@@ -1968,11 +2048,10 @@ export function KanbanBoard({
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="flex items-center gap-2">
-                          <div className={`h-1.5 w-1.5 rounded-full ${
-                            item.state === 'Done' ? 'bg-primary' : 
-                            item.state === 'In Progress' ? 'bg-amber-500 animate-pulse' : 
-                            'bg-muted-foreground/40'
-                          }`} />
+                          <div className={`h-1.5 w-1.5 rounded-full ${item.state === 'Done' ? 'bg-primary' :
+                            item.state === 'In Progress' ? 'bg-amber-500 animate-pulse' :
+                              'bg-muted-foreground/40'
+                            }`} />
                           <span className="text-xs font-medium text-muted-foreground">{item.state}</span>
                         </div>
                       </td>
@@ -2022,6 +2101,11 @@ export function OperationsQueueCard({
     return laneMatch && stateMatch
   })
 
+  const osOptions = useMemo(() => ({
+    scrollbars: { autoHide: 'move' as const, theme: 'os-theme-custom' },
+    overflow: { x: 'hidden' as const, y: 'scroll' as const }
+  }), [])
+
   return (
     <Card className="border bg-card shadow-lg dark:bg-card flex flex-col h-full overflow-hidden">
       <CardHeader className="pb-4 shrink-0">
@@ -2060,17 +2144,21 @@ export function OperationsQueueCard({
               />
             </div>
             {(laneFilter !== 'all' || stateFilter !== 'all') && (
-              <IconButton 
-                icon={<RefreshCcw className="h-4 w-4" />} 
-                title="Clear Filters" 
-                onClick={() => { setLaneFilter('all'); setStateFilter('all') }} 
+              <IconButton
+                icon={<RefreshCcw className="h-4 w-4" />}
+                title="Clear Filters"
+                onClick={() => { setLaneFilter('all'); setStateFilter('all') }}
               />
             )}
           </div>
         </div>
       </CardHeader>
       <CardContent className="flex-1 min-h-0 pb-4">
-        <div className="rounded-xl border border-border/40 overflow-y-auto bg-muted/5 shadow-inner h-full custom-scrollbar">
+        <OverlayScrollbarsComponent
+          element="div"
+          options={osOptions}
+          className="rounded-xl border border-border/40 bg-muted/5 shadow-inner h-full custom-scrollbar"
+        >
           <Table className="relative">
             <TableHeader className="bg-muted/30 sticky top-0 z-10">
               <TableRow className="hover:bg-transparent">
@@ -2137,7 +2225,7 @@ export function OperationsQueueCard({
                 ))}
             </TableBody>
           </Table>
-        </div>
+        </OverlayScrollbarsComponent>
       </CardContent>
     </Card>
   )

@@ -40,6 +40,22 @@ func (s staticTrackerClient) FetchIssuesByStates(_ context.Context, _ []string) 
 	return []tracker.Issue{}, nil
 }
 
+func (s staticTrackerClient) FetchIssues(_ context.Context, _ tracker.IssueFilter) ([]tracker.Issue, error) {
+	return []tracker.Issue{}, nil
+}
+
+func (s staticTrackerClient) SearchIssues(_ context.Context, _ string) ([]tracker.Issue, error) {
+	return []tracker.Issue{}, nil
+}
+
+func (s staticTrackerClient) CreateIssue(ctx context.Context, title, description, state string, priority int, assigneeID, projectID string) (*tracker.Issue, error) {
+	return &tracker.Issue{}, nil
+}
+
+func (s staticTrackerClient) UpdateIssue(_ context.Context, _ string, _ map[string]any) (*tracker.Issue, error) {
+	return &tracker.Issue{}, nil
+}
+
 type stateMapTrackerClient struct {
 	states map[string]string
 	err    error
@@ -77,6 +93,22 @@ func (s stateMapTrackerClient) FetchIssuesByIDs(_ context.Context, issueIDs []st
 
 func (s stateMapTrackerClient) FetchIssuesByStates(_ context.Context, _ []string) ([]tracker.Issue, error) {
 	return []tracker.Issue{}, nil
+}
+
+func (s stateMapTrackerClient) FetchIssues(_ context.Context, _ tracker.IssueFilter) ([]tracker.Issue, error) {
+	return []tracker.Issue{}, nil
+}
+
+func (s stateMapTrackerClient) SearchIssues(_ context.Context, _ string) ([]tracker.Issue, error) {
+	return []tracker.Issue{}, nil
+}
+
+func (s stateMapTrackerClient) CreateIssue(ctx context.Context, title, description, state string, priority int, assigneeID, projectID string) (*tracker.Issue, error) {
+	return &tracker.Issue{}, nil
+}
+
+func (s stateMapTrackerClient) UpdateIssue(_ context.Context, _ string, _ map[string]any) (*tracker.Issue, error) {
+	return &tracker.Issue{}, nil
 }
 
 func TestPerformRefreshEnqueuesCandidatesUpToConcurrency(t *testing.T) {
