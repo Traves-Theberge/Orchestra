@@ -172,12 +172,16 @@ export async function deleteIssue(config: BackendConfig, issueIdentifier: string
   })
 }
 
-export async function stopIssueSession(config: BackendConfig, issueIdentifier: string): Promise<void> {
+export async function stopIssueSession(config: BackendConfig, issueIdentifier: string, provider?: string): Promise<void> {
   const normalized = issueIdentifier.trim()
   if (normalized === '') {
     throw new APIError('invalid_request', 'issue identifier is required')
   }
-  await requestJSON<void>(config, `/api/v1/issues/${encodeURIComponent(normalized)}/session`, {
+  let path = `/api/v1/issues/${encodeURIComponent(normalized)}/session`
+  if (provider) {
+    path += `?provider=${encodeURIComponent(provider)}`
+  }
+  await requestJSON<void>(config, path, {
     method: 'DELETE',
   })
 }
@@ -198,7 +202,16 @@ export async function fetchIssues(config: BackendConfig, states?: string[], proj
 
 export async function createIssue(
   config: BackendConfig,
-  payload: { title: string; description: string; state: string; priority: number; assignee_id: string; project_id: string },
+  payload: {
+    title: string;
+    description: string;
+    state: string;
+    priority: number;
+    assignee_id: string;
+    project_id: string;
+    provider?: string;
+    disabled_tools?: string[];
+  },
 ): Promise<any> {
   return requestJSON<any>(config, '/api/v1/issues', {
     method: 'POST',
@@ -469,4 +482,23 @@ export async function fetchDocContent(config: BackendConfig, path: string): Prom
 export async function fetchMCPTools(config: BackendConfig): Promise<any[]> {
   const data = await requestJSON<{ tools: any[] }>(config, '/api/v1/mcp/tools')
   return data.tools || []
+}
+
+export async function fetchMCPServers(config: BackendConfig): Promise<any[]> {
+  const data = await requestJSON<{ servers: any[] }>(config, '/api/v1/mcp/servers')
+  return data.servers || []
+}
+
+export async function createMCPServer(config: BackendConfig, name: string, command: string): Promise<any> {
+  return requestJSON<any>(config, '/api/v1/mcp/servers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, command }),
+  })
+}
+
+export async function deleteMCPServer(config: BackendConfig, id: string): Promise<void> {
+  await requestJSON<any>(config, `/api/v1/mcp/servers/${id}`, {
+    method: 'DELETE',
+  })
 }

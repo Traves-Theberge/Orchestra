@@ -145,6 +145,7 @@ export default function App() {
   const [activeProfileId, setActiveProfileId] = useState('')
   const [agentConfig, setAgentConfig] = useState<{ commands: Record<string, string>; agent_provider: string } | null>(null)
   const [availableAgents, setAvailableAgents] = useState<string[]>([])
+  const [allTools, setAllTools] = useState<any[]>([])
   const [agentTokens, setAgentTokens] = useState<Record<string, string>>({})
   const [loadingState, setLoadingState] = useState(true)
   const [usePolling, setUsePolling] = useState(false)
@@ -285,11 +286,15 @@ export default function App() {
     fetchAgentConfig(config)
       .then(cfg => mounted && setAgentConfig(cfg))
       .catch(() => mounted && setAgentConfig(null))
+    if (config) {
+      fetchAgents(config)
+        .then(agents => mounted && setAvailableAgents(agents))
+        .catch(() => mounted && setAvailableAgents([]))
 
-    fetchAgents(config)
-      .then(agents => mounted && setAvailableAgents(agents))
-      .catch(() => mounted && setAvailableAgents([]))
-
+      fetchMCPTools(config)
+        .then(tools => mounted && setAllTools(tools))
+        .catch(() => mounted && setAllTools([]))
+    }
     // Section-specific data loading with global loading state
     const loadRequiredData = async () => {
       // Always fetch projects if we have none yet
@@ -570,11 +575,11 @@ export default function App() {
     }
   }
 
-  const handleStopSession = async (identifier: string) => {
+  const handleStopSession = async (identifier: string, provider?: string) => {
     if (!config) return
     try {
-      await stopIssueSession(config, identifier)
-      setStatusMessage(`Session for ${identifier} termination signaled.`)
+      await stopIssueSession(config, identifier, provider)
+      setStatusMessage(`Session for ${identifier}${provider ? ` (${provider})` : ''} termination signaled.`)
       void handleRefresh()
       void executeIssueLookup(identifier)
     } catch (err) {
@@ -587,7 +592,16 @@ export default function App() {
     setCreateTaskDialogOpen(true)
   }
 
-  const handleTaskSubmit = async (payload: { title: string; description: string; state: string; priority: number; assignee_id: string; project_id: string }) => {
+  const handleTaskSubmit = async (payload: {
+    title: string;
+    description: string;
+    state: string;
+    priority: number;
+    assignee_id: string;
+    project_id: string;
+    provider?: string;
+    disabled_tools?: string[];
+  }) => {
     if (!config) return
     try {
       await createIssue(config, payload)
@@ -1071,8 +1085,9 @@ export default function App() {
                 config={config}
                 timeline={timeline}
                 availableAgents={availableAgents}
+                allTools={allTools}
                 onUpdate={(updates) => handleIssueUpdate(issueLookupId, updates)}
-                onStopSession={() => handleStopSession(issueLookupId)}
+                onStopSession={(p) => handleStopSession(issueLookupId, p)}
               />
             ) : (
               <p className="text-center text-sm text-muted-foreground py-10">No issue data available.</p>

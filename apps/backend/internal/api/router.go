@@ -89,6 +89,9 @@ func NewRouterWithPubSub(
 	r.Get("/api/v1/docs/*", server.GetDocContent)
 
 	r.Get("/api/v1/mcp/tools", server.GetMCPTools)
+	r.Get("/api/v1/mcp/servers", server.GetMCPServers)
+	r.Post("/api/v1/mcp/servers", server.PostMCPServer)
+	r.Delete("/api/v1/mcp/servers/{id}", server.DeleteMCPServer)
 
 	r.Get("/api/v1/projects", server.GetProjects)
 	r.Post("/api/v1/projects", server.CreateProject)

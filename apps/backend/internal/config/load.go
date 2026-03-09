@@ -41,7 +41,6 @@ func Load() (Config, error) {
 	trackerType := getenvOrEmpty("ORCHESTRA_TRACKER_TYPE")
 	trackerEndpoint := getenvOrEmpty("ORCHESTRA_TRACKER_ENDPOINT")
 	trackerToken := getenvOrEmpty("ORCHESTRA_TRACKER_TOKEN")
-	trackerProject := getenvOrEmpty("ORCHESTRA_TRACKER_PROJECT")
 	trackerWorkerAssigneeIDsRaw := getenvOrEmpty("ORCHESTRA_TRACKER_WORKER_ASSIGNEE_IDS")
 	activeStatesRaw := getenvOrEmpty("ORCHESTRA_ACTIVE_STATES")
 	terminalStatesRaw := getenvOrEmpty("ORCHESTRA_TERMINAL_STATES")
@@ -83,9 +82,6 @@ func Load() (Config, error) {
 	}
 	if strings.TrimSpace(trackerToken) == "" {
 		trackerToken = workflowOverrides.TrackerToken
-	}
-	if strings.TrimSpace(trackerProject) == "" {
-		trackerProject = workflowOverrides.TrackerProject
 	}
 	if strings.TrimSpace(trackerWorkerAssigneeIDsRaw) == "" {
 		trackerWorkerAssigneeIDsRaw = workflowOverrides.TrackerWorkerAssigneeIDs
@@ -221,7 +217,6 @@ func Load() (Config, error) {
 		TrackerType:              strings.TrimSpace(strings.ToLower(trackerType)),
 		TrackerEndpoint:          strings.TrimSpace(trackerEndpoint),
 		TrackerToken:             strings.TrimSpace(trackerToken),
-		TrackerProject:           strings.TrimSpace(trackerProject),
 		TrackerWorkerAssigneeIDs: trackerWorkerAssigneeIDs,
 		ActiveStates:             activeStates,
 		TerminalStates:           terminalStates,
@@ -269,7 +264,6 @@ type workflowConfigOverrides struct {
 	TrackerType              string
 	TrackerEndpoint          string
 	TrackerToken             string
-	TrackerProject           string
 	TrackerWorkerAssigneeIDs string
 	ActiveStates             string
 	TerminalStates           string
@@ -335,9 +329,6 @@ func loadWorkflowOverrides(path string) workflowConfigOverrides {
 		),
 		TrackerToken: firstStringValue(
 			lookupNested(doc.Config, []string{"tracker", "token"}),
-		),
-		TrackerProject: firstStringValue(
-			lookupNested(doc.Config, []string{"tracker", "project"}),
 		),
 		TrackerWorkerAssigneeIDs: firstCSVValue(
 			lookupNested(doc.Config, []string{"tracker", "worker_assignee_ids"}),

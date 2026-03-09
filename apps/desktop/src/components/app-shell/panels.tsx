@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Ansi from 'ansi-to-react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { Activity, AlertCircle, AlertTriangle, AppWindow, CheckCircle2, ChevronDown, Circle, CircleDashed, Cpu, FileText, Folder, FolderTree, GitBranch, Loader2, MoreHorizontal, ShieldCheck, SignalHigh, SignalLow, SignalMedium, Square, Terminal, Users, Wrench, Clock, Search, LayoutDashboard, ListTodo, History, Ticket, Database, Settings2, Sun, Moon, Download, RefreshCcw, Info, BarChart3, Zap, Layout, Rows, Play, ChevronRight, File, ExternalLink, Plus, Trash2 } from 'lucide-react'
+import { Activity, AlertCircle, AlertTriangle, AppWindow, Bot, CheckCircle2, ChevronDown, Circle, CircleDashed, Cpu, FileText, Folder, FolderTree, GitBranch, Loader2, MoreHorizontal, ShieldCheck, SignalHigh, SignalLow, SignalMedium, Square, Terminal, User, Users, Wrench, Clock, Search, LayoutDashboard, ListTodo, History, Ticket, Database, Settings2, Sun, Moon, Download, RefreshCcw, Info, BarChart3, Zap, Layout, Rows, Play, ChevronRight, File, ExternalLink, Plus, Trash2 } from 'lucide-react'
 import * as Tooltip from '@radix-ui/react-tooltip'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -599,27 +599,38 @@ function CustomDropdown({
 }
 
 export function IssueDetailView({
-  result,
+  result: initialResult,
   onUpdate,
   onStopSession,
   config,
   timeline = [],
   availableAgents = [],
+  allTools = [],
 }: {
   result: Record<string, unknown> | null
   onUpdate?: (updates: Record<string, unknown>) => Promise<void>
-  onStopSession?: () => Promise<void>
+  onStopSession?: (provider?: string) => Promise<void>
   config: BackendConfig | null
   timeline?: TimelineItem[]
   availableAgents?: string[]
+  allTools?: any[]
 }) {
-  if (!result || typeof result !== 'object') {
+  if (!initialResult || typeof initialResult !== 'object') {
     return <div className="p-8 text-center text-muted-foreground italic">Invalid issue data provided.</div>
   }
+  const result = initialResult as any
 
   const [localState, setLocalState] = useState((result.state as string) || 'Todo')
   const [localAssignee, setLocalAssignee] = useState((result.assignee_id as string) || 'Unassigned')
-  const [activeTab, setActiveTab] = useState<'overview' | 'changes' | 'logs' | 'artifacts'>('overview')
+  const [localProvider, setLocalProvider] = useState<string>(() => {
+    const r = result as any
+    return r.provider || r.running?.provider || r.retry?.provider || ''
+  })
+  const [disabledTools, setDisabledTools] = useState<string[]>(() => {
+    const r = result as any
+    return r.disabled_tools || r.running?.disabled_tools || r.retry?.disabled_tools || []
+  })
+  const [activeTab, setActiveTab] = useState<'overview' | 'changes' | 'logs' | 'artifacts' | 'tools' | 'activity'>('overview')
   const [logs, setLogs] = useState<string>('')
   const [logsLoading, setLogsLoading] = useState(false)
   const [diff, setDiff] = useState<string>('')
@@ -697,6 +708,24 @@ export function IssueDetailView({
     }
   }
 
+  const handleProviderChange = async (newProvider: string) => {
+    setLocalProvider(newProvider)
+    if (onUpdate) {
+      await onUpdate({ provider: newProvider })
+    }
+  }
+
+  const handleToggleTool = async (toolName: string) => {
+    const next = disabledTools.includes(toolName)
+      ? disabledTools.filter(t => t !== toolName)
+      : [...disabledTools, toolName]
+
+    setDisabledTools(next)
+    if (onUpdate) {
+      await onUpdate({ disabled_tools: next })
+    }
+  }
+
   const handleCreatePR = async () => {
     if (!config || !identifier) return
     setPrPending(true)
@@ -764,318 +793,492 @@ export function IssueDetailView({
         >
           Artifacts
         </button>
+        <button
+          onClick={() => setActiveTab('tools')}
+          className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${activeTab === 'tools' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            }`}
+        >
+          Tools
+        </button>
+        <button
+          onClick={() => setActiveTab('activity')}
+          className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${activeTab === 'activity' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            }`}
+        >
+          Activity
+        </button>
       </div>
 
-      {activeTab === 'overview' ? (
-        <div className="space-y-4">
-          <div className="rounded-lg border bg-muted/30 p-4">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-border/40 pb-4">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="font-mono text-[10px] uppercase tracking-wider">
-                    {identifier}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground">in {(result.team_id as string) || 'Orchestra'}</span>
+      {
+        activeTab === 'overview' ? (
+          <div className="space-y-4">
+            <div className="rounded-lg border bg-muted/30 p-4">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-border/40 pb-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="font-mono text-[10px] uppercase tracking-wider">
+                      {identifier}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">in {(result.team_id as string) || 'Orchestra'}</span>
+                  </div>
+                  <h3 className="mt-1 truncate text-lg font-semibold text-foreground">{(result.title as string) || 'No Title'}</h3>
                 </div>
-                <h3 className="mt-1 truncate text-lg font-semibold text-foreground">{(result.title as string) || 'No Title'}</h3>
-              </div>
-              <div className="flex items-center gap-2">
-                {localState === 'Done' && !prResult && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 gap-2 border-primary/30 text-primary hover:bg-primary/5"
-                    onClick={handleCreatePR}
-                    disabled={prPending}
-                  >
-                    <GitBranch size={12} className={prPending ? 'animate-spin' : ''} />
-                    Create PR
-                  </Button>
-                )}
-                {prResult && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 gap-2 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/5"
-                    asChild
-                  >
-                    <a href={prResult.url} target="_blank" rel="noreferrer">
-                      <ExternalLink size={12} />
-                      PR #{prResult.number}
-                    </a>
-                  </Button>
-                )}
-                {(localState === 'Todo' || localState === 'Done') && (
-                  <Button
-                    variant="default"
-                    size="sm"
-                    className="h-8 gap-2 bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/20"
-                    onClick={() => handleStateChange('In Progress')}
-                  >
-                    <Play size={12} fill="currentColor" />
-                    Run Task
-                  </Button>
-                )}
-                {localState === 'In Progress' && onStopSession && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 border-red-200 text-xs text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-900/30 dark:text-red-400 dark:hover:bg-red-950/20"
-                    onClick={() => void onStopSession()}
-                  >
-                    Stop Session
-                  </Button>
-                )}
-                <CustomDropdown
-                  className="w-40"
-                  value={localState}
-                  options={AGENT_STATES.map((s) => ({ label: s, value: s }))}
-                  onChange={handleStateChange}
-                />
-                <CustomDropdown
-                  className="w-56"
-                  value={localAssignee}
-                  options={[
-                    { label: 'Unassigned', value: 'Unassigned', icon: <Users className="h-3 w-3" /> },
-                    ...availableAgents.map((agent) => ({
-                      label: agent,
-                      value: agent,
-                      icon: <Activity className="h-3 w-3" />,
-                    })),
-                  ]}
-                  onChange={handleAssigneeChange}
-                  placeholder="Assign Agent..."
-                />
-              </div>            </div>
-
-            <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-5">
-              <div className="space-y-1">
-                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Status</p>
                 <div className="flex items-center gap-2">
-                  <div className={`h-2 w-2 rounded-full ${localState === 'In Progress' ? 'bg-amber-500 animate-pulse' : 'bg-primary'}`} />
-                  <span className="font-medium">{localState}</span>
-                </div>
-              </div>
-              <div className="space-y-1">
-                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Priority</p>
-                <div className="flex items-center gap-2">
-                  <PriorityIcon priority={Number(result.priority ?? 0)} className="h-4 w-4" />
-                  <span className="font-medium">
-                    <PriorityLabel priority={Number(result.priority ?? 0)} />
-                  </span>
-                </div>
-              </div>
-              <div className="space-y-1">
-                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Assigned Agent</p>
-                <div className="flex items-center gap-2">
-                  <Users className="h-3.5 w-3.5 text-muted-foreground/60" />
-                  <p className="font-medium">{availableAgents.find((a) => a === localAssignee) || localAssignee}</p>
-                </div>
-              </div>
-              <div className="space-y-1">
-                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Project</p>
-                <p className="font-medium">{(result.project_id as string) || 'None'}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Labels</p>
-                <div className="flex flex-wrap gap-1">
-                  {Array.isArray(result.labels) && result.labels.length > 0 ? (
-                    result.labels.map((label: string) => (
-                      <Badge key={label} variant="secondary" className="px-1.5 py-0 text-[10px]">
-                        {label}
-                      </Badge>
-                    ))
-                  ) : (
-                    <span className="text-muted-foreground">None</span>
+                  {localState === 'Done' && !prResult && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-2 border-primary/30 text-primary hover:bg-primary/5"
+                      onClick={handleCreatePR}
+                      disabled={prPending}
+                    >
+                      <GitBranch size={12} className={prPending ? 'animate-spin' : ''} />
+                      Create PR
+                    </Button>
                   )}
+                  {prResult && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-2 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/5"
+                      asChild
+                    >
+                      <a href={prResult.url} target="_blank" rel="noreferrer">
+                        <ExternalLink size={12} />
+                        PR #{prResult.number}
+                      </a>
+                    </Button>
+                  )}
+                  {(localState === 'Todo' || localState === 'Done') && (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="h-8 gap-2 bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/20"
+                      onClick={() => handleStateChange('In Progress')}
+                    >
+                      <Play size={12} fill="currentColor" />
+                      Run Task
+                    </Button>
+                  )}
+                  {localState === 'In Progress' && onStopSession && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 border-red-200 text-xs text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-900/30 dark:text-red-400 dark:hover:bg-red-950/20"
+                      onClick={() => void onStopSession(localProvider)}
+                    >
+                      Stop Session
+                    </Button>
+                  )}
+                  <CustomDropdown
+                    className="w-40"
+                    value={localState}
+                    options={AGENT_STATES.map((s) => ({ label: s, value: s }))}
+                    onChange={handleStateChange}
+                  />
+                  <CustomDropdown
+                    className="w-48"
+                    value={localProvider || 'Default'}
+                    options={[
+                      { label: 'System Default', value: '', icon: <Settings2 className="h-3 w-3" /> },
+                      ...availableAgents.map((p) => ({
+                        label: p.charAt(0).toUpperCase() + p.slice(1),
+                        value: p,
+                        icon: <Cpu className="h-3 w-3" />,
+                      })),
+                    ]}
+                    onChange={handleProviderChange}
+                    placeholder="Select Provider..."
+                  />
+                  <CustomDropdown
+                    className="w-56"
+                    value={localAssignee}
+                    options={[
+                      { label: 'Unassigned', value: 'Unassigned', icon: <Users className="h-3 w-3" /> },
+                      ...availableAgents.map((agent) => ({
+                        label: agent,
+                        value: agent,
+                        icon: <Activity className="h-3 w-3" />,
+                      })),
+                    ]}
+                    onChange={handleAssigneeChange}
+                    placeholder="Assign Agent..."
+                  />
+                </div>            </div>
+
+              <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-5">
+                <div className="space-y-1">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Status</p>
+                  <div className="flex items-center gap-2">
+                    <div className={`h-2 w-2 rounded-full ${localState === 'In Progress' ? 'bg-amber-500 animate-pulse' : 'bg-primary'}`} />
+                    <span className="font-medium">{localState}</span>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Priority</p>
+                  <div className="flex items-center gap-2">
+                    <PriorityIcon priority={Number(result.priority ?? 0)} className="h-4 w-4" />
+                    <span className="font-medium">
+                      <PriorityLabel priority={Number(result.priority ?? 0)} />
+                    </span>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Assigned Agent</p>
+                  <div className="flex items-center gap-2">
+                    <Users className="h-3.5 w-3.5 text-muted-foreground/60" />
+                    <p className="font-medium">{availableAgents.find((a) => a === localAssignee) || localAssignee}</p>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Blockers</p>
+                  <div className="flex flex-wrap gap-1">
+                    {Array.isArray(result.blocked_by) && result.blocked_by.length > 0 ? (
+                      result.blocked_by.map((blocker: any) => (
+                        <Badge key={blocker.identifier || blocker.id} variant="outline" className="px-1.5 py-0 text-[10px] bg-red-500/10 text-red-500 border-red-500/20">
+                          {blocker.identifier || blocker.id}
+                        </Badge>
+                      ))
+                    ) : (
+                      <span className="text-muted-foreground">None</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 text-xs sm:grid-cols-2 lg:grid-cols-4 mt-4 border-t pt-4 border-border/20">
+                <div className="space-y-1">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Branch</p>
+                  <div className="flex items-center gap-2">
+                    <GitBranch size={12} className="text-muted-foreground" />
+                    <span className="font-mono text-[10px] truncate max-w-[120px]">{(result.branch_name as string) || 'None'}</span>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">System URL</p>
+                  <div className="flex items-center gap-2">
+                    <ExternalLink size={12} className="text-muted-foreground" />
+                    {result.url ? (
+                      <a href={result.url as string} target="_blank" rel="noreferrer" className="text-primary hover:underline truncate max-w-[150px]">
+                        {result.url as string}
+                      </a>
+                    ) : (
+                      <span className="text-muted-foreground">None</span>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Updated At</p>
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Clock size={12} />
+                    <span>{result.updated_at ? new Date(result.updated_at as string).toLocaleString() : 'N/A'}</span>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Provider</p>
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Cpu size={12} />
+                    <span>{localProvider || 'Default'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {(result.description as string) ? (
+                <div className="mt-4 border-t pt-4">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Description</p>
+                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground line-clamp-10">{result.description as string}</p>
+                </div>
+              ) : null}
+
+              <div className="mt-4 border-t pt-4">
+                <p className="mb-3 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Workspace Hooks</p>
+                <div className="space-y-3">
+                  {hooks.map((hook) => {
+                    const status = getHookStatus(hook.id)
+                    return (
+                      <div key={hook.id} className="flex items-start gap-3">
+                        <div className="mt-0.5">
+                          {status === 'completed' && <CheckCircle2 className="h-4 w-4 text-primary" />}
+                          {status === 'active' && <Loader2 className="h-4 w-4 animate-spin text-amber-500" />}
+                          {status === 'failed' && <AlertCircle className="h-4 w-4 text-red-500" />}
+                          {status === 'pending' && <Circle className="h-4 w-4 text-muted-foreground/30" />}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className={`text-xs font-medium ${status === 'pending' ? 'text-muted-foreground/50' : 'text-foreground'}`}>
+                            {hook.label}
+                          </p>
+                          <p className="truncate text-[10px] text-muted-foreground/60">{hook.description}</p>
+                        </div>
+                        {status !== 'pending' && (
+                          <Badge
+                            variant="outline"
+                            className={`h-4 px-1 text-[9px] uppercase tracking-tighter ${status === 'completed'
+                              ? 'border-primary/20 text-primary'
+                              : status === 'active'
+                                ? 'border-amber-500/20 text-amber-500'
+                                : 'border-red-500/20 text-red-500'
+                              }`}
+                          >
+                            {status}
+                          </Badge>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             </div>
 
-            {(result.description as string) ? (
-              <div className="mt-4 border-t pt-4">
-                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Description</p>
-                <p className="mt-1 text-sm leading-relaxed text-muted-foreground line-clamp-10">{result.description as string}</p>
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 text-[10px] text-muted-foreground hover:text-foreground">
+                  View Raw JSON Payload
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>Raw Issue Payload</DialogTitle>
+                  <DialogDescription>Snapshot of the issue data from the tracker contract.</DialogDescription>
+                </DialogHeader>
+                <pre className="max-h-[500px] overflow-auto rounded-md border bg-muted p-4 text-[10px]">{JSON.stringify(result, null, 2)}</pre>
+              </DialogContent>
+            </Dialog>
+          </div>
+        ) : activeTab === 'changes' ? (
+          <div className="relative min-h-[400px] rounded-lg border bg-[#1e1e1e] overflow-hidden shadow-inner">
+            <div className="flex items-center justify-between border-b border-white/5 bg-black/20 px-3 py-2">
+              <div className="flex items-center gap-2 text-zinc-500">
+                <GitBranch className="h-3 w-3" />
+                <span className="text-[10px] font-mono uppercase tracking-wider">workspace.diff</span>
               </div>
-            ) : null}
+              {diffLoading && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
+            </div>
+            <div className="max-h-[500px] overflow-auto">
+              {diffLoading && !diff ? (
+                <div className="space-y-2 p-4">
+                  <Skeleton className="h-3 w-3/4 bg-white/5" />
+                  <Skeleton className="h-3 w-1/2 bg-white/5" />
+                  <Skeleton className="h-3 w-2/3 bg-white/5" />
+                </div>
+              ) : diff ? (
+                <SyntaxHighlighter
+                  language="diff"
+                  style={oneDark}
+                  customStyle={{ margin: 0, borderRadius: 0, fontSize: '11px', background: 'transparent' }}
+                  showLineNumbers={false}
+                >
+                  {diff}
+                </SyntaxHighlighter>
+              ) : (
+                <div className="flex flex-col items-center justify-center p-12 text-center">
+                  <GitBranch className="h-8 w-8 text-white/5 mb-3" />
+                  <p className="text-xs text-muted-foreground/50 tracking-wide">No workspace changes detected.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : activeTab === 'logs' ? (
+          <div className="relative min-h-[400px] rounded-lg border bg-black p-4 font-mono text-[11px] leading-relaxed text-zinc-300 shadow-inner">
+            <div className="mb-3 flex items-center justify-between border-b border-white/10 pb-2">
+              <div className="flex items-center gap-2 text-zinc-500">
+                <Terminal className="h-3 w-3" />
+                <span>agent-turn-session.log</span>
+              </div>
+              {logsLoading && <div className="h-2 w-2 animate-pulse rounded-full bg-primary" />}
+            </div>
+            <div className="max-h-[500px] overflow-auto whitespace-pre-wrap">
+              {logsLoading && !logs ? (
+                <div className="space-y-2">
+                  <div className="h-3 w-3/4 animate-pulse rounded bg-zinc-800" />
+                  <div className="h-3 w-1/2 animate-pulse rounded bg-zinc-800" />
+                  <div className="h-3 w-2/3 animate-pulse rounded bg-zinc-800" />
+                </div>
+              ) : logs ? (
+                <Ansi>{logs}</Ansi>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12 text-center text-zinc-500">
+                  <Terminal className="h-8 w-8 opacity-10 mb-3" />
+                  <p className="text-xs tracking-tight">No logs documented for this issue session.</p>
+                </div>
+              )}
+              <div ref={logsEndRef} />
+            </div>
+          </div>
+        ) : activeTab === 'artifacts' ? (
+          <div className="grid grid-cols-12 gap-4">
+            <div className="col-span-12 rounded-lg border bg-muted/10 p-2 md:col-span-4">
+              <p className="mb-2 px-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60">Files</p>
+              <div className="max-h-[400px] space-y-1 overflow-auto">
+                {artifactsLoading ? (
+                  Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-8 w-full rounded" />)
+                ) : artifacts.length === 0 ? (
+                  <p className="p-4 text-center text-xs text-muted-foreground">No artifacts found.</p>
+                ) : (
+                  artifacts.map((path) => (
+                    <button
+                      key={path}
+                      onClick={() => setSelectedArtifact(path)}
+                      className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors ${selectedArtifact === path ? 'bg-primary/10 text-primary' : 'text-foreground hover:bg-muted/50'
+                        }`}
+                    >
+                      <FileText className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                      <span className="truncate">{path}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+            <div className="col-span-12 rounded-lg border bg-card p-0 md:col-span-8">
+              {selectedArtifact ? (
+                <div className="flex h-full flex-col">
+                  <div className="flex items-center justify-between border-b bg-muted/30 px-3 py-2">
+                    <span className="truncate font-mono text-[10px] text-muted-foreground">{selectedArtifact}</span>
+                    {contentLoading && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
+                  </div>
+                  <div className="max-h-[500px] overflow-auto">
+                    {contentLoading && !artifactContent ? (
+                      <div className="space-y-2 p-4">
+                        <Skeleton className="h-3 w-3/4" />
+                        <Skeleton className="h-3 w-1/2" />
+                        <Skeleton className="h-3 w-2/3" />
+                      </div>
+                    ) : (
+                      <SyntaxHighlighter
+                        language={selectedArtifact.split('.').pop() || 'text'}
+                        style={oneDark}
+                        customStyle={{ margin: 0, borderRadius: 0, fontSize: '11px', background: 'transparent' }}
+                        lineNumberStyle={{ minWidth: '2.5em', paddingRight: '1em', color: '#4b5563', textAlign: 'right' }}
+                        showLineNumbers
+                      >
+                        {artifactContent || ''}
+                      </SyntaxHighlighter>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex h-[400px] items-center justify-center p-8 text-center">
+                  <div className="space-y-2">
+                    <FileText className="mx-auto h-8 w-8 text-muted-foreground/20" />
+                    <p className="text-xs text-muted-foreground/50">Select a file to view its contents.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : activeTab === 'activity' ? (
+          <div className="space-y-4">
+            <div className="rounded-lg border bg-muted/30 p-4">
+              <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-4 flex items-center gap-2">
+                <History size={14} />
+                Issue Activity
+              </h3>
+              <div className="space-y-1">
+                {Array.isArray(result.history) && result.history.length > 0 ? (
+                  result.history.map((item: any, idx: number) => {
+                    const date = new Date(item.timestamp).toLocaleString()
+                    let actionText = ''
+                    let icon = <Activity size={12} />
 
-            <div className="mt-4 border-t pt-4">
-              <p className="mb-3 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Workspace Hooks</p>
-              <div className="space-y-3">
-                {hooks.map((hook) => {
-                  const status = getHookStatus(hook.id)
+                    switch (item.action) {
+                      case 'state_change':
+                        actionText = `changed status from ${item.old_value} to ${item.new_value}`
+                        icon = <CheckCircle2 size={12} className="text-primary" />
+                        break
+                      case 'priority_change':
+                        actionText = `changed priority from ${item.old_value} to ${item.new_value}`
+                        icon = <SignalHigh size={12} className="text-amber-500" />
+                        break
+                      case 'assignee_change':
+                        actionText = `assigned to ${item.new_value || 'Unassigned'} (was ${item.old_value || 'Unassigned'})`
+                        icon = <User size={12} className="text-blue-500" />
+                        break
+                      default:
+                        actionText = `${item.action} changed`
+                    }
+
+                    return (
+                      <div key={idx} className="flex items-start gap-4 py-3 border-b border-white/5 last:border-0 hover:bg-white/[0.02] px-3 rounded-xl transition-all">
+                        <div className="mt-1 rounded-full bg-white/5 p-1.5 shadow-sm">
+                          {icon}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-1">
+                            <p className="text-xs font-black text-foreground/90 uppercase tracking-tight">{item.user_id}</p>
+                            <p className="text-[10px] text-muted-foreground/40 font-mono tracking-tighter">{date}</p>
+                          </div>
+                          <p className="text-xs text-muted-foreground leading-snug">{actionText}</p>
+                        </div>
+                      </div>
+                    )
+                  })
+                ) : (
+                  <div className="py-12 text-center text-muted-foreground/30 flex flex-col items-center gap-2">
+                    <History size={32} className="opacity-10" />
+                    <p className="text-xs italic uppercase tracking-widest">No activity recorded yet</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            <div className="rounded-xl border border-white/5 bg-white/[0.02] p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                    <Wrench className="h-4 w-4 text-primary" />
+                    Capability Override
+                  </h3>
+                  <p className="text-xs text-muted-foreground">Select which tools the agent is allowed to use for this specific session.</p>
+                </div>
+                <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 text-[10px]">
+                  {allTools.length - disabledTools.length} Active Tools
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {allTools.map((tool) => {
+                  const isDisabled = disabledTools.includes(tool.name)
                   return (
-                    <div key={hook.id} className="flex items-start gap-3">
-                      <div className="mt-0.5">
-                        {status === 'completed' && <CheckCircle2 className="h-4 w-4 text-primary" />}
-                        {status === 'active' && <Loader2 className="h-4 w-4 animate-spin text-amber-500" />}
-                        {status === 'failed' && <AlertCircle className="h-4 w-4 text-red-500" />}
-                        {status === 'pending' && <Circle className="h-4 w-4 text-muted-foreground/30" />}
+                    <button
+                      key={tool.name}
+                      onClick={() => handleToggleTool(tool.name)}
+                      className={`flex flex-col text-left p-3 rounded-xl border transition-all group ${isDisabled
+                        ? 'border-white/5 bg-transparent opacity-40 grayscale hover:opacity-60'
+                        : 'border-primary/20 bg-primary/5 hover:bg-primary/10 shadow-lg shadow-primary/5'
+                        }`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5 w-full">
+                        <span className={`text-[11px] font-black tracking-tight ${isDisabled ? 'text-muted-foreground' : 'text-primary'}`}>
+                          {tool.name.includes('_') ? tool.name.split('_')[1] : tool.name}
+                        </span>
+                        {isDisabled ? (
+                          <div className="h-3.5 w-3.5 rounded-full border border-white/10 flex items-center justify-center">
+                            <div className="h-1.5 w-1.5 rounded-full bg-white/5" />
+                          </div>
+                        ) : (
+                          <div className="h-3.5 w-3.5 rounded-full bg-primary flex items-center justify-center shadow-lg shadow-primary/40">
+                            <CheckCircle2 className="h-2 w-2 text-primary-foreground" />
+                          </div>
+                        )}
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <p className={`text-xs font-medium ${status === 'pending' ? 'text-muted-foreground/50' : 'text-foreground'}`}>
-                          {hook.label}
-                        </p>
-                        <p className="truncate text-[10px] text-muted-foreground/60">{hook.description}</p>
-                      </div>
-                      {status !== 'pending' && (
-                        <Badge
-                          variant="outline"
-                          className={`h-4 px-1 text-[9px] uppercase tracking-tighter ${status === 'completed'
-                            ? 'border-primary/20 text-primary'
-                            : status === 'active'
-                              ? 'border-amber-500/20 text-amber-500'
-                              : 'border-red-500/20 text-red-500'
-                            }`}
-                        >
-                          {status}
-                        </Badge>
+                      <p className="text-[10px] text-muted-foreground leading-snug line-clamp-2">{tool.description || 'No documentation provided'}</p>
+                      {tool.name.includes('_') && (
+                        <div className="mt-2 pt-2 border-t border-white/5 flex items-center gap-1.5">
+                          <Badge variant="outline" className="text-[8px] h-3.5 px-1 bg-white/5 border-white/10 text-muted-foreground font-mono">
+                            {tool.name.split('_')[0]}
+                          </Badge>
+                        </div>
                       )}
-                    </div>
+                    </button>
                   )
                 })}
               </div>
             </div>
           </div>
-
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-7 text-[10px] text-muted-foreground hover:text-foreground">
-                View Raw JSON Payload
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-2xl">
-              <DialogHeader>
-                <DialogTitle>Raw Issue Payload</DialogTitle>
-                <DialogDescription>Snapshot of the issue data from the tracker contract.</DialogDescription>
-              </DialogHeader>
-              <pre className="max-h-[500px] overflow-auto rounded-md border bg-muted p-4 text-[10px]">{JSON.stringify(result, null, 2)}</pre>
-            </DialogContent>
-          </Dialog>
-        </div>
-      ) : activeTab === 'changes' ? (
-        <div className="relative min-h-[400px] rounded-lg border bg-[#1e1e1e] overflow-hidden shadow-inner">
-          <div className="flex items-center justify-between border-b border-white/5 bg-black/20 px-3 py-2">
-            <div className="flex items-center gap-2 text-zinc-500">
-              <GitBranch className="h-3 w-3" />
-              <span className="text-[10px] font-mono uppercase tracking-wider">workspace.diff</span>
-            </div>
-            {diffLoading && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
-          </div>
-          <div className="max-h-[500px] overflow-auto">
-            {diffLoading && !diff ? (
-              <div className="space-y-2 p-4">
-                <Skeleton className="h-3 w-3/4 bg-white/5" />
-                <Skeleton className="h-3 w-1/2 bg-white/5" />
-                <Skeleton className="h-3 w-2/3 bg-white/5" />
-              </div>
-            ) : diff ? (
-              <SyntaxHighlighter
-                language="diff"
-                style={oneDark}
-                customStyle={{ margin: 0, borderRadius: 0, fontSize: '11px', background: 'transparent' }}
-                showLineNumbers={false}
-              >
-                {diff}
-              </SyntaxHighlighter>
-            ) : (
-              <div className="flex flex-col items-center justify-center p-12 text-center">
-                <GitBranch className="h-8 w-8 text-white/5 mb-3" />
-                <p className="text-xs text-muted-foreground/50 tracking-wide">No workspace changes detected.</p>
-              </div>
-            )}
-          </div>
-        </div>
-      ) : activeTab === 'logs' ? (
-        <div className="relative min-h-[400px] rounded-lg border bg-black p-4 font-mono text-[11px] leading-relaxed text-zinc-300 shadow-inner">
-          <div className="mb-3 flex items-center justify-between border-b border-white/10 pb-2">
-            <div className="flex items-center gap-2 text-zinc-500">
-              <Terminal className="h-3 w-3" />
-              <span>agent-turn-session.log</span>
-            </div>
-            {logsLoading && <div className="h-2 w-2 animate-pulse rounded-full bg-primary" />}
-          </div>
-          <div className="max-h-[500px] overflow-auto whitespace-pre-wrap">
-            {logsLoading && !logs ? (
-              <div className="space-y-2">
-                <div className="h-3 w-3/4 animate-pulse rounded bg-zinc-800" />
-                <div className="h-3 w-1/2 animate-pulse rounded bg-zinc-800" />
-                <div className="h-3 w-2/3 animate-pulse rounded bg-zinc-800" />
-              </div>
-            ) : logs ? (
-              <Ansi>{logs}</Ansi>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-12 text-center text-zinc-500">
-                <Terminal className="h-8 w-8 opacity-10 mb-3" />
-                <p className="text-xs tracking-tight">No logs documented for this issue session.</p>
-              </div>
-            )}
-            <div ref={logsEndRef} />
-          </div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-12 gap-4">
-          <div className="col-span-12 rounded-lg border bg-muted/10 p-2 md:col-span-4">
-            <p className="mb-2 px-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60">Files</p>
-            <div className="max-h-[400px] space-y-1 overflow-auto">
-              {artifactsLoading ? (
-                Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-8 w-full rounded" />)
-              ) : artifacts.length === 0 ? (
-                <p className="p-4 text-center text-xs text-muted-foreground">No artifacts found.</p>
-              ) : (
-                artifacts.map((path) => (
-                  <button
-                    key={path}
-                    onClick={() => setSelectedArtifact(path)}
-                    className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors ${selectedArtifact === path ? 'bg-primary/10 text-primary' : 'text-foreground hover:bg-muted/50'
-                      }`}
-                  >
-                    <FileText className="h-3.5 w-3.5 shrink-0 opacity-60" />
-                    <span className="truncate">{path}</span>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-          <div className="col-span-12 rounded-lg border bg-card p-0 md:col-span-8">
-            {selectedArtifact ? (
-              <div className="flex h-full flex-col">
-                <div className="flex items-center justify-between border-b bg-muted/30 px-3 py-2">
-                  <span className="truncate font-mono text-[10px] text-muted-foreground">{selectedArtifact}</span>
-                  {contentLoading && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
-                </div>
-                <div className="max-h-[500px] overflow-auto">
-                  {contentLoading && !artifactContent ? (
-                    <div className="space-y-2 p-4">
-                      <Skeleton className="h-3 w-3/4" />
-                      <Skeleton className="h-3 w-1/2" />
-                      <Skeleton className="h-3 w-2/3" />
-                    </div>
-                  ) : (
-                    <SyntaxHighlighter
-                      language={selectedArtifact.split('.').pop() || 'text'}
-                      style={oneDark}
-                      customStyle={{ margin: 0, borderRadius: 0, fontSize: '11px', background: 'transparent' }}
-                      lineNumberStyle={{ minWidth: '2.5em', paddingRight: '1em', color: '#4b5563', textAlign: 'right' }}
-                      showLineNumbers
-                    >
-                      {artifactContent || ''}
-                    </SyntaxHighlighter>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="flex h-[400px] items-center justify-center p-8 text-center">
-                <div className="space-y-2">
-                  <FileText className="mx-auto h-8 w-8 text-muted-foreground/20" />
-                  <p className="text-xs text-muted-foreground/50">Select a file to view its contents.</p>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   )
 }
 
@@ -1198,13 +1401,24 @@ export function CreateTaskDialog({
   availableAgents: string[]
   projects?: any[]
   initialProjectID?: string
-  onSubmit: (payload: { title: string; description: string; state: string; priority: number; assignee_id: string; project_id: string }) => Promise<void>
+  onSubmit: (payload: {
+    title: string;
+    description: string;
+    state: string;
+    priority: number;
+    assignee_id: string;
+    project_id: string;
+    provider?: string;
+    disabled_tools?: string[];
+  }) => Promise<void>
 }) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [state, setState] = useState(initialState)
   const [priority, setPriority] = useState(0)
   const [assignee, setAssignee] = useState('Unassigned')
+  const [provider, setProvider] = useState('')
+  const [disabledTools, setDisabledTools] = useState<string[]>([])
   const [projectID, setProjectID] = useState(initialProjectID)
   const [pending, setPending] = useState(false)
 
@@ -1215,16 +1429,27 @@ export function CreateTaskDialog({
       setTitle('')
       setDescription('')
       setPriority(0)
-      setAssignee('')
+      setAssignee('Unassigned')
+      setProvider(availableAgents.length > 0 ? availableAgents[0] : '')
+      setDisabledTools([])
     }
-  }, [open, initialState, initialProjectID])
+  }, [open, initialState, initialProjectID, availableAgents])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!title.trim()) return
     setPending(true)
     try {
-      await onSubmit({ title, description, state, priority, assignee_id: assignee, project_id: projectID })
+      await onSubmit({
+        title,
+        description,
+        state,
+        priority,
+        assignee_id: assignee,
+        project_id: projectID,
+        provider,
+        disabled_tools: disabledTools
+      })
       onOpenChange(false)
     } catch (error) {
       console.error('Task creation failed', error)
@@ -1274,6 +1499,12 @@ export function CreateTaskDialog({
                 <PrioritySelector
                   value={priority}
                   onChange={setPriority}
+                />
+
+                <ProviderSelector
+                  value={provider}
+                  providers={availableAgents}
+                  onChange={setProvider}
                 />
               </div>
 
@@ -1338,14 +1569,32 @@ function AgentSelector({ value, agents, onChange }: { value: string, agents: str
       value={value}
       direction="up"
       options={[
-        { label: 'Assign Agent', value: '', icon: <Users className="h-3 w-3 opacity-40" /> },
-        ...agents.map((agent) => ({ label: agent, value: agent, icon: <Activity className="h-3 w-3 text-amber-500/60" /> })),
+        { label: 'Unassigned', value: 'Unassigned', icon: <User size={12} className="opacity-40" /> },
+        ...agents.map((a) => ({ label: a, value: a, icon: <Bot size={12} className="text-primary/60" /> })),
       ]}
       onChange={onChange}
       triggerContent={
         <div className="flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground/70 uppercase">
-          {value ? <Activity size={12} className="text-amber-500/60" /> : <Users size={12} className="opacity-40" />}
-          <span className="truncate max-w-[80px]">{value || 'Assign'}</span>
+          {value !== 'Unassigned' ? <Bot size={12} className="text-primary/60" /> : <User size={12} className="opacity-40" />}
+          <span className="truncate max-w-[80px]">{value || 'Assignee'}</span>
+        </div>
+      }
+    />
+  )
+}
+
+function ProviderSelector({ value, providers, onChange }: { value: string, providers: string[], onChange: (p: string) => void }) {
+  return (
+    <CustomDropdown
+      className="bg-transparent border-none hover:bg-white/5 !h-7 !px-2 rounded-md transition-colors shadow-none"
+      value={value}
+      direction="up"
+      options={providers.map((p) => ({ label: p, value: p, icon: <Cpu size={12} className="text-amber-500/60" /> }))}
+      onChange={onChange}
+      triggerContent={
+        <div className="flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground/70 uppercase">
+          <Cpu size={12} className="text-amber-500/60" />
+          <span className="truncate max-w-[80px]">{value || 'Provider'}</span>
         </div>
       }
     />

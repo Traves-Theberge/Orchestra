@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/orchestra/orchestra/apps/backend/internal/agents"
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
 	"github.com/orchestra/orchestra/apps/backend/internal/mcp"
@@ -34,6 +36,7 @@ type RunningEntry struct {
 	SessionID       string `json:"session_id"`
 	Provider        string `json:"provider"`
 	SessionLogPath  string `json:"session_log_path,omitempty"`
+	DisabledTools   []string `json:"disabled_tools,omitempty"`
 	TurnCount       int64  `json:"turn_count"`
 	LastEvent       string `json:"last_event"`
 	LastMessage     string `json:"last_message"`
@@ -52,6 +55,7 @@ type RetryEntry struct {
 	State           string `json:"state,omitempty"`
 	AssigneeID      string `json:"assignee_id,omitempty"`
 	Provider        string `json:"provider,omitempty"`
+	DisabledTools   []string `json:"disabled_tools,omitempty"`
 	Attempt         int64  `json:"attempt"`
 	DueAt           string `json:"due_at"`
 	Error           string `json:"error"`
@@ -131,21 +135,24 @@ func NewService() *Service {
 	}
 }
 
-func (s *Service) RegisterCancel(issueID string, cancel context.CancelFunc) {
+func (s *Service) RegisterCancel(issueID string, provider string, cancel context.CancelFunc) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.cancels[issueID] = cancel
+	key := fmt.Sprintf("%s:%s", issueID, provider)
+	s.cancels[key] = cancel
 }
 
-func (s *Service) DeregisterCancel(issueID string) {
+func (s *Service) DeregisterCancel(issueID string, provider string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.cancels, issueID)
+	key := fmt.Sprintf("%s:%s", issueID, provider)
+	delete(s.cancels, key)
 }
 
-func (s *Service) StopSession(issueID string) bool {
+func (s *Service) StopSession(issueID string, provider string) bool {
 	s.mu.Lock()
-	cancel, ok := s.cancels[issueID]
+	key := fmt.Sprintf("%s:%s", issueID, provider)
+	cancel, ok := s.cancels[key]
 	s.mu.Unlock()
 
 	if ok && cancel != nil {
@@ -153,6 +160,19 @@ func (s *Service) StopSession(issueID string) bool {
 		return true
 	}
 	return false
+}
+
+func (s *Service) StopAllSessionsForIssue(issueID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for key, cancel := range s.cancels {
+		if strings.HasPrefix(key, issueID+":") {
+			if cancel != nil {
+				cancel()
+			}
+			delete(s.cancels, key)
+		}
+	}
 }
 
 func (s *Service) Snapshot() Snapshot {
@@ -589,7 +609,7 @@ func (s *Service) SearchIssues(ctx context.Context, query string) ([]tracker.Iss
 	return client.SearchIssues(ctx, query)
 }
 
-func (s *Service) CreateIssue(ctx context.Context, title, description, state string, priority int, assigneeID, projectID string) (*tracker.Issue, error) {
+func (s *Service) CreateIssue(ctx context.Context, title, description, state string, priority int, assigneeID, projectID string, provider string, disabledTools []string) (*tracker.Issue, error) {
 	s.mu.RLock()
 	client := s.trackerClient
 	s.mu.RUnlock()
@@ -598,7 +618,7 @@ func (s *Service) CreateIssue(ctx context.Context, title, description, state str
 		return nil, fmt.Errorf("tracker client not available")
 	}
 
-	return client.CreateIssue(ctx, title, description, state, priority, assigneeID, projectID)
+	return client.CreateIssue(ctx, title, description, state, priority, assigneeID, projectID, provider, disabledTools)
 }
 
 func (s *Service) UpdateIssue(ctx context.Context, identifier string, updates map[string]any) (*tracker.Issue, error) {
@@ -633,9 +653,37 @@ func (s *Service) UpdateIssue(ctx context.Context, identifier string, updates ma
 		return nil, err
 	}
 
+	// 1. Fetch current issue for audit comparison (best effort)
+	oldIssue, _ := client.FetchIssueByIdentifier(ctx, identifier)
+
+	// 2. Log changes to history
+	if oldIssue != nil {
+		if state, ok := updates["state"].(string); ok && state != oldIssue.State {
+			s.LogIssueEvent(issue.ID, "User", "state_change", oldIssue.State, state)
+		}
+		if priority, ok := updates["priority"].(int); ok && priority != oldIssue.Priority {
+			s.LogIssueEvent(issue.ID, "User", "priority_change", fmt.Sprintf("%d", oldIssue.Priority), fmt.Sprintf("%d", priority))
+		}
+		if assignee, ok := updates["assignee_id"].(string); ok && assignee != oldIssue.AssigneeID {
+			s.LogIssueEvent(issue.ID, "User", "assignee_change", oldIssue.AssigneeID, assignee)
+		}
+	}
+
 	// Trigger refresh to reflect changes immediately in snapshot
 	s.QueueRefresh()
 	return issue, nil
+}
+
+func (s *Service) LogIssueEvent(issueID, userID, action, oldVal, newVal string) {
+	if s.db == nil {
+		return
+	}
+	id := fmt.Sprintf("hist_%s", uuid.New().String())
+	_, err := s.db.Exec("INSERT INTO issue_history (id, issue_id, user_id, action, old_value, new_value) VALUES (?, ?, ?, ?, ?, ?)",
+		id, issueID, userID, action, oldVal, newVal)
+	if err != nil {
+		fmt.Printf("failed to log issue event: %v\n", err)
+	}
 }
 
 func (s *Service) DeleteIssue(ctx context.Context, identifier string) error {
@@ -647,8 +695,8 @@ func (s *Service) DeleteIssue(ctx context.Context, identifier string) error {
 		return fmt.Errorf("tracker client not available")
 	}
 
-	// 1. Stop any active session for this issue
-	s.StopSession(identifier)
+	// 1. Stop any active sessions for this issue
+	s.StopAllSessionsForIssue(identifier)
 
 	// 2. Delete the issue from the tracker
 	if err := client.DeleteIssue(ctx, identifier); err != nil {
@@ -677,7 +725,13 @@ func (s *Service) enqueueCandidates(candidates []tracker.Issue) {
 		if !issue.AssignedToWorker {
 			continue
 		}
-		if s.isRunningLocked(issue.ID) || s.isRetryingLocked(issue.ID) {
+
+		targetProvider := s.agentProvider
+		if issue.AssigneeID != "" && strings.HasPrefix(issue.AssigneeID, "agent-") {
+			targetProvider = strings.TrimPrefix(issue.AssigneeID, "agent-")
+		}
+
+		if s.isRunningLocked(issue.ID, targetProvider) || s.isRetryingLocked(issue.ID, targetProvider) {
 			continue
 		}
 		if !s.stateSlotsAvailableLocked(issue.State) {
@@ -694,6 +748,7 @@ func (s *Service) enqueueCandidates(candidates []tracker.Issue) {
 			State:           issue.State,
 			AssigneeID:      issue.AssigneeID,
 			Provider:        s.agentProvider,
+			DisabledTools:   append([]string(nil), issue.DisabledTools...),
 			StartedAt:       now,
 			LastEventAt:     now,
 			LastEvent:       "dispatch_queued",
@@ -753,7 +808,7 @@ func (s *Service) releaseDueRetries() {
 			remaining = append(remaining, retry)
 			continue
 		}
-		if s.isRunningLocked(retry.IssueID) {
+		if s.isRunningLocked(retry.IssueID, retry.Provider) {
 			continue
 		}
 		state := strings.TrimSpace(retry.State)
@@ -768,6 +823,7 @@ func (s *Service) releaseDueRetries() {
 			State:           state,
 			AssigneeID:      retry.AssigneeID,
 			Provider:        retry.Provider,
+			DisabledTools:   append([]string(nil), retry.DisabledTools...),
 			StartedAt:       now.Format(time.RFC3339),
 			LastEventAt:     now.Format(time.RFC3339),
 			LastEvent:       "retry_due",
@@ -842,7 +898,7 @@ func (s *Service) filterRetryingByCurrentStates(ctx context.Context, client trac
 	return nil
 }
 
-func (s *Service) RecordRunFailure(issueID string, issueIdentifier string, attempt int64, dueAt time.Time, err error) {
+func (s *Service) RecordRunFailure(issueID string, provider string, issueIdentifier string, attempt int64, dueAt time.Time, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -850,17 +906,26 @@ func (s *Service) RecordRunFailure(issueID string, issueIdentifier string, attem
 	issueState := ""
 	issueAssigneeID := ""
 	lastProvider := ""
+	var disabledTools []string
+	found := false
 	for _, entry := range s.running {
-		if entry.IssueID != issueID {
+		if entry.IssueID != issueID || entry.Provider != provider {
 			filtered = append(filtered, entry)
 			continue
 		}
 		issueState = entry.State
 		issueAssigneeID = entry.AssigneeID
 		lastProvider = entry.Provider
+		disabledTools = append([]string(nil), entry.DisabledTools...)
 		s.accumulateEntryTotalsLocked(entry)
+		found = true
 	}
 	s.running = filtered
+
+	if !found {
+		// If entry not found in running (maybe already failed/stopped), just return
+		return
+	}
 
 	message := "run failed"
 	if err != nil {
@@ -894,6 +959,7 @@ func (s *Service) RecordRunFailure(issueID string, issueIdentifier string, attem
 		State:           issueState,
 		AssigneeID:      issueAssigneeID,
 		Provider:        nextProvider,
+		DisabledTools:   disabledTools,
 		Attempt:         attempt,
 		DueAt:           dueAt.UTC().Format(time.RFC3339),
 		Error:           message,
@@ -901,20 +967,18 @@ func (s *Service) RecordRunFailure(issueID string, issueIdentifier string, attem
 	delete(s.claimed, issueID)
 }
 
-func (s *Service) RecordRunSuccess(issueID string) {
+func (s *Service) RecordRunSuccess(issueID string, provider string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	filtered := make([]RunningEntry, 0, len(s.running))
 	for _, entry := range s.running {
-		if entry.IssueID == issueID {
+		if entry.IssueID == issueID && entry.Provider == provider {
 			s.codexTotals.SecondsRun += elapsedSeconds(entry.StartedAt)
 			continue
 		}
 
-		if entry.IssueID != issueID {
-			filtered = append(filtered, entry)
-		}
+		filtered = append(filtered, entry)
 	}
 	s.running = filtered
 	delete(s.claimed, issueID)
@@ -925,10 +989,11 @@ func (s *Service) ClaimNextRunnable() (RunningEntry, bool) {
 	defer s.mu.Unlock()
 
 	for idx, entry := range s.running {
-		if s.claimed[entry.IssueID] {
+		key := fmt.Sprintf("%s:%s", entry.IssueID, entry.Provider)
+		if s.claimed[key] {
 			continue
 		}
-		s.claimed[entry.IssueID] = true
+		s.claimed[key] = true
 		now := time.Now().UTC().Format(time.RFC3339)
 		entry.LastEvent = "run_claimed"
 		entry.LastEventAt = now
@@ -940,10 +1005,11 @@ func (s *Service) ClaimNextRunnable() (RunningEntry, bool) {
 	return RunningEntry{}, false
 }
 
-func (s *Service) ReleaseClaim(issueID string) {
+func (s *Service) ReleaseClaim(issueID string, provider string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.claimed, issueID)
+	key := fmt.Sprintf("%s:%s", issueID, provider)
+	delete(s.claimed, key)
 }
 
 func (s *Service) RevalidateClaimedIssue(ctx context.Context, issueID string) (bool, error) {
@@ -1035,13 +1101,13 @@ func (s *Service) dropRunningIssueLocked(issueID string) {
 	s.running = filtered
 }
 
-func (s *Service) RecordRunResult(issueID string, sessionID string, usageInput int64, usageOutput int64, usageTotal int64) {
+func (s *Service) RecordRunResult(issueID string, provider string, sessionID string, usageInput int64, usageOutput int64, usageTotal int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	for idx, entry := range s.running {
-		if entry.IssueID != issueID {
+		if entry.IssueID != issueID || entry.Provider != provider {
 			continue
 		}
 		entry.SessionID = sessionID
@@ -1061,11 +1127,11 @@ func (s *Service) RecordRunResult(issueID string, sessionID string, usageInput i
 	delete(s.claimed, issueID)
 }
 
-func (s *Service) RecordRunArtifact(issueID string, sessionID string, logPath string) {
+func (s *Service) RecordRunArtifact(issueID string, provider string, sessionID string, logPath string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for idx, entry := range s.running {
-		if entry.IssueID != issueID {
+		if entry.IssueID != issueID || entry.Provider != provider {
 			continue
 		}
 		if strings.TrimSpace(sessionID) != "" {
@@ -1079,7 +1145,7 @@ func (s *Service) RecordRunArtifact(issueID string, sessionID string, logPath st
 	}
 }
 
-func (s *Service) ShouldContinueTurn(ctx context.Context, issueID string, attempt int64, maxTurns int) (bool, error) {
+func (s *Service) ShouldContinueTurn(ctx context.Context, issueID string, provider string, attempt int64, maxTurns int) (bool, error) {
 	if maxTurns > 0 && int(attempt) >= maxTurns {
 		return false, nil
 	}
@@ -1156,12 +1222,12 @@ func (s *Service) reconcileRunningDispatchConstraints(issues []tracker.Issue, te
 	}
 }
 
-func (s *Service) PrepareNextTurn(issueID string, attempt int64) {
+func (s *Service) PrepareNextTurn(issueID string, provider string, attempt int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC().Format(time.RFC3339)
 	for idx, entry := range s.running {
-		if entry.IssueID != issueID {
+		if entry.IssueID != issueID || entry.Provider != provider {
 			continue
 		}
 		entry.TurnCount = attempt
@@ -1279,7 +1345,7 @@ func (s *Service) TerminalStates() []string {
 	return append([]string(nil), s.terminalStates...)
 }
 
-func (s *Service) RecordRunEvent(issueID string, event agents.Event) {
+func (s *Service) RecordRunEvent(issueID string, provider string, event agents.Event) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1289,7 +1355,7 @@ func (s *Service) RecordRunEvent(issueID string, event agents.Event) {
 	}
 
 	for idx, entry := range s.running {
-		if entry.IssueID != issueID {
+		if entry.IssueID != issueID || entry.Provider != provider {
 			continue
 		}
 		if kind := strings.TrimSpace(event.Kind); kind != "" {
@@ -1389,18 +1455,18 @@ func elapsedSeconds(startedAt string) float64 {
 	return delta.Seconds()
 }
 
-func (s *Service) isRunningLocked(issueID string) bool {
+func (s *Service) isRunningLocked(issueID string, provider string) bool {
 	for _, entry := range s.running {
-		if entry.IssueID == issueID {
+		if entry.IssueID == issueID && entry.Provider == provider {
 			return true
 		}
 	}
 	return false
 }
 
-func (s *Service) isRetryingLocked(issueID string) bool {
+func (s *Service) isRetryingLocked(issueID string, provider string) bool {
 	for _, entry := range s.retrying {
-		if entry.IssueID == issueID {
+		if entry.IssueID == issueID && entry.Provider == provider {
 			return true
 		}
 	}
@@ -1427,15 +1493,15 @@ func (s *Service) PersistStateToDB(ctx context.Context) error {
 		return err
 	}
 
-	stmt, err := tx.PrepareContext(ctx, `INSERT INTO runs (id, issue_id, session_id, state, last_event, last_message, turn_count, input_tokens, output_tokens, total_tokens) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	stmt, err := tx.PrepareContext(ctx, `INSERT INTO runs (id, issue_id, provider, session_id, state, last_event, last_message, turn_count, input_tokens, output_tokens, total_tokens) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 
 	for _, entry := range running {
-		runID := "run_" + entry.IssueID
-		_, err = stmt.ExecContext(ctx, runID, entry.IssueID, entry.SessionID, entry.State, entry.LastEvent, entry.LastMessage, entry.TurnCount, entry.Tokens.InputTokens, entry.Tokens.OutputTokens, entry.Tokens.TotalTokens)
+		runID := fmt.Sprintf("run_%s_%s", entry.IssueID, entry.Provider)
+		_, err = stmt.ExecContext(ctx, runID, entry.IssueID, entry.Provider, entry.SessionID, entry.State, entry.LastEvent, entry.LastMessage, entry.TurnCount, entry.Tokens.InputTokens, entry.Tokens.OutputTokens, entry.Tokens.TotalTokens)
 		if err != nil {
 			return err
 		}
@@ -1449,7 +1515,7 @@ func (s *Service) RestoreStateFromDB(ctx context.Context) error {
 		return nil
 	}
 
-	rows, err := s.db.QueryContext(ctx, `SELECT issue_id, session_id, state, last_event, last_message, turn_count, input_tokens, output_tokens, total_tokens FROM runs`)
+	rows, err := s.db.QueryContext(ctx, `SELECT issue_id, provider, session_id, state, last_event, last_message, turn_count, input_tokens, output_tokens, total_tokens FROM runs`)
 	if err != nil {
 		return err
 	}
@@ -1460,7 +1526,7 @@ func (s *Service) RestoreStateFromDB(ctx context.Context) error {
 
 	for rows.Next() {
 		var entry RunningEntry
-		if err := rows.Scan(&entry.IssueID, &entry.SessionID, &entry.State, &entry.LastEvent, &entry.LastMessage, &entry.TurnCount, &entry.Tokens.InputTokens, &entry.Tokens.OutputTokens, &entry.Tokens.TotalTokens); err != nil {
+		if err := rows.Scan(&entry.IssueID, &entry.Provider, &entry.SessionID, &entry.State, &entry.LastEvent, &entry.LastMessage, &entry.TurnCount, &entry.Tokens.InputTokens, &entry.Tokens.OutputTokens, &entry.Tokens.TotalTokens); err != nil {
 			return err
 		}
 		entry.StartedAt = now
@@ -1481,6 +1547,33 @@ func (s *Service) RestoreStateFromDB(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (s *Service) FetchIssueHistory(ctx context.Context, issueID string) ([]map[string]any, error) {
+	if s.db == nil {
+		return []map[string]any{}, nil
+	}
+	rows, err := s.db.QueryContext(ctx, "SELECT user_id, action, old_value, new_value, timestamp FROM issue_history WHERE issue_id = ? ORDER BY timestamp DESC", issueID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var history []map[string]any
+	for rows.Next() {
+		var userID, action, oldVal, newVal, timestamp string
+		if err := rows.Scan(&userID, &action, &oldVal, &newVal, &timestamp); err != nil {
+			return nil, err
+		}
+		history = append(history, map[string]any{
+			"user_id":    userID,
+			"action":     action,
+			"old_value":  oldVal,
+			"new_value":  newVal,
+			"timestamp":  timestamp,
+		})
+	}
+	return history, nil
 }
 
 func (s *Service) SetMCPRegistry(r *mcp.Registry, servers map[string]string) {

@@ -9,6 +9,7 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/presenter"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
 	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
+	"github.com/orchestra/orchestra/apps/backend/internal/mcp"
 	githubutils "github.com/orchestra/orchestra/apps/backend/internal/utils/github"
 	"path/filepath"
 )
@@ -116,12 +117,14 @@ func (s *Server) GetSearch(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) PostIssue(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Title       string `json:"title"`
-		Description string `json:"description"`
-		State       string `json:"state"`
-		Priority    int    `json:"priority"`
-		AssigneeID  string `json:"assignee_id"`
-		ProjectID   string `json:"project_id"`
+		Title         string   `json:"title"`
+		Description   string   `json:"description"`
+		State         string   `json:"state"`
+		Priority      int      `json:"priority"`
+		AssigneeID    string   `json:"assignee_id"`
+		ProjectID     string   `json:"project_id"`
+		Provider      string   `json:"provider"`
+		DisabledTools []string `json:"disabled_tools"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		s.logger.Error().Err(err).Msg("failed to decode post issue body")
@@ -135,7 +138,7 @@ func (s *Server) PostIssue(w http.ResponseWriter, r *http.Request) {
 		Str("project_id", body.ProjectID).
 		Msg("creating new issue")
 
-	issue, err := s.orchestrator.CreateIssue(r.Context(), body.Title, body.Description, body.State, body.Priority, body.AssigneeID, body.ProjectID)
+	issue, err := s.orchestrator.CreateIssue(r.Context(), body.Title, body.Description, body.State, body.Priority, body.AssigneeID, body.ProjectID, body.Provider, body.DisabledTools)
 	if err != nil {
 		s.logger.Error().Err(err).Msg("orchestrator failed to create issue")
 		writeJSONError(w, http.StatusInternalServerError, "create_failed", err.Error())
@@ -175,6 +178,8 @@ func (s *Server) GetIssue(w http.ResponseWriter, r *http.Request) {
 			logPath = filepath.Join(wsPath, "_logs", issue.Identifier, "latest.log")
 		}
 
+		history, _ := s.orchestrator.FetchIssueHistory(r.Context(), issue.ID)
+
 		json.NewEncoder(w).Encode(map[string]any{
 			"issue_id":         issue.ID,
 			"issue_identifier": issue.Identifier,
@@ -184,7 +189,16 @@ func (s *Server) GetIssue(w http.ResponseWriter, r *http.Request) {
 			"assignee_id":      issue.AssigneeID,
 			"priority":         issue.Priority,
 			"project_id":       issue.ProjectID,
+			"branch_name":      issue.BranchName,
+			"url":               issue.URL,
+			"labels":            issue.Labels,
+			"blocked_by":        issue.BlockedBy,
+			"provider":          issue.Provider,
+			"disabled_tools":    issue.DisabledTools,
+			"created_at":        issue.CreatedAt,
+			"updated_at":        issue.UpdatedAt,
 			"status":           "idle",
+			"history":          history,
 			"attempts": map[string]any{
 				"restart_count":         0,
 				"current_retry_attempt": 0,
@@ -230,13 +244,12 @@ func (s *Server) GetIssue(w http.ResponseWriter, r *http.Request) {
 		workspacePath = ""
 	}
 
-	var lastError any = nil
-	if runtime.Retry != nil && runtime.Retry.Error != "" {
-		lastError = map[string]any{
-			"message": runtime.Retry.Error,
-			"at":      runtime.Retry.DueAt,
-		}
 	}
+
+	history, _ := s.orchestrator.FetchIssueHistory(r.Context(), runtime.IssueID)
+
+	presented["history"] = history
+	presented["workspace_path"] = workspacePath
 
 	response := map[string]any{
 		"issue_identifier": runtime.IssueIdentifier,
@@ -373,15 +386,22 @@ func (s *Server) GetAgentConfig(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) DeleteIssueSession(w http.ResponseWriter, r *http.Request) {
 	identifier := chi.URLParam(r, "issue_identifier")
+	provider := r.URL.Query().Get("provider")
+	
 	runtime, ok := s.orchestrator.LookupIssue(identifier)
 	if !ok {
 		writeJSONError(w, http.StatusNotFound, "issue_not_found", "issue not found")
 		return
 	}
 
-	if stopped := s.orchestrator.StopSession(runtime.IssueID); !stopped {
-		writeJSONError(w, http.StatusConflict, "no_active_session", "no active session to stop")
-		return
+	// If provider is specified, stop only that one. Otherwise stop all for this issue.
+	if provider != "" {
+		if stopped := s.orchestrator.StopSession(runtime.IssueID, provider); !stopped {
+			writeJSONError(w, http.StatusConflict, "no_active_session", "no active session for this provider to stop")
+			return
+		}
+	} else {
+		s.orchestrator.StopAllSessionsForIssue(runtime.IssueID)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
@@ -499,4 +519,74 @@ func (s *Server) GetMCPTools(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"tools": tools,
 	})
+}
+
+func (s *Server) GetMCPServers(w http.ResponseWriter, r *http.Request) {
+	servers, err := s.db.ListMCPServers(r.Context())
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "db_failed", err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"servers": servers})
+}
+
+func (s *Server) PostMCPServer(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Name    string `json:"name"`
+		Command string `json:"command"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid_json", "failed to decode request body")
+		return
+	}
+
+	server, err := s.db.CreateMCPServer(r.Context(), body.Name, body.Command)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "db_failed", err.Error())
+		return
+	}
+
+	// Hot reload orchestrator
+	snapshot := s.orchestrator.Snapshot()
+	allServers := snapshot.MCPServers
+	if allServers == nil {
+		allServers = make(map[string]string)
+	}
+	allServers[body.Name] = body.Command
+	
+	// Create fresh registry
+	newReg := mcp.NewRegistry(allServers, s.logger)
+	newReg.StartAll(r.Context())
+	s.orchestrator.SetMCPRegistry(newReg, allServers)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(server)
+}
+
+func (s *Server) DeleteMCPServer(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := s.db.DeleteMCPServer(r.Context(), id); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "db_failed", err.Error())
+		return
+	}
+
+	// Reload all from DB + config to sync orchestrator
+	// Simplest: just tell user to restart OR implement full sync
+	// Let's implement sync
+	dbServers, _ := s.db.ListMCPServers(r.Context())
+	allServers := make(map[string]string)
+	for k, v := range s.config.MCPServers {
+		allServers[k] = v
+	}
+	for _, s := range dbServers {
+		allServers[s.Name] = s.Command
+	}
+
+	newReg := mcp.NewRegistry(allServers, s.logger)
+	newReg.StartAll(r.Context())
+	s.orchestrator.SetMCPRegistry(newReg, allServers)
+
+	w.WriteHeader(http.StatusNoContent)
 }

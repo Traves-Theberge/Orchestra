@@ -18,6 +18,8 @@ type Issue struct {
 	BlockedBy        []Blocker `json:"blocked_by,omitempty"`
 	CreatedAt        string    `json:"created_at,omitempty"`
 	UpdatedAt        string    `json:"updated_at,omitempty"`
+	Provider         string    `json:"provider,omitempty"`
+	DisabledTools    []string  `json:"disabled_tools,omitempty"`
 }
 
 type Blocker struct {
@@ -39,7 +41,8 @@ type Client interface {
 	FetchIssueStatesByIDs(ctx context.Context, issueIDs []string) (map[string]string, error)
 	FetchIssues(ctx context.Context, filter IssueFilter) ([]Issue, error)
 	SearchIssues(ctx context.Context, query string) ([]Issue, error)
-	CreateIssue(ctx context.Context, title, description, state string, priority int, assigneeID, projectID string) (*Issue, error)
+	FetchIssueByIdentifier(ctx context.Context, identifier string) (*Issue, error)
+	CreateIssue(ctx context.Context, title, description, state string, priority int, assigneeID, projectID string, provider string, disabledTools []string) (*Issue, error)
 	UpdateIssue(ctx context.Context, identifier string, updates map[string]any) (*Issue, error)
 	DeleteIssue(ctx context.Context, identifier string) error
 }

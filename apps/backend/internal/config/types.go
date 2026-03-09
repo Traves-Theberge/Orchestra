@@ -18,7 +18,6 @@ type Config struct {
 	TrackerType              string
 	TrackerEndpoint          string
 	TrackerToken             string
-	TrackerProject           string
 	TrackerWorkerAssigneeIDs []string
 	ActiveStates             []string
 	TerminalStates           []string

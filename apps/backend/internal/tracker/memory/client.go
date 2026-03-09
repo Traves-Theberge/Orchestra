@@ -147,7 +147,21 @@ func (c *Client) SearchIssues(_ context.Context, query string) ([]tracker.Issue,
 	return out, nil
 }
 
-func (c *Client) CreateIssue(_ context.Context, title, description, state string, priority int, assigneeID, projectID string) (*tracker.Issue, error) {
+func (c *Client) FetchIssueByIdentifier(_ context.Context, identifier string) (*tracker.Issue, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	for _, issue := range c.issues {
+		if issue.Identifier == identifier || issue.ID == identifier {
+			copy := issue
+			return &copy, nil
+		}
+	}
+
+	return nil, nil
+}
+
+func (c *Client) CreateIssue(_ context.Context, title, description, state string, priority int, assigneeID, projectID string, provider string, disabledTools []string) (*tracker.Issue, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -155,14 +169,18 @@ func (c *Client) CreateIssue(_ context.Context, title, description, state string
 	identifier := fmt.Sprintf("OPS-%s", id)
 
 	issue := tracker.Issue{
-		ID:         id,
-		Identifier: identifier,
-		Title:      title,
-		Description: description,
-		State:      state,
-		Priority:   priority,
-		AssigneeID: assigneeID,
-		ProjectID:  projectID,
+		ID:            id,
+		Identifier:    identifier,
+		Title:         title,
+		Description:   description,
+		State:         state,
+		Priority:      priority,
+		AssigneeID:    assigneeID,
+		ProjectID:     projectID,
+		Provider:      provider,
+		DisabledTools: disabledTools,
+		Labels:        []string{},
+		BlockedBy:     []tracker.Blocker{},
 	}
 
 	c.issues[id] = issue
@@ -209,6 +227,53 @@ func (c *Client) UpdateIssue(_ context.Context, identifier string, updates map[s
 			target.Priority = n
 		} else if f, ok := val.(float64); ok {
 			target.Priority = int(f)
+		}
+	}
+	if val, ok := updates["branch_name"]; ok {
+		if s, ok := val.(string); ok {
+			target.BranchName = s
+		}
+	}
+	if val, ok := updates["url"]; ok {
+		if s, ok := val.(string); ok {
+			target.URL = s
+		}
+	}
+	if val, ok := updates["provider"]; ok {
+		if s, ok := val.(string); ok {
+			target.Provider = s
+		}
+	}
+	if val, ok := updates["labels"]; ok {
+		if slice, ok := val.([]string); ok {
+			target.Labels = slice
+		} else if slice, ok := val.([]any); ok {
+			strs := make([]string, 0, len(slice))
+			for _, s := range slice {
+				if str, ok := s.(string); ok {
+					strs = append(strs, str)
+				}
+			}
+			target.Labels = strs
+		}
+	}
+	if val, ok := updates["disabled_tools"]; ok {
+		if slice, ok := val.([]string); ok {
+			target.DisabledTools = slice
+		} else if slice, ok := val.([]any); ok {
+			strs := make([]string, 0, len(slice))
+			for _, s := range slice {
+				if str, ok := s.(string); ok {
+					strs = append(strs, str)
+				}
+			}
+			target.DisabledTools = strs
+		}
+	}
+	if val, ok := updates["blocked_by"]; ok {
+		// This is complex for memory tracker update but let's at least support the type if possible
+		if blockers, ok := val.([]tracker.Blocker); ok {
+			target.BlockedBy = blockers
 		}
 	}
 

@@ -130,3 +130,29 @@ export type DocItem = {
   is_folder: boolean
   children?: DocItem[]
 }
+
+export type Blocker = {
+  id: string
+  identifier?: string
+  state?: string
+}
+
+export type Issue = {
+  id: string
+  identifier: string
+  title: string
+  description?: string
+  priority?: number
+  state: string
+  branch_name?: string
+  url?: string
+  project_id?: string
+  assignee_id?: string
+  assigned_to_worker: boolean
+  labels?: string[]
+  blocked_by?: Blocker[]
+  provider?: string
+  disabled_tools?: string[]
+  created_at?: string
+  updated_at?: string
+}

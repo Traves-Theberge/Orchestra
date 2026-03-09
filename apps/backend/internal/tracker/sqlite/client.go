@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -35,7 +36,7 @@ func (c *Client) FetchCandidateIssues(ctx context.Context, activeStates []string
 		return []tracker.Issue{}, nil
 	}
 	
-	query := "SELECT id, identifier, title, description, state, assignee_id, project_id, priority, created_at FROM issues WHERE LOWER(TRIM(state)) IN ("
+	query := "SELECT id, identifier, title, description, state, assignee_id, project_id, priority, branch_name, url, labels, blocked_by, provider, disabled_tools, created_at, updated_at FROM issues WHERE LOWER(TRIM(state)) IN ("
 	args := make([]any, len(activeStates))
 	for i, state := range activeStates {
 		args[i] = strings.ToLower(strings.TrimSpace(state))
@@ -54,7 +55,7 @@ func (c *Client) FetchIssuesByIDs(ctx context.Context, issueIDs []string) ([]tra
 		return []tracker.Issue{}, nil
 	}
 
-	query := "SELECT id, identifier, title, description, state, assignee_id, project_id, priority, created_at FROM issues WHERE id IN ("
+	query := "SELECT id, identifier, title, description, state, assignee_id, project_id, priority, branch_name, url, labels, blocked_by, provider, disabled_tools, created_at, updated_at FROM issues WHERE id IN ("
 	args := make([]any, len(issueIDs))
 	for i, id := range issueIDs {
 		args[i] = id
@@ -86,7 +87,7 @@ func (c *Client) FetchIssuesByStates(ctx context.Context, states []string) ([]tr
 }
 
 func (c *Client) FetchIssues(ctx context.Context, filter tracker.IssueFilter) ([]tracker.Issue, error) {
-	query := "SELECT id, identifier, title, description, state, assignee_id, project_id, priority, created_at FROM issues"
+	query := "SELECT id, identifier, title, description, state, assignee_id, project_id, priority, branch_name, url, labels, blocked_by, provider, disabled_tools, created_at, updated_at FROM issues"
 	var where []string
 	var args []any
 
@@ -122,12 +123,12 @@ func (c *Client) SearchIssues(ctx context.Context, query string) ([]tracker.Issu
 		return []tracker.Issue{}, nil
 	}
 	
-	sqlQuery := "SELECT id, identifier, title, description, state, assignee_id, project_id, priority, created_at FROM issues WHERE title LIKE ? OR identifier LIKE ? OR id LIKE ?;"
+	sqlQuery := "SELECT id, identifier, title, description, state, assignee_id, project_id, priority, branch_name, url, labels, blocked_by, provider, disabled_tools, created_at, updated_at FROM issues WHERE title LIKE ? OR identifier LIKE ? OR id LIKE ?;"
 	pattern := "%" + query + "%"
 	return c.queryIssues(ctx, sqlQuery, pattern, pattern, pattern)
 }
 
-func (c *Client) CreateIssue(ctx context.Context, title, description, state string, priority int, assigneeID, projectID string) (*tracker.Issue, error) {
+func (c *Client) CreateIssue(ctx context.Context, title, description, state string, priority int, assigneeID, projectID string, provider string, disabledTools []string) (*tracker.Issue, error) {
 	id := uuid.New().String()
 	
 	// Simple identifier generation: OPS-count+1
@@ -135,21 +136,23 @@ func (c *Client) CreateIssue(ctx context.Context, title, description, state stri
 	_ = c.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM issues").Scan(&count)
 	identifier := fmt.Sprintf("OPS-%d", count+1)
 
+	disabledToolsStr := strings.Join(disabledTools, ",")
+
 	query := `
-		INSERT INTO issues (id, identifier, title, description, state, assignee_id, project_id, priority)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO issues (id, identifier, title, description, state, assignee_id, project_id, priority, branch_name, url, labels, blocked_by, provider, disabled_tools)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
-	_, err := c.db.ExecContext(ctx, query, id, identifier, title, description, state, assigneeID, projectID, priority)
+	_, err := c.db.ExecContext(ctx, query, id, identifier, title, description, state, assigneeID, projectID, priority, "", "", "[]", "[]", provider, disabledToolsStr)
 	if err != nil {
 		return nil, fmt.Errorf("create issue: %w", err)
 	}
 
-	return c.fetchSingleIssue(ctx, id)
+	return c.FetchIssueByIdentifier(ctx, id)
 }
 
 func (c *Client) UpdateIssue(ctx context.Context, identifier string, updates map[string]any) (*tracker.Issue, error) {
 	if len(updates) == 0 {
-		return c.fetchSingleIssue(ctx, identifier)
+		return c.FetchIssueByIdentifier(ctx, identifier)
 	}
 
 	query := "UPDATE issues SET "
@@ -157,9 +160,27 @@ func (c *Client) UpdateIssue(ctx context.Context, identifier string, updates map
 	
 	cols := make([]string, 0, len(updates))
 	for col, val := range updates {
+		if col == "disabled_tools" {
+			if slice, ok := val.([]any); ok {
+				strs := make([]string, 0, len(slice))
+				for _, s := range slice {
+					if str, ok := s.(string); ok {
+						strs = append(strs, str)
+					}
+				}
+				val = strings.Join(strs, ",")
+			} else if slice, ok := val.([]string); ok {
+				val = strings.Join(slice, ",")
+			}
+		} else if col == "labels" || col == "blocked_by" {
+			if data, err := json.Marshal(val); err == nil {
+				val = string(data)
+			}
+		}
 		cols = append(cols, fmt.Sprintf("%s = ?", col))
 		args = append(args, val)
 	}
+	cols = append(cols, "updated_at = CURRENT_TIMESTAMP")
 	query += strings.Join(cols, ", ")
 	query += " WHERE id = ? OR identifier = ?;"
 	args = append(args, identifier, identifier)
@@ -169,7 +190,7 @@ func (c *Client) UpdateIssue(ctx context.Context, identifier string, updates map
 		return nil, fmt.Errorf("update issue: %w", err)
 	}
 
-	return c.fetchSingleIssue(ctx, identifier)
+	return c.FetchIssueByIdentifier(ctx, identifier)
 }
 
 func (c *Client) DeleteIssue(ctx context.Context, identifier string) error {
@@ -181,8 +202,8 @@ func (c *Client) DeleteIssue(ctx context.Context, identifier string) error {
 	return nil
 }
 
-func (c *Client) fetchSingleIssue(ctx context.Context, identifier string) (*tracker.Issue, error) {
-	query := "SELECT id, identifier, title, description, state, assignee_id, project_id, priority, created_at FROM issues WHERE id = ? OR identifier = ?;"
+func (c *Client) FetchIssueByIdentifier(ctx context.Context, identifier string) (*tracker.Issue, error) {
+	query := "SELECT id, identifier, title, description, state, assignee_id, project_id, priority, branch_name, url, labels, blocked_by, provider, disabled_tools, created_at, updated_at FROM issues WHERE id = ? OR identifier = ?;"
 	issues, err := c.queryIssues(ctx, query, identifier, identifier)
 	if err != nil {
 		return nil, err
@@ -203,9 +224,12 @@ func (c *Client) queryIssues(ctx context.Context, query string, args ...any) ([]
 	var issues []tracker.Issue
 	for rows.Next() {
 		var issue tracker.Issue
-		var title, description, assigneeID, projectID, createdAt sql.NullString
+		var title, description, assigneeID, projectID, branchName, url, labelsRaw, blockedByRaw, provider, disabledToolsRaw, createdAt, updatedAt sql.NullString
 		
-		if err := rows.Scan(&issue.ID, &issue.Identifier, &title, &description, &issue.State, &assigneeID, &projectID, &issue.Priority, &createdAt); err != nil {
+		if err := rows.Scan(
+			&issue.ID, &issue.Identifier, &title, &description, &issue.State, &assigneeID, &projectID, &issue.Priority,
+			&branchName, &url, &labelsRaw, &blockedByRaw, &provider, &disabledToolsRaw, &createdAt, &updatedAt,
+		); err != nil {
 			return nil, fmt.Errorf("scan issue: %w", err)
 		}
 		
@@ -221,8 +245,35 @@ func (c *Client) queryIssues(ctx context.Context, query string, args ...any) ([]
 		if projectID.Valid {
 			issue.ProjectID = projectID.String
 		}
+		if branchName.Valid {
+			issue.BranchName = branchName.String
+		}
+		if url.Valid {
+			issue.URL = url.String
+		}
+		if provider.Valid {
+			issue.Provider = provider.String
+		}
+		if labelsRaw.Valid && labelsRaw.String != "" {
+			_ = json.Unmarshal([]byte(labelsRaw.String), &issue.Labels)
+		}
+		if blockedByRaw.Valid && blockedByRaw.String != "" {
+			_ = json.Unmarshal([]byte(blockedByRaw.String), &issue.BlockedBy)
+		}
 		if createdAt.Valid {
 			issue.CreatedAt = createdAt.String
+		}
+		if updatedAt.Valid {
+			issue.UpdatedAt = updatedAt.String
+		}
+		if disabledToolsRaw.Valid && disabledToolsRaw.String != "" {
+			parts := strings.Split(disabledToolsRaw.String, ",")
+			for _, p := range parts {
+				t := strings.TrimSpace(p)
+				if t != "" {
+					issue.DisabledTools = append(issue.DisabledTools, t)
+				}
+			}
 		}
 
 		if len(c.workerAssigneeIDs) == 0 {

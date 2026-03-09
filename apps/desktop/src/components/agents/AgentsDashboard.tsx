@@ -4,14 +4,14 @@ import {
     ShieldCheck, Zap, Activity, Code as CodeIcon,
     ChevronRight, FileText, Layout,
     CheckCircle2, AlertCircle, Wrench, ListTree, Sparkles,
-    Settings, Globe, Layers, Folder, Plus, Loader2
+    Settings, Globe, Layers, Folder, Plus, Loader2, Trash2
 } from 'lucide-react'
 import type { AgentConfig, BackendConfig, Project, SnapshotPayload } from '@/lib/orchestra-types'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { AppTooltip } from '../ui/tooltip-wrapper'
-import { fetchAgentConfigs, updateAgentConfigByPath, fetchProjects, createAgentResource, fetchMCPTools } from '@/lib/orchestra-client'
+import { fetchAgentConfigs, updateAgentConfigByPath, fetchProjects, createAgentResource, fetchMCPTools, fetchMCPServers, createMCPServer, deleteMCPServer } from '@/lib/orchestra-client'
 import { OverlayScrollbarsComponent } from 'overlayscrollbars-react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -21,6 +21,7 @@ import {
     DialogHeader,
     DialogTitle,
     DialogDescription,
+    DialogFooter
 } from '@/components/ui/dialog'
 interface AgentsDashboardProps {
     config: BackendConfig | null
@@ -31,6 +32,7 @@ export const AgentsDashboard: React.FC<AgentsDashboardProps> = ({ config, snapsh
     const [configs, setConfigs] = useState<AgentConfig[]>([])
     const [projects, setProjects] = useState<Project[]>([])
     const [mcpTools, setMcpTools] = useState<any[]>([])
+    const [mcpServers, setMcpServers] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState<string | null>(null)
     const [selectedConfig, setSelectedConfig] = useState<AgentConfig | null>(null)
@@ -40,9 +42,12 @@ export const AgentsDashboard: React.FC<AgentsDashboardProps> = ({ config, snapsh
 
     // Creation State
     const [createDialogOpen, setCreateResourceDialogOpen] = useState(false)
+    const [mcpDialogOpen, setMcpDialogOpen] = useState(false)
     const [newResourceProvider, setNewResourceProvider] = useState<string>('Orchestra')
     const [newResourceType, setNewResourceType] = useState<'skill' | 'core'>('skill')
     const [newResourceName, setNewResourceName] = useState('')
+    const [newMcpName, setNewMcpName] = useState('')
+    const [newMcpCommand, setNewMcpCommand] = useState('')
     const [creating, setCreating] = useState(false)
 
     // Scope Management
@@ -58,14 +63,16 @@ export const AgentsDashboard: React.FC<AgentsDashboardProps> = ({ config, snapsh
         if (!config) return
         setLoading(true)
         try {
-            const [configsData, projectsData, mcpToolsData] = await Promise.all([
+            const [configsData, projectsData, mcpToolsData, mcpServersData] = await Promise.all([
                 fetchAgentConfigs(config, scope === 'project' ? selectedProjectID : undefined),
                 fetchProjects(config),
-                fetchMCPTools(config)
+                fetchMCPTools(config),
+                fetchMCPServers(config)
             ])
             setConfigs(configsData)
             setProjects(projectsData)
             setMcpTools(mcpToolsData)
+            setMcpServers(mcpServersData)
 
             if (configsData.length > 0) {
                 const initial = selectedConfig
@@ -145,6 +152,32 @@ export const AgentsDashboard: React.FC<AgentsDashboardProps> = ({ config, snapsh
             setCreating(false)
         }
     }
+    const handleDeleteMCPServer = async (id: string) => {
+        if (!config || !window.confirm('Are you sure you want to remove this MCP server?')) return
+        try {
+            await deleteMCPServer(config, id)
+            await loadData()
+        } catch (err: any) {
+            setError(err.message || 'Failed to delete MCP server')
+        }
+    }
+
+    const handleCreateMCPServer = async () => {
+        if (!config || !newMcpName || !newMcpCommand) return
+        setCreating(true)
+        try {
+            await createMCPServer(config, newMcpName, newMcpCommand)
+            await loadData()
+            setMcpDialogOpen(false)
+            setNewMcpName('')
+            setNewMcpCommand('')
+        } catch (err: any) {
+            setError(err.message || 'Failed to create MCP server')
+        } finally {
+            setCreating(false)
+        }
+    }
+
     const handleFormatJson = () => {
         try {
             const parsed = JSON.parse(editedContent)
@@ -489,7 +522,15 @@ export const AgentsDashboard: React.FC<AgentsDashboardProps> = ({ config, snapsh
                             </div>
 
                             <div className="space-y-3">
-                                <h3 className="text-[10px] font-black uppercase tracking-widest text-blue-400/60 px-1">MCP Status</h3>
+                                <div className="flex items-center justify-between px-1">
+                                    <h3 className="text-[10px] font-black uppercase tracking-widest text-blue-400/60">MCP Status</h3>
+                                    <button
+                                        onClick={() => setMcpDialogOpen(true)}
+                                        className="h-4 w-4 rounded-md bg-blue-500/10 flex items-center justify-center text-blue-400 hover:bg-blue-500/20 transition-all shadow-sm border border-blue-500/20"
+                                    >
+                                        <Plus size={10} strokeWidth={3} />
+                                    </button>
+                                </div>
                                 <div className="space-y-1.5">
                                     {!snapshot?.mcp_servers || Object.keys(snapshot.mcp_servers).length === 0 ? (
                                         <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 text-[9px] text-muted-foreground italic">
@@ -497,11 +538,22 @@ export const AgentsDashboard: React.FC<AgentsDashboardProps> = ({ config, snapsh
                                         </div>
                                     ) : Object.entries(snapshot.mcp_servers).map(([name, cmd]) => {
                                         const serverTools = mcpTools.filter(t => t.name.startsWith(name + "_"))
+                                        const dbRecord = mcpServers.find(s => s.name === name)
                                         return (
-                                            <div key={name} className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-2 group hover:bg-white/[0.05] transition-all">
+                                            <div key={name} className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-2 group hover:bg-white/[0.05] transition-all relative">
                                                 <div className="flex items-center justify-between">
                                                     <span className="text-[10px] font-bold text-foreground/80">{name}</span>
-                                                    <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                                                    <div className="flex items-center gap-2">
+                                                        {dbRecord && (
+                                                            <button
+                                                                onClick={() => handleDeleteMCPServer(dbRecord.id)}
+                                                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-red-500/50 hover:text-red-500"
+                                                            >
+                                                                <Trash2 size={10} />
+                                                            </button>
+                                                        )}
+                                                        <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                                                    </div>
                                                 </div>
                                                 <p className="text-[9px] text-muted-foreground font-mono truncate opacity-40 mb-2">{cmd}</p>
                                                 
@@ -620,6 +672,64 @@ export const AgentsDashboard: React.FC<AgentsDashboardProps> = ({ config, snapsh
                                         <span>Creating...</span>
                                     </div>
                                 ) : 'Create Resource'}
+                            </Button>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={mcpDialogOpen} onOpenChange={setMcpDialogOpen}>
+                <DialogContent className="max-w-md bg-card border-border shadow-2xl font-sans">
+                    <DialogHeader className="border-b border-border/40 pb-4">
+                        <DialogTitle className="text-xl font-bold tracking-tight">Add MCP Server</DialogTitle>
+                        <DialogDescription className="text-muted-foreground/70">
+                            Connect an external tool host via JSON-RPC over stdio.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-6 py-6">
+                        <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1">Server Name</label>
+                            <input
+                                autoFocus
+                                className="h-11 w-full rounded-xl border border-border bg-background px-4 text-sm font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-sm"
+                                placeholder="e.g. github"
+                                value={newMcpName}
+                                onChange={(e) => setNewMcpName(e.target.value)}
+                            />
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1">Executable Command</label>
+                            <input
+                                className="h-11 w-full rounded-xl border border-border bg-background px-4 text-sm font-medium font-mono focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-sm"
+                                placeholder="e.g. npx @modelcontextprotocol/server-github"
+                                value={newMcpCommand}
+                                onChange={(e) => setNewMcpCommand(e.target.value)}
+                            />
+                        </div>
+
+                        <div className="flex justify-end gap-3 pt-2">
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                onClick={() => setMcpDialogOpen(false)}
+                                disabled={creating}
+                                className="text-muted-foreground hover:text-foreground"
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                onClick={handleCreateMCPServer}
+                                disabled={creating || !newMcpName.trim() || !newMcpCommand.trim()}
+                                className="px-6 bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20"
+                            >
+                                {creating ? (
+                                    <div className="flex items-center gap-2">
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                        <span>Connecting...</span>
+                                    </div>
+                                ) : 'Register Server'}
                             </Button>
                         </div>
                     </div>

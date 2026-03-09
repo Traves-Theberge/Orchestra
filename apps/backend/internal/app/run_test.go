@@ -10,7 +10,6 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/config"
 	"github.com/orchestra/orchestra/apps/backend/internal/observability"
 	"github.com/orchestra/orchestra/apps/backend/internal/orchestrator"
-	trackergraphql "github.com/orchestra/orchestra/apps/backend/internal/tracker/graphql"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker/memory"
 	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
 	"github.com/rs/zerolog"
@@ -20,13 +19,6 @@ func TestNewTrackerClientUsesMemoryWhenEndpointUnset(t *testing.T) {
 	client := newTrackerClient(config.Config{}, nil)
 	if _, ok := client.(*memory.Client); !ok {
 		t.Fatalf("expected memory tracker client when endpoint is unset")
-	}
-}
-
-func TestNewTrackerClientUsesGraphQLWhenEndpointSet(t *testing.T) {
-	client := newTrackerClient(config.Config{TrackerEndpoint: "http://tracker.local/graphql", TrackerToken: "token"}, nil)
-	if _, ok := client.(*trackergraphql.Client); !ok {
-		t.Fatalf("expected graphql tracker client when endpoint is set")
 	}
 }
 

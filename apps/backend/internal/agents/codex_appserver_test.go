@@ -23,7 +23,7 @@ func TestCodexAppServerRunner_RunTurn(t *testing.T) {
 		"    *\"\\\"id\\\":1\"*) printf '%s\\n' '{\"id\":1,\"result\":{\"ok\":true}}' ;;\n" +
 		"    *\"\\\"method\\\":\\\"initialized\\\"\"*) : ;;\n" +
 		"    *\"\\\"id\\\":2\"*) printf '%s\\n' '{\"id\":2,\"result\":{\"thread\":{\"id\":\"thread-1\"}}}' ;;\n" +
-		"    *\"\\\"id\\\":3\"*) printf '%s\\n' '{\"id\":3,\"result\":{\"turn\":{\"id\":\"turn-1\"}}}'; printf '%s\\n' '{\"method\":\"item/commandExecution/requestApproval\",\"id\":77}'; printf '%s\\n' '{\"method\":\"item/tool/call\",\"id\":88,\"params\":{\"tool\":\"linear_graphql\",\"arguments\":{\"query\":\"{}\"}}}'; printf '%s\\n' '{\"method\":\"turn/completed\",\"usage\":{\"input_tokens\":21,\"output_tokens\":9,\"total_tokens\":30}}' ;;\n" +
+		"    *\"\\\"id\\\":3\"*) printf '%s\\n' '{\"id\":3,\"result\":{\"turn\":{\"id\":\"turn-1\"}}}'; printf '%s\\n' '{\"method\":\"item/commandExecution/requestApproval\",\"id\":77}'; printf '%s\\n' '{\"method\":\"item/tool/call\",\"id\":88,\"params\":{\"tool\":\"tracker_query\",\"arguments\":{\"query\":\"{}\"}}}'; printf '%s\\n' '{\"method\":\"turn/completed\",\"usage\":{\"input_tokens\":21,\"output_tokens\":9,\"total_tokens\":30}}' ;;\n" +
 		"  esac\n" +
 		"done\n"
 	if err := os.WriteFile(script, []byte(scriptContent), 0o755); err != nil {
@@ -43,7 +43,7 @@ func TestCodexAppServerRunner_RunTurn(t *testing.T) {
 		AutoApprove:     true,
 		ToolExecutor: func(tool string, arguments map[string]any) map[string]any {
 			toolInvoked = true
-			if tool != "linear_graphql" {
+			if tool != "tracker_query" {
 				return map[string]any{"success": false, "error": "unexpected tool"}
 			}
 			return map[string]any{"success": true, "data": map[string]any{"ok": true}}
@@ -436,7 +436,7 @@ func TestCodexAppServerRunner_IgnoresProtocolJSONOnStderr(t *testing.T) {
 		"    *\"\\\"id\\\":1\"*) printf '%s\\n' '{\"id\":1,\"result\":{\"ok\":true}}' ;;\n" +
 		"    *\"\\\"method\\\":\\\"initialized\\\"\"*) : ;;\n" +
 		"    *\"\\\"id\\\":2\"*) printf '%s\\n' '{\"id\":2,\"result\":{\"thread\":{\"id\":\"thread-1\"}}}' ;;\n" +
-		"    *\"\\\"id\\\":3\"*) printf '%s\\n' '{\"id\":3,\"result\":{\"turn\":{\"id\":\"turn-1\"}}}'; printf '%s\\n' '{\"method\":\"item/tool/call\",\"id\":88,\"params\":{\"tool\":\"linear_graphql\",\"arguments\":{\"query\":\"{}\"}}}' 1>&2; printf '%s\\n' '{\"method\":\"turn/completed\"}' ;;\n" +
+		"    *\"\\\"id\\\":3\"*) printf '%s\\n' '{\"id\":3,\"result\":{\"turn\":{\"id\":\"turn-1\"}}}'; printf '%s\\n' '{\"method\":\"item/tool/call\",\"id\":88,\"params\":{\"tool\":\"tracker_query\",\"arguments\":{\"query\":\"{}\"}}}' 1>&2; printf '%s\\n' '{\"method\":\"turn/completed\"}' ;;\n" +
 		"  esac\n" +
 		"done\n"
 	if err := os.WriteFile(script, []byte(scriptContent), 0o755); err != nil {
@@ -478,7 +478,7 @@ func TestCodexAppServerRunner_AdvertisesDynamicToolsOnThreadStart(t *testing.T) 
 		"  case \"$line\" in\n" +
 		"    *\"\\\"id\\\":1\"*) printf '%s\\n' '{\"id\":1,\"result\":{\"ok\":true}}' ;;\n" +
 		"    *\"\\\"method\\\":\\\"initialized\\\"\"*) : ;;\n" +
-		"    *\"\\\"id\\\":2\"*\"\\\"name\\\":\\\"linear_graphql\\\"\"*) printf '%s\\n' '{\"id\":2,\"result\":{\"thread\":{\"id\":\"thread-1\"}}}' ;;\n" +
+		"    *\"\\\"id\\\":2\"*\"\\\"name\\\":\\\"tracker_query\\\"\"*) printf '%s\\n' '{\"id\":2,\"result\":{\"thread\":{\"id\":\"thread-1\"}}}' ;;\n" +
 		"    *\"\\\"id\\\":2\"*) printf '%s\\n' '{\"id\":2,\"error\":{\"message\":\"dynamicTools missing\"}}' ;;\n" +
 		"    *\"\\\"id\\\":3\"*) printf '%s\\n' '{\"id\":3,\"result\":{\"turn\":{\"id\":\"turn-1\"}}}'; printf '%s\\n' '{\"method\":\"turn/completed\"}' ;;\n" +
 		"  esac\n" +
@@ -496,7 +496,7 @@ func TestCodexAppServerRunner_AdvertisesDynamicToolsOnThreadStart(t *testing.T) 
 		Timeout:         3 * time.Second,
 		AutoApprove:     true,
 		ToolSpecs: []map[string]any{{
-			"name": "linear_graphql",
+			"name": "tracker_query",
 		}},
 	}, nil)
 	if err != nil {

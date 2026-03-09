@@ -23,7 +23,6 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/telemetry"
 	"github.com/orchestra/orchestra/apps/backend/internal/tools"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
-	trackergraphql "github.com/orchestra/orchestra/apps/backend/internal/tracker/graphql"
 	trackergithub "github.com/orchestra/orchestra/apps/backend/internal/tracker/github"
 	trackersqlite "github.com/orchestra/orchestra/apps/backend/internal/tracker/sqlite"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker/memory"
@@ -75,10 +74,20 @@ func Run(logger zerolog.Logger) error {
 	orchestratorService.SetWorkspaceService(workspaceService)
 	orchestratorService.SetWorkspaceRoot(cfg.WorkspaceRoot)
 
-	// Initialize MCP
-	mcpRegistry := mcp.NewRegistry(cfg.MCPServers, logger)
+	// Initialize MCP (Merge Config + DB)
+	allMCPServers := make(map[string]string)
+	for k, v := range cfg.MCPServers {
+		allMCPServers[k] = v
+	}
+	if dbServers, err := warehouseDB.ListMCPServers(context.Background()); err == nil {
+		for _, s := range dbServers {
+			allMCPServers[s.Name] = s.Command
+		}
+	}
+
+	mcpRegistry := mcp.NewRegistry(allMCPServers, logger)
 	mcpRegistry.StartAll(context.Background())
-	orchestratorService.SetMCPRegistry(mcpRegistry, cfg.MCPServers)
+	orchestratorService.SetMCPRegistry(mcpRegistry, allMCPServers)
 
 	logger.Info().Str("agent_provider", cfg.AgentProvider).Str("service_id", runtime.ServiceOrchestrator).Msg("agent provider configured")
 
@@ -107,9 +116,6 @@ func newTrackerClient(cfg config.Config, localDB *db.DB) tracker.Client {
 		if len(parts) == 2 {
 			return trackergithub.NewClient(parts[0], parts[1], cfg.TrackerToken, nil)
 		}
-	}
-	if cfg.TrackerEndpoint != "" {
-		return trackergraphql.NewClient(cfg.TrackerEndpoint, cfg.TrackerToken, cfg.TrackerProject, cfg.TrackerWorkerAssigneeIDs, nil)
 	}
 	if localDB == nil {
 		return memory.NewClient(nil)
@@ -164,7 +170,7 @@ func processExecutionTick(
 
 	shouldDispatch, revalidateErr := service.RevalidateClaimedIssue(context.Background(), entry.IssueID)
 	if revalidateErr != nil {
-		service.ReleaseClaim(entry.IssueID)
+		service.ReleaseClaim(entry.IssueID, entry.Provider)
 		logger.Warn().Err(revalidateErr).Str("issue_id", entry.IssueID).Msg("issue revalidation failed; skipping dispatch")
 		publishSnapshot(pubsub, service)
 		return
@@ -219,7 +225,7 @@ func processExecutionTick(
 				"cause":            "workspace_prepare_failed",
 			})
 		}
-		service.RecordRunFailure(entry.IssueID, entry.IssueIdentifier, attempt, dueAt, err)
+		service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, attempt, dueAt, err)
 		logger.Error().Err(err).Str("issue_id", entry.IssueID).Str("provider", activeProviderName).Msg("workspace preparation failed")
 		publishSnapshot(pubsub, service)
 		return
@@ -264,7 +270,7 @@ func processExecutionTick(
 					"cause":            "before_run_hook_failed",
 				})
 			}
-			service.RecordRunFailure(entry.IssueID, entry.IssueIdentifier, attempt, dueAt, err)
+			service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, attempt, dueAt, err)
 			logger.Error().Err(err).Str("issue_id", entry.IssueID).Str("provider", activeProviderName).Msg("workspace before_run hook failed")
 			publishSnapshot(pubsub, service)
 			return
@@ -290,19 +296,39 @@ func processExecutionTick(
 
 	runCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	service.RegisterCancel(entry.IssueID, cancel)
-	defer service.DeregisterCancel(entry.IssueID)
+	service.RegisterCancel(entry.IssueID, activeProviderName, cancel)
+	defer service.DeregisterCancel(entry.IssueID, activeProviderName)
 
 	var eventsBuffer []agents.Event
 
 	// Fetch MCP tools and resources
-	allToolSpecs := make([]map[string]any, len(toolSpecs))
-	copy(allToolSpecs, toolSpecs)
+	allToolSpecs := make([]map[string]any, 0, len(toolSpecs))
+	disabledSet := make(map[string]struct{})
+	// Fetch issue to get disabled tools if using SQLite or memory tracker
+	// For now, assume trackerClient has populated DisabledTools if applicable
+	for _, dt := range entry.DisabledTools {
+		disabledSet[strings.ToLower(dt)] = struct{}{}
+	}
+
+	for _, ts := range toolSpecs {
+		if name, ok := ts["name"].(string); ok {
+			if _, disabled := disabledSet[strings.ToLower(name)]; !disabled {
+				allToolSpecs = append(allToolSpecs, ts)
+			}
+		}
+	}
+
 	var allResourceSpecs []map[string]any
 
 	if mcpReg := service.GetMCPRegistry(); mcpReg != nil {
 		mcpTools, _ := mcpReg.ListTools(runCtx)
-		allToolSpecs = append(allToolSpecs, mcpTools...)
+		for _, mt := range mcpTools {
+			if name, ok := mt["name"].(string); ok {
+				if _, disabled := disabledSet[strings.ToLower(name)]; !disabled {
+					allToolSpecs = append(allToolSpecs, mt)
+				}
+			}
+		}
 		
 		mcpResources, _ := mcpReg.ListResources(runCtx)
 		allResourceSpecs = append(allResourceSpecs, mcpResources...)
@@ -336,8 +362,8 @@ func processExecutionTick(
 		ToolExecutor:    mcpAwareExecutor,
 		ToolSpecs:       allToolSpecs,
 		ResourceSpecs:   allResourceSpecs,
-	}, func(e agents.Event) {
-		service.RecordRunEvent(entry.IssueID, event)
+	}, func(event agents.Event) {
+		service.RecordRunEvent(entry.IssueID, activeProviderName, event)
 		publishRunEvent(pubsub, entry, activeProviderName, event)
 		eventsBuffer = append(eventsBuffer, event)
 	})
@@ -361,7 +387,7 @@ func processExecutionTick(
 		runAfterHook()
 		logPath, logErr := logfile.WriteSessionLog(workspaceRoot, entry.IssueIdentifier, result.SessionID, result.Output)
 		if logErr == nil {
-			service.RecordRunArtifact(entry.IssueID, result.SessionID, logPath)
+			service.RecordRunArtifact(entry.IssueID, activeProviderName, result.SessionID, logPath)
 		}
 		dueAt := service.NextRetryDue(entry.IssueID, attempt)
 		publishLifecycleEvent(pubsub, "run_failed", map[string]any{
@@ -382,7 +408,7 @@ func processExecutionTick(
 				"cause":            "agent_run_failed",
 			})
 		}
-		service.RecordRunFailure(entry.IssueID, entry.IssueIdentifier, attempt, dueAt, runErr)
+		service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, attempt, dueAt, runErr)
 		logger.Error().Err(runErr).Str("issue_id", entry.IssueID).Str("provider", activeProviderName).Msg("agent run failed")
 		publishSnapshot(pubsub, service)
 		return
@@ -390,12 +416,12 @@ func processExecutionTick(
 
 	logPath, logErr := logfile.WriteSessionLog(workspaceRoot, entry.IssueIdentifier, result.SessionID, result.Output)
 	if logErr == nil {
-		service.RecordRunArtifact(entry.IssueID, result.SessionID, logPath)
+		service.RecordRunArtifact(entry.IssueID, activeProviderName, result.SessionID, logPath)
 	}
 
-	service.RecordRunResult(entry.IssueID, result.SessionID, result.Usage.InputTokens, result.Usage.OutputTokens, result.Usage.TotalTokens)
+	service.RecordRunResult(entry.IssueID, activeProviderName, result.SessionID, result.Usage.InputTokens, result.Usage.OutputTokens, result.Usage.TotalTokens)
 
-	continueTurn, checkErr := service.ShouldContinueTurn(context.Background(), entry.IssueID, attempt, agentMaxTurns)
+	continueTurn, checkErr := service.ShouldContinueTurn(context.Background(), entry.IssueID, activeProviderName, attempt, agentMaxTurns)
 	if checkErr != nil {
 		runAfterHook()
 		dueAt := service.NextRetryDue(entry.IssueID, attempt)
@@ -417,14 +443,14 @@ func processExecutionTick(
 				"cause":            "continuation_check_failed",
 			})
 		}
-		service.RecordRunFailure(entry.IssueID, entry.IssueIdentifier, attempt, dueAt, checkErr)
+		service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, attempt, dueAt, checkErr)
 		logger.Error().Err(checkErr).Str("issue_id", entry.IssueID).Msg("failed to check turn continuation")
 		publishSnapshot(pubsub, service)
 		return
 	}
 
 	if continueTurn {
-		service.PrepareNextTurn(entry.IssueID, attempt)
+		service.PrepareNextTurn(entry.IssueID, activeProviderName, attempt)
 		publishLifecycleEvent(pubsub, "run_continues", map[string]any{
 			"issue_id":         entry.IssueID,
 			"issue_identifier": entry.IssueIdentifier,
@@ -437,7 +463,7 @@ func processExecutionTick(
 		return
 	}
 
-	service.RecordRunSuccess(entry.IssueID)
+	service.RecordRunSuccess(entry.IssueID, activeProviderName)
 	publishLifecycleEvent(pubsub, "run_succeeded", map[string]any{
 		"issue_id":         entry.IssueID,
 		"issue_identifier": entry.IssueIdentifier,

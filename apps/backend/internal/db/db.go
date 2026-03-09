@@ -36,5 +36,32 @@ func Connect(dbPath string) (*DB, error) {
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
 
+	// Manual Migrations
+	_, _ = db.Exec("ALTER TABLE issues ADD COLUMN disabled_tools TEXT")
+	_, _ = db.Exec("ALTER TABLE issues ADD COLUMN branch_name TEXT")
+	_, _ = db.Exec("ALTER TABLE issues ADD COLUMN url TEXT")
+	_, _ = db.Exec("ALTER TABLE issues ADD COLUMN labels TEXT")
+	_, _ = db.Exec("ALTER TABLE issues ADD COLUMN blocked_by TEXT")
+	_, _ = db.Exec("ALTER TABLE issues ADD COLUMN provider TEXT")
+	_, _ = db.Exec("ALTER TABLE issues ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP")
+	_, _ = db.Exec("ALTER TABLE runs ADD COLUMN provider TEXT")
+
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS issue_history (
+		id TEXT PRIMARY KEY,
+		issue_id TEXT NOT NULL,
+		user_id TEXT,
+		action TEXT NOT NULL,
+		old_value TEXT,
+		new_value TEXT,
+		timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (issue_id) REFERENCES issues(id)
+	);`); err != nil {
+		return nil, fmt.Errorf("failed to create issue_history table: %w", err)
+	}
+
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_issue_history_issue_id ON issue_history(issue_id);`); err != nil {
+		return nil, fmt.Errorf("failed to create idx_issue_history_issue_id index: %w", err)
+	}
+
 	return &DB{DB: db}, nil
 }

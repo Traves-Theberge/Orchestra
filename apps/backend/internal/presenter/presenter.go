@@ -21,6 +21,8 @@ func StatePayload(snapshot orchestrator.Snapshot) map[string]any {
 			"last_message":     humanizeMessage(entry.LastMessage),
 			"last_event_at":    entry.LastEventAt,
 			"started_at":       entry.StartedAt,
+			"provider":         entry.Provider,
+			"disabled_tools":   entry.DisabledTools,
 			"tokens": map[string]any{
 				"input_tokens":  entry.Tokens.InputTokens,
 				"output_tokens": entry.Tokens.OutputTokens,
@@ -90,6 +92,8 @@ func lookupRuntime(snapshot orchestrator.Snapshot, issueIdentifier string) (map[
 					"session_id":       running.SessionID,
 					"session_log_path": running.SessionLogPath,
 					"turn_count":       running.TurnCount,
+					"provider":         running.Provider,
+					"disabled_tools":   running.DisabledTools,
 				},
 				"retry": nil,
 			}, true
@@ -103,10 +107,12 @@ func lookupRuntime(snapshot orchestrator.Snapshot, issueIdentifier string) (map[
 				"issue_id":         retry.IssueID,
 				"running":          nil,
 				"retry": map[string]any{
-					"state":   retry.State,
-					"attempt": retry.Attempt,
-					"due_at":  retry.DueAt,
-					"error":   humanizeMessage(retry.Error),
+					"state":          retry.State,
+					"attempt":        retry.Attempt,
+					"due_at":         retry.DueAt,
+					"error":          humanizeMessage(retry.Error),
+					"provider":       retry.Provider,
+					"disabled_tools": retry.DisabledTools,
 				},
 			}, true
 		}

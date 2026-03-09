@@ -46,7 +46,14 @@ CREATE TABLE IF NOT EXISTS issues (
 	assignee_id TEXT,
 	project_id TEXT,
 	priority INTEGER DEFAULT 0,
-	created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	branch_name TEXT,
+	url TEXT,
+	labels TEXT,
+	blocked_by TEXT,
+	provider TEXT,
+	disabled_tools TEXT,
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_issues_identifier ON issues(identifier);
@@ -55,6 +62,7 @@ CREATE TABLE IF NOT EXISTS runs (
 	id TEXT PRIMARY KEY,
 	issue_id TEXT NOT NULL,
 	session_id TEXT,
+	provider TEXT NOT NULL,
 	state TEXT NOT NULL,
 	last_event TEXT,
 	last_message TEXT,
@@ -72,4 +80,25 @@ CREATE TABLE IF NOT EXISTS ingest_offsets (
 	bytes_read INTEGER NOT NULL DEFAULT 0,
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS mcp_servers (
+	id TEXT PRIMARY KEY,
+	name TEXT UNIQUE NOT NULL,
+	command TEXT NOT NULL,
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS issue_history (
+	id TEXT PRIMARY KEY,
+	issue_id TEXT NOT NULL,
+	user_id TEXT,
+	action TEXT NOT NULL,
+	old_value TEXT,
+	new_value TEXT,
+	timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+	FOREIGN KEY (issue_id) REFERENCES issues(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_issue_history_issue_id ON issue_history(issue_id);
 `

@@ -39,7 +39,7 @@ func (c *Client) FetchIssuesByIDs(ctx context.Context, issueIDs []string) ([]tra
 	// GitHub REST API doesn't support bulk fetch by ID easily without multiple calls or search query.
 	var issues []tracker.Issue
 	for _, id := range issueIDs {
-		issue, err := c.fetchIssue(ctx, id)
+		issue, err := c.FetchIssueByIdentifier(ctx, id)
 		if err != nil {
 			continue // Log error and continue?
 		}
@@ -123,7 +123,7 @@ func (c *Client) FetchIssuesByStates(ctx context.Context, states []string) ([]tr
 func (c *Client) FetchIssueStatesByIDs(ctx context.Context, issueIDs []string) (map[string]string, error) {
 	results := make(map[string]string)
 	for _, id := range issueIDs {
-		issue, err := c.fetchIssue(ctx, id)
+		issue, err := c.FetchIssueByIdentifier(ctx, id)
 		if err != nil {
 			continue
 		}
@@ -141,7 +141,7 @@ func (c *Client) SearchIssues(ctx context.Context, query string) ([]tracker.Issu
 	return nil, fmt.Errorf("GitHub SearchIssues not implemented yet")
 }
 
-func (c *Client) CreateIssue(ctx context.Context, title, description, state string, priority int, assigneeID, projectID string) (*tracker.Issue, error) {
+func (c *Client) CreateIssue(ctx context.Context, title, description, state string, priority int, assigneeID, projectID string, provider string, disabledTools []string) (*tracker.Issue, error) {
 	return nil, fmt.Errorf("GitHub CreateIssue not implemented yet")
 }
 
@@ -193,14 +193,14 @@ func (c *Client) UpdateIssue(ctx context.Context, identifier string, updates map
 		return nil, fmt.Errorf("github api returned status %d for update issue %s", resp.StatusCode, identifier)
 	}
 
-	return c.fetchIssue(ctx, issueNumber)
+	return c.FetchIssueByIdentifier(ctx, issueNumber)
 }
 
 func (c *Client) DeleteIssue(ctx context.Context, identifier string) error {
 	return fmt.Errorf("GitHub DeleteIssue not implemented yet")
 }
 
-func (c *Client) fetchIssue(ctx context.Context, id string) (*tracker.Issue, error) {
+func (c *Client) FetchIssueByIdentifier(ctx context.Context, id string) (*tracker.Issue, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/issues/%s", c.owner, c.repo, id)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {

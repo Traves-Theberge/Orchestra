@@ -7,15 +7,15 @@ This document tracks all unfinished features, known bugs, and architectural gaps
 ### 1. Model Context Protocol (MCP) Extensions
 - [x] **Dynamic Tool UI**: The UI now displays active MCP servers and their discovered tool schemas with interactive tooltips.
 - [x] **MCP Resource Support**: Backend now discovers, lists, and injects `resources.json` into agent workspaces, allowing models to read remote data sources.
-- [ ] **Configurable Tool Selection**: Allow operators to "toggle" specific MCP tools on or off for individual agent turns.
+- [x] **Configurable Tool Selection**: Operators can now selectively toggle specific tools (system or MCP) on or off per-issue in the Issue Inspector "Tools" tab.
 
 ### 2. Multi-Agent Coordination
-- [ ] **UI Override**: Add a "Provider Selector" to the Issue Inspector so humans can manually swap an agent mid-session.
+- [x] **UI Override**: Added a "Provider Selector" to the Issue Inspector allowing operators to manually swap agent providers (Claude, Gemini, etc.) mid-session.
 - [ ] **Parallel Races**: Implement a mode where two agents (e.g., Claude and Gemini) work on the same issue in parallel, and the human picks the best result.
 - [ ] **Agent Handoffs**: Add a mechanism for an agent to explicitly request a handoff to another model (e.g., "This requires massive context, send to Gemini").
 
 ### 3. Stability & Scalability
-- [ ] **DB Persistence for MCP**: MCP server configurations are currently in environment variables/YAML. They should be persisted to the SQLite database for dynamic UI management.
+- [x] **DB Persistence for MCP**: MCP server configurations are now stored in the SQLite database and can be managed (add/remove) directly from the Agents tab UI.
 - [ ] **Artifact Cleanup**: Workspaces are currently cleaned up on completion, but there's no "Garbage Collector" for stalled workspaces if the backend crashes.
 
 ## 🟡 Medium Priority: Enhancements
