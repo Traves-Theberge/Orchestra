@@ -125,6 +125,7 @@ func NewRouterWithPubSub(
 	r.Get("/api/v1/issues/{issue_identifier}/artifacts", server.GetArtifacts)
 	r.Get("/api/v1/issues/{issue_identifier}/artifacts/*", server.GetArtifactContent)
 	r.Patch("/api/v1/issues/{issue_identifier}", server.PatchIssue)
+	r.Post("/api/v1/issues/{issue_identifier}/race", server.PostIssueRace)
 	r.Delete("/api/v1/issues/{issue_identifier}", server.DeleteIssue)
 	r.Delete("/api/v1/issues/{issue_identifier}/session", server.DeleteIssueSession)
 

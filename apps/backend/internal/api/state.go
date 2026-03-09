@@ -244,8 +244,6 @@ func (s *Server) GetIssue(w http.ResponseWriter, r *http.Request) {
 		workspacePath = ""
 	}
 
-	}
-
 	history, _ := s.orchestrator.FetchIssueHistory(r.Context(), runtime.IssueID)
 
 	presented["history"] = history
@@ -307,16 +305,35 @@ func (s *Server) PatchIssue(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(issue)
 }
 
+func (s *Server) PostIssueRace(w http.ResponseWriter, r *http.Request) {
+	identifier := chi.URLParam(r, "issue_identifier")
+	var body struct {
+		Providers []string `json:"providers"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid_json", "failed to decode request body")
+		return
+	}
+
+	if err := s.orchestrator.StartParallelRace(r.Context(), identifier, body.Providers); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "race_failed", err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+}
+
 func (s *Server) GetIssueLogs(w http.ResponseWriter, r *http.Request) {
 	identifier := chi.URLParam(r, "issue_identifier")
+	provider := r.URL.Query().Get("provider")
 	runtime, ok := s.orchestrator.LookupIssue(identifier)
 
 	logPath := ""
-	if ok && runtime.Running != nil && runtime.Running.SessionLogPath != "" {
+	if ok && runtime.Running != nil && runtime.Running.SessionLogPath != "" && (provider == "" || runtime.Running.Provider == provider) {
 		logPath = runtime.Running.SessionLogPath
 	} else {
-		// Try fallback to disk
-		if wsPath, err := workspace.WorkspacePath(s.workspaceRoot, identifier); err == nil {
+		// Try fallback to disk with provider-specific path
+		if wsPath, err := workspace.WorkspacePath(s.workspaceRoot, identifier, provider); err == nil {
 			logPath = filepath.Join(wsPath, "_logs", identifier, "latest.log")
 		}
 	}
@@ -331,7 +348,8 @@ func (s *Server) GetIssueLogs(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) GetArtifacts(w http.ResponseWriter, r *http.Request) {
 	identifier := chi.URLParam(r, "issue_identifier")
-	artifacts, err := s.orchestrator.ListArtifacts(identifier)
+	provider := r.URL.Query().Get("provider")
+	artifacts, err := s.orchestrator.ListArtifacts(identifier, provider)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
@@ -345,12 +363,13 @@ func (s *Server) GetArtifacts(w http.ResponseWriter, r *http.Request) {
 func (s *Server) GetArtifactContent(w http.ResponseWriter, r *http.Request) {
 	identifier := chi.URLParam(r, "issue_identifier")
 	relPath := chi.URLParam(r, "*")
+	provider := r.URL.Query().Get("provider")
 	if relPath == "" {
 		writeJSONError(w, http.StatusBadRequest, "invalid_request", "artifact path is required")
 		return
 	}
 
-	content, err := s.orchestrator.GetArtifactContent(identifier, relPath)
+	content, err := s.orchestrator.GetArtifactContent(identifier, provider, relPath)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, "fetch_failed", err.Error())
 		return
@@ -363,7 +382,8 @@ func (s *Server) GetArtifactContent(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) GetIssueDiff(w http.ResponseWriter, r *http.Request) {
 	identifier := chi.URLParam(r, "issue_identifier")
-	diff, err := s.orchestrator.GetDiff(identifier)
+	provider := r.URL.Query().Get("provider")
+	diff, err := s.orchestrator.GetDiff(identifier, provider)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "diff_failed", err.Error())
 		return

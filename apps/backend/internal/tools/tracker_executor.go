@@ -42,6 +42,18 @@ func TrackerToolSpecs() []map[string]any {
 				},
 			},
 		},
+		{
+			"name":        "request_handoff",
+			"description": "Explicitly request to hand off the current task to another agent provider. Use this if the task requires a model with different capabilities (e.g. larger context, better reasoning).",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"required": []string{"provider", "reason"},
+				"properties": map[string]any{
+					"provider": map[string]any{"type": "string", "description": "The target agent provider (e.g. claude, gemini, codex, opencode)"},
+					"reason":   map[string]any{"type": "string", "description": "The reason for the handoff request"},
+				},
+			},
+		},
 	}
 }
 
@@ -82,6 +94,36 @@ func (e *TrackerToolExecutor) Execute(tool string, arguments map[string]any) map
 			return failureResponse(map[string]any{"error": map[string]any{"message": "issue update failed", "reason": err.Error()}})
 		}
 		return successResponse(map[string]any{"issue": issue})
+	case "request_handoff":
+		provider, _ := arguments["provider"].(string)
+		reason, _ := arguments["reason"].(string)
+		identifier, _ := arguments["identifier"].(string) // Optional, but useful if agent knows it
+
+		if provider == "" || reason == "" {
+			return failureResponse(map[string]any{"error": map[string]any{"message": "request_handoff requires `provider` and `reason`."}})
+		}
+
+		// If identifier is not provided, we can't easily find the issue from here 
+		// without knowing the current session context.
+		// However, the agent usually knows its own issue identifier.
+		if identifier == "" {
+			return failureResponse(map[string]any{"error": map[string]any{"message": "request_handoff requires `identifier` (e.g. OPS-123)."}})
+		}
+
+		updates := map[string]any{
+			"assignee_id": "agent-" + strings.ToLower(provider),
+		}
+
+		issue, err := e.tracker.UpdateIssue(context.Background(), identifier, updates)
+		if err != nil {
+			return failureResponse(map[string]any{"error": map[string]any{"message": "handoff failed", "reason": err.Error()}})
+		}
+
+		return successResponse(map[string]any{
+			"status": "handoff_initiated",
+			"issue":  issue,
+			"note":   "The orchestrator will switch to the new provider on the next turn cycle.",
+		})
 	case "tracker_query":
 		arguments := arguments
 

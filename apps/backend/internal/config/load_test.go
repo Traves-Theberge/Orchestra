@@ -44,7 +44,7 @@ func TestLoad_AgentProviderAndCommandsFromEnv(t *testing.T) {
 	t.Setenv("ORCHESTRA_AGENT_PROVIDER", "claude")
 	t.Setenv("ORCHESTRA_AGENT_COMMAND_CLAUDE", "claude -p {{prompt}} --output-format json")
 	t.Setenv("ORCHESTRA_AGENT_MAX_TURNS", "7")
-	t.Setenv("ORCHESTRA_TRACKER_ENDPOINT", "http://127.0.0.1:5010/graphql")
+	t.Setenv("ORCHESTRA_TRACKER_ENDPOINT", "http://127.0.0.1:5010/api/v1")
 	t.Setenv("ORCHESTRA_TRACKER_TOKEN", "tracker-token")
 
 	cfg, err := Load()
@@ -61,7 +61,7 @@ func TestLoad_AgentProviderAndCommandsFromEnv(t *testing.T) {
 	if cfg.AgentMaxTurns != 7 {
 		t.Fatalf("expected env max turns 7, got=%d", cfg.AgentMaxTurns)
 	}
-	if cfg.TrackerEndpoint != "http://127.0.0.1:5010/graphql" {
+	if cfg.TrackerEndpoint != "http://127.0.0.1:5010/api/v1" {
 		t.Fatalf("unexpected tracker endpoint: %q", cfg.TrackerEndpoint)
 	}
 	if cfg.TrackerToken != "tracker-token" {
@@ -105,7 +105,7 @@ func TestLoad_ParsesTrackerAndConcurrencyOverridesFromEnv(t *testing.T) {
 func TestLoad_UsesWorkflowOverridesWhenEnvUnset(t *testing.T) {
 	tempDir := t.TempDir()
 	workflowPath := filepath.Join(tempDir, "WORKFLOW.md")
-	content := "---\nserver:\n  host: 0.0.0.0\n  port: 4333\n  api_token: workflow-token\nworkspace:\n  root: /tmp/orchestra-from-workflow\nagent:\n  provider: opencode\n  max_turns: 4\n  max_concurrent: 8\n  max_concurrent_by_state:\n    Todo: 1\n    In Progress: 2\n  commands:\n    opencode: opencode run {{prompt}} --json\ntracker:\n  endpoint: http://tracker.local/graphql\n  token: workflow-tracker-token\n  project: orch-workflow\n  worker_assignee_ids: user-1,user-2\n  active_states: Todo,In Progress\n  terminal_states: Done,Cancelled\n---\nPrompt"
+	content := "---\nserver:\n  host: 0.0.0.0\n  port: 4333\n  api_token: workflow-token\nworkspace:\n  root: /tmp/orchestra-from-workflow\nagent:\n  provider: opencode\n  max_turns: 4\n  max_concurrent: 8\n  max_concurrent_by_state:\n    Todo: 1\n    In Progress: 2\n  commands:\n    opencode: opencode run {{prompt}} --json\ntracker:\n  endpoint: http://tracker.local/api/v1\n  token: workflow-tracker-token\n  project: orch-workflow\n  worker_assignee_ids: user-1,user-2\n  active_states: Todo,In Progress\n  terminal_states: Done,Cancelled\n---\nPrompt"
 	if err := os.WriteFile(workflowPath, []byte(content), 0o644); err != nil {
 		t.Fatalf("write workflow: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestLoad_UsesWorkflowOverridesWhenEnvUnset(t *testing.T) {
 	if cfg.AgentMaxTurns != 4 {
 		t.Fatalf("expected workflow max turns 4, got=%d", cfg.AgentMaxTurns)
 	}
-	if cfg.TrackerEndpoint != "http://tracker.local/graphql" {
+	if cfg.TrackerEndpoint != "http://tracker.local/api/v1" {
 		t.Fatalf("unexpected workflow tracker endpoint: %q", cfg.TrackerEndpoint)
 	}
 	if cfg.TrackerToken != "workflow-tracker-token" {

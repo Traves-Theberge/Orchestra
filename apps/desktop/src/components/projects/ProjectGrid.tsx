@@ -3,6 +3,7 @@ import { Folder, Globe, History, Search, Zap, Plus, Trash2, ChevronLeft, Chevron
 import type { Project, ProjectStats } from '@/lib/orchestra-types'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { AppTooltip } from '../ui/tooltip-wrapper'
 
 interface ProjectCardProps {
@@ -13,81 +14,81 @@ interface ProjectCardProps {
     onDelete?: (id: string) => void
 }
 
+const calculateStabilityScore = (stats?: ProjectStats): number => {
+    if (!stats || stats.total_sessions === 0) return 100
+    const finished = stats.success_count + stats.failure_count
+    if (finished === 0) return 100
+    return Math.round((stats.success_count / finished) * 100)
+}
+
 const ProjectCard: React.FC<ProjectCardProps> = ({ project, stats, loading, onClick, onDelete }) => {
     if (loading) {
         return (
-            <div className="bg-background/40 backdrop-blur-md border border-white/10 rounded-lg p-4 h-32 animate-pulse">
-                <Skeleton className="h-4 w-3/4 mb-3" />
-                <Skeleton className="h-3 w-1/2 mb-6" />
-                <div className="flex gap-3">
-                    <Skeleton className="h-6 w-12" />
-                    <Skeleton className="h-6 w-12" />
-                </div>
-            </div>
-        )
+            <Card className="h-40 bg-muted/50 border border-border/50 animate-pulse">
+                <CardHeader className="pb-2">
+                    <Skeleton className="h-4 w-3/4 mb-1" />
+                    <Skeleton className="h-3 w-1/2" />
+                </CardHeader>
+                <CardContent className="space-y-3 pt-3 border-t border-border/40">
+                    <Skeleton className="h-2 w-full" />
+                    <div className="grid grid-cols-2 gap-2">
+                        <Skeleton className="h-3 w-full" />
+                        <Skeleton className="h-3 w-full" />
+                    </div>
+                </CardContent>
+            </Card>
+        );
     }
+    const stability = calculateStabilityScore(stats)
 
     return (
-        <div
+        <Card
             onClick={() => onClick(project.id)}
-            className="group relative overflow-hidden bg-card/40 backdrop-blur-md border border-border/50 rounded-lg p-4 transition-all duration-300 hover:scale-[1.01] hover:shadow-xl hover:shadow-primary/10 cursor-pointer h-32 flex flex-col justify-between shadow-sm"
+            className="group relative overflow-hidden bg-gradient-to-br from-card/40 via-card/30 to-card/20 backdrop-blur-md border border-border/50 transition-all duration-500 hover:scale-[1.02] hover:shadow-2xl hover:shadow-primary/20 cursor-pointer h-40 flex flex-col justify-between shadow-lg hover:ring-1 hover:ring-primary/30"
         >
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary/50 to-transparent" />
 
-            <div>
-                <div className="flex items-start justify-between mb-2">
-                    <div className="p-1.5 rounded-md bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors duration-300">
-                        <Folder size={14} />
-                    </div>
-                    <div className="flex gap-1">
-                        {project.remote_url && (
-                            <AppTooltip content="Open Remote Repository">
-                                <a
-                                    href={project.remote_url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="text-muted-foreground hover:text-primary transition-colors p-1"
-                                >
-                                    <Globe size={16} />
-                                </a>
-                            </AppTooltip>
-                        )}
-                        {onDelete && (
-                            <AppTooltip content="Remove Project">
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation()
-                                        if (confirm(`Remove project "${project.name}"?`)) {
-                                            onDelete(project.id)
-                                        }
-                                    }}
-                                    className="text-muted-foreground hover:text-red-500 transition-colors p-1"
-                                >
-                                    <Trash2 size={16} />
-                                </button>
-                            </AppTooltip>
-                        )}
-                    </div>
+            <CardHeader className="pb-2">
+                <div className="flex items-center gap-2">
+                    <Folder className="w-4 h-4 text-primary/60 shrink-0" />
+                    <CardTitle className="text-sm font-bold truncate group-hover:text-primary transition-colors">{project.name}</CardTitle>
                 </div>
-
-                <h3 className="text-sm font-bold truncate group-hover:text-primary transition-colors">{project.name}</h3>
-                <p className="text-[9px] text-muted-foreground truncate font-mono opacity-50">{project.root_path}</p>
-            </div>
+                <CardDescription className="text-[9px] text-muted-foreground truncate font-mono opacity-50 ml-6">{project.root_path}</CardDescription>
+            </CardHeader>
 
             {stats && (
-                <div className="grid grid-cols-2 gap-2 mt-auto pt-2 border-t border-border/40">
-                    <div className="flex items-center gap-2">
-                        <History size={12} className="text-primary/70" />
-                        <span className="text-xs font-medium">{stats.total_sessions} Sessions</span>
+                <CardContent className="space-y-3 mt-auto pt-3 border-t border-border/40 flex-1">
+                    <div className="space-y-1">
+                        <div className="flex items-center justify-between text-[9px] uppercase font-black tracking-widest text-muted-foreground/60">
+                            <span>Stability</span>
+                            <span className={stability > 80 ? 'text-emerald-500' : stability > 50 ? 'text-amber-500' : 'text-red-500'}>
+                                {stability}%
+                            </span>
+                        </div>
+                        <div className="h-1 w-full rounded-full bg-white/5 overflow-hidden">
+                            <div
+                                className={`h-full rounded-full transition-all duration-1000 ${stability > 80 ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]' :
+                                    stability > 50 ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]' :
+                                        'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]'
+                                    }`}
+                                style={{ width: `${stability}%` }}
+                            />
+                        </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <Zap size={12} className="text-primary/70" />
-                        <span className="text-xs font-medium">{((stats.total_input + stats.total_output) / 1000).toFixed(1)}k Tokens</span>
+
+                    <div className="grid grid-cols-2 gap-2">
+                        <div className="flex items-center gap-2">
+                            <History size={12} className="text-primary/70" />
+                            <span className="text-xs font-medium">{stats.total_sessions} Sessions</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Zap size={12} className="text-primary/70" />
+                            <span className="text-xs font-medium">{((stats.total_input + stats.total_output) / 1000).toFixed(1)}k Tokens</span>
+                        </div>
                     </div>
-                </div>
+                </CardContent>
             )}
-        </div>
+        </Card>
     )
 }
 

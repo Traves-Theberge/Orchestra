@@ -6,7 +6,7 @@
 
 When a new agent turn starts, Orchestra scans the `.codex/skills/` directory. All active skills are injected into the agent's system prompt, providing it with:
 - **Best Practices**: Coding standards and workflow requirements.
-- **Tool Instruction**: How to interact with custom tools like `linear_graphql`.
+- **Tool Instruction**: How to interact with system tools like `update_issue`.
 - **Strategic Guidance**: Step-by-step reasoning patterns for complex tasks.
 
 ## 📂 Skill Structure
@@ -20,8 +20,8 @@ description: Deep integration with Linear issue management.
 ---
 
 # Linear Integration
-Use this skill when you need to update issue status or post comments.
-Always use the `linear_graphql` tool for these operations.
+Use this skill when you need to update issue status or transition through the workflow.
+Always use the `update_issue` tool for these operations.
 ```
 
 ## 🛠️ Managing Skills

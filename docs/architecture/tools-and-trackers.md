@@ -16,9 +16,9 @@ Currently, Orchestra injects the following core capabilities into every agent's 
 2.  **`update_issue`**:
     *   **Purpose**: Mutates the state of an issue in the backing tracker.
     *   **Use Case**: Once an agent finishes writing code, it calls `update_issue` with `{ "state": "In Review", "assignee_id": "human-reviewer" }`. This signals the orchestrator that the turn is complete.
-3.  **`linear_graphql`**:
-    *   **Purpose**: A raw GraphQL tunnel specifically for interacting with Linear.
-    *   **Use Case**: Used for complex tracker operations not covered by standard state updates, such as posting comments, fetching specific project boards, or uploading attachments.
+3.  **Issue History Audit**:
+    -   **Purpose**: Records every change made to an issue's metadata.
+    -   **Use Case**: The orchestrator automatically logs changes to `state`, `priority`, and `assignee` in a dedicated `issue_history` table, providing a permanent audit trail for agent sessions.
 
 ## 📡 The Tracker Abstraction (`internal/tracker`)
 
@@ -26,7 +26,7 @@ The `TrackerToolExecutor` does not communicate with Linear or GitHub directly. I
 
 ### Supported Backends
 
-*   **GraphQL Client**: Primarily used for connecting to Linear. It translates generic orchestrator queries into the specific GraphQL schema required by the host.
+*   **Linear Client**: A high-performance native client for Linear. It ensures 1:1 state parity and implements the full history logging protocol.
 *   **GitHub Client**: Interacts with the GitHub Issues API. It maps standard concepts like `state: "Done"` to GitHub's open/closed issue states.
 *   **SQLite / Memory Clients**: Local implementations used for self-hosted instances or automated testing, ensuring the orchestrator can run entirely offline if needed.
 

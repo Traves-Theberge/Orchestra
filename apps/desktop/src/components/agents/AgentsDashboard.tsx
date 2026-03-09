@@ -193,7 +193,8 @@ export const AgentsDashboard: React.FC<AgentsDashboardProps> = ({ config, snapsh
         const lower = conf.name.toLowerCase()
         if (lower.includes('workspace')) return <Layout size={14} className="text-zinc-100" />
         if (lower.includes('claude')) return <div className="h-2 w-2 rounded-full bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.4)]" />
-        if (lower.includes('gemini')) return <div className="h-2 w-2 rounded-full bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.4)]" />
+        if (lower.includes('gemini')) return <div className="h-2 w-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.4)]" />
+        if (lower.includes('codex')) return <div className="h-2 w-2 rounded-full bg-primary shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
         if (lower.includes('codex')) return <div className="h-2 w-2 rounded-full bg-primary shadow-[0_0_8px_rgba(var(--primary),0.4)]" />
         if (lower.includes('open')) return <div className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
         return <FileText size={14} className="text-zinc-500" />
@@ -645,7 +646,8 @@ export const AgentsDashboard: React.FC<AgentsDashboardProps> = ({ config, snapsh
                             >
                                 <option value="Orchestra">Orchestra (System)</option>
                                 <option value="claude">Claude Code</option>
-                                <option value="gemini">Gemini</option>
+                                <option value="gemini">Gemini CLI</option>
+                                <option value="codex">Codex</option>
                                 <option value="codex">Codex</option>
                                 <option value="opencode">OpenCode</option>
                             </select>

@@ -95,6 +95,7 @@ func Run(logger zerolog.Logger) error {
 
 	cleanupTerminalWorkspaces(orchestratorService, trackerClient, workspaceService, cfg.WorkspaceHooks, logger)
 
+	go startGarbageCollector(orchestratorService, cfg.WorkspaceRoot, logger)
 	go startRefreshWorker(orchestratorService, pubsub, logger)
 	go telemetry.StartWatcher(context.Background(), warehouseDB, cfg.ProjectRoots, logger)
 	
@@ -496,6 +497,52 @@ func cleanupTerminalWorkspaces(service *orchestrator.Service, trackerClient trac
 	for _, issue := range issues {
 		if err := workspaceService.RemoveIssueWorkspaces(issue.Identifier, hooks); err != nil {
 			logger.Warn().Err(err).Str("issue_identifier", issue.Identifier).Msg("startup workspace cleanup failed")
+		}
+	}
+}
+
+func startGarbageCollector(service *orchestrator.Service, root string, logger zerolog.Logger) {
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			active := service.GetActiveWorkspaceIdentifiers()
+			activeSet := make(map[string]struct{})
+			for _, id := range active {
+				activeSet[id] = struct{}{}
+			}
+
+			entries, err := os.ReadDir(root)
+			if err != nil {
+				continue
+			}
+
+			for _, entry := range entries {
+				if !entry.IsDir() {
+					continue
+				}
+				name := entry.Name()
+				if _, ok := activeSet[name]; ok {
+					continue
+				}
+
+				// Check if it's an orchestra workspace (safety check)
+				marker := filepath.Join(root, name, ".orchestra")
+				if _, err := os.Stat(marker); os.IsNotExist(err) {
+					continue
+				}
+
+				// Check age - don't delete brand new workspaces that might be initializing
+				info, err := entry.Info()
+				if err == nil && time.Since(info.ModTime()) < 2*time.Hour {
+					continue
+				}
+
+				logger.Info().Str("workspace", name).Msg("cleaning up orphaned workspace")
+				_ = os.RemoveAll(filepath.Join(root, name))
+			}
 		}
 	}
 }

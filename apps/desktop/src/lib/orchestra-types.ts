@@ -104,6 +104,8 @@ export type ProjectStats = {
   total_sessions: number
   total_input: number
   total_output: number
+  success_count: number
+  failure_count: number
   last_active: string
 }
 

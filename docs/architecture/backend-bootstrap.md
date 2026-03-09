@@ -20,7 +20,7 @@ The system reads environment variables and local `.env` files via `config.Load()
 - Executes a state recovery protocol (`RestoreStateFromDB`) to rebuild the active queue from persisted records if the daemon was unexpectedly restarted.
 
 ### 3. Subsystem Wiring
-- **Tracker Client**: Initializes the correct provider (GitHub, GraphQL, Memory, or SQLite) based on the configuration.
+- **Tracker Client**: Initializes the correct provider (GitHub, Linear, Memory, or SQLite) based on the configuration.
 - **PubSub**: Starts the event bus for real-time SSE streaming.
 - **Agent Registry**: Validates that the requested AI provider (`codex`, `claude`, `gemini`, `opencode`) has a registered adapter and executable command.
 - **Workspace Service**: Mounts the ephemeral filesystem manager.

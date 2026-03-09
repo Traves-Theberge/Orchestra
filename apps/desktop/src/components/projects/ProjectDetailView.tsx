@@ -29,6 +29,13 @@ interface ProjectDetailViewProps {
 
 type ProjectTab = 'overview' | 'tasks' | 'files' | 'git'
 
+const calculateStabilityScore = (stats?: ProjectStats): number => {
+    if (!stats || stats.total_sessions === 0) return 100
+    const finished = stats.success_count + stats.failure_count
+    if (finished === 0) return 100
+    return Math.round((stats.success_count / finished) * 100)
+}
+
 export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     project,
     stats,
@@ -51,6 +58,8 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     const [gitPending, setGitPending] = useState(false)
     const [commitMessage, setCommitMessage] = useState('')
     const [showCommitDialog, setShowCommitDialog] = useState(false)
+
+    const stability = calculateStabilityScore(stats)
 
     useEffect(() => {
         if (!config) return
@@ -271,32 +280,55 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                                 <StatCard title="Total Sessions" value={stats?.total_sessions || 0} icon={<History size={20} />} color="blue" />
                                 <StatCard title="Token Throughput" value={((stats?.total_input || 0) + (stats?.total_output || 0)).toLocaleString()} icon={<Zap size={20} />} color="amber" />
                                 <StatCard title="Last Active" value={stats?.last_active ? new Date(stats.last_active).toLocaleDateString() : 'N/A'} icon={<Calendar size={20} />} color="green" />
-                                <StatCard title="Files Impacted" value="--" icon={<CodeIcon size={20} />} color="primary" />
+                                <StatCard title="Project Health" value={`${stability}%`} icon={<ShieldCheck size={20} />} color={stability > 80 ? "primary" : stability > 50 ? "amber" : "destructive"} />
                             </div>
 
                             {/* Recent Activity Mini-Timeline */}
                             <div className="bg-background/20 rounded-2xl border border-white/5 p-6 backdrop-blur-sm mb-8">
-                                <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Quick Stats</h3>
+                                <div className="flex items-center justify-between mb-6">
+                                    <div className="space-y-1">
+                                        <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Stability Forecast</h3>
+                                        <p className="text-[10px] text-muted-foreground/60">Historical run performance and reliability index.</p>
+                                    </div>
+                                    <Badge variant="outline" className={stability > 80 ? "text-emerald-500 border-emerald-500/20" : stability > 50 ? "text-amber-500 border-amber-500/20" : "text-red-500 border-red-500/20"}>
+                                        {stability > 80 ? 'Stable' : stability > 50 ? 'Degraded' : 'Unstable'}
+                                    </Badge>
+                                </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                     <div className="space-y-4">
-                                        <div className="flex items-center justify-between text-sm">
-                                            <span className="text-muted-foreground">Input Tokens</span>
-                                            <span className="font-mono">{(stats?.total_input || 0).toLocaleString()}</span>
+                                        <div className="space-y-1">
+                                            <div className="flex items-center justify-between text-xs mb-1">
+                                                <span className="text-muted-foreground font-medium uppercase tracking-tighter text-[10px]">Reliability Index</span>
+                                                <span className="font-bold">{stability}%</span>
+                                            </div>
+                                            <div className="h-2 w-full rounded-full bg-white/5 overflow-hidden">
+                                                <div
+                                                    className={`h-full rounded-full transition-all duration-1000 ${stability > 80 ? 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.4)]' :
+                                                        stability > 50 ? 'bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.4)]' :
+                                                            'bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.4)]'
+                                                        }`}
+                                                    style={{ width: `${stability}%` }}
+                                                />
+                                            </div>
                                         </div>
-                                        <div className="w-full bg-muted/20 h-1.5 rounded-full overflow-hidden">
-                                            <div className="bg-primary h-full transition-all" style={{ width: '65%' }} />
-                                        </div>
-                                        <div className="flex items-center justify-between text-sm">
-                                            <span className="text-muted-foreground">Output Tokens</span>
-                                            <span className="font-mono">{(stats?.total_output || 0).toLocaleString()}</span>
-                                        </div>
-                                        <div className="w-full bg-muted/20 h-1.5 rounded-full overflow-hidden">
-                                            <div className="bg-blue-500 h-full transition-all" style={{ width: '45%' }} />
+                                        <div className="mt-4 grid grid-cols-3 gap-4 text-center">
+                                            <div className="space-y-1">
+                                                <p className="text-[9px] font-black uppercase text-muted-foreground/40 tracking-tighter">Total</p>
+                                                <p className="text-sm font-bold">{stats?.total_sessions || 0}</p>
+                                            </div>
+                                            <div className="space-y-1 border-x border-white/5">
+                                                <p className="text-[9px] font-black uppercase text-emerald-500/40 tracking-tighter text-emerald-500/60">Success</p>
+                                                <p className="text-sm font-bold text-emerald-500">{stats?.success_count || 0}</p>
+                                            </div>
+                                            <div className="space-y-1">
+                                                <p className="text-[9px] font-black uppercase text-red-500/40 tracking-tighter text-red-500/60">Failures</p>
+                                                <p className="text-sm font-bold text-red-500">{stats?.failure_count || 0}</p>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div className="flex flex-col justify-center items-center p-4 border border-dashed border-white/10 rounded-xl">
+                                    <div className="flex flex-col justify-center items-center p-4 border border-dashed border-white/10 rounded-xl bg-white/[0.01]">
                                         <Activity className="text-primary/20 mb-2" size={32} />
-                                        <p className="text-xs text-muted-foreground text-center">Project compute distribution and efficiency metrics coming soon.</p>
+                                        <p className="text-[10px] text-muted-foreground text-center uppercase font-bold tracking-widest opacity-40">Predictive Analytics Inactive</p>
                                     </div>
                                 </div>
                             </div>

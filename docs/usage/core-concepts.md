@@ -11,7 +11,7 @@ A **Workspace** is an isolated, ephemeral directory where an agent performs its 
 ## 2. Agent Turns
 A **Turn** represents a single execution cycle of an agent.
 - **Context Injection**: Each turn includes the issue description, current file state, and active **Skills**.
-- **Tools**: During a turn, the agent can call built-in tools like `linear_graphql` or `update_issue`.
+- **Tools**: During a turn, the agent can call built-in tools like `tracker_query` or `update_issue`.
 - **Termination**: A turn ends when the agent submits a final result or hits a timeout.
 
 ## 3. Sessions

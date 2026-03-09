@@ -22,8 +22,8 @@ type Hooks struct {
 	AfterRun     string
 }
 
-func (s Service) EnsureIssueWorkspace(issueIdentifier string, hooks Hooks) (string, bool, error) {
-	path, err := WorkspacePath(s.Root, issueIdentifier)
+func (s Service) EnsureIssueWorkspace(issueIdentifier string, provider string, hooks Hooks) (string, bool, error) {
+	path, err := WorkspacePath(s.Root, issueIdentifier, provider)
 	if err != nil {
 		return "", false, err
 	}
@@ -66,12 +66,12 @@ func (s Service) EnsureIssueWorkspace(issueIdentifier string, hooks Hooks) (stri
 	return path, created, nil
 }
 
-func (s Service) RemoveIssueWorkspaces(issueIdentifier string, hooks Hooks) error {
+func (s Service) RemoveIssueWorkspaces(issueIdentifier string, provider string, hooks Hooks) error {
 	if issueIdentifier == "" {
 		return nil
 	}
 
-	path, err := WorkspacePath(s.Root, issueIdentifier)
+	path, err := WorkspacePath(s.Root, issueIdentifier, provider)
 	if err != nil {
 		return err
 	}
@@ -111,8 +111,8 @@ func (s Service) RunAfterRunHook(workspacePath string, hooks Hooks) error {
 	return nil
 }
 
-func (s Service) ListArtifacts(issueIdentifier string) ([]string, error) {
-	path, err := WorkspacePath(s.Root, issueIdentifier)
+func (s Service) ListArtifacts(issueIdentifier string, provider string) ([]string, error) {
+	path, err := WorkspacePath(s.Root, issueIdentifier, provider)
 	if err != nil {
 		return nil, err
 	}
@@ -149,8 +149,8 @@ func (s Service) ListArtifacts(issueIdentifier string) ([]string, error) {
 	return artifacts, err
 }
 
-func (s Service) GetArtifactContent(issueIdentifier string, relPath string) ([]byte, error) {
-	root, err := WorkspacePath(s.Root, issueIdentifier)
+func (s Service) GetArtifactContent(issueIdentifier string, provider string, relPath string) ([]byte, error) {
+	root, err := WorkspacePath(s.Root, issueIdentifier, provider)
 	if err != nil {
 		return nil, err
 	}
@@ -163,8 +163,8 @@ func (s Service) GetArtifactContent(issueIdentifier string, relPath string) ([]b
 	return os.ReadFile(fullPath)
 }
 
-func (s Service) GetDiff(issueIdentifier string) (string, error) {
-	path, err := WorkspacePath(s.Root, issueIdentifier)
+func (s Service) GetDiff(issueIdentifier string, provider string) (string, error) {
+	path, err := WorkspacePath(s.Root, issueIdentifier, provider)
 	if err != nil {
 		return "", err
 	}

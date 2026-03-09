@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Ansi from 'ansi-to-react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { Activity, AlertCircle, AlertTriangle, AppWindow, Bot, CheckCircle2, ChevronDown, Circle, CircleDashed, Cpu, FileText, Folder, FolderTree, GitBranch, Loader2, MoreHorizontal, ShieldCheck, SignalHigh, SignalLow, SignalMedium, Square, Terminal, User, Users, Wrench, Clock, Search, LayoutDashboard, ListTodo, History, Ticket, Database, Settings2, Sun, Moon, Download, RefreshCcw, Info, BarChart3, Zap, Layout, Rows, Play, ChevronRight, File, ExternalLink, Plus, Trash2 } from 'lucide-react'
+import { Activity, AlertCircle, AlertTriangle, AppWindow, Bot, CheckCircle2, ChevronDown, Circle, CircleDashed, Cpu, FileText, Folder, FolderTree, GitBranch, Loader2, MoreHorizontal, ShieldCheck, SignalHigh, SignalLow, SignalMedium, Square, Terminal, User, Users, Wrench, Clock, Search, LayoutDashboard, ListTodo, History, Ticket, Database, Settings2, Sun, Moon, Download, RefreshCcw, Info, BarChart3, Zap, Layout, Rows, Play, ChevronRight, File, ExternalLink, Plus, Trash2, Keyboard } from 'lucide-react'
 import * as Tooltip from '@radix-ui/react-tooltip'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -314,13 +314,14 @@ export function SettingsCard({
   onSaveAgentConfig: (config: { commands: Record<string, string>; agent_provider: string }) => Promise<void>
   onSaveAgentToken: (name: string, value: string | null) => Promise<void>
 }) {
-  const [activeTab, setActiveTab] = useState<'backend' | 'agents' | 'tokens' | 'migration'>('backend')
+  const [activeTab, setActiveTab] = useState<'backend' | 'agents' | 'tokens' | 'migration' | 'shortcuts'>('backend')
 
   const tabs = [
     { id: 'backend', label: 'Backend', icon: <Database className="h-3.5 w-3.5" /> },
     { id: 'agents', label: 'Agents', icon: <Zap className="h-3.5 w-3.5" /> },
     { id: 'tokens', label: 'Tokens', icon: <ShieldCheck className="h-3.5 w-3.5" /> },
     { id: 'migration', label: 'Migration', icon: <RefreshCcw className="h-3.5 w-3.5" /> },
+    { id: 'shortcuts', label: 'Shortcuts', icon: <Keyboard className="h-3.5 w-3.5" /> },
   ] as const
 
   return (
@@ -421,6 +422,68 @@ export function SettingsCard({
                   onMigrationPlan={onMigrationPlan}
                   onMigrationApply={onMigrationApply}
                 />
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'shortcuts' && (
+            <div className="space-y-6">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                <Keyboard className="h-3.5 w-3.5" />
+                Keyboard Command Mapping
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Global shortcuts for rapid navigation and fleet management.
+              </p>
+              
+              <div className="grid gap-3">
+                <div className="flex items-center justify-between p-4 rounded-xl border border-white/5 bg-white/[0.02]">
+                  <div className="space-y-1">
+                    <p className="text-sm font-bold">Command Palette</p>
+                    <p className="text-[10px] text-muted-foreground">Search and navigate instantly across the platform.</p>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <kbd className="px-2 py-1 rounded bg-muted border border-border text-[10px] font-mono">⌘</kbd>
+                    <kbd className="px-2 py-1 rounded bg-muted border border-border text-[10px] font-mono">K</kbd>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-4 rounded-xl border border-white/5 bg-white/[0.02]">
+                  <div className="space-y-1">
+                    <p className="text-sm font-bold">Refresh Tracker</p>
+                    <p className="text-[10px] text-muted-foreground">Manually trigger a full state synchronization.</p>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <kbd className="px-2 py-1 rounded bg-muted border border-border text-[10px] font-mono">⌘</kbd>
+                    <kbd className="px-2 py-1 rounded bg-muted border border-border text-[10px] font-mono">R</kbd>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-4 rounded-xl border border-white/5 bg-white/[0.02]">
+                  <div className="space-y-1">
+                    <p className="text-sm font-bold">Toggle Sidebar</p>
+                    <p className="text-[10px] text-muted-foreground">Collapse or expand the primary navigation rail.</p>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <kbd className="px-2 py-1 rounded bg-muted border border-border text-[10px] font-mono">⌘</kbd>
+                    <kbd className="px-2 py-1 rounded bg-muted border border-border text-[10px] font-mono">/</kbd>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-4 rounded-xl border border-white/5 bg-white/[0.02]">
+                  <div className="space-y-1">
+                    <p className="text-sm font-bold">Quick Switch (Dashboard)</p>
+                    <p className="text-[10px] text-muted-foreground">Jump back to the operations overview.</p>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <kbd className="px-2 py-1 rounded bg-muted border border-border text-[10px] font-mono">⌥</kbd>
+                    <kbd className="px-2 py-1 rounded bg-muted border border-border text-[10px] font-mono">1</kbd>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-white/5">
+                <p className="text-[10px] text-muted-foreground italic">Note: Custom shortcut remapping is currently in development and will be available in v1.1.0.</p>
               </div>
             </div>
           )}
@@ -602,7 +665,9 @@ export function IssueDetailView({
   result: initialResult,
   onUpdate,
   onStopSession,
+  onStartRace,
   config,
+  snapshot,
   timeline = [],
   availableAgents = [],
   allTools = [],
@@ -610,7 +675,9 @@ export function IssueDetailView({
   result: Record<string, unknown> | null
   onUpdate?: (updates: Record<string, unknown>) => Promise<void>
   onStopSession?: (provider?: string) => Promise<void>
+  onStartRace?: (providers: string[]) => Promise<void>
   config: BackendConfig | null
+  snapshot: SnapshotPayload | null
   timeline?: TimelineItem[]
   availableAgents?: string[]
   allTools?: any[]
@@ -624,14 +691,28 @@ export function IssueDetailView({
   const [localAssignee, setLocalAssignee] = useState((result.assignee_id as string) || 'Unassigned')
   const [localProvider, setLocalProvider] = useState<string>(() => {
     const r = result as any
-    return r.provider || r.running?.provider || r.retry?.provider || ''
+    return r.running?.provider || r.retry?.provider || ''
   })
+
+  // Get all providers for this issue from snapshot to support switching between parallel runs
+  const activeSessions = useMemo(() => {
+    if (!snapshot) return []
+    return snapshot.running.filter(r => r.issue_id === result.id || r.issue_identifier === identifier)
+  }, [snapshot, result.id, identifier])
+
+  useEffect(() => {
+    // If we only have one active session and it's different from localProvider, auto-switch
+    if (activeSessions.length === 1 && activeSessions[0].provider !== localProvider) {
+      setLocalProvider(activeSessions[0].provider)
+    }
+  }, [activeSessions, localProvider])
   const [disabledTools, setDisabledTools] = useState<string[]>(() => {
     const r = result as any
     return r.disabled_tools || r.running?.disabled_tools || r.retry?.disabled_tools || []
   })
-  const [activeTab, setActiveTab] = useState<'overview' | 'changes' | 'logs' | 'artifacts' | 'tools' | 'activity'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'changes' | 'logs' | 'artifacts' | 'tools'>('overview')
   const [logs, setLogs] = useState<string>('')
+  const [logFilter, setLogFilter] = useState('')
   const [logsLoading, setLogsLoading] = useState(false)
   const [diff, setDiff] = useState<string>('')
   const [diffLoading, setDiffLoading] = useState(false)
@@ -643,13 +724,15 @@ export function IssueDetailView({
   const logsEndRef = useRef<HTMLDivElement>(null)
   const [prPending, setPrPending] = useState(false)
   const [prResult, setPrResult] = useState<{ url: string; number: number } | null>(null)
+  const [raceDialogOpen, setRaceDialogOpen] = useState(false)
+  const [selectedRaceProviders, setSelectedRaceProviders] = useState<string[]>([])
 
   const identifier = (result.identifier as string) || (result.id as string) || ''
 
   useEffect(() => {
     if (activeTab === 'logs' && identifier && config) {
       setLogsLoading(true)
-      fetchIssueLogs(config, identifier)
+      fetchIssueLogs(config, identifier, localProvider)
         .then(setLogs)
         .catch(() => {
           if (!logs) setLogs('No logs available yet. Start the task to see real-time output.')
@@ -658,7 +741,7 @@ export function IssueDetailView({
     }
     if (activeTab === 'changes' && identifier && config) {
       setDiffLoading(true)
-      fetchIssueDiff(config, identifier)
+      fetchIssueDiff(config, identifier, localProvider)
         .then(setDiff)
         .catch(() => {
           if (!diff) setDiff('No workspace changes currently detected.')
@@ -667,32 +750,39 @@ export function IssueDetailView({
     }
     if (activeTab === 'artifacts' && identifier && config) {
       setArtifactsLoading(true)
-      fetchArtifacts(config, identifier)
+      fetchArtifacts(config, identifier, localProvider)
         .then(setArtifacts)
         .catch(() => {
           if (artifacts.length === 0) setArtifacts([])
         })
         .finally(() => setArtifactsLoading(false))
     }
-  }, [activeTab, identifier, config])
+  }, [activeTab, identifier, config, localProvider])
 
   useEffect(() => {
     if (selectedArtifact && identifier && config) {
       setArtifactContentLoading(true)
-      fetchArtifactContent(config, identifier, selectedArtifact)
+      fetchArtifactContent(config, identifier, selectedArtifact, localProvider)
         .then(setArtifactContent)
         .catch(() => setArtifactContent('Failed to load artifact content.'))
         .finally(() => setArtifactContentLoading(false))
     } else {
       setArtifactContent(null)
     }
-  }, [selectedArtifact, identifier, config])
+  }, [selectedArtifact, identifier, config, localProvider])
 
   useEffect(() => {
     if (activeTab === 'logs' && logsEndRef.current) {
       logsEndRef.current.scrollIntoView({ behavior: 'smooth' })
     }
   }, [logs, activeTab])
+
+  const filteredLogs = useMemo(() => {
+    if (!logFilter.trim()) return logs
+    return logs.split('\n').filter(line => 
+      line.toLowerCase().includes(logFilter.toLowerCase())
+    ).join('\n')
+  }, [logs, logFilter])
 
   const handleStateChange = async (newState: string) => {
     setLocalState(newState)
@@ -723,6 +813,25 @@ export function IssueDetailView({
     setDisabledTools(next)
     if (onUpdate) {
       await onUpdate({ disabled_tools: next })
+    }
+  }
+
+  const handleStartRace = async () => {
+    if (onStartRace && selectedRaceProviders.length > 0) {
+      await onStartRace(selectedRaceProviders)
+      setRaceDialogOpen(false)
+      setSelectedRaceProviders([])
+    }
+  }
+
+  const handlePromoteWinner = async () => {
+    if (!onUpdate) return
+    // In a real scenario, this might trigger a git merge or specific state update.
+    // For now, we'll mark this provider as the official assignee and stop other sessions.
+    await onUpdate({ assignee_id: 'agent-' + localProvider, state: 'In Review' })
+    if (onStopSession) {
+      // Stop all sessions for this issue (calling without provider stops all)
+      await onStopSession()
     }
   }
 
@@ -809,10 +918,41 @@ export function IssueDetailView({
         </button>
       </div>
 
-      {
-        activeTab === 'overview' ? (
-          <div className="space-y-4">
-            <div className="rounded-lg border bg-muted/30 p-4">
+      {activeTab === 'overview' ? (
+        <div className="space-y-4">
+          {activeSessions.length > 1 && (
+            <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Zap size={14} className="text-blue-500" fill="currentColor" />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-blue-500/80">Active Parallel Race</span>
+                </div>
+                <Badge variant="outline" className="h-4 px-1.5 border-blue-500/30 text-blue-500 text-[8px] font-black">
+                  {activeSessions.length} PARTICIPANTS
+                </Badge>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {activeSessions.map((session) => (
+                  <button
+                    key={session.provider}
+                    onClick={() => setLocalProvider(session.provider)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all ${localProvider === session.provider
+                      ? 'bg-blue-500 border-blue-500 text-white shadow-lg shadow-blue-500/20'
+                      : 'bg-black/20 border-white/5 text-muted-foreground hover:bg-white/5'
+                      }`}
+                  >
+                    <Cpu size={10} />
+                    <span className="text-[10px] font-bold uppercase tracking-tight">{session.provider}</span>
+                    {localProvider === session.provider && <CheckCircle2 size={10} className="text-white" />}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[9px] text-blue-500/60 leading-tight">
+                Switch between participants to view their unique logs, artifacts, and diffs. Promote a session to finalize the race.
+              </p>
+            </div>
+          )}
+          <div className="rounded-lg border bg-muted/30 p-4">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-border/40 pb-4">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
@@ -846,11 +986,32 @@ export function IssueDetailView({
                       <a href={prResult.url} target="_blank" rel="noreferrer">
                         <ExternalLink size={12} />
                         PR #{prResult.number}
-                      </a>
-                    </Button>
-                  )}
-                  {(localState === 'Todo' || localState === 'Done') && (
-                    <Button
+                        </a>
+                        </Button>
+                        )}
+                        {onStartRace && (
+                        <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-2 border-blue-500/30 text-blue-500 hover:bg-blue-500/5"
+                        onClick={() => setRaceDialogOpen(true)}
+                        >
+                        <Zap size={12} fill="currentColor" className="text-blue-500" />
+                        Start Race
+                        </Button>
+                        )}
+                        {localState === 'In Progress' && (
+                        <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-2 border-primary/30 text-primary hover:bg-primary/5"
+                        onClick={handlePromoteWinner}
+                        >
+                        <ShieldCheck size={12} fill="currentColor" className="text-primary" />
+                        Promote to Winner
+                        </Button>
+                        )}
+                        {(localState === 'Todo' || localState === 'Done') && (                    <Button
                       variant="default"
                       size="sm"
                       className="h-8 gap-2 bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/20"
@@ -1043,6 +1204,88 @@ export function IssueDetailView({
                 <pre className="max-h-[500px] overflow-auto rounded-md border bg-muted p-4 text-[10px]">{JSON.stringify(result, null, 2)}</pre>
               </DialogContent>
             </Dialog>
+
+            <Dialog open={raceDialogOpen} onOpenChange={setRaceDialogOpen}>
+              <DialogContent className="max-w-md bg-card border-border shadow-2xl">
+                <DialogHeader className="border-b border-border/40 pb-4">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="h-10 w-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shadow-lg shadow-blue-500/5">
+                      <Zap className="text-blue-500 h-5 w-5" fill="currentColor" />
+                    </div>
+                    <div>
+                      <DialogTitle className="text-xl font-bold tracking-tight">Start Parallel Race</DialogTitle>
+                      <DialogDescription className="text-xs text-muted-foreground/70 font-medium">
+                        Select multiple agent providers to work on this issue simultaneously.
+                      </DialogDescription>
+                    </div>
+                  </div>
+                </DialogHeader>
+
+                <div className="py-6 space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    {availableAgents.map((agent) => {
+                      const isSelected = selectedRaceProviders.includes(agent)
+                      return (
+                        <button
+                          key={agent}
+                          onClick={() => {
+                            setSelectedRaceProviders(prev =>
+                              prev.includes(agent)
+                                ? prev.filter(a => a !== agent)
+                                : [...prev, agent]
+                            )
+                          }}
+                          className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${isSelected
+                            ? 'border-blue-500/40 bg-blue-500/5 shadow-inner'
+                            : 'border-white/5 bg-white/[0.02] hover:bg-white/[0.05]'
+                            }`}
+                        >
+                          <div className={`h-4 w-4 rounded-md border flex items-center justify-center transition-all ${isSelected
+                            ? 'bg-blue-500 border-blue-500 shadow-lg shadow-blue-500/40'
+                            : 'bg-black/20 border-white/10'
+                            }`}>
+                            {isSelected && <CheckCircle2 className="h-2.5 w-2.5 text-white" />}
+                          </div>
+                          <div className="flex flex-col text-left">
+                            <span className="text-xs font-bold capitalize text-foreground/80">
+                              {agent}
+                            </span>
+                            <span className="text-[9px] text-muted-foreground uppercase tracking-widest opacity-40">Agent</span>
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/10 space-y-2">
+                    <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-amber-500/60">
+                      <AlertTriangle size={12} />
+                      Operator Note
+                    </div>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      Parallel races will consume tokens from each provider simultaneously. You can stop individual sessions at any time from the Queue.
+                    </p>
+                  </div>
+                </div>
+
+                <DialogFooter className="border-t border-border/40 pt-4">
+                  <Button
+                    variant="ghost"
+                    onClick={() => setRaceDialogOpen(false)}
+                    className="text-xs font-bold uppercase tracking-widest"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleStartRace}
+                    disabled={selectedRaceProviders.length === 0}
+                    className="px-8 bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 text-xs font-bold uppercase tracking-widest"
+                  >
+                    Initiate Race ({selectedRaceProviders.length})
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
         ) : activeTab === 'changes' ? (
           <div className="relative min-h-[400px] rounded-lg border bg-[#1e1e1e] overflow-hidden shadow-inner">
@@ -1066,10 +1309,16 @@ export function IssueDetailView({
                   style={oneDark}
                   customStyle={{ margin: 0, borderRadius: 0, fontSize: '11px', background: 'transparent' }}
                   showLineNumbers={false}
+                  wrapLines={true}
+                  lineProps={lineNumber => {
+                    const line = diff.split('\n')[lineNumber - 1]
+                    if (line?.startsWith('+')) return { style: { display: 'block', backgroundColor: 'rgba(16, 185, 129, 0.1)' } }
+                    if (line?.startsWith('-')) return { style: { display: 'block', backgroundColor: 'rgba(239, 68, 68, 0.1)' } }
+                    return { style: { display: 'block' } }
+                  }}
                 >
                   {diff}
-                </SyntaxHighlighter>
-              ) : (
+                </SyntaxHighlighter>              ) : (
                 <div className="flex flex-col items-center justify-center p-12 text-center">
                   <GitBranch className="h-8 w-8 text-white/5 mb-3" />
                   <p className="text-xs text-muted-foreground/50 tracking-wide">No workspace changes detected.</p>
@@ -1084,24 +1333,39 @@ export function IssueDetailView({
                 <Terminal className="h-3 w-3" />
                 <span>agent-turn-session.log</span>
               </div>
-              {logsLoading && <div className="h-2 w-2 animate-pulse rounded-full bg-primary" />}
-            </div>
-            <div className="max-h-[500px] overflow-auto whitespace-pre-wrap">
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-2.5 w-2.5 text-muted-foreground/40" />
+                  <input
+                    type="text"
+                    placeholder="Filter logs..."
+                    value={logFilter}
+                    onChange={(e) => setLogFilter(e.target.value)}
+                    className="h-6 w-48 rounded bg-white/5 border border-white/10 pl-7 pr-2 text-[10px] text-zinc-300 focus:outline-none focus:ring-1 focus:ring-primary/30"
+                  />
+                </div>
+                {logsLoading && <div className="h-2 w-2 animate-pulse rounded-full bg-primary" />}
+              </div>
+            </div>            <div className="max-h-[500px] overflow-auto whitespace-pre-wrap">
               {logsLoading && !logs ? (
                 <div className="space-y-2">
                   <div className="h-3 w-3/4 animate-pulse rounded bg-zinc-800" />
                   <div className="h-3 w-1/2 animate-pulse rounded bg-zinc-800" />
                   <div className="h-3 w-2/3 animate-pulse rounded bg-zinc-800" />
                 </div>
+              ) : filteredLogs ? (
+                <Ansi>{filteredLogs}</Ansi>
               ) : logs ? (
-                <Ansi>{logs}</Ansi>
+                <div className="flex flex-col items-center justify-center py-12 text-center text-zinc-500 opacity-40">
+                  <Search className="h-8 w-8 mb-3" />
+                  <p className="text-xs tracking-tight uppercase font-black">No matching logs found</p>
+                </div>
               ) : (
                 <div className="flex flex-col items-center justify-center py-12 text-center text-zinc-500">
                   <Terminal className="h-8 w-8 opacity-10 mb-3" />
                   <p className="text-xs tracking-tight">No logs documented for this issue session.</p>
                 </div>
-              )}
-              <div ref={logsEndRef} />
+              )}              <div ref={logsEndRef} />
             </div>
           </div>
         ) : activeTab === 'artifacts' ? (
@@ -1852,17 +2116,32 @@ function WorkspaceMigrationDialog({
 
 export function MetricCard({ title, value, hint, icon }: { title: string; value: string; hint: string; icon: ReactNode }) {
   return (
-    <Card className="relative overflow-hidden border bg-card shadow-lg dark:bg-card">
-      <div className="pointer-events-none absolute -right-10 -top-10 h-16 w-16 rotate-12 rounded-xl border bg-muted/50 dark:bg-muted/50" />
-      <CardHeader className="p-5 pb-2">
-        <CardDescription className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider">
-          <span>{title}</span>
-          {icon}
-        </CardDescription>
-        <CardTitle className="text-3xl font-black tracking-tight">{value}</CardTitle>
+    <Card className="group relative overflow-hidden border border-border/60 bg-gradient-to-br from-card via-card/95 to-muted/20 shadow-lg shadow-black/5 transition-all duration-500 hover:shadow-xl hover:shadow-primary/10 hover:border-primary/30 hover:-translate-y-0.5">
+      {/* Subtle gradient overlay */}
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
+      
+      {/* Decorative corner element */}
+      <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rotate-12 rounded-2xl border border-border/30 bg-muted/30 shadow-inner transition-transform duration-500 group-hover:rotate-6 group-hover:scale-110" />
+      
+      <CardHeader className="relative p-5 pb-3">
+        <div className="flex items-center justify-between">
+          <CardDescription className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground/70">
+            <span className="h-1 w-1 rounded-full bg-primary/60" />
+            {title}
+          </CardDescription>
+          <div className="rounded-lg bg-muted/50 p-1.5 text-primary/70 transition-colors duration-300 group-hover:bg-primary/10 group-hover:text-primary">
+            {icon}
+          </div>
+        </div>
+        <CardTitle className="mt-2 text-3xl font-black tracking-tight tabular-nums transition-transform duration-300 group-hover:scale-105 origin-left">
+          {value}
+        </CardTitle>
       </CardHeader>
-      <CardContent className="px-5 pb-5 pt-0">
-        <p className="text-[11px] text-muted-foreground font-medium leading-none">{hint}</p>
+      <CardContent className="relative px-5 pb-5 pt-0">
+        <div className="flex items-center gap-2">
+          <div className="h-px flex-1 bg-gradient-to-r from-border/50 to-transparent" />
+          <p className="text-[11px] text-muted-foreground/80 font-medium leading-tight">{hint}</p>
+        </div>
       </CardContent>
     </Card>
   )
@@ -1874,6 +2153,7 @@ type QueueRow = {
   state: string
   lane: 'running' | 'retrying'
   session_id: string
+  provider: string
   detail: string
   at: string
 }
@@ -1889,6 +2169,7 @@ function queueRowsFromSnapshot(snapshot: SnapshotPayload | null): QueueRow[] {
     state: row.state,
     lane: 'running',
     session_id: row.session_id ?? 'n/a',
+    provider: row.provider || 'default',
     detail: row.last_message || row.last_event || 'active runtime session',
     at: row.last_event_at || row.started_at || snapshot.generated_at,
   }))
@@ -1899,6 +2180,7 @@ function queueRowsFromSnapshot(snapshot: SnapshotPayload | null): QueueRow[] {
     state: row.state,
     lane: 'retrying',
     session_id: 'retry-queue',
+    provider: row.provider || 'default',
     detail: row.error || `attempt ${row.attempt}`,
     at: row.due_at,
   }))
@@ -2063,6 +2345,47 @@ export function KanbanBoard({
   const orderedColumns = columnOrder.map((id) => columns.find((c) => c.id === id)!)
 
   const filteredList = enrichedIssues.filter(filterItem)
+
+  if (loadingState && enrichedIssues.length === 0) {
+    return (
+      <div className="flex-1 flex flex-col min-h-0 space-y-6">
+        <div className="flex items-center gap-3 border-b border-border/40 pb-4 shrink-0">
+          <Skeleton className="h-8 w-40 rounded-md" />
+          <Skeleton className="h-8 w-40 rounded-md" />
+          <Skeleton className="h-8 w-40 rounded-md" />
+        </div>
+        <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-6 overflow-hidden">
+          {['todo', 'progress', 'done'].map((col) => (
+            <div key={col} className="flex flex-col min-h-0 space-y-4">
+              <div className="flex items-center justify-between px-2 shrink-0">
+                <div className="flex items-center gap-2">
+                  <Skeleton className="h-2 w-2 rounded-full" />
+                  <Skeleton className="h-4 w-20 rounded" />
+                </div>
+                <Skeleton className="h-4 w-6 rounded-full" />
+              </div>
+              <div className="flex-1 space-y-3 overflow-hidden p-1">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="bg-card/40 border border-border/50 rounded-xl p-4 space-y-3">
+                    <div className="flex justify-between items-start">
+                      <Skeleton className="h-4 w-16 rounded" />
+                      <Skeleton className="h-4 w-4 rounded-full" />
+                    </div>
+                    <Skeleton className="h-3 w-full rounded" />
+                    <Skeleton className="h-3 w-2/3 rounded" />
+                    <div className="pt-2 flex gap-2">
+                      <Skeleton className="h-4 w-12 rounded-full" />
+                      <Skeleton className="h-4 w-12 rounded-full" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex-1 flex flex-col min-h-0 space-y-6">
@@ -2513,6 +2836,7 @@ export function OperationsQueueCard({
             <TableHeader className="bg-muted/30 sticky top-0 z-10">
               <TableRow className="hover:bg-transparent">
                 <TableHead className="text-[10px] font-bold uppercase tracking-wider py-3">Issue</TableHead>
+                <TableHead className="text-[10px] font-bold uppercase tracking-wider py-3">Provider</TableHead>
                 <TableHead className="text-[10px] font-bold uppercase tracking-wider py-3">Lane</TableHead>
                 <TableHead className="text-[10px] font-bold uppercase tracking-wider py-3">State</TableHead>
                 <TableHead className="text-[10px] font-bold uppercase tracking-wider py-3 text-center">Session</TableHead>
@@ -2524,19 +2848,19 @@ export function OperationsQueueCard({
               {loadingState
                 ? Array.from({ length: 3 }).map((_, idx) => (
                   <TableRow key={idx}>
-                    <TableCell colSpan={6}>
+                    <TableCell colSpan={7}>
                       <Skeleton className="h-10 w-full rounded-md" />
                     </TableCell>
                   </TableRow>
                 ))
                 : rows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-32 text-center text-muted-foreground italic text-xs uppercase tracking-widest opacity-40">
+                    <TableCell colSpan={7} className="h-32 text-center text-muted-foreground italic text-xs uppercase tracking-widest opacity-40">
                       No active sessions in queue
                     </TableCell>
                   </TableRow>
                 ) : rows.map((row) => (
-                  <TableRow key={`${row.lane}-${row.issue_id}`} className="group transition-colors hover:bg-muted/30">
+                  <TableRow key={`${row.lane}-${row.issue_id}-${row.provider}`} className="group transition-colors hover:bg-muted/30">
                     <TableCell className="font-bold font-mono text-xs">
                       <button
                         type="button"
@@ -2545,6 +2869,12 @@ export function OperationsQueueCard({
                       >
                         {row.issue_identifier}
                       </button>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1.5">
+                        <Cpu className="h-3 w-3 text-muted-foreground/40" />
+                        <span className="text-[10px] font-bold capitalize text-foreground/70">{row.provider}</span>
+                      </div>
                     </TableCell>
                     <TableCell>
                       <Badge variant={row.lane === 'running' ? 'default' : 'outline'} className={`text-[9px] uppercase tracking-tighter h-5 px-1.5 ${row.lane === 'running' ? '' : 'text-amber-600 border-amber-500/20'}`}>

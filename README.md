@@ -17,7 +17,8 @@ Traditional agent execution often relies on manual scripts, lacking isolation, o
 
 ## ✨ Key Features
 
-- **Pluggable Tracker Adapters**: Generic interface for integrating with any issue tracker (Linear, GitHub, or custom internal implementations).
+- **Native Tracker Parity**: Built-in high-performance adapters for Linear and GitHub, plus a local SQLite tracker with 1:1 state parity.
+- **Audit & History Timeline**: Automatic logging of all issue transitions (state, priority, assignee) for clear task genealogy.
 - **Dynamic Workflows**: Hot-reloadable `WORKFLOW.md` for updating prompts and runtime limits without service restarts.
 - **Advanced Orchestration**: Bounded concurrency (global and per-state thresholds), prioritization, and exponential backoff retries.
 - **Workspace Isolation**: Automated directory sanitization, path guarding (traversal/symlink protection), and lifecycle hooks.
@@ -45,7 +46,7 @@ Every agent session is isolated within a dedicated workspace.
 
 ### 3. Communication Protocols
 - **Agent-Server**: Stateless JSON-RPC over `stdin`/`stdout` handling initialization, thread management, and automated action approvals.
-- **Desktop-Backend**: Hybrid synchronization using **SSE (Server-Sent Events)** for real-time timeline updates with an automatic **2s Snapshot Polling** fallback for restricted environments.
+- **Desktop-Backend**: Real-time observability via **SSE (Server-Sent Events)** and detailed **Activity Feeds** for per-issue audit trails.
 
 ## 📂 Project Structure
 

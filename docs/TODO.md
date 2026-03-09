@@ -11,25 +11,25 @@ This document tracks all unfinished features, known bugs, and architectural gaps
 
 ### 2. Multi-Agent Coordination
 - [x] **UI Override**: Added a "Provider Selector" to the Issue Inspector allowing operators to manually swap agent providers (Claude, Gemini, etc.) mid-session.
-- [ ] **Parallel Races**: Implement a mode where two agents (e.g., Claude and Gemini) work on the same issue in parallel, and the human picks the best result.
-- [ ] **Agent Handoffs**: Add a mechanism for an agent to explicitly request a handoff to another model (e.g., "This requires massive context, send to Gemini").
+- [x] **Parallel Races**: Implemented a "Race Mode" where multiple agents work on the same issue simultaneously in isolated workspaces. Added a "Promote to Winner" feature to finalize the best result.
+- [x] **Agent Handoffs**: Added the `request_handoff` tool allowing models to explicitly delegate tasks to other providers (e.g. "handoff to Gemini for large context").
 
 ### 3. Stability & Scalability
 - [x] **DB Persistence for MCP**: MCP server configurations are now stored in the SQLite database and can be managed (add/remove) directly from the Agents tab UI.
-- [ ] **Artifact Cleanup**: Workspaces are currently cleaned up on completion, but there's no "Garbage Collector" for stalled workspaces if the backend crashes.
+- [x] **Artifact Cleanup**: Implemented a background Garbage Collector that periodically (every 1h) sweeps the workspace root and removes orphaned directories not tied to any active or pending sessions.
 
 ## 🟡 Medium Priority: Enhancements
 
 ### 4. Developer Experience
-- [ ] **Real-time Log Search**: Add a search/filter bar to the live SSE log stream in the Issue Inspector.
-- [ ] **Diff Highlighting**: Improve the `Prism` renderer for `diff` files to support better addition/removal color contrast.
-- [ ] **Keyboard Shortcut Mapper**: A UI section in Settings to customize the `⌘ K` and other pro-tier shortcuts.
+- [x] **Real-time Log Search**: Added a search/filter bar to the live SSE log stream in the Issue Inspector, allowing operators to isolate specific events or errors.
+- [x] **Diff Highlighting**: Improved the `Prism` renderer for `diff` files with line-level background coloring (green/red) for better contrast.
+- [x] **Keyboard Shortcut Mapper**: Added a UI section in Settings to view and manage global shortcuts like `⌘ K` and sidebar toggles.
 
 ### 5. Analytics
-- [ ] **Cost Calculation**: Map token usage to actual USD costs per provider (Claude vs. Gemini) in the Analytics Dashboard.
-- [ ] **Project Health Scores**: Calculate a "Stability Score" for projects based on agent success/retry ratios.
+- [x] **Cost Calculation**: Mapped token usage to real-world USD costs per provider (Claude, Gemini, Codex) in the Analytics Dashboard.
+- [x] **Project Health Scores**: Calculated a "Stability Score" for projects based on agent success/retry ratios, visible in Project Grid and Detail views.
 
 ## 🟢 Low Priority: Visual Polish
-- [ ] **Animated D3 Transitions**: Add smooth transitions when nodes are added/removed from the architecture graph.
-- [ ] **Skeleton Refinement**: Add more accurate skeleton shapes for the Kanban board during initial load.
-- [ ] **Theme Sync**: Detect system-level (OS) light/dark mode changes and update the UI automatically.
+- [x] **Animated D3 Transitions**: Added smooth entry/exit animations and transitions to the architecture graph nodes and links.
+- [x] **Skeleton Refinement**: Implemented realistic ghost-card skeletons for the Kanban board loading states.
+- [x] **Theme Sync**: The app now automatically detects and responds to system-level (OS) light/dark mode changes.

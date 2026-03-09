@@ -425,6 +425,12 @@ func extractKind(provider Provider, source string, payload map[string]any) strin
 		}
 	}
 
+	if provider == ProviderGemini {
+		if eventType := firstString(payload, "type", "event"); eventType != "" {
+			return eventType
+		}
+	}
+
 	return kind
 }
 

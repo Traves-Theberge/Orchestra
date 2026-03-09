@@ -5,6 +5,20 @@ import { Badge } from '@/components/ui/badge'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Button } from '@/components/ui/button'
 
+const PROVIDER_PRICES: Record<string, { input: number; output: number }> = {
+    claude: { input: 3.0, output: 15.0 }, // Claude 3.7 Sonnet
+    gemini: { input: 0.075, output: 0.30 }, // Gemini 2.0 Flash (approx)
+    codex: { input: 2.0, output: 10.0 }, // Default custom pricing
+    default: { input: 1.0, output: 5.0 }
+}
+
+function calculateCost(tokens: number, type: 'input' | 'output', provider?: string): number {
+    const p = provider?.toLowerCase() || 'default'
+    const rates = PROVIDER_PRICES[p] || PROVIDER_PRICES.default
+    const rate = type === 'input' ? rates.input : rates.output
+    return (tokens / 1_000_000) * rate
+}
+
 interface AnalyticsDashboardProps {
     stats: GlobalStats | null
     loading: boolean
@@ -54,7 +68,9 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ stats, l
                     </div>
                     <p className="text-[11px] font-bold text-muted-foreground mb-1 uppercase tracking-widest leading-none">Total Input</p>
                     <h3 className="text-3xl font-black leading-tight">{(stats.total_input / 1000).toFixed(1)}k</h3>
-                    <p className="text-[11px] text-emerald-500/70 font-mono font-bold uppercase tracking-tight leading-none">tokens ingested</p>
+                    <p className="text-[11px] text-emerald-500/70 font-mono font-bold uppercase tracking-tight leading-none">
+                        ~${calculateCost(stats.total_input, 'input').toFixed(2)} USD
+                    </p>
                 </div>
 
                 <div className="bg-background/40 backdrop-blur-md border border-white/10 rounded-xl p-5 relative overflow-hidden group shadow-sm">
@@ -63,7 +79,9 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ stats, l
                     </div>
                     <p className="text-[11px] font-bold text-muted-foreground mb-1 uppercase tracking-widest leading-none">Total Output</p>
                     <h3 className="text-3xl font-black leading-tight">{(stats.total_output / 1000).toFixed(1)}k</h3>
-                    <p className="text-[11px] text-primary/70 font-mono font-bold uppercase tracking-tight leading-none">tokens generated</p>
+                    <p className="text-[11px] text-primary/70 font-mono font-bold uppercase tracking-tight leading-none">
+                        ~${calculateCost(stats.total_output, 'output').toFixed(2)} USD
+                    </p>
                 </div>
 
                 <div className="bg-background/40 backdrop-blur-md border border-white/10 rounded-xl p-5 relative overflow-hidden group shadow-sm">
@@ -73,6 +91,17 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ stats, l
                     <p className="text-[11px] font-bold text-muted-foreground mb-1 uppercase tracking-widest leading-none">Avg. Efficiency</p>
                     <h3 className="text-3xl font-black leading-tight">{((stats.total_output / Math.max(stats.total_input, 1)) * 100).toFixed(1)}%</h3>
                     <p className="text-[11px] text-blue-500/70 font-mono font-bold uppercase tracking-tight leading-none">output ratio</p>
+                </div>
+
+                <div className="bg-background/40 backdrop-blur-md border border-primary/20 rounded-xl p-5 relative overflow-hidden group shadow-md ring-1 ring-primary/10">
+                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-primary">
+                        <TrendingUp size={32} />
+                    </div>
+                    <p className="text-[11px] font-bold text-primary/60 mb-1 uppercase tracking-widest leading-none">Total Cost</p>
+                    <h3 className="text-3xl font-black leading-tight text-primary">
+                        ${(calculateCost(stats.total_input, 'input') + calculateCost(stats.total_output, 'output')).toFixed(2)}
+                    </h3>
+                    <p className="text-[11px] text-muted-foreground font-mono font-bold uppercase tracking-tight leading-none">estimated usd</p>
                 </div>
             </div>
 

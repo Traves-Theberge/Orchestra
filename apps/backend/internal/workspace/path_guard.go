@@ -11,7 +11,7 @@ import (
 
 var sanitizeIssueIDPattern = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
 
-func WorkspacePath(root string, issueIdentifier string) (string, error) {
+func WorkspacePath(root string, issueIdentifier string, provider string) (string, error) {
 	if strings.TrimSpace(issueIdentifier) == "" {
 		return "", errors.New("issue identifier is required")
 	}
@@ -22,7 +22,11 @@ func WorkspacePath(root string, issueIdentifier string) (string, error) {
 	}
 
 	normalized := sanitizeIssueIDPattern.ReplaceAllString(strings.TrimSpace(issueIdentifier), "_")
-	path := filepath.Join(absRoot, normalized)
+	dirName := normalized
+	if provider != "" {
+		dirName = fmt.Sprintf("%s-%s", normalized, strings.ToLower(provider))
+	}
+	path := filepath.Join(absRoot, dirName)
 
 	if err := ValidateWorkspacePath(absRoot, path); err != nil {
 		return "", err

@@ -109,6 +109,8 @@ type ProjectStats struct {
 	TotalSessions int64 `json:"total_sessions"`
 	TotalInput    int64 `json:"total_input"`
 	TotalOutput   int64 `json:"total_output"`
+	SuccessCount  int64 `json:"success_count"`
+	FailureCount  int64 `json:"failure_count"`
 	LastActive    string `json:"last_active"`
 }
 
@@ -134,16 +136,18 @@ func (db *DB) GetProjectStats(ctx context.Context, projectID string) (ProjectSta
 	query := `
 		SELECT 
 			COUNT(DISTINCT s.id),
-			SUM(e.input_tokens),
-			SUM(e.output_tokens),
-			MAX(s.created_at)
+			COALESCE(SUM(e.input_tokens), 0),
+			COALESCE(SUM(e.output_tokens), 0),
+			MAX(s.created_at),
+			COUNT(DISTINCT CASE WHEN e.kind = 'run_succeeded' THEN s.id END),
+			COUNT(DISTINCT CASE WHEN e.kind = 'run_failed' THEN s.id END)
 		FROM sessions s
 		LEFT JOIN events e ON s.id = e.session_id
 		WHERE s.project_id = ?
 	`
 	var stats ProjectStats
 	var lastActive sql.NullString
-	err := db.QueryRowContext(ctx, query, projectID).Scan(&stats.TotalSessions, &stats.TotalInput, &stats.TotalOutput, &lastActive)
+	err := db.QueryRowContext(ctx, query, projectID).Scan(&stats.TotalSessions, &stats.TotalInput, &stats.TotalOutput, &lastActive, &stats.SuccessCount, &stats.FailureCount)
 	if err != nil {
 		return stats, err
 	}

@@ -40,6 +40,7 @@ import {
   updateAgentConfig,
   searchIssues,
   stopIssueSession,
+  startIssueRace,
   toDisplayError,
   updateIssue,
   createProject,
@@ -47,7 +48,7 @@ import {
   deleteProject,
   deleteIssue,
   fetchSessionDetail,
-  type BackendConfig,
+  fetchMCPTools,
 } from '@/lib/orchestra-client'
 import { startRuntimeSync } from '@/lib/runtime-sync'
 import { appendTimelineEvent, applySnapshotUpdate } from '@/lib/runtime-store'
@@ -231,6 +232,15 @@ export default function App() {
     }
     window.localStorage.setItem('orchestra-theme', theme)
   }, [theme])
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    const handleChange = (e: MediaQueryListEvent) => {
+      setTheme(e.matches ? 'dark' : 'light')
+    }
+    mediaQuery.addEventListener('change', handleChange)
+    return () => mediaQuery.removeEventListener('change', handleChange)
+  }, [])
 
   useEffect(() => {
     let mounted = true
@@ -584,6 +594,18 @@ export default function App() {
       void executeIssueLookup(identifier)
     } catch (err) {
       setErrorMessage(`stop session failed: ${toDisplayError(err)}`)
+    }
+  }
+
+  const handleStartRace = async (identifier: string, providers: string[]) => {
+    if (!config) return
+    try {
+      await startIssueRace(config, identifier, providers)
+      setStatusMessage(`Parallel race for ${identifier} initiated.`)
+      void handleRefresh()
+      void executeIssueLookup(identifier)
+    } catch (err) {
+      setErrorMessage(`start race failed: ${toDisplayError(err)}`)
     }
   }
 
@@ -1084,10 +1106,12 @@ export default function App() {
                 result={issueLookupResult}
                 config={config}
                 timeline={timeline}
+                snapshot={snapshot}
                 availableAgents={availableAgents}
                 allTools={allTools}
                 onUpdate={(updates) => handleIssueUpdate(issueLookupId, updates)}
                 onStopSession={(p) => handleStopSession(issueLookupId, p)}
+                onStartRace={(providers) => handleStartRace(issueLookupId, providers)}
               />
             ) : (
               <p className="text-center text-sm text-muted-foreground py-10">No issue data available.</p>

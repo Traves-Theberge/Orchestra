@@ -22,7 +22,7 @@ func Load() (Config, error) {
 		"codex":    "codex exec --skip-git-repo-check --json {{prompt}}",
 		"claude":   "claude -p {{prompt}} --output-format json",
 		"opencode": "opencode run {{prompt}} --format json",
-		"gemini":   "gemini run {{prompt}} --json",
+		"gemini":   "gemini --output-format stream-json {{prompt}}",
 	}
 
 	host := getenvOrEmpty("ORCHESTRA_SERVER_HOST")

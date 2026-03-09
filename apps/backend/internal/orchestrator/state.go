@@ -355,16 +355,16 @@ func (s *Service) SetWorkspaceRoot(root string) {
 	s.workspaceRoot = root
 }
 
-func (s *Service) ListArtifacts(issueIdentifier string) ([]string, error) {
-	return s.workspaceService.ListArtifacts(issueIdentifier)
+func (s *Service) ListArtifacts(issueIdentifier string, provider string) ([]string, error) {
+	return s.workspaceService.ListArtifacts(issueIdentifier, provider)
 }
 
-func (s *Service) GetArtifactContent(issueIdentifier string, relPath string) ([]byte, error) {
-	return s.workspaceService.GetArtifactContent(issueIdentifier, relPath)
+func (s *Service) GetArtifactContent(issueIdentifier string, provider string, relPath string) ([]byte, error) {
+	return s.workspaceService.GetArtifactContent(issueIdentifier, provider, relPath)
 }
 
-func (s *Service) GetDiff(issueIdentifier string) (string, error) {
-	return s.workspaceService.GetDiff(issueIdentifier)
+func (s *Service) GetDiff(issueIdentifier string, provider string) (string, error) {
+	return s.workspaceService.GetDiff(issueIdentifier, provider)
 }
 
 func (s *Service) UpdateAgentConfig(commands map[string]string, provider string) {
@@ -747,7 +747,7 @@ func (s *Service) enqueueCandidates(candidates []tracker.Issue) {
 			Title:           issue.Title,
 			State:           issue.State,
 			AssigneeID:      issue.AssigneeID,
-			Provider:        s.agentProvider,
+			Provider:        targetProvider,
 			DisabledTools:   append([]string(nil), issue.DisabledTools...),
 			StartedAt:       now,
 			LastEventAt:     now,
@@ -1574,6 +1574,73 @@ func (s *Service) FetchIssueHistory(ctx context.Context, issueID string) ([]map[
 		})
 	}
 	return history, nil
+}
+
+func (s *Service) StartParallelRace(ctx context.Context, identifier string, providers []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	client := s.trackerClient
+	if client == nil {
+		return fmt.Errorf("tracker client not available")
+	}
+
+	issues, err := client.SearchIssues(ctx, identifier)
+	if err != nil || len(issues) == 0 {
+		return fmt.Errorf("issue not found")
+	}
+	issue := issues[0]
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	for _, p := range providers {
+		p = strings.TrimSpace(strings.ToLower(p))
+		if p == "" {
+			continue
+		}
+
+		// Check if already running this specific provider
+		exists := false
+		for _, r := range s.running {
+			if r.IssueID == issue.ID && r.Provider == p {
+				exists = true
+				break
+			}
+		}
+		if exists {
+			continue
+		}
+
+		entry := RunningEntry{
+			IssueID:         issue.ID,
+			IssueIdentifier: issue.Identifier,
+			Title:           issue.Title,
+			State:           issue.State,
+			AssigneeID:      issue.AssigneeID,
+			Provider:        p,
+			DisabledTools:   append([]string(nil), issue.DisabledTools...),
+			StartedAt:       now,
+			LastEventAt:     now,
+			LastEvent:       "race_started",
+			LastMessage:     fmt.Sprintf("Parallel race started with %s", p),
+		}
+		s.running = append(s.running, entry)
+	}
+
+	return nil
+}
+
+func (s *Service) GetActiveWorkspaceIdentifiers() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	
+	ids := make([]string, 0, len(s.running)+len(s.retrying))
+	for _, entry := range s.running {
+		ids = append(ids, entry.IssueIdentifier)
+	}
+	for _, entry := range s.retrying {
+		ids = append(ids, entry.IssueIdentifier)
+	}
+	return ids
 }
 
 func (s *Service) SetMCPRegistry(r *mcp.Registry, servers map[string]string) {

@@ -186,6 +186,18 @@ export async function stopIssueSession(config: BackendConfig, issueIdentifier: s
   })
 }
 
+export async function startIssueRace(config: BackendConfig, issueIdentifier: string, providers: string[]): Promise<void> {
+  const normalized = issueIdentifier.trim()
+  if (normalized === '') {
+    throw new APIError('invalid_request', 'issue identifier is required')
+  }
+  await requestJSON<void>(config, `/api/v1/issues/${encodeURIComponent(normalized)}/race`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ providers }),
+  })
+}
+
 export async function fetchState(config: BackendConfig): Promise<SnapshotPayload> {
   const payload = await requestJSON<unknown>(config, '/api/v1/state')
   return normalizeSnapshotPayload(payload)
@@ -300,12 +312,15 @@ export async function fetchIssueDetail(config: BackendConfig, issueIdentifier: s
   return requestJSON<any>(config, `/api/v1/issues/${encodeURIComponent(normalized)}`)
 }
 
-export async function fetchIssueLogs(config: BackendConfig, issueIdentifier: string): Promise<string> {
+export async function fetchIssueLogs(config: BackendConfig, issueIdentifier: string, provider?: string): Promise<string> {
   const normalized = issueIdentifier.trim()
   if (normalized === '') {
     throw new APIError('invalid_request', 'issue identifier is required')
   }
-  const response = await fetch(new URL(`/api/v1/issues/${encodeURIComponent(normalized)}/logs`, config.baseUrl).toString(), {
+  const url = new URL(`/api/v1/issues/${encodeURIComponent(normalized)}/logs`, config.baseUrl)
+  if (provider) url.searchParams.set('provider', provider)
+  
+  const response = await fetch(url.toString(), {
     headers: buildHeaders(config),
   })
 
@@ -316,12 +331,15 @@ export async function fetchIssueLogs(config: BackendConfig, issueIdentifier: str
   return response.text()
 }
 
-export async function fetchIssueDiff(config: BackendConfig, issueIdentifier: string): Promise<string> {
+export async function fetchIssueDiff(config: BackendConfig, issueIdentifier: string, provider?: string): Promise<string> {
   const normalized = issueIdentifier.trim()
   if (normalized === '') {
     throw new APIError('invalid_request', 'issue identifier is required')
   }
-  const response = await fetch(new URL(`/api/v1/issues/${encodeURIComponent(normalized)}/diff`, config.baseUrl).toString(), {
+  const url = new URL(`/api/v1/issues/${encodeURIComponent(normalized)}/diff`, config.baseUrl)
+  if (provider) url.searchParams.set('provider', provider)
+
+  const response = await fetch(url.toString(), {
     headers: buildHeaders(config),
   })
 
@@ -332,21 +350,27 @@ export async function fetchIssueDiff(config: BackendConfig, issueIdentifier: str
   return response.text()
 }
 
-export async function fetchArtifacts(config: BackendConfig, issueIdentifier: string): Promise<string[]> {
+export async function fetchArtifacts(config: BackendConfig, issueIdentifier: string, provider?: string): Promise<string[]> {
   const normalized = issueIdentifier.trim()
   if (normalized === '') {
     throw new APIError('invalid_request', 'issue identifier is required')
   }
-  const payload = await requestJSON<{ artifacts: string[] }>(config, `/api/v1/issues/${encodeURIComponent(normalized)}/artifacts`)
+  const url = new URL(`/api/v1/issues/${encodeURIComponent(normalized)}/artifacts`, config.baseUrl)
+  if (provider) url.searchParams.set('provider', provider)
+
+  const payload = await requestJSON<{ artifacts: string[] }>(config, url.pathname + url.search)
   return payload.artifacts || []
 }
 
-export async function fetchArtifactContent(config: BackendConfig, issueIdentifier: string, relPath: string): Promise<string> {
+export async function fetchArtifactContent(config: BackendConfig, issueIdentifier: string, relPath: string, provider?: string): Promise<string> {
   const normalized = issueIdentifier.trim()
   if (normalized === '') {
     throw new APIError('invalid_request', 'issue identifier is required')
   }
-  const response = await fetch(new URL(`/api/v1/issues/${encodeURIComponent(normalized)}/artifacts/${relPath}`, config.baseUrl).toString(), {
+  const url = new URL(`/api/v1/issues/${encodeURIComponent(normalized)}/artifacts/${relPath}`, config.baseUrl)
+  if (provider) url.searchParams.set('provider', provider)
+
+  const response = await fetch(url.toString(), {
     headers: buildHeaders(config),
   })
 

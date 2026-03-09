@@ -81,37 +81,55 @@ export const D3ArchitectureGraph: React.FC = () => {
             .attr('stroke-opacity', 0.4)
             .selectAll('line')
             .data(links)
-            .join('line')
+            .join(
+                enter => enter.append('line')
+                    .attr('stroke-opacity', 0)
+                    .call(enter => enter.transition().duration(750).attr('stroke-opacity', 0.4)),
+                update => update,
+                exit => exit.transition().duration(500).attr('stroke-opacity', 0).remove()
+            )
             .attr('stroke-width', d => Math.sqrt(d.value) * 2)
 
         const node = svg.append('g')
             .selectAll<SVGGElement, Node>('g')
             .data(nodes)
-            .join('g')
+            .join(
+                enter => {
+                    const g = enter.append('g')
+                    g.attr('opacity', 0)
+                        .call(enter => enter.transition().duration(750).attr('opacity', 1))
+                    
+                    g.append('circle')
+                        .attr('r', 0)
+                        .attr('fill', d => {
+                            if (d.group === 'core') return '#10b981'
+                            if (d.group === 'ui') return '#3b82f6'
+                            return '#f59e0b'
+                        })
+                        .attr('stroke', '#18181b')
+                        .attr('stroke-width', 2)
+                        .transition().duration(750)
+                        .attr('r', 10)
+
+                    g.append('text')
+                        .attr('x', 14)
+                        .attr('y', 4)
+                        .text(d => d.label)
+                        .style('font-size', '13px')
+                        .style('font-weight', '600')
+                        .style('fill', '#e4e4e7')
+                        .style('paint-order', 'stroke')
+                        .style('stroke', '#18181b')
+                        .style('stroke-width', '3px')
+                        .style('stroke-linecap', 'round')
+                        .style('stroke-linejoin', 'round')
+                    
+                    return g
+                },
+                update => update,
+                exit => exit.transition().duration(500).attr('opacity', 0).remove()
+            )
             .call(drag(simulation) as any)
-
-        node.append('circle')
-            .attr('r', 10)
-            .attr('fill', d => {
-                if (d.group === 'core') return '#10b981'
-                if (d.group === 'ui') return '#3b82f6'
-                return '#f59e0b'
-            })
-            .attr('stroke', '#18181b')
-            .attr('stroke-width', 2)
-
-        node.append('text')
-            .attr('x', 14)
-            .attr('y', 4)
-            .text(d => d.label)
-            .style('font-size', '13px')
-            .style('font-weight', '600')
-            .style('fill', '#e4e4e7')
-            .style('paint-order', 'stroke')
-            .style('stroke', '#18181b')
-            .style('stroke-width', '3px')
-            .style('stroke-linecap', 'round')
-            .style('stroke-linejoin', 'round')
 
         const radius = 10;
         simulation.on('tick', () => {
