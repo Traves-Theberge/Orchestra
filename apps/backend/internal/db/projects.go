@@ -46,20 +46,25 @@ func (db *DB) UpsertProject(ctx context.Context, rootPath string, remoteURL stri
 	return id, nil
 }
 
-// RecordSession initializes a telemetry session and ties it to a project.
-func (db *DB) RecordSession(ctx context.Context, sessionID, projectID, sessionUUID, provider, branch string) error {
+// RecordSession initializes a telemetry session and ties it to a project and issue.
+func (db *DB) RecordSession(ctx context.Context, sessionID, projectID, issueID, sessionUUID, provider, branch string) error {
 	var prjID *string
 	if projectID != "" {
 		prjID = &projectID
 	}
+	var issID *string
+	if issueID != "" {
+		issID = &issueID
+	}
 	
 	query := `
-		INSERT INTO sessions (id, project_id, session_uuid, provider, branch)
-		VALUES (?, ?, ?, ?, ?)
+		INSERT INTO sessions (id, project_id, issue_id, session_uuid, provider, branch)
+		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET 
-			project_id = CASE WHEN sessions.project_id IS NULL OR sessions.project_id = '' THEN excluded.project_id ELSE sessions.project_id END
+			project_id = CASE WHEN sessions.project_id IS NULL OR sessions.project_id = '' THEN excluded.project_id ELSE sessions.project_id END,
+			issue_id = CASE WHEN sessions.issue_id IS NULL OR sessions.issue_id = '' THEN excluded.issue_id ELSE sessions.issue_id END
 	`
-	_, err := db.ExecContext(ctx, query, sessionID, prjID, sessionUUID, provider, branch)
+	_, err := db.ExecContext(ctx, query, sessionID, prjID, issID, sessionUUID, provider, branch)
 	return err
 }
 
@@ -93,6 +98,77 @@ func (db *DB) RecordEvent(ctx context.Context, eventID, sessionID, kind, message
 
 	_, err := db.ExecContext(ctx, query, eventID, sessionID, kind, message, raw, inputTokens, outputTokens, tsTime)
 	return err
+}
+
+// PruneEvents removes events older than the specified duration
+func (db *DB) PruneEvents(ctx context.Context, maxAgeDays int) (int64, error) {
+	query := `DELETE FROM events WHERE timestamp < date('now', '-' || ? || ' days')`
+	res, err := db.ExecContext(ctx, query, maxAgeDays)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// GetUnifiedHistory returns a combined timeline of issue metadata changes and agent events
+func (db *DB) GetUnifiedHistory(ctx context.Context, issueID string) ([]map[string]any, error) {
+	query := `
+		SELECT 
+			'metadata' as source,
+			id,
+			user_id as provider,
+			action as kind,
+			COALESCE(old_value || ' -> ' || new_value, action) as message,
+			0 as input_tokens,
+			0 as output_tokens,
+			timestamp
+		FROM issue_history
+		WHERE issue_id = ?
+		
+		UNION ALL
+		
+		SELECT 
+			'agent' as source,
+			e.id,
+			s.provider,
+			e.kind,
+			e.message,
+			e.input_tokens,
+			e.output_tokens,
+			e.timestamp
+		FROM events e
+		JOIN sessions s ON e.session_id = s.id
+		WHERE s.issue_id = ?
+		
+		ORDER BY timestamp ASC
+	`
+
+	rows, err := db.QueryContext(ctx, query, issueID, issueID)
+	if err != nil {
+		return nil, fmt.Errorf("query unified history: %w", err)
+	}
+	defer rows.Close()
+
+	var history []map[string]any
+	for rows.Next() {
+		var source, id, provider, kind, message, timestamp string
+		var inputTokens, outputTokens int
+		if err := rows.Scan(&source, &id, &provider, &kind, &message, &inputTokens, &outputTokens, &timestamp); err != nil {
+			return nil, fmt.Errorf("scan unified history row: %w", err)
+		}
+
+		history = append(history, map[string]any{
+			"source":        source,
+			"id":            id,
+			"provider":      provider,
+			"kind":          kind,
+			"message":       message,
+			"input_tokens":  inputTokens,
+			"output_tokens": outputTokens,
+			"timestamp":     timestamp,
+		})
+	}
+	return history, nil
 }
 
 type Project struct {

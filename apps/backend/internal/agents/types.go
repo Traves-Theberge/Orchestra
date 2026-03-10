@@ -15,6 +15,7 @@ const (
 )
 
 type TurnRequest struct {
+	SessionID       string
 	Workspace       string
 	WorkspaceRoot   string
 	Prompt          string
@@ -36,6 +37,7 @@ type TokenUsage struct {
 
 type Event struct {
 	Provider  Provider       `json:"provider"`
+	SessionID string         `json:"session_id,omitempty"`
 	Kind      string         `json:"kind"`
 	Message   string         `json:"message,omitempty"`
 	Raw       map[string]any `json:"raw,omitempty"`

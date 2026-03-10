@@ -13,7 +13,7 @@ The default landing view is designed for real-time monitoring and high-level fle
 ## 📋 Task Board (`KanbanBoard`)
 
 A visual, drag-and-drop interface for managing issue states.
-- **State Mapping**: Maps standard tracker states to visual columns (e.g., `Todo`, `In Progress`, `Done`).
+- **State Mapping**: Maps standard Linear states to visual columns (e.g., `Todo`, `In Progress`, `Done`).
 - **Interactive Triggers**: Dragging an issue into the `In Progress` column triggers a backend API call to update the issue state, which automatically provisions a workspace and dispatches an agent.
 
 ## 📂 Project Management (`ProjectGrid` & `ProjectDetailView`)

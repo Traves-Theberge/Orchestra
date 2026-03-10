@@ -27,9 +27,19 @@ func NewCommandRunner(provider Provider, command string) *CommandRunner {
 	return &CommandRunner{provider: provider, command: strings.TrimSpace(command)}
 }
 
+const (
+	MaxOutputSize = 5 * 1024 * 1024 // 5MB cap on raw output
+	MaxEventCount = 2000           // 2000 events max per turn
+)
+
 func (r *CommandRunner) RunTurn(ctx context.Context, request TurnRequest, onEvent EventHandler) (TurnResult, error) {
 	if err := workspace.ValidateWorkspacePath(request.WorkspaceRoot, request.Workspace); err != nil {
 		return TurnResult{}, fmt.Errorf("invalid workspace path: %w", err)
+	}
+
+	sessionID := request.SessionID
+	if sessionID == "" {
+		sessionID = fmt.Sprintf("%s-%d", request.IssueIdentifier, time.Now().UnixNano())
 	}
 
 	commandLine := strings.TrimSpace(r.command)
@@ -95,6 +105,9 @@ func (r *CommandRunner) RunTurn(ctx context.Context, request TurnRequest, onEven
 	collector := &outputCollector{}
 	var streamErr error
 	var streamErrMu sync.Mutex
+	var eventCount int
+	var eventCountMu sync.Mutex
+
 	setStreamErr := func(err error) {
 		if err == nil {
 			return
@@ -119,8 +132,18 @@ func (r *CommandRunner) RunTurn(ctx context.Context, request TurnRequest, onEven
 			if len(sseDataLines) == 0 {
 				return
 			}
+
+			eventCountMu.Lock()
+			if eventCount >= MaxEventCount {
+				eventCountMu.Unlock()
+				return
+			}
+			eventCount++
+			eventCountMu.Unlock()
+
 			payload := strings.Join(sseDataLines, "\n")
 			event := parseLineToEvent(r.provider, source, payload)
+			event.SessionID = sessionID
 			if currentSSEEvent != "" && event.Kind == source {
 				event.Kind = currentSSEEvent
 			}
@@ -135,7 +158,11 @@ func (r *CommandRunner) RunTurn(ctx context.Context, request TurnRequest, onEven
 		}
 		for scanner.Scan() {
 			line := scanner.Text()
-			collector.append(line)
+			if !collector.append(line) {
+				setStreamErr(fmt.Errorf("agent exceeded maximum output size (%d bytes)", MaxOutputSize))
+				return
+			}
+
 			trimmed := strings.TrimSpace(line)
 
 			if strings.HasPrefix(trimmed, "event:") {
@@ -144,7 +171,16 @@ func (r *CommandRunner) RunTurn(ctx context.Context, request TurnRequest, onEven
 				if currentSSEEvent == "" {
 					currentSSEEvent = source
 				}
-				event := Event{Provider: r.provider, Kind: currentSSEEvent, Timestamp: time.Now().UTC()}
+
+				eventCountMu.Lock()
+				if eventCount >= MaxEventCount {
+					eventCountMu.Unlock()
+					continue
+				}
+				eventCount++
+				eventCountMu.Unlock()
+
+				event := Event{Provider: r.provider, SessionID: sessionID, Kind: currentSSEEvent, Timestamp: time.Now().UTC()}
 				if onEvent != nil {
 					onEvent(event)
 				}
@@ -177,7 +213,16 @@ func (r *CommandRunner) RunTurn(ctx context.Context, request TurnRequest, onEven
 				continue
 			}
 
+			eventCountMu.Lock()
+			if eventCount >= MaxEventCount {
+				eventCountMu.Unlock()
+				continue
+			}
+			eventCount++
+			eventCountMu.Unlock()
+
 			event := parseLineToEvent(r.provider, source, line)
+			event.SessionID = sessionID
 			if currentSSEEvent != "" && event.Kind == source {
 				event.Kind = currentSSEEvent
 			}
@@ -216,7 +261,7 @@ func (r *CommandRunner) RunTurn(ctx context.Context, request TurnRequest, onEven
 
 	result := TurnResult{
 		Provider:  r.provider,
-		SessionID: fmt.Sprintf("%s-%d", request.IssueIdentifier, time.Now().UnixNano()),
+		SessionID: sessionID,
 		ExitCode:  exitCode,
 		Output:    collector.output(),
 		Usage:     collector.usage(),
@@ -270,15 +315,21 @@ func detectBlockingEvent(event Event) (string, bool) {
 }
 
 type outputCollector struct {
-	mu    sync.Mutex
-	lines []string
-	used  TokenUsage
+	mu        sync.Mutex
+	lines     []string
+	used      TokenUsage
+	totalSize int
 }
 
-func (c *outputCollector) append(line string) {
+func (c *outputCollector) append(line string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.totalSize+len(line) > MaxOutputSize {
+		return false
+	}
 	c.lines = append(c.lines, line)
+	c.totalSize += len(line)
+	return true
 }
 
 func (c *outputCollector) mergeUsage(usage TokenUsage) {

@@ -18,7 +18,7 @@ The `NewRouter` function mounts several critical middleware components:
 - `GET /api/v1/events`: Establishes a Server-Sent Events (SSE) connection, streaming live log lines and lifecycle events (`run_started`, `run_failed`) directly to the UI.
 
 ### Issue Management
-- `GET /api/v1/issues`: Polls the active tracker for issues, optionally filtered by state or project.
+- `GET /api/v1/issues`: Polls Linear for issues, optionally filtered by state or project.
 - `GET /api/v1/issues/{issue_identifier}`: Retrieves deep context for a specific issue.
 - `PATCH /api/v1/issues/{issue_identifier}`: Updates issue metadata or moves it between states (which can trigger agent execution).
 - `DELETE /api/v1/issues/{issue_identifier}`: Removes an issue and all associated sessions.
@@ -37,7 +37,7 @@ The `NewRouter` function mounts several critical middleware components:
 - `POST /api/v1/projects/{project_id}/git/commit`: Creates git commit with message.
 - `POST /api/v1/projects/{project_id}/git/push`: Pushes changes to remote repository.
 - `POST /api/v1/projects/{project_id}/git/pull`: Pulls latest changes from remote.
-- `POST /api/v1/workspace/migrate`: Initiates a cross-tracker or configuration migration.
+- `POST /api/v1/workspace/migrate`: Initiates a project or configuration migration.
 
 ### Model Context Protocol (MCP)
 - `GET /api/v1/mcp/tools`: Lists all available MCP server tools and schemas.

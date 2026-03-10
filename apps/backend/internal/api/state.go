@@ -179,7 +179,7 @@ func (s *Server) GetIssue(w http.ResponseWriter, r *http.Request) {
 			logPath = filepath.Join(wsPath, "_logs", issue.Identifier, "latest.log")
 		}
 
-		history, _ := s.orchestrator.FetchIssueHistory(r.Context(), issue.ID)
+		history, _ := s.orchestrator.GetHistory(r.Context(), issue.ID)
 
 		json.NewEncoder(w).Encode(map[string]any{
 			"issue_id":         issue.ID,
@@ -383,17 +383,14 @@ func (s *Server) GetIssueHistory(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) GetIssueLogs(w http.ResponseWriter, r *http.Request) {
 	identifier := chi.URLParam(r, "issue_identifier")
-	provider := r.URL.Query().Get("provider")
 	runtime, ok := s.orchestrator.LookupIssue(identifier)
 
 	logPath := ""
-	if ok && runtime.Running != nil && runtime.Running.SessionLogPath != "" && (provider == "" || runtime.Running.Provider == provider) {
+	if ok && runtime.Running != nil && runtime.Running.SessionLogPath != "" {
 		logPath = runtime.Running.SessionLogPath
 	} else {
-		// Try fallback to disk with provider-specific path
-		if wsPath, err := workspace.WorkspacePath(s.workspaceRoot, identifier, provider); err == nil {
-			logPath = filepath.Join(wsPath, "_logs", identifier, "latest.log")
-		}
+		// Try fallback to disk in the global logs directory
+		logPath = filepath.Join(s.workspaceRoot, "_logs", identifier, "latest.log")
 	}
 
 	// Check if log file exists

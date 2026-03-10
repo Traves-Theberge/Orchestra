@@ -826,9 +826,21 @@ export function IssueDetailView({
   }
 
   const handleAssigneeChange = async (newAssignee: string) => {
+    const normalized = newAssignee === 'Unassigned' ? '' : newAssignee
     setLocalAssignee(newAssignee)
-    if (onUpdate) {
-      await onUpdate({ assignee_id: newAssignee === 'Unassigned' ? '' : newAssignee })
+    
+    // Sync provider if possible
+    const agentName = normalized.replace('agent-', '')
+    if (availableAgents.includes(agentName)) {
+      setLocalProvider(agentName)
+      if (onUpdate) {
+        await onUpdate({ 
+          assignee_id: normalized,
+          provider: agentName
+        })
+      }
+    } else if (onUpdate) {
+      await onUpdate({ assignee_id: normalized })
     }
   }
 
@@ -1033,32 +1045,33 @@ export function IssueDetailView({
                       <a href={prResult.url} target="_blank" rel="noreferrer">
                         <ExternalLink size={12} />
                         PR #{prResult.number}
-                        </a>
-                        </Button>
-                        )}
-                        {onStartRace && (
-                        <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 gap-2 border-blue-500/30 text-blue-500 hover:bg-blue-500/5"
-                        onClick={() => setRaceDialogOpen(true)}
-                        >
-                        <Zap size={12} fill="currentColor" className="text-blue-500" />
-                        Start Race
-                        </Button>
-                        )}
-                        {localState === 'In Progress' && (
-                        <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 gap-2 border-primary/30 text-primary hover:bg-primary/5"
-                        onClick={handlePromoteWinner}
-                        >
-                        <ShieldCheck size={12} fill="currentColor" className="text-primary" />
-                        Promote to Winner
-                        </Button>
-                        )}
-                        {(localState === 'Todo' || localState === 'Done') && (                    <Button
+                      </a>
+                    </Button>
+                  )}
+                  {onStartRace && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-2 border-blue-500/30 text-blue-500 hover:bg-blue-500/5"
+                      onClick={() => setRaceDialogOpen(true)}
+                    >
+                      <Zap size={12} fill="currentColor" className="text-blue-500" />
+                      Start Race
+                    </Button>
+                  )}
+                  {localState === 'In Progress' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-2 border-primary/30 text-primary hover:bg-primary/5"
+                      onClick={handlePromoteWinner}
+                    >
+                      <ShieldCheck size={12} fill="currentColor" className="text-primary" />
+                      Promote to Winner
+                    </Button>
+                  )}
+                  {(localState === 'Todo' || localState === 'Done') && (
+                    <Button
                       variant="default"
                       size="sm"
                       className="h-8 gap-2 bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/20"
@@ -1856,18 +1869,21 @@ export function CreateTaskDialog({
                 <AgentSelector
                   value={assignee}
                   agents={availableAgents}
-                  onChange={setAssignee}
+                  onChange={(val) => {
+                    setAssignee(val)
+                    // Automatically sync provider when agent is assigned
+                    const agentName = val.replace('agent-', '')
+                    if (availableAgents.includes(agentName)) {
+                      setProvider(agentName)
+                    } else if (val === '') {
+                      setProvider(availableAgents.length > 0 ? availableAgents[0] : '')
+                    }
+                  }}
                 />
 
                 <PrioritySelector
                   value={priority}
                   onChange={setPriority}
-                />
-
-                <ProviderSelector
-                  value={provider}
-                  providers={availableAgents}
-                  onChange={setProvider}
                 />
               </div>
 
@@ -1948,23 +1964,6 @@ function AgentSelector({ value, agents, onChange }: { value: string, agents: str
   )
 }
 
-function ProviderSelector({ value, providers, onChange }: { value: string, providers: string[], onChange: (p: string) => void }) {
-  return (
-    <CustomDropdown
-      className="bg-transparent border-none hover:bg-white/5 !h-7 !px-2 rounded-md transition-colors shadow-none"
-      value={value}
-      direction="up"
-      options={providers.map((p) => ({ label: p, value: p, icon: <Cpu size={12} className="text-amber-500/60" /> }))}
-      onChange={onChange}
-      triggerContent={
-        <div className="flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground/70 uppercase">
-          <Cpu size={12} className="text-amber-500/60" />
-          <span className="truncate max-w-[80px]">{value || 'Provider'}</span>
-        </div>
-      }
-    />
-  )
-}
 
 function PrioritySelector({ value, onChange }: { value: number, onChange: (p: number) => void }) {
   const priorities = [

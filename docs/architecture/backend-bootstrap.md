@@ -20,14 +20,14 @@ The system reads environment variables and local `.env` files via `config.Load()
 - Executes a state recovery protocol (`RestoreStateFromDB`) to rebuild the active queue from persisted records if the daemon was unexpectedly restarted.
 
 ### 3. Subsystem Wiring
-- **Tracker Client**: Initializes the correct provider (GitHub, Linear, Memory, or SQLite) based on the configuration.
+- **Linear Client**: Initializes the Linear provider (or Memory/SQLite for testing) based on the configuration.
 - **PubSub**: Starts the event bus for real-time SSE streaming.
 - **Agent Registry**: Validates that the requested AI provider (`codex`, `claude`, `gemini`, `opencode`) has a registered adapter and executable command.
 - **Workspace Service**: Mounts the ephemeral filesystem manager.
 
 ### 4. Background Workers
 Once the synchronous setup is complete, the runner spawns several non-blocking goroutines:
-- **Refresh Worker**: Periodically polls the issue tracker to sync state.
+- **Refresh Worker**: Periodically polls Linear to sync state.
 - **Telemetry Watcher**: Scans local project roots to index Git history and file changes.
 - **Execution Worker**: The heart of the autonomous system. It runs on a high-frequency tick (300ms) to detect state changes and dispatch agent turns.
 

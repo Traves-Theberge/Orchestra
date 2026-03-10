@@ -20,7 +20,7 @@ To run agents like Claude or Gemini, you must provide your API tokens.
 
 ## 3. Discovering Tasks
 
-Orchestra syncs with your issue tracker (Linear, GitHub, or local).
+Orchestra syncs natively with Linear (with support for local test clients).
 
 1.  Click the **Refresh** button in the Top Bar.
 2.  Newly discovered issues will appear in the **Tasks** (Kanban) board under the `Todo` column.

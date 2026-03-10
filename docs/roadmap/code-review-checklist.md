@@ -69,10 +69,8 @@ This document tracks the comprehensive, file-by-file review of the entire Orches
 - [x] `apps/backend/internal/workspace/service.go`
 - [x] `apps/backend/internal/workspace/service_test.go`
 
-### Trackers & Tools
+### Linear Client & Tools
 - [x] `apps/backend/internal/tracker/github/client.go`
-- [x] `apps/backend/internal/tracker/graphql/client.go`
-- [x] `apps/backend/internal/tracker/graphql/client_test.go`
 - [x] `apps/backend/internal/tracker/memory/client.go`
 - [x] `apps/backend/internal/tracker/memory/client_test.go`
 - [x] `apps/backend/internal/tracker/sqlite/client.go`

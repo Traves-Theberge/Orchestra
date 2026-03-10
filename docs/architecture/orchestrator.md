@@ -1,6 +1,6 @@
 # Core Orchestrator
 
-The `orchestrator` package is the beating heart of the Orchestra platform. It operates as an asynchronous, non-blocking state machine that constantly reconciles the state of the real world (your tracker) with the state of your executing agent fleet.
+The `orchestrator` package is the beating heart of the Orchestra platform. It operates as an asynchronous, non-blocking state machine that constantly reconciles the state of the real world (Linear) with the state of your executing agent fleet.
 
 ## 🧠 The State Machine (`state.go`)
 
@@ -11,12 +11,12 @@ type Service struct {
 	mu               sync.RWMutex
 	running          []RunningEntry
 	retrying         []RetryEntry
-	// ... (dependencies like tracker, registry, db)
+	// ... (dependencies like Linear Client, registry, db)
 }
 ```
 
 ### Thread Safety & Concurrency
-Because the orchestrator is accessed simultaneously by the HTTP API (for UI reads), the Execution Worker (for launching agents), and the Refresh Worker (for polling trackers), the `Service` is heavily guarded by a `sync.RWMutex`. 
+Because the orchestrator is accessed simultaneously by the HTTP API (for UI reads), the Execution Worker (for launching agents), and the Refresh Worker (for polling Linear), the `Service` is heavily guarded by a `sync.RWMutex`. 
 
 This guarantees that the Desktop UI never reads a torn state, and agents never step on each other's toes when claiming issues.
 
@@ -34,7 +34,7 @@ The orchestrator operates on a tick-based loop (every 300ms). During each tick, 
 What happens when an agent crashes or a workspace fails to mount? The orchestrator never hangs.
 
 1.  **The Retry Queue**: Failed sessions are immediately moved to the `retrying` array.
-2.  **Exponential Backoff**: The system uses an exponential backoff algorithm (`retryBaseDelay` up to `retryMaxDelay`) to prevent a failing agent from rapidly spamming the tracker or API.
+2.  **Exponential Backoff**: The system uses an exponential backoff algorithm (`retryBaseDelay` up to `retryMaxDelay`) to prevent a failing agent from rapidly spamming Linear or the API.
 3.  **Terminal States**: If an issue fails `maxRetryAttempts` times, it is marked as a hard failure and requires human intervention via the Desktop UI.
 
 ## 💾 State Recovery

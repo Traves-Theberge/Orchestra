@@ -24,11 +24,10 @@ type Config struct {
 	AgentProvider            string
 	AgentCommands            map[string]string
 	AgentMaxTurns            int
-	TrackerType              string
-	TrackerEndpoint          string
-	TrackerToken             string
-	TrackerProject           string
-	TrackerWorkerAssigneeIDs []string
+	LinearEndpoint          string
+	LinearToken             string
+	LinearProject           string
+	LinearWorkerAssigneeIDs []string
 	ActiveStates             []string
 	TerminalStates           []string
 	MaxConcurrent            int

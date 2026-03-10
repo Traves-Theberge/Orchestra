@@ -96,11 +96,11 @@ func Run(logger zerolog.Logger) error {
 
 	cleanupTerminalWorkspaces(orchestratorService, trackerClient, workspaceService, cfg.WorkspaceHooks, logger)
 
-	go startGarbageCollector(orchestratorService, cfg.WorkspaceRoot, logger)
+	go startGarbageCollector(orchestratorService, warehouseDB, cfg.WorkspaceRoot, logger)
 	go startRefreshWorker(orchestratorService, pubsub, logger)
 	go telemetry.StartWatcher(context.Background(), warehouseDB, cfg.ProjectRoots, logger)
 	
-	toolExecutor := tools.NewTrackerToolExecutor(trackerClient)
+	toolExecutor := tools.NewLinearToolExecutor(trackerClient)
 	go startExecutionWorker(orchestratorService, agentRegistry, provider, cfg.AgentProvider, cfg.WorkspaceRoot, cfg.WorkflowFile, cfg.AgentMaxTurns, toolExecutor.Execute, tools.TrackerToolSpecs(), cfg.WorkspaceHooks, pubsub, warehouseDB, logger)
 
 	logger.Info().Str("addr", addr).Str("service_id", runtime.ServiceOrchestrator).Msg("starting orchestrad")
@@ -353,7 +353,20 @@ func processExecutionTick(
 		return toolExecutor(tool, args)
 	}
 
+	sessionID := fmt.Sprintf("%s-%d", entry.IssueIdentifier, time.Now().UnixNano())
+
+	if warehouseDB != nil {
+		rootPath, remoteURL, _ := git.ProjectInfo(context.Background(), workspaceRoot)
+		projectID, err := warehouseDB.UpsertProject(context.Background(), rootPath, remoteURL)
+		if err == nil {
+			_ = warehouseDB.RecordSession(context.Background(), sessionID, projectID, entry.IssueID, sessionID, activeProviderName, "main")
+		} else {
+			logger.Warn().Err(err).Msg("failed to upsert project for telemetry")
+		}
+	}
+
 	result, runErr := registry.RunTurn(runCtx, activeProvider, agents.TurnRequest{
+		SessionID:       sessionID,
 		Workspace:       workspacePath,
 		WorkspaceRoot:   workspaceRoot,
 		Prompt:          renderedPrompt,
@@ -369,6 +382,13 @@ func processExecutionTick(
 		publishRunEvent(pubsub, entry, activeProviderName, event)
 		eventsBuffer = append(eventsBuffer, event)
 
+		// Persist to database in real-time
+		if warehouseDB != nil && event.SessionID != "" {
+			eventID := uuid.New().String()
+			raw, _ := json.Marshal(event.Raw)
+			_ = warehouseDB.RecordEvent(context.Background(), eventID, event.SessionID, event.Kind, event.Message, raw, int(event.Usage.InputTokens), int(event.Usage.OutputTokens), event.Timestamp.Format(time.RFC3339))
+		}
+
 		// Log to stdout for TUI visibility
 		if event.Message != "" {
 			logger.Info().
@@ -378,21 +398,6 @@ func processExecutionTick(
 				Msg(event.Message)
 		}
 	})
-
-	if warehouseDB != nil && result.SessionID != "" {
-		rootPath, remoteURL, _ := git.ProjectInfo(context.Background(), workspaceRoot)
-		projectID, err := warehouseDB.UpsertProject(context.Background(), rootPath, remoteURL)
-		if err == nil {
-			_ = warehouseDB.RecordSession(context.Background(), result.SessionID, projectID, result.SessionID, activeProviderName, "main")
-			for _, e := range eventsBuffer {
-				eventID := uuid.New().String()
-				raw, _ := json.Marshal(e.Raw)
-				_ = warehouseDB.RecordEvent(context.Background(), eventID, result.SessionID, e.Kind, e.Message, raw, int(e.Usage.InputTokens), int(e.Usage.OutputTokens), e.Timestamp.Format(time.RFC3339))
-			}
-		} else {
-			logger.Warn().Err(err).Msg("failed to upsert project for telemetry")
-		}
-	}
 
 	if runErr != nil {
 		runAfterHook()
@@ -511,13 +516,23 @@ func cleanupTerminalWorkspaces(service *orchestrator.Service, trackerClient trac
 	}
 }
 
-func startGarbageCollector(service *orchestrator.Service, root string, logger zerolog.Logger) {
+func startGarbageCollector(service *orchestrator.Service, warehouseDB *db.DB, root string, logger zerolog.Logger) {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
+			// Prune old database events (keep 7 days)
+			if warehouseDB != nil {
+				affected, err := warehouseDB.PruneEvents(context.Background(), 7)
+				if err != nil {
+					logger.Warn().Err(err).Msg("database pruning failed")
+				} else if affected > 0 {
+					logger.Info().Int64("count", affected).Msg("pruned old database events")
+				}
+			}
+
 			active := service.GetActiveWorkspaceIdentifiers()
 			activeSet := make(map[string]struct{})
 			for _, id := range active {

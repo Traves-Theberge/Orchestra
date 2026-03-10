@@ -304,7 +304,7 @@ func processFile(ctx context.Context, database *db.DB, manualRoots []string, pat
 				sid = s
 			}
 
-			_ = database.RecordSession(ctx, sid, projectID, sid, provider, "unknown")
+			_ = database.RecordSession(ctx, sid, projectID, "", sid, provider, "unknown")
 			
 			if entry.Timestamp != "" {
 				eventID := uuid.New().String()
@@ -315,7 +315,7 @@ func processFile(ctx context.Context, database *db.DB, manualRoots []string, pat
 		} else {
 			// Fallback for plain text .log files
 			if len(strings.TrimSpace(line)) > 0 {
-				_ = database.RecordSession(ctx, fallbackSessionID, projectID, fallbackSessionID, provider, "unknown")
+				_ = database.RecordSession(ctx, fallbackSessionID, projectID, "", fallbackSessionID, provider, "unknown")
 				eventID := uuid.New().String()
 				kind := "log"
 				if strings.Contains(strings.ToLower(line), "error") {

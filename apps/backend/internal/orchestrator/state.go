@@ -1700,5 +1700,5 @@ func (s *Service) GetHistory(ctx context.Context, issueID string) ([]map[string]
 	if s.db == nil {
 		return []map[string]any{}, nil
 	}
-	return s.db.GetEvents(ctx, issueID)
+	return s.db.GetUnifiedHistory(ctx, issueID)
 }

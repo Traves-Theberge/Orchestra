@@ -33,7 +33,7 @@ You can edit and preview skills in the **Agents** tab:
 3.  **Hot Reloading**: Skills are read from disk at the start of every turn. You can tune agent behavior mid-session by saving changes to a skill file.
 
 ### Default Skills
-- `linear`: Tracker-specific guidance.
+- `linear`: Linear-specific guidance.
 - `commit`: Standards for high-quality git commits.
 - `debug`: Framework for systematic root-cause analysis.
 - `land`: Landing/merge workflow standards.
