@@ -30,6 +30,7 @@ export type RunningEntry = {
   last_message?: string
   last_event_at?: string
   started_at?: string
+  provider?: string
 }
 
 export type RetryEntry = {
@@ -39,6 +40,7 @@ export type RetryEntry = {
   attempt: number
   due_at: string
   error: string
+  provider?: string
 }
 
 export type CodexTotals = {

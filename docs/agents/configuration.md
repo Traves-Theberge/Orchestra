@@ -22,6 +22,8 @@ Configured via `.claude` or `~/.claude/settings.json`.
 Configured via `.gemini` or `~/.gemini/settings.json`.
 - **Primary Model**: `gemini-2.0-flash`
 - **Context Limit**: Optimized for massive codebase analysis.
+- **Output Format**: Uses `--output-format stream-json` for real-time telemetry and tool execution updates.
+- **Event Mapping**: Standardizes `init`, `message`, `tool_use`, and `result` events into the Orchestra Activity Feed.
 
 ## 🛠️ Global Control Plane
 

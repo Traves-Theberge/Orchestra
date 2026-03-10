@@ -55,7 +55,7 @@ If no commands are provided, the loader initializes the `AgentCommands` map with
 - `codex`: `codex exec --skip-git-repo-check --json {{prompt}}`
 - `claude`: `claude -p {{prompt}} --output-format json`
 - `opencode`: `opencode run {{prompt}} --format json`
-- `gemini`: `gemini run {{prompt}} --json`
+- `gemini`: `gemini --output-format stream-json {{prompt}}`
 
 ## 🔒 Security Posture
 The configuration loader enforces basic security constraints. Most notably, if the `Host` is set to a non-loopback address (e.g., `0.0.0.0`), the system **will refuse to start** unless a valid `ORCHESTRA_API_TOKEN` is provided, preventing accidental exposure of the control plane to the open internet.

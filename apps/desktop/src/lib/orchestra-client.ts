@@ -166,9 +166,8 @@ export async function deleteIssue(config: BackendConfig, issueIdentifier: string
   if (normalized === '') {
     throw new APIError('invalid_request', 'issue identifier is required')
   }
-  await fetch(new URL(`/api/v1/issues/${encodeURIComponent(normalized)}`, config.baseUrl).toString(), {
+  await requestJSON<void>(config, `/api/v1/issues/${encodeURIComponent(normalized)}`, {
     method: 'DELETE',
-    headers: buildHeaders(config),
   })
 }
 
@@ -329,6 +328,15 @@ export async function fetchIssueLogs(config: BackendConfig, issueIdentifier: str
   }
 
   return response.text()
+}
+
+export async function fetchIssueHistory(config: BackendConfig, issueIdentifier: string): Promise<any[]> {
+  const normalized = issueIdentifier.trim()
+  if (normalized === '') {
+    throw new APIError('invalid_request', 'issue identifier is required')
+  }
+  const data = await requestJSON<{ history: any[] }>(config, `/api/v1/issues/${encodeURIComponent(normalized)}/history`)
+  return data.history || []
 }
 
 export async function fetchIssueDiff(config: BackendConfig, issueIdentifier: string, provider?: string): Promise<string> {
@@ -522,7 +530,7 @@ export async function createMCPServer(config: BackendConfig, name: string, comma
 }
 
 export async function deleteMCPServer(config: BackendConfig, id: string): Promise<void> {
-  await requestJSON<any>(config, `/api/v1/mcp/servers/${id}`, {
+  await requestJSON<void>(config, `/api/v1/mcp/servers/${id}`, {
     method: 'DELETE',
   })
 }

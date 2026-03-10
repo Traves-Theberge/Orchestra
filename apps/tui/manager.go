@@ -74,6 +74,7 @@ func (s *Service) run(ctx context.Context) {
 
 	s.mu.Lock()
 	s.Status = StatusRunning
+	s.Logs = append(s.Logs, fmt.Sprintf(">>> %s process started: %s", s.Name, s.Cmd))
 	s.mu.Unlock()
 	s.onEvent()
 
@@ -102,7 +103,7 @@ func (s *Service) run(ctx context.Context) {
 	wg.Wait()
 
 	s.mu.Lock()
-	if s.Status != StatusError {
+	if s.Status != StatusError && s.Status != StatusStopped {
 		s.Status = StatusStopped
 	}
 	s.mu.Unlock()
@@ -119,4 +120,7 @@ func (s *Service) Stop() {
 		// Kill the entire process group
 		_ = syscall.Kill(-s.cmd.Process.Pid, syscall.SIGKILL)
 	}
+	s.Status = StatusStopped
+	s.Logs = append(s.Logs, fmt.Sprintf(">>> %s stopped", s.Name))
+	s.onEvent()
 }

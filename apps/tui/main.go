@@ -27,20 +27,24 @@ func initialModel() *model {
 	m := &model{
 		backend: &Service{
 			Name: "Orchestra Backend",
-			Cmd:  "go run cmd/orchestrad/main.go",
-			Cwd:  "../backend",
-			Env:  []string{"ORCHESTRA_SERVER_PORT=4000"},
+			Cmd:  "./apps/backend/orchestrad",
+			Cwd:  "../..",
+			Env:  []string{"ORCHESTRA_SERVER_PORT=4010", "ORCHESTRA_SERVER_HOST=0.0.0.0", "ORCHESTRA_WORKSPACE_ROOT=/tmp/orchestra", "ORCHESTRA_API_TOKEN=dev-token"},
 		},
 		frontend: &Service{
 			Name: "Orchestra Desktop",
 			Cmd:  "npm run dev",
 			Cwd:  "../desktop",
+			Env:  []string{"ORCHESTRA_API_TOKEN=dev-token"},
 		},
 	}
 	return m
 }
 
 func (m *model) Init() tea.Cmd {
+	// Auto-start backend only
+	m.backend.Start(func() {})
+
 	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
 		return eventMsg{}
 	})
@@ -73,6 +77,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if running {
 				s.Stop()
 			} else {
+				s.mu.Lock()
+				s.Logs = append(s.Logs, fmt.Sprintf(">>> Starting %s...", s.Name))
+				s.mu.Unlock()
 				s.Start(func() {})
 			}
 		}

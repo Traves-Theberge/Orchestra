@@ -85,6 +85,7 @@ func StartWatcher(ctx context.Context, database *db.DB, manualRoots []string, lo
 			// 0. History Files (to map sessions to projects)
 			processHistoryFile(ctx, database, filepath.Join(homeDir, ".claude", "history.jsonl"), "claude", logger)
 			processHistoryFile(ctx, database, filepath.Join(homeDir, ".codex", "history.jsonl"), "codex", logger)
+			processHistoryFile(ctx, database, filepath.Join(homeDir, ".gemini", "history.jsonl"), "gemini", logger)
 
 			// 1. Claude Code
 			scanDirectory(ctx, database, manualRoots, filepath.Join(homeDir, ".claude", "projects"), "claude", logger)
@@ -100,6 +101,7 @@ func StartWatcher(ctx context.Context, database *db.DB, manualRoots []string, lo
 
 			// 4. Gemini CLI
 			scanDirectory(ctx, database, manualRoots, filepath.Join(homeDir, ".gemini", "logs"), "gemini", logger)
+			scanDirectory(ctx, database, manualRoots, filepath.Join(homeDir, ".gemini", "sessions"), "gemini", logger)
 		}
 	}
 }

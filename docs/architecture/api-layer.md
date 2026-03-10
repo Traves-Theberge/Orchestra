@@ -21,11 +21,29 @@ The `NewRouter` function mounts several critical middleware components:
 - `GET /api/v1/issues`: Polls the active tracker for issues, optionally filtered by state or project.
 - `GET /api/v1/issues/{issue_identifier}`: Retrieves deep context for a specific issue.
 - `PATCH /api/v1/issues/{issue_identifier}`: Updates issue metadata or moves it between states (which can trigger agent execution).
+- `DELETE /api/v1/issues/{issue_identifier}`: Removes an issue and all associated sessions.
+- `GET /api/v1/issues/{issue_identifier}/logs`: Retrieves live session logs with graceful handling for missing files.
+- `GET /api/v1/issues/{issue_identifier}/history`: **NEW** - Returns chronological audit trail of all issue events and state changes.
+- `GET /api/v1/issues/{issue_identifier}/diff`: Shows workspace diff for the issue.
+- `GET /api/v1/issues/{issue_identifier}/artifacts`: Lists generated artifacts and files.
+- `POST /api/v1/issues/{issue_identifier}/race`: Initiates parallel multi-agent race mode.
+- `POST /api/v1/issues/{issue_identifier}/pr`: Creates GitHub pull request from issue changes.
 
 ### Workspaces & Projects
 - `GET /api/v1/projects`: Lists locally managed repositories.
+- `GET /api/v1/projects/{project_id}`: Retrieves project statistics and metadata.
 - `GET /api/v1/projects/{project_id}/tree`: Reads the active filesystem tree for an agent's workspace.
+- `GET /api/v1/projects/{project_id}/git`: Returns git commit history and statistics.
+- `POST /api/v1/projects/{project_id}/git/commit`: Creates git commit with message.
+- `POST /api/v1/projects/{project_id}/git/push`: Pushes changes to remote repository.
+- `POST /api/v1/projects/{project_id}/git/pull`: Pulls latest changes from remote.
 - `POST /api/v1/workspace/migrate`: Initiates a cross-tracker or configuration migration.
+
+### Model Context Protocol (MCP)
+- `GET /api/v1/mcp/tools`: Lists all available MCP server tools and schemas.
+- `GET /api/v1/mcp/servers`: Retrieves configured MCP servers from database.
+- `POST /api/v1/mcp/servers`: Registers new MCP server with hot-reload.
+- `DELETE /api/v1/mcp/servers/{id}`: Removes MCP server and updates registry.
 
 ### Agent Control Plane
 - `GET /api/v1/config/agents/items`: Returns a categorized list of core configs and skills (`.claude`, `SKILL.md`).

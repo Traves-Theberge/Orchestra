@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -203,7 +204,7 @@ func processExecutionTick(
 	}
 
 	publishLifecycleEvent(pubsub, "hook_started", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create"})
-	workspacePath, created, err := workspaceService.EnsureIssueWorkspace(entry.IssueIdentifier, workspaceHooks)
+	workspacePath, created, err := workspaceService.EnsureIssueWorkspace(entry.IssueIdentifier, activeProviderName, workspaceHooks)
 	if err != nil {
 		publishLifecycleEvent(pubsub, "hook_failed", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create", "error": err.Error()})
 		attempt := entry.TurnCount + 1
@@ -367,6 +368,15 @@ func processExecutionTick(
 		service.RecordRunEvent(entry.IssueID, activeProviderName, event)
 		publishRunEvent(pubsub, entry, activeProviderName, event)
 		eventsBuffer = append(eventsBuffer, event)
+
+		// Log to stdout for TUI visibility
+		if event.Message != "" {
+			logger.Info().
+				Str("issue", entry.IssueIdentifier).
+				Str("provider", activeProviderName).
+				Str("kind", event.Kind).
+				Msg(event.Message)
+		}
 	})
 
 	if warehouseDB != nil && result.SessionID != "" {
@@ -495,7 +505,7 @@ func cleanupTerminalWorkspaces(service *orchestrator.Service, trackerClient trac
 	}
 
 	for _, issue := range issues {
-		if err := workspaceService.RemoveIssueWorkspaces(issue.Identifier, hooks); err != nil {
+		if err := workspaceService.RemoveIssueWorkspaces(issue.Identifier, "", hooks); err != nil {
 			logger.Warn().Err(err).Str("issue_identifier", issue.Identifier).Msg("startup workspace cleanup failed")
 		}
 	}

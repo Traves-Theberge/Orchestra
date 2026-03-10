@@ -3,6 +3,8 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -11,7 +13,6 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
 	"github.com/orchestra/orchestra/apps/backend/internal/mcp"
 	githubutils "github.com/orchestra/orchestra/apps/backend/internal/utils/github"
-	"path/filepath"
 )
 
 func (s *Server) CreateGitHubPR(w http.ResponseWriter, r *http.Request) {
@@ -174,7 +175,7 @@ func (s *Server) GetIssue(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
 		logPath := ""
-		if wsPath, err := workspace.WorkspacePath(s.workspaceRoot, issue.Identifier); err == nil {
+		if wsPath, err := workspace.WorkspacePath(s.workspaceRoot, issue.Identifier, ""); err == nil {
 			logPath = filepath.Join(wsPath, "_logs", issue.Identifier, "latest.log")
 		}
 
@@ -219,29 +220,35 @@ func (s *Server) GetIssue(w http.ResponseWriter, r *http.Request) {
 
 	runtime, _ := s.orchestrator.LookupIssue(identifier)
 
+	// Fetch full issue details from tracker to ensure consistent response
+	var issueDetails *tracker.Issue
+	issues, err := s.orchestrator.SearchIssues(r.Context(), identifier)
+	if err == nil && len(issues) > 0 {
+		issueDetails = &issues[0]
+	}
+
 	restartCount := int64(0)
 	currentRetryAttempt := int64(0)
 	if runtime.Retry != nil {
 		currentRetryAttempt = runtime.Retry.Attempt
 	}
 	recentEvents := make([]map[string]any, 0, 1)
-	logPath := ""
 	if runtime.Running != nil && runtime.Running.LastEvent != "" {
 		recentEvents = append(recentEvents, map[string]any{
 			"at":      runtime.Running.LastEventAt,
 			"event":   runtime.Running.LastEvent,
 			"message": runtime.Running.LastMessage,
 		})
-		logPath = runtime.Running.SessionLogPath
-	} else {
-		if wsPath, err := workspace.WorkspacePath(s.workspaceRoot, identifier); err == nil {
-			logPath = filepath.Join(wsPath, "_logs", identifier, "latest.log")
-		}
 	}
 
-	workspacePath, workspaceErr := workspace.WorkspacePath(s.workspaceRoot, runtime.IssueIdentifier)
+	workspacePath, workspaceErr := workspace.WorkspacePath(s.workspaceRoot, runtime.IssueIdentifier, "")
 	if workspaceErr != nil {
 		workspacePath = ""
+	}
+
+	lastError := ""
+	if runtime.Retry != nil && runtime.Retry.Error != "" {
+		lastError = runtime.Retry.Error
 	}
 
 	history, _ := s.orchestrator.FetchIssueHistory(r.Context(), runtime.IssueID)
@@ -249,9 +256,26 @@ func (s *Server) GetIssue(w http.ResponseWriter, r *http.Request) {
 	presented["history"] = history
 	presented["workspace_path"] = workspacePath
 
+	// Build consistent response with all fields from tracker when available
 	response := map[string]any{
-		"issue_identifier": runtime.IssueIdentifier,
+		"id":               runtime.IssueID,
 		"issue_id":         runtime.IssueID,
+		"identifier":       runtime.IssueIdentifier,
+		"issue_identifier": runtime.IssueIdentifier,
+		"title":            "",
+		"description":      "",
+		"state":            "",
+		"assignee_id":      "",
+		"priority":         0,
+		"project_id":       "",
+		"branch_name":      "",
+		"url":              "",
+		"labels":           []string{},
+		"blocked_by":       []tracker.Blocker{},
+		"provider":         "",
+		"disabled_tools":   []string{},
+		"created_at":       "",
+		"updated_at":       "",
 		"status":           presented["status"],
 		"attempts": map[string]any{
 			"restart_count":         restartCount,
@@ -260,20 +284,35 @@ func (s *Server) GetIssue(w http.ResponseWriter, r *http.Request) {
 		"workspace": map[string]any{
 			"path": workspacePath,
 		},
-		"running": presented["running"],
-		"retry":   presented["retry"],
-		"logs": map[string]any{
-			"codex_session_logs": []map[string]any{
-				{
-					"label": "latest",
-					"path":  logPath,
-					"url":   nil,
-				},
-			},
-		},
+		"running":       presented["running"],
+		"retry":         presented["retry"],
 		"recent_events": recentEvents,
 		"last_error":    lastError,
 		"tracked":       map[string]any{},
+	}
+
+	// Merge tracker issue details if available
+	if issueDetails != nil {
+		response["title"] = issueDetails.Title
+		response["description"] = issueDetails.Description
+		response["state"] = issueDetails.State
+		response["assignee_id"] = issueDetails.AssigneeID
+		response["priority"] = issueDetails.Priority
+		response["project_id"] = issueDetails.ProjectID
+		response["branch_name"] = issueDetails.BranchName
+		response["url"] = issueDetails.URL
+		if issueDetails.Labels != nil {
+			response["labels"] = issueDetails.Labels
+		}
+		if issueDetails.BlockedBy != nil {
+			response["blocked_by"] = issueDetails.BlockedBy
+		}
+		response["provider"] = issueDetails.Provider
+		if issueDetails.DisabledTools != nil {
+			response["disabled_tools"] = issueDetails.DisabledTools
+		}
+		response["created_at"] = issueDetails.CreatedAt
+		response["updated_at"] = issueDetails.UpdatedAt
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -323,6 +362,25 @@ func (s *Server) PostIssueRace(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 }
 
+func (s *Server) GetIssueHistory(w http.ResponseWriter, r *http.Request) {
+	identifier := chi.URLParam(r, "issue_identifier")
+	runtime, ok := s.orchestrator.LookupIssue(identifier)
+	if !ok {
+		writeJSONError(w, http.StatusNotFound, "issue_not_found", "issue not found")
+		return
+	}
+
+	history, err := s.orchestrator.GetHistory(r.Context(), runtime.IssueID)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "history_failed", err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{"history": history})
+}
+
 func (s *Server) GetIssueLogs(w http.ResponseWriter, r *http.Request) {
 	identifier := chi.URLParam(r, "issue_identifier")
 	provider := r.URL.Query().Get("provider")
@@ -338,8 +396,18 @@ func (s *Server) GetIssueLogs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Check if log file exists
 	if logPath == "" {
 		writeJSONError(w, http.StatusNotFound, "logs_not_found", "no logs found for this issue")
+		return
+	}
+
+	// Check if file actually exists
+	if _, err := os.Stat(logPath); os.IsNotExist(err) {
+		// Return empty logs response instead of 404 for issues that haven't started
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("# No logs available yet\n\nThis issue hasn't started processing or logs haven't been created."))
 		return
 	}
 

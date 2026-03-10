@@ -122,7 +122,7 @@ func NewService() *Service {
 	return &Service{
 		running:          make([]RunningEntry, 0),
 		retrying:         make([]RetryEntry, 0),
-		activeStates:     []string{"Todo", "In Progress"},
+		activeStates:     []string{"In Progress"},
 		terminalStates:   []string{"Done", "Cancelled", "Canceled", "Closed", "Duplicate"},
 		maxConcurrent:    4,
 		maxByState:       map[string]int{},
@@ -687,23 +687,60 @@ func (s *Service) LogIssueEvent(issueID, userID, action, oldVal, newVal string) 
 }
 
 func (s *Service) DeleteIssue(ctx context.Context, identifier string) error {
-	s.mu.RLock()
+	s.mu.Lock()
 	client := s.trackerClient
-	s.mu.RUnlock()
+	
+	// Find the issue ID and completely remove it from running/retrying
+	var issueID string
+	
+	filteredRunning := make([]RunningEntry, 0, len(s.running))
+	for _, entry := range s.running {
+		if entry.IssueIdentifier == identifier {
+			issueID = entry.IssueID
+			// Don't add to filtered -> this removes it from queue
+		} else {
+			filteredRunning = append(filteredRunning, entry)
+		}
+	}
+	s.running = filteredRunning
+
+	filteredRetrying := make([]RetryEntry, 0, len(s.retrying))
+	for _, entry := range s.retrying {
+		if entry.IssueIdentifier == identifier {
+			if issueID == "" {
+				issueID = entry.IssueID
+			}
+		} else {
+			filteredRetrying = append(filteredRetrying, entry)
+		}
+	}
+	s.retrying = filteredRetrying
+
+	if issueID != "" {
+		delete(s.claimed, issueID)
+		
+		// Stop active sessions using the actual issueID
+		for key, cancel := range s.cancels {
+			if strings.HasPrefix(key, issueID+":") {
+				if cancel != nil {
+					cancel()
+				}
+				delete(s.cancels, key)
+			}
+		}
+	}
+	s.mu.Unlock()
 
 	if client == nil {
 		return fmt.Errorf("tracker client not available")
 	}
 
-	// 1. Stop any active sessions for this issue
-	s.StopAllSessionsForIssue(identifier)
-
-	// 2. Delete the issue from the tracker
+	// Delete the issue from the tracker
 	if err := client.DeleteIssue(ctx, identifier); err != nil {
 		return err
 	}
 
-	// 3. Trigger refresh to reflect changes
+	// Trigger refresh to reflect changes
 	s.QueueRefresh()
 	return nil
 }
@@ -1657,4 +1694,11 @@ func (s *Service) GetMCPRegistry() *mcp.Registry {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.mcpRegistry
+}
+
+func (s *Service) GetHistory(ctx context.Context, issueID string) ([]map[string]any, error) {
+	if s.db == nil {
+		return []map[string]any{}, nil
+	}
+	return s.db.GetEvents(ctx, issueID)
 }

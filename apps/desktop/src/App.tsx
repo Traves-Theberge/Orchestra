@@ -61,6 +61,7 @@ import { AgentsDashboard } from '@/components/agents/AgentsDashboard'
 import { DocsDashboard } from '@/components/docs/DocsDashboard'
 import { Command } from 'cmdk'
 import { OverlayScrollbarsComponent } from 'overlayscrollbars-react'
+import type { BackendConfig } from '@/lib/orchestra-client'
 
 type BackendProfile = {
   id: string
@@ -139,7 +140,7 @@ export default function App() {
   const [snapshot, setSnapshot] = useState<SnapshotPayload | null>(null)
   const [timeline, setTimeline] = useState<TimelineItem[]>([])
   const [boardIssues, setBoardIssues] = useState<any[]>([])
-  const [loadingConfig, setLoadingConfig] = useState(true)
+  const [loadingConfig, setLoadingConfig] = useState(false)
   const [savingConfig, setSavingConfig] = useState(false)
   const [profilesPending, setProfilesPending] = useState(false)
   const [backendProfiles, setBackendProfiles] = useState<BackendProfile[]>([])
@@ -464,10 +465,11 @@ export default function App() {
     }
 
     const remaining = typeof snapshot.rate_limits?.remaining === 'number' ? String(snapshot.rate_limits.remaining) : ''
+    const total = snapshot.codex_totals?.total_tokens ?? 0
     return {
       running: String(snapshot.counts.running ?? 0),
       retrying: String(snapshot.counts.retrying ?? 0),
-      totalTokens: String(snapshot.codex_totals?.total_tokens ?? 0),
+      totalTokens: total > 10000 ? `${(total / 1000).toFixed(1)}k` : String(total),
     }
   }, [snapshot])
 
@@ -641,11 +643,20 @@ export default function App() {
 
   const handleIssueDelete = async (identifier: string) => {
     if (!config) return
-    if (!window.confirm(`Are you sure you want to delete task ${identifier}?`)) return
 
     try {
       await deleteIssue(config, identifier)
       setStatusMessage(`Task ${identifier} deleted.`)
+
+      // Optimistically remove from snapshot
+      setSnapshot(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          running: prev.running.filter(r => r.issue_identifier !== identifier),
+          retrying: prev.retrying.filter(r => r.issue_identifier !== identifier)
+        }
+      })
 
       // Instantly update the board issues
       const updatedIssues = await fetchIssues(config)
@@ -746,7 +757,7 @@ export default function App() {
       return
     }
 
-    const fromConfig = config ?? { baseUrl: 'http://127.0.0.1:4000', apiToken: '' }
+    const fromConfig = config ?? { baseUrl: 'http://127.0.0.1:4010', apiToken: 'dev-token' }
     setProfilesPending(true)
     setErrorMessage('')
     try {
@@ -1086,12 +1097,12 @@ export default function App() {
       </div>
 
       <Dialog open={inspectDialogOpen} onOpenChange={setInspectDialogOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
+        <DialogContent className="max-w-6xl w-[90vw] max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader className="shrink-0">
             <DialogTitle>Issue Inspection</DialogTitle>
             <DialogDescription>View detailed status and diagnostics for this issue.</DialogDescription>
           </DialogHeader>
-          <div className="py-2">
+          <div className="py-2 overflow-auto flex-1 min-h-0">
             {issueLookupPending ? (
               <div className="space-y-4">
                 <Skeleton className="h-8 w-[200px]" />

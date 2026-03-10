@@ -134,13 +134,13 @@ export const D3ArchitectureGraph: React.FC = () => {
         const radius = 10;
         simulation.on('tick', () => {
             link
-                .attr('x1', d => Math.max(radius, Math.min(width - radius, (d.source as any).x)))
-                .attr('y1', d => Math.max(radius, Math.min(height - radius, (d.source as any).y)))
-                .attr('x2', d => Math.max(radius, Math.min(width - radius, (d.target as any).x)))
-                .attr('y2', d => Math.max(radius, Math.min(height - radius, (d.target as any).y)))
+                .attr('x1', d => Math.max(radius, Math.min(width - radius, (d.source as any).x || 0)))
+                .attr('y1', d => Math.max(radius, Math.min(height - radius, (d.source as any).y || 0)))
+                .attr('x2', d => Math.max(radius, Math.min(width - radius, (d.target as any).x || 0)))
+                .attr('y2', d => Math.max(radius, Math.min(height - radius, (d.target as any).y || 0)))
 
             node
-                .attr('transform', d => `translate(${Math.max(radius, Math.min(width - radius, d.x))},${Math.max(radius, Math.min(height - radius, d.y))})`)
+                .attr('transform', d => `translate(${Math.max(radius, Math.min(width - radius, d.x || 0))},${Math.max(radius, Math.min(height - radius, d.y || 0))})`)
         })
 
         function drag(sim: d3.Simulation<Node, undefined>) {

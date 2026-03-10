@@ -5,7 +5,7 @@ function parseArgs(argv) {
   const spawnBackend = argv.includes('--spawn-backend')
   const requireAuth = argv.includes('--require-auth')
   const baseArg = argv.find((value) => value.startsWith('--base-url='))
-  const baseUrl = baseArg ? baseArg.slice('--base-url='.length) : process.env.ORCHESTRA_BASE_URL || 'http://127.0.0.1:4000'
+  const baseUrl = baseArg ? baseArg.slice('--base-url='.length) : process.env.ORCHESTRA_BASE_URL || 'http://127.0.0.1:4010'
   const tokenArg = argv.find((value) => value.startsWith('--token='))
   const token = tokenArg ? tokenArg.slice('--token='.length) : process.env.ORCHESTRA_API_TOKEN || ''
   return { spawnBackend, requireAuth, baseUrl, token }

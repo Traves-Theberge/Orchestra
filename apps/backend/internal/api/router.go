@@ -60,7 +60,7 @@ func NewRouterWithPubSub(
 	r.Use(contentTypeGuard)
 	r.Use(middleware.Timeout(30 * time.Second))
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:*", "http://127.0.0.1:*"},
+		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "DELETE", "PATCH", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		AllowCredentials: false,
@@ -121,6 +121,7 @@ func NewRouterWithPubSub(
 
 	r.Get("/api/v1/issues/{issue_identifier}", server.GetIssue)
 	r.Get("/api/v1/issues/{issue_identifier}/logs", server.GetIssueLogs)
+	r.Get("/api/v1/issues/{issue_identifier}/history", server.GetIssueHistory)
 	r.Get("/api/v1/issues/{issue_identifier}/diff", server.GetIssueDiff)
 	r.Get("/api/v1/issues/{issue_identifier}/artifacts", server.GetArtifacts)
 	r.Get("/api/v1/issues/{issue_identifier}/artifacts/*", server.GetArtifactContent)

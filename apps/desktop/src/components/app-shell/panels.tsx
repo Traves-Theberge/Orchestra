@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Ansi from 'ansi-to-react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { Activity, AlertCircle, AlertTriangle, AppWindow, Bot, CheckCircle2, ChevronDown, Circle, CircleDashed, Cpu, FileText, Folder, FolderTree, GitBranch, Loader2, MoreHorizontal, ShieldCheck, SignalHigh, SignalLow, SignalMedium, Square, Terminal, User, Users, Wrench, Clock, Search, LayoutDashboard, ListTodo, History, Ticket, Database, Settings2, Sun, Moon, Download, RefreshCcw, Info, BarChart3, Zap, Layout, Rows, Play, ChevronRight, File, ExternalLink, Plus, Trash2, Keyboard } from 'lucide-react'
+import { Activity, AlertCircle, AlertTriangle, AppWindow, Bot, CheckCircle2, ChevronDown, Circle, CircleDashed, Cpu, FileText, Folder, FolderTree, GitBranch, Loader2, MoreHorizontal, ShieldCheck, SignalHigh, SignalLow, SignalMedium, Square, Terminal, User, Users, Wrench, Clock, Search, LayoutDashboard, ListTodo, History, Ticket, Database, Settings2, Sun, Moon, Download, RefreshCcw, Info, BarChart3, Zap, Layout, Rows, Play, ChevronRight, File, ExternalLink, Plus, Trash2, Keyboard, X, TrendingUp } from 'lucide-react'
 import * as Tooltip from '@radix-ui/react-tooltip'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -21,7 +21,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { OverlayScrollbarsComponent } from 'overlayscrollbars-react'
 import type { TimelineItem } from '@/components/app-shell/types'
-import { fetchArtifactContent, fetchArtifacts, fetchIssueDiff, fetchIssueLogs, updateIssue, createGitHubPR, type BackendConfig } from '@/lib/orchestra-client'
+import { fetchArtifactContent, fetchArtifacts, fetchIssueDiff, fetchIssueLogs, fetchIssueHistory, updateIssue, createGitHubPR, type BackendConfig } from '@/lib/orchestra-client'
 import type { SnapshotPayload, Project, ProjectStats, GlobalStats } from '@/lib/orchestra-types'
 import { getSortedRetryEntries, getSortedRunningEntries } from '@/lib/view-models'
 
@@ -66,6 +66,8 @@ export function DashboardOverview({
     return sB - sA
   }).slice(0, 3)
 
+  const displayProjects = sortedProjects.length > 0 ? sortedProjects : projects.slice(0, 3)
+
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 min-h-0">
       {/* Workspace Activity (Left) */}
@@ -101,12 +103,12 @@ export function DashboardOverview({
           </CardHeader>
           <CardContent className="flex-1 min-h-0">
             <div className="space-y-1.5">
-              {sortedProjects.length === 0 ? (
+              {displayProjects.length === 0 ? (
                 <div className="py-12 text-center border border-dashed border-white/10 rounded-2xl bg-white/[0.02]">
                   <Folder size={32} className="mx-auto mb-3 opacity-10" />
                   <p className="text-xs text-muted-foreground font-medium uppercase tracking-widest">No projects discovered</p>
                 </div>
-              ) : sortedProjects.map((p) => (
+              ) : displayProjects.map((p) => (
                 <button
                   key={p.id}
                   onClick={() => onProjectClick(p.id)}
@@ -164,14 +166,14 @@ export function DashboardOverview({
                       <div key={name} className="space-y-2 group/bar">
                         <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest">
                           <span className="flex items-center gap-2">
-                            <div className={`h-1.5 w-1.5 rounded-full ${name.includes('claude') ? 'bg-orange-500' : 'bg-primary'} shadow-[0_0_8px_rgba(var(--primary),0.4)]`} />
+                            <div className={`h-1.5 w-1.5 rounded-full ${name.includes('claude') ? 'bg-orange-500' : name.includes('gemini') ? 'bg-blue-500' : 'bg-primary'} shadow-[0_0_8px_rgba(var(--primary),0.4)]`} />
                             {name}
                           </span>
                           <span className="text-muted-foreground group-hover/bar:text-primary transition-colors">{(tokens / 1000).toFixed(1)}k</span>
                         </div>
                         <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
                           <div
-                            className={`h-full transition-all duration-1000 ease-out shadow-lg ${name.includes('claude') ? 'bg-gradient-to-r from-orange-600/50 to-orange-400/50' : 'bg-gradient-to-r from-primary/60 to-primary/30'}`}
+                            className={`h-full transition-all duration-1000 ease-out shadow-lg ${name.includes('claude') ? 'bg-gradient-to-r from-orange-600/50 to-orange-400/50' : name.includes('gemini') ? 'bg-gradient-to-r from-blue-600/50 to-blue-400/50' : 'bg-gradient-to-r from-primary/60 to-primary/30'}`}
                             style={{ width: `${percentage}%` }}
                           />
                         </div>
@@ -687,33 +689,39 @@ export function IssueDetailView({
   }
   const result = initialResult as any
 
-  const [localState, setLocalState] = useState((result.state as string) || 'Todo')
-  const [localAssignee, setLocalAssignee] = useState((result.assignee_id as string) || 'Unassigned')
-  const [localProvider, setLocalProvider] = useState<string>(() => {
-    const r = result as any
-    return r.running?.provider || r.retry?.provider || ''
-  })
+  const identifier = (result.identifier as string) || (result.issue_identifier as string) || (result.id as string) || ''
+  const issueId = (result.id as string) || (result.issue_id as string) || ''
+  const title = (result.title as string) || 'No Title'
+  const description = (result.description as string) || ''
+  const state = (result.state as string) || 'Todo'
+  const assigneeId = (result.assignee_id as string) || 'Unassigned'
+  const priority = (result.priority as number) || 0
+  const projectId = (result.project_id as string) || ''
+  const branchName = (result.branch_name as string) || ''
+  const issueUrl = (result.url as string) || ''
+  const labels = (result.labels as string[]) || []
+  const blockedBy = (result.blocked_by as any[]) || []
+  const provider = (result.provider as string) || ''
+  const disabledToolsFromResult = (result.disabled_tools as string[]) || []
+  const createdAt = (result.created_at as string) || ''
+  const updatedAt = (result.updated_at as string) || ''
 
-  // Get all providers for this issue from snapshot to support switching between parallel runs
-  const activeSessions = useMemo(() => {
-    if (!snapshot) return []
-    return snapshot.running.filter(r => r.issue_id === result.id || r.issue_identifier === identifier)
-  }, [snapshot, result.id, identifier])
-
-  useEffect(() => {
-    // If we only have one active session and it's different from localProvider, auto-switch
-    if (activeSessions.length === 1 && activeSessions[0].provider !== localProvider) {
-      setLocalProvider(activeSessions[0].provider)
-    }
-  }, [activeSessions, localProvider])
-  const [disabledTools, setDisabledTools] = useState<string[]>(() => {
-    const r = result as any
-    return r.disabled_tools || r.running?.disabled_tools || r.retry?.disabled_tools || []
-  })
-  const [activeTab, setActiveTab] = useState<'overview' | 'changes' | 'logs' | 'artifacts' | 'tools'>('overview')
+  const [localState, setLocalState] = useState(state)
+  const [localAssignee, setLocalAssignee] = useState(assigneeId)
+  const [localProvider, setLocalProvider] = useState<string>(provider)
+  const [activeTab, setActiveTab] = useState<'overview' | 'changes' | 'logs' | 'artifacts' | 'tools' | 'activity'>('overview')
   const [logs, setLogs] = useState<string>('')
   const [logFilter, setLogFilter] = useState('')
   const [logsLoading, setLogsLoading] = useState(false)
+  
+  const [issueHistory, setIssueHistory] = useState<any[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  
+  // Split view state for parallel races
+  const [isSplitView, setIsSplitView] = useState(false)
+  const [secondaryProvider, setSecondaryProvider] = useState<string>('')
+  const [secondaryLogs, setSecondaryLogs] = useState<string>('')
+  const [secondaryLogsLoading, setSecondaryLogsLoading] = useState(false)
   const [diff, setDiff] = useState<string>('')
   const [diffLoading, setDiffLoading] = useState(false)
   const [artifacts, setArtifacts] = useState<string[]>([])
@@ -726,8 +734,21 @@ export function IssueDetailView({
   const [prResult, setPrResult] = useState<{ url: string; number: number } | null>(null)
   const [raceDialogOpen, setRaceDialogOpen] = useState(false)
   const [selectedRaceProviders, setSelectedRaceProviders] = useState<string[]>([])
+  const [disabledTools, setDisabledTools] = useState<string[]>(disabledToolsFromResult)
 
-  const identifier = (result.identifier as string) || (result.id as string) || ''
+  // Sync local state when result changes
+  useEffect(() => {
+    setLocalState(state)
+    setLocalAssignee(assigneeId)
+    setLocalProvider(provider)
+    setDisabledTools(disabledToolsFromResult)
+  }, [result])
+
+  // Get all providers for this issue from snapshot to support switching between parallel runs
+  const activeSessions = useMemo(() => {
+    if (!snapshot) return []
+    return snapshot.running.filter(r => r.issue_id === issueId || r.issue_identifier === identifier)
+  }, [snapshot, issueId, identifier])
 
   useEffect(() => {
     if (activeTab === 'logs' && identifier && config) {
@@ -757,6 +778,13 @@ export function IssueDetailView({
         })
         .finally(() => setArtifactsLoading(false))
     }
+    if (activeTab === 'activity' && identifier && config) {
+      setHistoryLoading(true)
+      fetchIssueHistory(config, identifier)
+        .then(setIssueHistory)
+        .catch(() => setIssueHistory([]))
+        .finally(() => setHistoryLoading(false))
+    }
   }, [activeTab, identifier, config, localProvider])
 
   useEffect(() => {
@@ -772,10 +800,16 @@ export function IssueDetailView({
   }, [selectedArtifact, identifier, config, localProvider])
 
   useEffect(() => {
-    if (activeTab === 'logs' && logsEndRef.current) {
-      logsEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    if (isSplitView && secondaryProvider && identifier && config && activeTab === 'logs') {
+      setSecondaryLogsLoading(true)
+      fetchIssueLogs(config, identifier, secondaryProvider)
+        .then(setSecondaryLogs)
+        .catch(() => setSecondaryLogs('No logs available for secondary provider.'))
+        .finally(() => setSecondaryLogsLoading(false))
+    } else if (!isSplitView) {
+      setSecondaryLogs('')
     }
-  }, [logs, activeTab])
+  }, [isSplitView, secondaryProvider, identifier, config, activeTab])
 
   const filteredLogs = useMemo(() => {
     if (!logFilter.trim()) return logs
@@ -794,7 +828,7 @@ export function IssueDetailView({
   const handleAssigneeChange = async (newAssignee: string) => {
     setLocalAssignee(newAssignee)
     if (onUpdate) {
-      await onUpdate({ assignee_id: newAssignee })
+      await onUpdate({ assignee_id: newAssignee === 'Unassigned' ? '' : newAssignee })
     }
   }
 
@@ -840,9 +874,9 @@ export function IssueDetailView({
     setPrPending(true)
     try {
       const res = await createGitHubPR(config, identifier, {
-        title: (result.title as string) || `PR for ${identifier}`,
-        body: (result.description as string) || `Fixes ${identifier}`,
-        head: `task/${identifier}`, // Assuming a branch naming convention
+        title: title || `PR for ${identifier}`,
+        body: description || `Fixes ${identifier}`,
+        head: `task/${identifier}`,
         base: 'main',
       })
       setPrResult(res)
@@ -863,6 +897,16 @@ export function IssueDetailView({
     const started = relevant.find((e) => e.type === 'hook_started' && (e.data as any)?.hook_type === type)
     if (started) return 'active'
     return 'pending'
+  }
+
+  const getEventIcon = (kind: string) => {
+    const k = kind.toLowerCase()
+    if (k.includes('started') || k.includes('init')) return <Play className="h-3 w-3 text-emerald-500" fill="currentColor" />
+    if (k.includes('failed') || k.includes('error')) return <AlertCircle className="h-3 w-3 text-red-500" />
+    if (k.includes('completed') || k.includes('success')) return <CheckCircle2 className="h-3 w-3 text-primary" />
+    if (k.includes('tool')) return <Wrench className="h-3 w-3 text-amber-500" />
+    if (k.includes('hook')) return <Rows className="h-3 w-3 text-blue-400" />
+    return <Activity size={12} className="text-muted-foreground/40" />
   }
 
   const hooks = [
@@ -932,20 +976,23 @@ export function IssueDetailView({
                 </Badge>
               </div>
               <div className="flex flex-wrap gap-2">
-                {activeSessions.map((session) => (
-                  <button
-                    key={session.provider}
-                    onClick={() => setLocalProvider(session.provider)}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all ${localProvider === session.provider
-                      ? 'bg-blue-500 border-blue-500 text-white shadow-lg shadow-blue-500/20'
-                      : 'bg-black/20 border-white/5 text-muted-foreground hover:bg-white/5'
-                      }`}
-                  >
-                    <Cpu size={10} />
-                    <span className="text-[10px] font-bold uppercase tracking-tight">{session.provider}</span>
-                    {localProvider === session.provider && <CheckCircle2 size={10} className="text-white" />}
-                  </button>
-                ))}
+                {activeSessions.map((session) => {
+                  const sessionProvider = session.provider || 'default'
+                  return (
+                    <button
+                      key={sessionProvider}
+                      onClick={() => setLocalProvider(sessionProvider)}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all ${localProvider === sessionProvider
+                        ? 'bg-blue-500 border-blue-500 text-white shadow-lg shadow-blue-500/20'
+                        : 'bg-black/20 border-white/5 text-muted-foreground hover:bg-white/5'
+                        }`}
+                    >
+                      <Cpu size={10} />
+                      <span className="text-[10px] font-bold uppercase tracking-tight">{sessionProvider}</span>
+                      {localProvider === sessionProvider && <CheckCircle2 size={10} className="text-white" />}
+                    </button>
+                  )
+                })}
               </div>
               <p className="text-[9px] text-blue-500/60 leading-tight">
                 Switch between participants to view their unique logs, artifacts, and diffs. Promote a session to finalize the race.
@@ -961,7 +1008,7 @@ export function IssueDetailView({
                     </Badge>
                     <span className="text-xs text-muted-foreground">in {(result.team_id as string) || 'Orchestra'}</span>
                   </div>
-                  <h3 className="mt-1 truncate text-lg font-semibold text-foreground">{(result.title as string) || 'No Title'}</h3>
+                  <h3 className="mt-1 truncate text-lg font-semibold text-foreground">{title}</h3>
                 </div>
                 <div className="flex items-center gap-2">
                   {localState === 'Done' && !prResult && (
@@ -1039,9 +1086,9 @@ export function IssueDetailView({
                   />
                   <CustomDropdown
                     className="w-48"
-                    value={localProvider || 'Default'}
+                    value={localProvider || 'default'}
                     options={[
-                      { label: 'System Default', value: '', icon: <Settings2 className="h-3 w-3" /> },
+                      { label: 'System Default', value: 'default', icon: <Settings2 className="h-3 w-3" /> },
                       ...availableAgents.map((p) => ({
                         label: p.charAt(0).toUpperCase() + p.slice(1),
                         value: p,
@@ -1053,12 +1100,12 @@ export function IssueDetailView({
                   />
                   <CustomDropdown
                     className="w-56"
-                    value={localAssignee}
+                    value={localAssignee.startsWith('agent-') ? localAssignee : (availableAgents.includes(localAssignee) ? `agent-${localAssignee}` : localAssignee)}
                     options={[
                       { label: 'Unassigned', value: 'Unassigned', icon: <Users className="h-3 w-3" /> },
                       ...availableAgents.map((agent) => ({
-                        label: agent,
-                        value: agent,
+                        label: agent.charAt(0).toUpperCase() + agent.slice(1),
+                        value: `agent-${agent}`,
                         icon: <Activity className="h-3 w-3" />,
                       })),
                     ]}
@@ -1078,9 +1125,9 @@ export function IssueDetailView({
                 <div className="space-y-1">
                   <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Priority</p>
                   <div className="flex items-center gap-2">
-                    <PriorityIcon priority={Number(result.priority ?? 0)} className="h-4 w-4" />
+                    <PriorityIcon priority={priority} className="h-4 w-4" />
                     <span className="font-medium">
-                      <PriorityLabel priority={Number(result.priority ?? 0)} />
+                      <PriorityLabel priority={priority} />
                     </span>
                   </div>
                 </div>
@@ -1088,14 +1135,14 @@ export function IssueDetailView({
                   <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Assigned Agent</p>
                   <div className="flex items-center gap-2">
                     <Users className="h-3.5 w-3.5 text-muted-foreground/60" />
-                    <p className="font-medium">{availableAgents.find((a) => a === localAssignee) || localAssignee}</p>
+                    <p className="font-medium capitalize">{localAssignee.replace('agent-', '')}</p>
                   </div>
                 </div>
                 <div className="space-y-1">
                   <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Blockers</p>
                   <div className="flex flex-wrap gap-1">
-                    {Array.isArray(result.blocked_by) && result.blocked_by.length > 0 ? (
-                      result.blocked_by.map((blocker: any) => (
+                    {Array.isArray(blockedBy) && blockedBy.length > 0 ? (
+                      blockedBy.map((blocker: any) => (
                         <Badge key={blocker.identifier || blocker.id} variant="outline" className="px-1.5 py-0 text-[10px] bg-red-500/10 text-red-500 border-red-500/20">
                           {blocker.identifier || blocker.id}
                         </Badge>
@@ -1112,16 +1159,16 @@ export function IssueDetailView({
                   <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Branch</p>
                   <div className="flex items-center gap-2">
                     <GitBranch size={12} className="text-muted-foreground" />
-                    <span className="font-mono text-[10px] truncate max-w-[120px]">{(result.branch_name as string) || 'None'}</span>
+                    <span className="font-mono text-[10px] truncate max-w-[120px]">{branchName || 'None'}</span>
                   </div>
                 </div>
                 <div className="space-y-1">
                   <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">System URL</p>
                   <div className="flex items-center gap-2">
                     <ExternalLink size={12} className="text-muted-foreground" />
-                    {result.url ? (
-                      <a href={result.url as string} target="_blank" rel="noreferrer" className="text-primary hover:underline truncate max-w-[150px]">
-                        {result.url as string}
+                    {issueUrl ? (
+                      <a href={issueUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline truncate max-w-[150px]">
+                        {issueUrl}
                       </a>
                     ) : (
                       <span className="text-muted-foreground">None</span>
@@ -1132,7 +1179,7 @@ export function IssueDetailView({
                   <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Updated At</p>
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <Clock size={12} />
-                    <span>{result.updated_at ? new Date(result.updated_at as string).toLocaleString() : 'N/A'}</span>
+                    <span>{updatedAt ? new Date(updatedAt).toLocaleString() : 'N/A'}</span>
                   </div>
                 </div>
                 <div className="space-y-1">
@@ -1144,10 +1191,10 @@ export function IssueDetailView({
                 </div>
               </div>
 
-              {(result.description as string) ? (
+              {description ? (
                 <div className="mt-4 border-t pt-4">
                   <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Description</p>
-                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground line-clamp-10">{result.description as string}</p>
+                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground line-clamp-10">{description}</p>
                 </div>
               ) : null}
 
@@ -1189,21 +1236,6 @@ export function IssueDetailView({
                 </div>
               </div>
             </div>
-
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-7 text-[10px] text-muted-foreground hover:text-foreground">
-                  View Raw JSON Payload
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-2xl">
-                <DialogHeader>
-                  <DialogTitle>Raw Issue Payload</DialogTitle>
-                  <DialogDescription>Snapshot of the issue data from the tracker contract.</DialogDescription>
-                </DialogHeader>
-                <pre className="max-h-[500px] overflow-auto rounded-md border bg-muted p-4 text-[10px]">{JSON.stringify(result, null, 2)}</pre>
-              </DialogContent>
-            </Dialog>
 
             <Dialog open={raceDialogOpen} onOpenChange={setRaceDialogOpen}>
               <DialogContent className="max-w-md bg-card border-border shadow-2xl">
@@ -1329,11 +1361,42 @@ export function IssueDetailView({
         ) : activeTab === 'logs' ? (
           <div className="relative min-h-[400px] rounded-lg border bg-black p-4 font-mono text-[11px] leading-relaxed text-zinc-300 shadow-inner">
             <div className="mb-3 flex items-center justify-between border-b border-white/10 pb-2">
-              <div className="flex items-center gap-2 text-zinc-500">
-                <Terminal className="h-3 w-3" />
-                <span>agent-turn-session.log</span>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 text-zinc-500">
+                  <Terminal className="h-3 w-3" />
+                  <span>{localProvider || 'main'}.log</span>
+                </div>
+                {activeSessions.length > 1 && (
+                  <button
+                    onClick={() => {
+                      setIsSplitView(!isSplitView)
+                      if (!secondaryProvider && activeSessions.length > 1) {
+                        const other = activeSessions.find(s => s.provider !== localProvider)
+                        if (other) setSecondaryProvider(other.provider || '')
+                        }
+                        }}                    className={`flex items-center gap-1.5 px-2 py-0.5 rounded border transition-all text-[9px] font-black uppercase tracking-tighter ${isSplitView 
+                      ? 'bg-blue-500/20 border-blue-500/40 text-blue-400' 
+                      : 'bg-white/5 border-white/10 text-muted-foreground hover:text-foreground'}`}
+                  >
+                    <Rows className="h-2.5 w-2.5 rotate-90" />
+                    Split View
+                  </button>
+                )}
               </div>
               <div className="flex items-center gap-2">
+                {isSplitView && (
+                  <select
+                    value={secondaryProvider}
+                    onChange={(e) => setSecondaryProvider(e.target.value)}
+                    className="h-6 bg-black/40 border border-white/10 rounded px-2 text-[9px] font-bold uppercase text-blue-400 outline-none"
+                  >
+                    {activeSessions.map(s => (
+                      <option key={s.provider} value={s.provider} disabled={s.provider === localProvider}>
+                        VS {s.provider?.toUpperCase()}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <div className="relative">
                   <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-2.5 w-2.5 text-muted-foreground/40" />
                   <input
@@ -1344,28 +1407,58 @@ export function IssueDetailView({
                     className="h-6 w-48 rounded bg-white/5 border border-white/10 pl-7 pr-2 text-[10px] text-zinc-300 focus:outline-none focus:ring-1 focus:ring-primary/30"
                   />
                 </div>
-                {logsLoading && <div className="h-2 w-2 animate-pulse rounded-full bg-primary" />}
+                {(logsLoading || secondaryLogsLoading) && <div className="h-2 w-2 animate-pulse rounded-full bg-primary" />}
               </div>
             </div>            <div className="max-h-[500px] overflow-auto whitespace-pre-wrap">
-              {logsLoading && !logs ? (
-                <div className="space-y-2">
-                  <div className="h-3 w-3/4 animate-pulse rounded bg-zinc-800" />
-                  <div className="h-3 w-1/2 animate-pulse rounded bg-zinc-800" />
-                  <div className="h-3 w-2/3 animate-pulse rounded bg-zinc-800" />
-                </div>
-              ) : filteredLogs ? (
-                <Ansi>{filteredLogs}</Ansi>
-              ) : logs ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center text-zinc-500 opacity-40">
-                  <Search className="h-8 w-8 mb-3" />
-                  <p className="text-xs tracking-tight uppercase font-black">No matching logs found</p>
+              {isSplitView ? (
+                <div className="grid grid-cols-2 gap-4 divide-x divide-white/5 h-[500px]">
+                  <div className="pr-4 overflow-auto scroll-smooth">
+                    <div className="sticky top-0 bg-black/80 backdrop-blur pb-1 mb-2 text-[8px] font-black uppercase text-zinc-500 flex items-center justify-between z-10">
+                      <span>{localProvider}</span>
+                      {logsLoading && <Loader2 className="h-2 w-2 animate-spin text-primary" />}
+                    </div>
+                    {filteredLogs ? <Ansi>{filteredLogs}</Ansi> : <p className="opacity-20 italic">No output...</p>}
+                  </div>
+                  <div className="pl-4 overflow-auto scroll-smooth border-l border-white/5">
+                    <div className="sticky top-0 bg-black/80 backdrop-blur pb-1 mb-2 text-[8px] font-black uppercase text-blue-400 flex items-center justify-between z-10">
+                      <span>{secondaryProvider}</span>
+                      {secondaryLogsLoading && <Loader2 className="h-2 w-2 animate-spin text-blue-400" />}
+                    </div>
+                    {secondaryLogs.split('\n').filter(line => 
+                      !logFilter.trim() || line.toLowerCase().includes(logFilter.toLowerCase())
+                    ).join('\n') ? (
+                      <Ansi>{secondaryLogs.split('\n').filter(line => 
+                        !logFilter.trim() || line.toLowerCase().includes(logFilter.toLowerCase())
+                      ).join('\n')}</Ansi>
+                    ) : (
+                      <p className="opacity-20 italic">No output...</p>
+                    )}
+                  </div>
                 </div>
               ) : (
-                <div className="flex flex-col items-center justify-center py-12 text-center text-zinc-500">
-                  <Terminal className="h-8 w-8 opacity-10 mb-3" />
-                  <p className="text-xs tracking-tight">No logs documented for this issue session.</p>
-                </div>
-              )}              <div ref={logsEndRef} />
+                <>
+                  {logsLoading && !logs ? (
+                    <div className="space-y-2">
+                      <div className="h-3 w-3/4 animate-pulse rounded bg-zinc-800" />
+                      <div className="h-3 w-1/2 animate-pulse rounded bg-zinc-800" />
+                      <div className="h-3 w-2/3 animate-pulse rounded bg-zinc-800" />
+                    </div>
+                  ) : filteredLogs ? (
+                    <Ansi>{filteredLogs}</Ansi>
+                  ) : logs ? (
+                    <div className="flex flex-col items-center justify-center py-12 text-center text-zinc-500 opacity-40">
+                      <Search className="h-8 w-8 mb-3" />
+                      <p className="text-xs tracking-tight uppercase font-black">No matching logs found</p>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-12 text-center text-zinc-500">
+                      <Terminal className="h-8 w-8 opacity-10 mb-3" />
+                      <p className="text-xs tracking-tight">No logs documented for this issue session.</p>
+                    </div>
+                  )}
+                </>
+              )}
+              <div ref={logsEndRef} />
             </div>
           </div>
         ) : activeTab === 'artifacts' ? (
@@ -1429,120 +1522,126 @@ export function IssueDetailView({
               )}
             </div>
           </div>
-        ) : activeTab === 'activity' ? (
-          <div className="space-y-4">
-            <div className="rounded-lg border bg-muted/30 p-4">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-4 flex items-center gap-2">
-                <History size={14} />
-                Issue Activity
-              </h3>
-              <div className="space-y-1">
-                {Array.isArray(result.history) && result.history.length > 0 ? (
-                  result.history.map((item: any, idx: number) => {
-                    const date = new Date(item.timestamp).toLocaleString()
-                    let actionText = ''
-                    let icon = <Activity size={12} />
-
-                    switch (item.action) {
-                      case 'state_change':
-                        actionText = `changed status from ${item.old_value} to ${item.new_value}`
-                        icon = <CheckCircle2 size={12} className="text-primary" />
-                        break
-                      case 'priority_change':
-                        actionText = `changed priority from ${item.old_value} to ${item.new_value}`
-                        icon = <SignalHigh size={12} className="text-amber-500" />
-                        break
-                      case 'assignee_change':
-                        actionText = `assigned to ${item.new_value || 'Unassigned'} (was ${item.old_value || 'Unassigned'})`
-                        icon = <User size={12} className="text-blue-500" />
-                        break
-                      default:
-                        actionText = `${item.action} changed`
-                    }
-
-                    return (
-                      <div key={idx} className="flex items-start gap-4 py-3 border-b border-white/5 last:border-0 hover:bg-white/[0.02] px-3 rounded-xl transition-all">
-                        <div className="mt-1 rounded-full bg-white/5 p-1.5 shadow-sm">
-                          {icon}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between mb-1">
-                            <p className="text-xs font-black text-foreground/90 uppercase tracking-tight">{item.user_id}</p>
-                            <p className="text-[10px] text-muted-foreground/40 font-mono tracking-tighter">{date}</p>
-                          </div>
-                          <p className="text-xs text-muted-foreground leading-snug">{actionText}</p>
-                        </div>
-                      </div>
-                    )
-                  })
-                ) : (
-                  <div className="py-12 text-center text-muted-foreground/30 flex flex-col items-center gap-2">
-                    <History size={32} className="opacity-10" />
-                    <p className="text-xs italic uppercase tracking-widest">No activity recorded yet</p>
-                  </div>
-                )}
+      ) : activeTab === 'activity' ? (
+        <div className="space-y-6 text-left">
+          <div className="rounded-xl border border-white/5 bg-white/[0.02] p-6 min-h-[400px]">
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                  <History className="h-4 w-4 text-primary" />
+                  Full Event Audit
+                </h3>
+                <p className="text-xs text-muted-foreground text-left">Chronological narrative of all system interactions for this issue.</p>
               </div>
+              {historyLoading && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
             </div>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            <div className="rounded-xl border border-white/5 bg-white/[0.02] p-6">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
-                    <Wrench className="h-4 w-4 text-primary" />
-                    Capability Override
-                  </h3>
-                  <p className="text-xs text-muted-foreground">Select which tools the agent is allowed to use for this specific session.</p>
-                </div>
-                <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 text-[10px]">
-                  {allTools.length - disabledTools.length} Active Tools
-                </Badge>
-              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {allTools.map((tool) => {
-                  const isDisabled = disabledTools.includes(tool.name)
-                  return (
-                    <button
-                      key={tool.name}
-                      onClick={() => handleToggleTool(tool.name)}
-                      className={`flex flex-col text-left p-3 rounded-xl border transition-all group ${isDisabled
-                        ? 'border-white/5 bg-transparent opacity-40 grayscale hover:opacity-60'
-                        : 'border-primary/20 bg-primary/5 hover:bg-primary/10 shadow-lg shadow-primary/5'
-                        }`}
-                    >
-                      <div className="flex items-center justify-between mb-1.5 w-full">
-                        <span className={`text-[11px] font-black tracking-tight ${isDisabled ? 'text-muted-foreground' : 'text-primary'}`}>
-                          {tool.name.includes('_') ? tool.name.split('_')[1] : tool.name}
+            {issueHistory.length === 0 && !historyLoading ? (
+              <div className="flex flex-col items-center justify-center py-20 opacity-20 grayscale text-center">
+                <Activity size={48} className="mb-4 mx-auto" />
+                <p className="text-xs font-black uppercase tracking-widest">No historical events found</p>
+              </div>
+            ) : (
+              <div className="relative space-y-6 before:absolute before:left-[11px] before:top-2 before:h-[calc(100%-16px)] before:w-[1px] before:bg-border/40 text-left">
+                {issueHistory.map((item, idx) => (
+                  <div key={`${item.id || idx}`} className="relative pl-10 group text-left">
+                    <div className="absolute left-0 top-0 z-10 grid h-6 w-6 place-items-center rounded-full border border-white/10 bg-black shadow-sm group-hover:border-primary/40 transition-colors">
+                      {getEventIcon(item.kind)}
+                    </div>
+                    <div className="flex flex-col gap-1 bg-white/[0.01] p-3 rounded-xl border border-transparent group-hover:border-white/5 group-hover:bg-white/[0.02] transition-all text-left">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-foreground capitalize">{item.kind.replace(/_/g, ' ')}</span>
+                          {item.provider && (
+                            <Badge variant="outline" className="text-[8px] h-3.5 px-1 bg-primary/5 text-primary/60 border-primary/10">
+                              {item.provider}
+                            </Badge>
+                          )}
+                        </div>
+                        <span className="text-[9px] font-medium text-muted-foreground/40 font-mono">
+                          {new Date(item.timestamp).toLocaleString()}
                         </span>
-                        {isDisabled ? (
-                          <div className="h-3.5 w-3.5 rounded-full border border-white/10 flex items-center justify-center">
-                            <div className="h-1.5 w-1.5 rounded-full bg-white/5" />
-                          </div>
-                        ) : (
-                          <div className="h-3.5 w-3.5 rounded-full bg-primary flex items-center justify-center shadow-lg shadow-primary/40">
-                            <CheckCircle2 className="h-2 w-2 text-primary-foreground" />
-                          </div>
-                        )}
                       </div>
-                      <p className="text-[10px] text-muted-foreground leading-snug line-clamp-2">{tool.description || 'No documentation provided'}</p>
-                      {tool.name.includes('_') && (
-                        <div className="mt-2 pt-2 border-t border-white/5 flex items-center gap-1.5">
-                          <Badge variant="outline" className="text-[8px] h-3.5 px-1 bg-white/5 border-white/10 text-muted-foreground font-mono">
-                            {tool.name.split('_')[0]}
-                          </Badge>
+                      <p className="text-[11px] text-muted-foreground leading-relaxed text-left">
+                        {item.message || 'System event recorded without message details.'}
+                      </p>
+                      {(item.input_tokens > 0 || item.output_tokens > 0) && (
+                        <div className="mt-2 flex items-center gap-3">
+                          <div className="flex items-center gap-1 text-[9px] font-mono text-emerald-500/60">
+                            <Zap size={10} />
+                            IN: {item.input_tokens}
+                          </div>
+                          <div className="flex items-center gap-1 text-[9px] font-mono text-primary/60">
+                            <TrendingUp size={10} />
+                            OUT: {item.output_tokens}
+                          </div>
                         </div>
                       )}
-                    </button>
-                  )
-                })}
+                    </div>
+                  </div>
+                ))}
               </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-6 text-left">
+          <div className="rounded-xl border border-white/5 bg-white/[0.02] p-6">
+            <div className="flex items-center justify-between mb-6">
+              <div className="text-left">
+                <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                  <Wrench className="h-4 w-4 text-primary" />
+                  Capability Override
+                </h3>
+                <p className="text-xs text-muted-foreground">Select which tools the agent is allowed to use for this specific session.</p>
+              </div>
+              <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 text-[10px]">
+                {allTools.length - disabledTools.length} Active Tools
+              </Badge>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {allTools.map((tool) => {
+                const isDisabled = disabledTools.includes(tool.name)
+                return (
+                  <button
+                    key={tool.name}
+                    onClick={() => handleToggleTool(tool.name)}
+                    className={`flex flex-col text-left p-3 rounded-xl border transition-all group ${isDisabled
+                      ? 'border-white/5 bg-transparent opacity-40 grayscale hover:opacity-60'
+                      : 'border-primary/20 bg-primary/5 hover:bg-primary/10 shadow-lg shadow-primary/5'
+                      }`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5 w-full">
+                      <span className={`text-[11px] font-black tracking-tight ${isDisabled ? 'text-muted-foreground' : 'text-primary'}`}>
+                        {tool.name.includes('_') ? tool.name.split('_')[1] : tool.name}
+                      </span>
+                      {isDisabled ? (
+                        <div className="h-3.5 w-3.5 rounded-full border border-white/10 flex items-center justify-center">
+                          <div className="h-1.5 w-1.5 rounded-full bg-white/5" />
+                        </div>
+                      ) : (
+                        <div className="h-3.5 w-3.5 rounded-full bg-primary flex items-center justify-center shadow-lg shadow-primary/40">
+                          <CheckCircle2 className="h-2 w-2 text-primary-foreground" />
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground leading-snug line-clamp-2">{tool.description || 'No documentation provided'}</p>
+                    {tool.name.includes('_') && (
+                      <div className="mt-2 pt-2 border-t border-white/5 flex items-center gap-1.5">
+                        <Badge variant="outline" className="text-[8px] h-3.5 px-1 bg-white/5 border-white/10 text-muted-foreground font-mono">
+                          {tool.name.split('_')[0]}
+                        </Badge>
+                      </div>
+                    )}
+                  </button>
+                )
+              })}
             </div>
           </div>
-        )
-      }
-    </div >
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -1827,16 +1926,18 @@ function ProjectSelector({ value, projects, onChange }: { value: string, project
 }
 
 function AgentSelector({ value, agents, onChange }: { value: string, agents: string[], onChange: (a: string) => void }) {
+  const normalizedValue = value.startsWith('agent-') ? value.replace('agent-', '') : value;
+  
   return (
     <CustomDropdown
       className="bg-transparent border-none hover:bg-white/5 !h-7 !px-2 rounded-md transition-colors shadow-none"
-      value={value}
+      value={normalizedValue || 'Unassigned'}
       direction="up"
       options={[
         { label: 'Unassigned', value: 'Unassigned', icon: <User size={12} className="opacity-40" /> },
         ...agents.map((a) => ({ label: a, value: a, icon: <Bot size={12} className="text-primary/60" /> })),
       ]}
-      onChange={onChange}
+      onChange={(v) => onChange(v === 'Unassigned' ? '' : `agent-${v}`)}
       triggerContent={
         <div className="flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground/70 uppercase">
           {value !== 'Unassigned' ? <Bot size={12} className="text-primary/60" /> : <User size={12} className="opacity-40" />}
@@ -1989,7 +2090,7 @@ function BackendConfigForm({
           className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
           value={baseUrl}
           onChange={(event) => setBaseUrl(event.target.value)}
-          placeholder="http://127.0.0.1:4000"
+          placeholder="http://127.0.0.1:4010"
           disabled={disabled}
         />
       </label>
@@ -2225,6 +2326,8 @@ export function KanbanBoard({
   const [priorityFilter, setPriorityFilter] = useState<string>('all')
   const [projectFilter, setProjectFilter] = useState<string>(projects.length === 1 ? projects[0].id : 'all')
   const [viewMode, setViewMode] = useState<'board' | 'list'>('board')
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [issueToDelete, setIssueToDelete] = useState<{ identifier: string; title?: string } | null>(null)
 
   const osOptions = useMemo(() => ({
     scrollbars: { autoHide: 'move' as const, theme: 'os-theme-custom' },
@@ -2548,7 +2651,7 @@ export function KanbanBoard({
                                 : ''}
                           </span>
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            {item.state !== 'In Progress' && item.assignee_id && item.assignee_id !== 'Unassigned' && onIssueUpdate && (
+                            {item.state === 'Todo' && item.assignee_id && item.assignee_id !== 'Unassigned' && onIssueUpdate && (
                               <button
                                 type="button"
                                 className="p-1 rounded-md text-emerald-500/60 hover:text-emerald-500 hover:bg-emerald-500/10 transition-all active:scale-95"
@@ -2575,10 +2678,11 @@ export function KanbanBoard({
                             {onIssueDelete && (
                               <button
                                 type="button"
-                                className="p-1 rounded-md text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-all active:scale-95"
+                                className="p-1 rounded-md text-muted-foreground/60 hover:text-red-500 hover:bg-red-500/10 transition-all active:scale-95 cursor-pointer relative z-50"
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  void onIssueDelete(item.issue_identifier)
+                                  setIssueToDelete({ identifier: item.issue_identifier, title: item.title })
+                                  setDeleteDialogOpen(true)
                                 }}
                               >
                                 <Trash2 className="h-3 w-3" />
@@ -2588,7 +2692,7 @@ export function KanbanBoard({
                         </div>
                       </div>
                       <p className="mt-2 line-clamp-2 text-[13px] font-medium leading-tight text-foreground/90">
-                        {(item as any).last_message || (item as any).error || 'No message'}
+                        {item.title || item.description || (item as any).last_message || (item as any).error || 'No message'}
                       </p>
                       {Array.isArray((item as any).labels) && (item as any).labels.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1">
@@ -2703,7 +2807,7 @@ export function KanbanBoard({
                       </td>
                       <td className="px-2 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          {item.state !== 'In Progress' && item.assignee_id && item.assignee_id !== 'Unassigned' && onIssueUpdate && (
+                          {item.state === 'Todo' && item.assignee_id && item.assignee_id !== 'Unassigned' && onIssueUpdate && (
                             <button
                               type="button"
                               className="p-1 rounded-md text-emerald-500/60 hover:text-emerald-500 hover:bg-emerald-500/10 transition-all active:scale-95"
@@ -2730,10 +2834,11 @@ export function KanbanBoard({
                           {onIssueDelete && (
                             <button
                               type="button"
-                              className="p-1 rounded-md text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-all opacity-0 group-hover:opacity-100"
+                              className="p-1 rounded-md text-muted-foreground/60 hover:text-red-500 hover:bg-red-500/10 transition-all cursor-pointer"
                               onClick={(e) => {
                                 e.stopPropagation()
-                                void onIssueDelete(item.issue_identifier)
+                                setIssueToDelete({ identifier: item.issue_identifier, title: item.title })
+                                setDeleteDialogOpen(true)
                               }}
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -2749,6 +2854,58 @@ export function KanbanBoard({
           )}
         </div>
       )}
+
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-500">
+              <Trash2 className="h-5 w-5" />
+              Delete Task
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this task? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            {issueToDelete && (
+              <div className="rounded-lg border bg-muted/30 p-3">
+                <p className="text-sm font-mono text-primary">{issueToDelete.identifier}</p>
+                {issueToDelete.title && (
+                  <p className="mt-1 text-sm text-muted-foreground">{issueToDelete.title}</p>
+                )}
+              </div>
+            )}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteDialogOpen(false)
+                setIssueToDelete(null)
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={async () => {
+                if (issueToDelete && onIssueDelete) {
+                  try {
+                    await onIssueDelete(issueToDelete.identifier)
+                  } catch (err) {
+                    console.error('Failed to delete issue:', err)
+                  }
+                }
+                setDeleteDialogOpen(false)
+                setIssueToDelete(null)
+              }}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

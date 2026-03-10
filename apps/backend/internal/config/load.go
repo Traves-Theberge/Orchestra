@@ -22,7 +22,7 @@ func Load() (Config, error) {
 		"codex":    "codex exec --skip-git-repo-check --json {{prompt}}",
 		"claude":   "claude -p {{prompt}} --output-format json",
 		"opencode": "opencode run {{prompt}} --format json",
-		"gemini":   "gemini --output-format stream-json {{prompt}}",
+		"gemini":   "gemini -p {{prompt}} --output-format stream-json --approval-mode yolo",
 	}
 
 	host := getenvOrEmpty("ORCHESTRA_SERVER_HOST")
@@ -124,7 +124,7 @@ func Load() (Config, error) {
 		host = "127.0.0.1"
 	}
 	if strings.TrimSpace(portRaw) == "" {
-		portRaw = "4000"
+		portRaw = "4010"
 	}
 	if strings.TrimSpace(workspaceRoot) == "" {
 		workspaceRoot = workspaceDefault

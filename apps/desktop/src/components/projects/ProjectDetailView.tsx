@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import {
     ArrowLeft, Folder, Globe, History, Zap, ExternalLink,
     Calendar, Code as CodeIcon, GitBranch, RefreshCcw, Trash2, Github,
-    FileText, Activity, Layers, ChevronRight, File, Folder as FolderIcon, Info
+    FileText, Activity, Layers, ChevronRight, File, Folder as FolderIcon, Info, ShieldCheck
 } from 'lucide-react'
 import type { Project, ProjectStats, SnapshotPayload, BackendConfig } from '@/lib/orchestra-types'
 import { Button } from '@/components/ui/button'
@@ -479,6 +479,8 @@ function StatCard({ title, value, icon, color }: { title: string, value: string 
         amber: 'bg-amber-500/10 text-amber-500',
         green: 'bg-green-500/10 text-green-500',
         primary: 'bg-primary/10 text-primary',
+        red: 'bg-red-500/10 text-red-500',
+        destructive: 'bg-red-500/10 text-red-500',
     }
 
     return (

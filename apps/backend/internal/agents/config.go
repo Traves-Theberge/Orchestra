@@ -46,7 +46,7 @@ var AgentMeta = map[string]struct {
 		GlobalPaths: []string{".gemini/settings.json"},
 		LocalPaths:  []string{".gemini/settings.json"},
 		Format:      "json",
-		SkillPaths:  []string{},
+		SkillPaths:  []string{".gemini/agents", ".gemini/skills"},
 	},
 	"opencode": {
 		GlobalPaths: []string{".config/opencode/opencode.json"},
