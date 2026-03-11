@@ -99,7 +99,7 @@ export function DashboardOverview({
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 min-h-0">
       {/* Workspace Activity (Left) */}
       <div className="lg:col-span-2 flex flex-col min-h-[420px]">
-        <Card className="bg-background/40 backdrop-blur-xl border-white/5 shadow-2xl flex-1 flex flex-col min-h-0">
+        <Card className="bg-card/40 backdrop-blur-xl border-border/40 shadow-2xl flex-1 flex flex-col min-h-0">
           <CardHeader className="flex flex-row items-center justify-between pb-2 px-3 pt-3 shrink-0">
             <div className="space-y-1">
               <CardTitle className="text-sm font-bold flex items-center gap-2 text-foreground/90">
@@ -139,7 +139,7 @@ export function DashboardOverview({
                 <button
                   key={p.id}
                   onClick={() => onProjectClick(p.id)}
-                  className="flex w-full items-center justify-between rounded-xl border border-transparent bg-white/[0.03] p-2 transition-all hover:bg-white/[0.06] hover:border-white/10 group shadow-sm"
+                  className="flex w-full items-center justify-between rounded-xl border border-transparent bg-muted/20 p-2 transition-all hover:bg-muted/30 hover:border-border/30 group shadow-sm"
                 >
                   <div className="flex items-center gap-4">
                     <div className="rounded-lg bg-primary/10 p-2.5 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all duration-300">
@@ -166,7 +166,7 @@ export function DashboardOverview({
 
       {/* Fleet Distribution (Right) */}
       <div className="flex flex-col">
-        <Card className="bg-background/40 backdrop-blur-xl border-white/5 shadow-2xl flex-1 flex flex-col min-h-0 overflow-hidden relative">
+        <Card className="bg-card/40 backdrop-blur-xl border-border/40 shadow-2xl flex-1 flex flex-col min-h-0 overflow-hidden relative">
           <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
             <Cpu size={120} />
           </div>
@@ -198,7 +198,7 @@ export function DashboardOverview({
                           </span>
                           <span className="text-muted-foreground group-hover/bar:text-primary transition-colors">{(tokens / 1000).toFixed(1)}k</span>
                         </div>
-                        <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
+                        <div className="h-1.5 w-full bg-muted/30 rounded-full overflow-hidden border border-border/10">
                           <div
                             className={`h-full transition-all duration-1000 ease-out shadow-lg ${name.includes('claude') ? 'bg-gradient-to-r from-orange-600/50 to-orange-400/50' : name.includes('gemini') ? 'bg-gradient-to-r from-blue-600/50 to-blue-400/50' : 'bg-gradient-to-r from-primary/60 to-primary/30'}`}
                             style={{ width: `${percentage}%` }}
@@ -253,11 +253,11 @@ export function TimelineCard({ timeline }: { timeline: TimelineItem[] }) {
       >        <CardContent className="px-4 pb-4">
           {timeline.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground/40">
-              <Activity className="h-8 w-8 mb-2 opacity-20" />
+              <Activity className="h-8 w-8 mb-2 opacity-10" />
               <p className="text-xs italic uppercase tracking-wider">Awaiting telemetry...</p>
             </div>
           ) : (
-            <div className="relative space-y-3 before:absolute before:left-[11px] before:top-2 before:h-[calc(100%-16px)] before:w-[1px] before:bg-border/60">
+            <div className="relative space-y-3 before:absolute before:left-[11px] before:top-2 before:h-[calc(100%-16px)] before:w-[1px] before:bg-border/30">
               {timeline.map((item, idx) => (
                 <div key={`${item.type}-${idx}`} className="relative pl-8 group">
                   <div className="absolute left-0 top-0.5 z-10 grid h-6 w-6 place-items-center rounded-full border bg-card shadow-sm group-hover:border-primary/40 transition-colors">
@@ -466,7 +466,7 @@ export function SettingsCard({
               </p>
               
               <div className="grid gap-3">
-                <div className="flex items-center justify-between p-4 rounded-xl border border-white/5 bg-white/[0.02]">
+                <div className="flex items-center justify-between p-4 rounded-xl border border-border/20 bg-muted/10">
                   <div className="space-y-1">
                     <p className="text-sm font-bold">Command Palette</p>
                     <p className="text-[10px] text-muted-foreground">Search and navigate instantly across the platform.</p>
@@ -477,7 +477,7 @@ export function SettingsCard({
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between p-4 rounded-xl border border-white/5 bg-white/[0.02]">
+                <div className="flex items-center justify-between p-4 rounded-xl border border-border/20 bg-muted/10">
                   <div className="space-y-1">
                     <p className="text-sm font-bold">Refresh Tracker</p>
                     <p className="text-[10px] text-muted-foreground">Manually trigger a full state synchronization.</p>
@@ -488,7 +488,7 @@ export function SettingsCard({
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between p-4 rounded-xl border border-white/5 bg-white/[0.02]">
+                <div className="flex items-center justify-between p-4 rounded-xl border border-border/20 bg-muted/10">
                   <div className="space-y-1">
                     <p className="text-sm font-bold">Toggle Sidebar</p>
                     <p className="text-[10px] text-muted-foreground">Collapse or expand the primary navigation rail.</p>
@@ -499,7 +499,7 @@ export function SettingsCard({
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between p-4 rounded-xl border border-white/5 bg-white/[0.02]">
+                <div className="flex items-center justify-between p-4 rounded-xl border border-border/20 bg-muted/10">
                   <div className="space-y-1">
                     <p className="text-sm font-bold">Quick Switch (Dashboard)</p>
                     <p className="text-[10px] text-muted-foreground">Jump back to the operations overview.</p>
@@ -949,8 +949,8 @@ export function IssueDetailView({
   ]
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-1 rounded-lg bg-muted/20 p-1">
+    <div className="flex flex-col gap-4 h-full">
+      <div className="flex items-center gap-1 rounded-lg bg-muted/20 p-1 shrink-0">
         <AppTooltip content="Task metadata, agent configuration, and runtime pulse">
           <button
             onClick={() => setActiveTab('overview')}
@@ -999,338 +999,221 @@ export function IssueDetailView({
       </div>
 
       {activeTab === 'overview' ? (
-        <div className="space-y-4 h-[78vh] overflow-auto custom-scrollbar pr-1">
+        <div className="flex-1 min-h-0 overflow-hidden flex flex-col gap-3 pr-1">
           {activeSessions.length > 1 && (
-            <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Activity size={14} className="text-primary" />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Active Contexts</span>
-                </div>
+            <div className="rounded-lg border border-white/5 bg-white/[0.02] p-2 space-y-2 shrink-0">
+              <div className="flex items-center gap-2">
+                <Activity size={12} className="text-primary" />
+                <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">Active Contexts</span>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-1.5">
                 {activeSessions.map((session) => {
                   const sessionProvider = session.provider || 'default'
                   return (
                     <AppTooltip key={sessionProvider} content={`Switch view to ${sessionProvider} agent context`}>
                       <button
                         onClick={() => setLocalProvider(sessionProvider)}
-                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all ${localProvider === sessionProvider
-                          ? 'bg-primary/10 border-primary/20 text-primary shadow-lg shadow-primary/5'
+                        className={`flex items-center gap-2 px-2 py-1 rounded-md border transition-all ${localProvider === sessionProvider
+                          ? 'bg-primary/10 border-primary/20 text-primary'
                           : 'bg-black/20 border-white/5 text-muted-foreground hover:bg-white/5'
                           }`}
                       >
                         <Cpu size={10} />
-                        <span className="text-[10px] font-bold uppercase tracking-tight">{sessionProvider}</span>
-                        {localProvider === sessionProvider && <CheckCircle2 size={10} className="text-primary" />}
+                        <span className="text-[9px] font-bold uppercase tracking-tight">{sessionProvider}</span>
                       </button>
                     </AppTooltip>
                   )
                 })}
               </div>
-              <p className="text-[9px] text-muted-foreground/40 leading-tight">
-                Switch between active agent sessions to monitor unique logs and artifacts.
-              </p>
             </div>
           )}
-            <div className="rounded-xl border border-white/5 bg-[#0c0c0e] shadow-2xl overflow-hidden">
-              {/* Header / Actions */}
-              <div className="flex flex-wrap items-center justify-between gap-4 p-5 bg-white/[0.02] border-b border-white/5">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <Badge variant="outline" className="font-mono text-[10px] uppercase tracking-wider bg-primary/10 text-primary border-primary/20">
-                      {identifier}
-                    </Badge>
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 flex items-center gap-1.5">
-                      <FolderTree size={12} />
-                      {(result.team_id as string) || 'Orchestra Workspace'}
-                    </span>
-                  </div>
-                  <h3 className="truncate text-xl font-black tracking-tight text-white">{title}</h3>
+
+          <div className="rounded-xl border border-white/5 bg-[#0c0c0e] shadow-2xl flex-1 flex flex-col min-h-0 overflow-hidden">
+            {/* Header Area */}
+            <div className="flex items-center justify-between gap-4 p-3 bg-white/[0.02] border-b border-white/5 shrink-0">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <Badge variant="outline" className="font-mono text-[9px] h-4 uppercase bg-primary/10 text-primary border-primary/20 px-1">
+                    {identifier}
+                  </Badge>
+                  <h3 className="truncate text-base font-black tracking-tight text-white">{title}</h3>
                 </div>
                 <div className="flex items-center gap-2">
-                  {localState === 'Done' && !prResult && (
-                    <AppTooltip content="Stage changes and create a GitHub Pull Request">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 gap-2 border-primary/30 text-primary hover:bg-primary/10 bg-primary/5"
-                        onClick={handleCreatePR}
-                        disabled={prPending}
-                      >
-                        <GitBranch size={12} className={prPending ? 'animate-spin' : ''} />
-                        Create PR
-                      </Button>
-                    </AppTooltip>
-                  )}
-                  {prResult && (
-                    <AppTooltip content="View created PR on GitHub">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 gap-2 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/10 bg-emerald-500/5"
-                        asChild
-                      >
-                        <a href={prResult.url} target="_blank" rel="noreferrer">
-                          <ExternalLink size={12} />
-                          PR #{prResult.number}
-                        </a>
-                      </Button>
-                    </AppTooltip>
-                  )}
-                  {(localState === 'Todo' || localState === 'Done') && (
-                    <AppTooltip content="Wake agent and begin automated task execution">
-                      <Button
-                        variant="default"
-                        size="sm"
-                        className="h-8 gap-2 bg-emerald-500 hover:bg-emerald-400 text-black font-bold uppercase tracking-widest text-[10px] shadow-lg shadow-emerald-500/20"
-                        onClick={() => handleStateChange('In Progress')}
-                      >
-                        <Play size={12} fill="currentColor" />
-                        Run Task
-                      </Button>
-                    </AppTooltip>
-                  )}
-                  {localState === 'In Progress' && onStopSession && (
-                    <AppTooltip content="Gracefully terminate the active agent session">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 border-red-500/30 text-red-500 hover:bg-red-500/10 bg-red-500/5 font-bold uppercase tracking-widest text-[10px]"
-                        onClick={() => void onStopSession(localProvider)}
-                      >
-                        <Square size={10} fill="currentColor" className="mr-1.5" />
-                        Stop Session
-                      </Button>
-                    </AppTooltip>
-                  )}
+                  <AppTooltip content="Task State">
+                    <CustomDropdown
+                      className="h-7 w-32 border-white/10 bg-black text-[10px]"
+                      value={localState}
+                      options={AGENT_STATES.map((s) => ({ label: s, value: s }))}
+                      onChange={handleStateChange}
+                    />
+                  </AppTooltip>
+                  <AppTooltip content="Active Agent">
+                    <CustomDropdown
+                      className="h-7 w-48 border-white/10 bg-black text-[10px]"
+                      value={localAssignee.startsWith('agent-') ? localAssignee : (availableAgents.includes(localAssignee) ? `agent-${localAssignee}` : localAssignee)}
+                      options={[
+                        { label: 'Unassigned', value: 'Unassigned', icon: <Users className="h-3 w-3 text-muted-foreground" /> },
+                        ...availableAgents.map((agent) => ({
+                          label: `Agent: ${agent.charAt(0).toUpperCase() + agent.slice(1)}`,
+                          value: `agent-${agent}`,
+                          icon: <Bot className="h-3 w-3 text-primary/70" />,
+                        })),
+                      ]}
+                      onChange={handleAssigneeChange}
+                    />
+                  </AppTooltip>
                 </div>
               </div>
-
-              {/* Controls Strip */}
-              <div className="flex flex-wrap gap-3 p-4 bg-black/40 border-b border-white/5">
-                <AppTooltip content="Manually override the lifecycle state of this task">
-                  <CustomDropdown
-                    className="w-44 border-white/10 bg-black hover:bg-white/5"
-                    value={localState}
-                    options={AGENT_STATES.map((s) => ({ label: s, value: s }))}
-                    onChange={handleStateChange}
-                  />
-                </AppTooltip>
-                <AppTooltip content="Deploy a specific agent model to handle this task context">
-                  <CustomDropdown
-                    className="w-64 border-white/10 bg-black hover:bg-white/5"
-                    value={localAssignee.startsWith('agent-') ? localAssignee : (availableAgents.includes(localAssignee) ? `agent-${localAssignee}` : localAssignee)}
-                    options={[
-                      { label: 'Unassigned', value: 'Unassigned', icon: <Users className="h-3 w-3 text-muted-foreground" /> },
-                      ...availableAgents.map((agent) => ({
-                        label: `Agent: ${agent.charAt(0).toUpperCase() + agent.slice(1)}`,
-                        value: `agent-${agent}`,
-                        icon: <Bot className="h-3 w-3 text-primary/70" />,
-                      })),
-                    ]}
-                    onChange={handleAssigneeChange}
-                    placeholder="Assign Workforce Agent..."
-                  />
-                </AppTooltip>
+              <div className="flex items-center gap-2">
+                {localState === 'Done' && !prResult && (
+                  <Button variant="outline" size="sm" className="h-7 px-2 gap-1 border-primary/30 text-primary text-[10px]" onClick={handleCreatePR} disabled={prPending}>
+                    <GitBranch size={10} /> PR
+                  </Button>
+                )}
+                {(localState === 'Todo' || localState === 'Done') && (
+                  <Button variant="default" size="sm" className="h-7 px-3 gap-1.5 bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-[10px]" onClick={() => handleStateChange('In Progress')}>
+                    <Play size={10} fill="currentColor" /> RUN
+                  </Button>
+                )}
+                {localState === 'In Progress' && onStopSession && (
+                  <Button variant="outline" size="sm" className="h-7 border-red-500/30 text-red-500 text-[10px]" onClick={() => void onStopSession(localProvider)}>
+                    <Square size={8} fill="currentColor" className="mr-1" /> STOP
+                  </Button>
+                )}
               </div>
+            </div>
 
-              {/* Metadata Grid */}
-              <div className="grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-white/5 bg-white/[0.01]">
-                <AppTooltip content="The current stage of the agentic lifecycle">
-                  <div className="p-4 space-y-1.5 cursor-help">
-                    <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
-                      <Activity size={10} /> Status
+            {/* Main Content Grid */}
+            <div className="flex-1 grid grid-cols-12 divide-x divide-white/5 overflow-hidden">
+              {/* Left Column: Context & Capabilities */}
+              <div className="col-span-8 flex flex-col divide-y divide-white/5 overflow-hidden">
+                {/* Description */}
+                {description && (
+                  <div className="p-3 shrink-0">
+                    <div className="flex items-center gap-2 text-[8px] font-black uppercase tracking-widest text-zinc-500 mb-1.5">
+                      <FileText size={10} /> Description
                     </div>
-                    <div className="flex items-center gap-2 text-sm font-medium text-zinc-300">
-                      <div className={`h-2 w-2 rounded-full ${localState === 'In Progress' ? 'bg-amber-500 animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.5)]' : 'bg-primary'}`} />
-                      {localState}
-                    </div>
-                  </div>
-                </AppTooltip>
-                <AppTooltip content="Urgency level assigned by the task tracker">
-                  <div className="p-4 space-y-1.5 cursor-help">
-                    <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
-                      <Zap size={10} /> Priority
-                    </div>
-                    <div className="flex items-center gap-2 text-sm font-medium text-zinc-300">
-                      <PriorityIcon priority={priority} className="h-4 w-4" />
-                      <PriorityLabel priority={priority} />
+                    <div className="max-h-24 overflow-auto custom-scrollbar">
+                      <p className="text-[11px] leading-relaxed text-zinc-400">{description}</p>
                     </div>
                   </div>
-                </AppTooltip>
-                <AppTooltip content="The active git branch being modified by the agent">
-                  <div className="p-4 space-y-1.5 cursor-help">
-                    <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
-                      <GitBranch size={10} /> Target Branch
-                    </div>
-                    <div className="text-sm font-mono text-zinc-300 truncate" title={branchName || 'None'}>
-                      {branchName || 'None'}
-                    </div>
-                  </div>
-                </AppTooltip>
-                <AppTooltip content="Timestamp of the last recorded state transition">
-                  <div className="p-4 space-y-1.5 cursor-help">
-                    <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
-                      <Clock size={10} /> Last Updated
-                    </div>
-                    <div className="text-sm font-medium text-zinc-300 truncate">
-                      {updatedAt ? new Date(updatedAt).toLocaleString() : 'N/A'}
-                    </div>
-                  </div>
-                </AppTooltip>
-              </div>
+                )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 border-t border-white/5 divide-y md:divide-y-0 md:divide-x divide-white/5 bg-white/[0.01]">
-                <AppTooltip content="Other tasks that must be completed before this one can progress">
-                  <div className="p-4 space-y-2 cursor-help">
-                    <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
-                      <ShieldCheck size={10} /> Active Blockers
+                {/* Capabilities */}
+                <div className="p-3 flex-1 flex flex-col overflow-hidden">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2 text-[8px] font-black uppercase tracking-widest text-zinc-500">
+                      <Wrench size={10} /> Agent Capabilities
                     </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {Array.isArray(blockedBy) && blockedBy.length > 0 ? (
-                        blockedBy.map((blocker: any) => (
-                          <Badge key={blocker.identifier || blocker.id} variant="outline" className="px-2 py-0.5 text-[10px] font-bold bg-red-500/10 text-red-500 border-red-500/20">
-                            {blocker.identifier || blocker.id}
-                          </Badge>
-                        ))
-                      ) : (
-                        <span className="text-sm font-medium text-zinc-500 italic">No constraints</span>
-                      )}
-                    </div>
+                    <span className="text-[8px] font-bold text-primary/60">{allTools.length - disabledTools.length} Enabled</span>
                   </div>
-                </AppTooltip>
-                <AppTooltip content="Direct link to the origin task in your project management system">
-                  <div className="p-4 space-y-2 cursor-help">
-                    <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
-                      <ExternalLink size={10} /> Remote System
-                    </div>
-                    <div>
-                      {issueUrl ? (
-                        <a href={issueUrl} target="_blank" rel="noreferrer" className="text-sm font-medium text-primary hover:underline hover:text-primary/80 transition-colors truncate block">
-                          {issueUrl}
-                        </a>
-                      ) : (
-                        <span className="text-sm font-medium text-zinc-500 italic">No external tracker linked</span>
-                      )}
-                    </div>
-                  </div>
-                </AppTooltip>
-              </div>
-
-              {description && (
-                <div className="p-5 border-t border-white/5 bg-[#0c0c0e]">
-                  <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500 mb-3">
-                    <FileText size={10} /> Description Payload
-                  </div>
-                  <p className="text-sm leading-relaxed text-zinc-300 line-clamp-6">{description}</p>
-                </div>
-              )}
-
-              <div className="p-5 border-t border-white/5 bg-[#0c0c0e]">
-                <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500 mb-4">
-                  <Rows size={10} /> Execution Hooks
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {hooks.map((hook) => {
-                    const status = getHookStatus(hook.id)
-                    return (
-                      <AppTooltip key={hook.id} content={hook.description}>
-                        <div className="flex flex-col gap-2 p-3 rounded-lg border border-white/5 bg-white/[0.02] cursor-help">
-                          <div className="flex items-center justify-between">
-                            <p className={`text-xs font-bold ${status === 'pending' ? 'text-zinc-500' : 'text-zinc-200'}`}>
-                              {hook.label}
-                            </p>
-                            {status !== 'pending' && (
-                              <Badge
-                                variant="outline"
-                                className={`h-4 px-1.5 text-[8px] font-black uppercase tracking-widest ${status === 'completed'
-                                  ? 'border-primary/20 text-primary bg-primary/5'
-                                  : status === 'active'
-                                    ? 'border-amber-500/20 text-amber-500 bg-amber-500/5 animate-pulse'
-                                    : 'border-red-500/20 text-red-500 bg-red-500/5'
-                                  }`}
-                              >
-                                {status}
-                              </Badge>
-                            )}
-                            {status === 'pending' && <Circle className="h-3 w-3 text-zinc-700" />}
-                          </div>
-                          <p className="text-[10px] text-zinc-500 leading-snug line-clamp-1">{hook.description}</p>
-                        </div>
-                      </AppTooltip>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {/* Agent Capabilities (Merged from Tools) */}
-              <div className="p-5 border-t border-white/5 bg-[#0c0c0e]">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
-                    <Wrench size={10} /> Managed Agent Capabilities
-                  </div>
-                  <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 text-[8px] font-black px-1.5 h-4">
-                    {allTools.length - disabledTools.length} ENABLED
-                  </Badge>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
-                  {allTools.map((tool) => {
-                    const isDisabled = disabledTools.includes(tool.name)
-                    return (
-                      <AppTooltip key={tool.name} content={tool.description || 'No documentation'}>
-                        <button
-                          onClick={() => handleToggleTool(tool.name)}
-                          className={`flex items-center gap-2 px-2 py-1.5 rounded-lg border transition-all group ${isDisabled
-                            ? 'border-white/5 bg-transparent opacity-30 grayscale hover:opacity-100 hover:bg-white/5'
-                            : 'border-primary/20 bg-primary/5 hover:bg-primary/10'
-                            }`}
-                        >
-                          <div className={`h-1.5 w-1.5 rounded-full ${isDisabled ? 'bg-zinc-600' : 'bg-primary shadow-[0_0_5px_rgba(var(--primary),0.5)]'}`} />
-                          <span className={`text-[9px] font-bold truncate ${isDisabled ? 'text-zinc-500' : 'text-zinc-300'}`}>
+                  <div className="flex-1 overflow-auto custom-scrollbar">
+                    <div className="flex flex-wrap gap-1">
+                      {allTools.map((tool) => {
+                        const isDisabled = disabledTools.includes(tool.name)
+                        return (
+                          <button
+                            key={tool.name}
+                            onClick={() => handleToggleTool(tool.name)}
+                            className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase border transition-all ${isDisabled ? 'border-white/5 text-zinc-600 opacity-40' : 'border-primary/20 bg-primary/10 text-primary'}`}
+                          >
                             {tool.name.includes('_') ? tool.name.split('_')[1] : tool.name}
-                          </span>
-                        </button>
-                      </AppTooltip>
-                    )
-                  })}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Pulse */}
+                <div className="p-3 bg-white/[0.01] shrink-0">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2 text-[8px] font-black uppercase tracking-widest text-zinc-500">
+                      <Activity size={10} /> Runtime Pulse
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    {issueHistory.slice(0, 2).map((item, idx) => (
+                      <div key={idx} className="flex items-center gap-2 px-2 py-1 rounded bg-white/[0.02] border border-white/5">
+                        <div className="shrink-0 scale-75">{getEventIcon(item.kind)}</div>
+                        <p className="text-[9px] font-bold text-zinc-400 truncate flex-1">{item.message || item.kind}</p>
+                        <span className="text-[7px] font-mono text-zinc-600 tabular-nums">{new Date(item.timestamp).toLocaleTimeString()}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
 
-              {/* Condensed Activity Stream */}
-              <div className="p-5 border-t border-white/5 bg-white/[0.01]">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
-                    <Activity size={10} /> Runtime Pulse
-                  </div>
-                  <button 
-                    onClick={() => setActiveTab('activity')}
-                    className="text-[8px] font-black uppercase tracking-widest text-primary hover:text-white transition-colors"
-                  >
-                    View Full Audit
-                  </button>
-                </div>
-                <div className="space-y-2">
-                  {issueHistory.slice(0, 3).map((item, idx) => (
-                    <div key={idx} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-white/[0.02] border border-white/5 group hover:bg-white/[0.04] transition-all">
-                      <div className="shrink-0">{getEventIcon(item.kind)}</div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[10px] font-bold text-zinc-300 truncate">{item.message || item.kind}</p>
+              {/* Right Column: Metadata & Hooks */}
+              <div className="col-span-4 flex flex-col divide-y divide-white/5 bg-white/[0.01] overflow-hidden">
+                {/* Status Grid */}
+                <div className="grid grid-cols-1 divide-y divide-white/5 shrink-0">
+                  <div className="p-2.5">
+                    <div className="text-[8px] font-black uppercase tracking-widest text-zinc-500 mb-1">Status & Priority</div>
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2 text-[11px] font-bold text-zinc-300">
+                        <div className={`h-1.5 w-1.5 rounded-full ${localState === 'In Progress' ? 'bg-amber-500 animate-pulse' : 'bg-primary'}`} />
+                        {localState}
                       </div>
-                      <span className="text-[8px] font-mono text-zinc-600 uppercase tracking-tighter shrink-0">{new Date(item.timestamp).toLocaleTimeString()}</span>
+                      <div className="flex items-center gap-2 text-[11px] font-bold text-zinc-300">
+                        <PriorityIcon priority={priority} className="h-3 w-3" />
+                        <PriorityLabel priority={priority} />
+                      </div>
                     </div>
-                  ))}
-                  {issueHistory.length === 0 && (
-                    <div className="py-4 text-center border border-dashed border-white/5 rounded-xl opacity-20">
-                      <p className="text-[10px] font-black uppercase tracking-widest italic">No pulse detected</p>
+                  </div>
+                  <div className="p-2.5">
+                    <div className="text-[8px] font-black uppercase tracking-widest text-zinc-500 mb-1">Source Context</div>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-1.5 text-[10px] font-mono text-zinc-400">
+                        <GitBranch size={10} />
+                        <span className="truncate">{branchName || 'main'}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[10px] font-mono text-zinc-400">
+                        <Clock size={10} />
+                        <span>{updatedAt ? new Date(updatedAt).toLocaleDateString() : 'N/A'}</span>
+                      </div>
                     </div>
+                  </div>
+                </div>
+
+                {/* External Links */}
+                <div className="p-2.5 shrink-0">
+                  <div className="text-[8px] font-black uppercase tracking-widest text-zinc-500 mb-2">Remote System</div>
+                  {issueUrl ? (
+                    <a href={issueUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 p-1.5 rounded bg-primary/5 border border-primary/10 text-primary hover:bg-primary/10 transition-all">
+                      <ExternalLink size={10} />
+                      <span className="text-[9px] font-bold truncate">Open in Tracker</span>
+                    </a>
+                  ) : (
+                    <div className="text-[9px] text-zinc-600 italic">No external link</div>
                   )}
+                </div>
+
+                {/* Execution Hooks */}
+                <div className="p-2.5 flex-1 flex flex-col overflow-hidden">
+                  <div className="text-[8px] font-black uppercase tracking-widest text-zinc-500 mb-2">Execution Hooks</div>
+                  <div className="space-y-1.5 overflow-auto custom-scrollbar pr-1">
+                    {hooks.map((hook) => {
+                      const status = getHookStatus(hook.id)
+                      return (
+                        <div key={hook.id} className="flex flex-col gap-1 p-1.5 rounded bg-white/[0.02] border border-white/5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[9px] font-bold text-zinc-300">{hook.label}</span>
+                            <Badge variant="outline" className={`h-3 px-1 text-[6px] font-black uppercase ${status === 'completed' ? 'border-primary/20 text-primary' : status === 'active' ? 'border-amber-500/20 text-amber-500 animate-pulse' : 'text-zinc-600 border-white/5'}`}>
+                              {status}
+                            </Badge>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
               </div>
             </div>
           </div>
+        </div>
         ) : activeTab === 'changes' ? (
-          <div className="relative h-[78vh] rounded-lg border bg-[#1e1e1e] overflow-hidden shadow-inner">
+          <div className="relative flex-1 min-h-0 rounded-lg border bg-[#1e1e1e] overflow-hidden shadow-inner flex flex-col">
             <div className="flex items-center justify-between border-b border-white/5 bg-black/20 px-3 py-2">
               <div className="flex items-center gap-2 text-zinc-500">
                 <GitBranch className="h-3 w-3" />
@@ -1369,7 +1252,7 @@ export function IssueDetailView({
             </div>
           </div>
         ) : activeTab === 'logs' ? (
-          <div className="relative h-[78vh] rounded-lg border bg-[#0c0c0e] flex flex-col font-mono text-[11px] leading-relaxed text-zinc-300 shadow-inner overflow-hidden border-white/5">
+          <div className="relative flex-1 min-h-0 rounded-lg border bg-[#0c0c0e] flex flex-col font-mono text-[11px] leading-relaxed text-zinc-300 shadow-inner overflow-hidden border-white/5">
             <div className="flex items-center justify-between border-b border-white/10 bg-white/5 px-3 py-2 shrink-0">
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2 text-zinc-500">
@@ -1462,7 +1345,7 @@ export function IssueDetailView({
             </div>
           </div>
         ) : activeTab === 'artifacts' ? (
-          <div className="flex h-[78vh] rounded-xl border border-white/5 bg-[#0c0c0e] shadow-2xl overflow-hidden">
+          <div className="flex flex-1 min-h-0 rounded-xl border border-white/5 bg-[#0c0c0e] shadow-2xl overflow-hidden">
             {/* Sidebar: File List */}
             <div className="w-72 border-r border-white/5 bg-black/20 flex flex-col shrink-0">
               <div className="p-3 border-b border-white/5 bg-white/5 flex items-center justify-between shrink-0">
@@ -1549,7 +1432,7 @@ export function IssueDetailView({
             </div>
           </div>
       ) : (
-        <div className="space-y-6 text-left h-[78vh] overflow-auto custom-scrollbar pr-1">
+        <div className="space-y-6 text-left flex-1 min-h-0 overflow-auto custom-scrollbar pr-1">
           <div className="rounded-xl border border-white/5 bg-white/[0.02] p-6 min-h-full">
             <div className="flex items-center justify-between mb-8">
               <div>

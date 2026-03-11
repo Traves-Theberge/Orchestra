@@ -1125,7 +1125,7 @@ export default function App() {
             <DialogTitle>Issue Inspection</DialogTitle>
             <DialogDescription>View detailed status and diagnostics for this issue.</DialogDescription>
           </DialogHeader>
-          <div className="py-2 overflow-auto flex-1 min-h-0">
+          <div className="flex-1 min-h-0 mt-2">
             {issueLookupPending ? (
               <div className="space-y-4">
                 <Skeleton className="h-8 w-[200px]" />
