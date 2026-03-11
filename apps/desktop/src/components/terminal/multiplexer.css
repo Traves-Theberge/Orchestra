@@ -1,34 +1,63 @@
 .terminal-multiplexer .mosaic-window {
-    border: 1px solid hsl(var(--border));
+    border: 1px solid hsl(var(--border) / 0.5);
     background: hsl(var(--background));
+    border-radius: 8px;
+    overflow: hidden;
+    transition: border-color 0.2s ease;
+}
+
+.terminal-multiplexer .mosaic-window:hover {
+    border-color: hsl(var(--primary) / 0.3);
 }
 
 .terminal-multiplexer .mosaic-window-toolbar {
-    background: hsl(var(--muted) / 0.5);
-    border-bottom: 1px solid hsl(var(--border));
-    height: 28px;
-    padding: 0 8px;
+    background: linear-gradient(to bottom, hsl(var(--muted) / 0.8), hsl(var(--muted) / 0.4));
+    border-bottom: 1px solid hsl(var(--border) / 0.5);
+    height: 32px;
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    backdrop-blur: 8px;
 }
 
 .terminal-multiplexer .mosaic-window-title {
     font-size: 10px;
     font-family: 'JetBrains Mono', monospace;
-    font-weight: 800;
+    font-weight: 900;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.15em;
     color: hsl(var(--muted-foreground));
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.terminal-multiplexer .mosaic-window-title::before {
+    content: '';
+    display: block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: hsl(var(--primary));
+    box-shadow: 0 0 8px hsl(var(--primary) / 0.5);
 }
 
 .terminal-multiplexer .mosaic-tile {
-    margin: 2px;
+    margin: 4px;
 }
 
 .terminal-multiplexer .mosaic-root {
     background: transparent;
+    padding: 4px;
 }
 
 .terminal-multiplexer .mosaic-window-body {
     background: hsl(var(--background));
+}
+
+.terminal-multiplexer .mosaic-preview {
+    background: hsl(var(--primary) / 0.05);
+    border: 2px dashed hsl(var(--primary) / 0.2);
 }
 
 /* Custom scrollbars for the multiplexer sidebar if needed */
@@ -40,4 +69,8 @@
 .terminal-multiplexer ::-webkit-scrollbar-thumb {
     background: hsl(var(--muted-foreground) / 0.2);
     border-radius: 10px;
+}
+
+.terminal-multiplexer ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--primary) / 0.4);
 }

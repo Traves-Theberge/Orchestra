@@ -32,37 +32,29 @@ export const TerminalMultiplexer: React.FC<TerminalMultiplexerProps> = ({
             return
         }
 
-        // Simplistic tiling: just add the new terminal as a sibling
-        const buildInitialTree = (ids: string[]): MosaicNode<string> => {
-            if (ids.length === 1) return ids[0]
+        const ids = activeTerminals.map(t => t.id)
+        
+        // Recursive function to build a balanced tree
+        const buildBalancedTree = (nodeIds: string[], direction: 'row' | 'column' = 'row'): MosaicNode<string> => {
+            if (nodeIds.length === 1) return nodeIds[0]
             
-            const half = Math.floor(ids.length / 2)
+            const half = Math.ceil(nodeIds.length / 2)
+            const firstHalf = nodeIds.slice(0, half)
+            const secondHalf = nodeIds.slice(half)
+            
             return {
-                direction: ids.length % 2 === 0 ? 'row' : 'column',
-                first: buildInitialTree(ids.slice(0, half)),
-                second: buildInitialTree(ids.slice(half))
+                direction,
+                first: buildBalancedTree(firstHalf, direction === 'row' ? 'column' : 'row'),
+                second: buildBalancedTree(secondHalf, direction === 'row' ? 'column' : 'row')
             }
         }
 
-        // Only rebuild if we don't have a layout or IDs changed significantly
-        // For a true "tmux" experience, we'd preserve the user's manual resizing
-        if (!currentNode) {
-            setCurrentNode(buildInitialTree(activeTerminals.map(t => t.id)))
-        } else {
-            // Check if we need to add a missing node
-            const currentIds = getIdsFromNode(currentNode)
-            const missing = activeTerminals.filter(t => !currentIds.includes(t.id))
-            if (missing.length > 0) {
-                let newNode = currentNode
-                missing.forEach(m => {
-                    newNode = {
-                        direction: 'row',
-                        first: newNode,
-                        second: m.id
-                    }
-                })
-                setCurrentNode(newNode)
-            }
+        // Check if current IDs match activeTerminals IDs
+        const currentIds = currentNode ? getIdsFromNode(currentNode).sort().join(',') : ''
+        const activeIds = ids.slice().sort().join(',')
+
+        if (currentIds !== activeIds) {
+            setCurrentNode(buildBalancedTree(ids))
         }
     }, [activeTerminals])
 
@@ -72,7 +64,7 @@ export const TerminalMultiplexer: React.FC<TerminalMultiplexerProps> = ({
     }
 
     return (
-        <div className="w-full h-full bg-[#0c0c0e] overflow-hidden terminal-multiplexer">
+        <div className="w-full h-full bg-background overflow-hidden terminal-multiplexer">
             {activeTerminals.length > 0 ? (
                 <Mosaic<string>
                     renderTile={(id, path) => {
@@ -85,7 +77,7 @@ export const TerminalMultiplexer: React.FC<TerminalMultiplexerProps> = ({
                                     <div className="flex items-center gap-1">
                                         <button 
                                             onClick={() => onCloseTerminal(id)}
-                                            className="p-1 hover:bg-red-500/20 text-zinc-500 hover:text-red-500 transition-colors rounded"
+                                            className="p-1 hover:bg-destructive/20 text-muted-foreground/60 hover:text-destructive transition-colors rounded"
                                         >
                                             <X size={14} />
                                         </button>
@@ -105,9 +97,15 @@ export const TerminalMultiplexer: React.FC<TerminalMultiplexerProps> = ({
                     className="mosaic-blueprint-theme"
                 />
             ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center text-zinc-600 space-y-4">
-                    <TerminalIcon size={48} className="opacity-20" />
-                    <p className="text-sm font-bold uppercase tracking-[0.2em] opacity-40">No active terminal sessions</p>
+                <div className="w-full h-full flex flex-col items-center justify-center text-muted-foreground/20 space-y-6">
+                    <div className="relative">
+                        <TerminalIcon size={80} className="animate-pulse" strokeWidth={1} />
+                        <div className="absolute inset-0 bg-primary/10 blur-3xl rounded-full" />
+                    </div>
+                    <div className="text-center space-y-2 relative z-10">
+                        <p className="text-sm font-black uppercase tracking-[0.3em]">No Active Runtime Contexts</p>
+                        <p className="text-[10px] font-medium uppercase tracking-widest opacity-60">Deploy an agent or open a project shell to begin</p>
+                    </div>
                 </div>
             )}
         </div>

@@ -194,16 +194,24 @@ export default function App() {
   const [selectedProjectID, setSelectedProjectID] = useState<string | null>(null)
   const [dataLoading, setDataLoading] = useState(false)
 
-  const [openTerminals, setOpenTerminals] = useState<TerminalNode[]>([])
+  const [openTerminals, setOpenTerminals] = useState<TerminalNode[]>([
+    { id: 'master-shell', title: 'Master Control' }
+  ])
 
   // Sync open terminals with running sessions
   useEffect(() => {
     if (!snapshot?.running) return
 
     setOpenTerminals(prev => {
+      // Always keep master-shell
+      const base = prev.some(p => p.id === 'master-shell') ? [] : [{ id: 'master-shell', title: 'Master Control' }]
+      
       // Find sessions that are running but don't have a terminal window yet
+      const activeRunningIds = snapshot.running.map(r => `issue-${r.issue_identifier}`)
+      const existingIds = prev.map(p => p.id)
+      
       const newTerms = snapshot.running
-        .filter(r => !prev.some(p => p.id === `issue-${r.issue_identifier}`))
+        .filter(r => !existingIds.includes(`issue-${r.issue_identifier}`))
         .map(r => ({
           id: `issue-${r.issue_identifier}`,
           title: `Agent: ${r.issue_identifier}`,
@@ -211,7 +219,7 @@ export default function App() {
         }))
 
       if (newTerms.length === 0) return prev
-      // Add new ones to the list
+      
       return [...prev, ...newTerms]
     })
   }, [snapshot, projects])

@@ -22,12 +22,30 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ sessionId, projectId
         const term = new Terminal({
             cursorBlink: true,
             fontSize: 12,
+            lineHeight: 1.4,
+            letterSpacing: 0.5,
             fontFamily: 'JetBrains Mono, Menlo, Monaco, Consolas, "Courier New", monospace',
             theme: {
                 background: isDark ? '#0c0c0e' : '#f8fafc',
-                foreground: isDark ? '#ffffff' : '#0f172a',
-                cursor: isDark ? '#ffffff' : '#0f172a',
-                selectionBackground: isDark ? 'rgba(255, 255, 255, 0.3)' : 'rgba(0, 0, 0, 0.2)',
+                foreground: isDark ? '#e2e8f0' : '#0f172a',
+                cursor: isDark ? 'hsl(161, 72%, 45%)' : 'hsl(161, 72%, 38%)',
+                selectionBackground: isDark ? 'rgba(161, 72%, 45%, 0.3)' : 'rgba(161, 72%, 38%, 0.2)',
+                black: '#000000',
+                red: '#ef4444',
+                green: '#10b981',
+                yellow: '#f59e0b',
+                blue: '#3b82f6',
+                magenta: '#8b5cf6',
+                cyan: '#06b6d4',
+                white: '#ffffff',
+                brightBlack: '#475569',
+                brightRed: '#f87171',
+                brightGreen: '#34d399',
+                brightYellow: '#fbbf24',
+                brightBlue: '#60a5fa',
+                brightMagenta: '#a78bfa',
+                brightCyan: '#22d3ee',
+                brightWhite: '#f1f5f9',
             }
         })
 
