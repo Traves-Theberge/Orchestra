@@ -90,12 +90,6 @@ const sidebarItems: SidebarItem[] = [
     icon: FolderTree,
   },
   {
-    id: 'running',
-    label: 'Running',
-    description: 'Active issue sessions',
-    icon: ListTodo,
-  },
-  {
     id: 'timeline',
     label: 'Activity Feed',
     description: 'Real-time lifecycle events',
@@ -949,9 +943,8 @@ export default function App() {
             <div className="mt-4 grid min-w-0 grid-cols-12 gap-3 flex-1">
               {sectionVisibility.showDashboard ? (
                 <>
-                  <section className="col-span-12 grid grid-cols-3 gap-3 h-fit">
+                  <section className="col-span-12 grid grid-cols-2 gap-3 h-fit">
                     <MetricCard title="Active Sessions" value={metrics.running} icon={<Activity className="h-3.5 w-3.5 text-primary" />} hint="Issues currently being processed" />
-                    <MetricCard title="Pending Retries" value={metrics.retrying} icon={<RefreshCcw className="h-3.5 w-3.5 text-amber-500" />} hint="Work items in backoff queue" />
                     <MetricCard title="Fleet Token Usage" value={metrics.totalTokens} icon={<Zap className="h-3.5 w-3.5 text-blue-500" />} hint="Aggregate compute consumption" />
                   </section>
 
@@ -972,11 +965,7 @@ export default function App() {
                     />
                   </section>
 
-                  <section className="col-span-12 lg:col-span-8 min-h-[450px] flex flex-col">
-                    <OperationsQueueCard loadingState={loadingState} snapshot={snapshot} onInspectIssue={handleInspectIssueFromList} />
-                  </section>
-
-                  <section className="col-span-12 lg:col-span-4 min-h-[450px] flex flex-col">
+                  <section className="col-span-12 flex flex-col min-h-[450px]">
                     <TimelineCard timeline={timeline.slice(0, 15)} />
                   </section>
                 </>
