@@ -46,10 +46,10 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({ session })
                     <Terminal size={14} />
                     Execution Timeline
                 </h3>
-                <div className="rounded-xl border border-border/40 bg-black/20 overflow-hidden shadow-inner">
+                <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden shadow-inner">
                     <div className="max-h-[400px] overflow-y-auto custom-scrollbar p-1">
                         {session.events?.map((event: any, idx: number) => (
-                            <div key={idx} className="p-3 border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors group">
+                            <div key={idx} className="p-3 border-b border-border last:border-0 hover:bg-muted/50 transition-colors group">
                                 <div className="flex items-center justify-between mb-2">
                                     <div className="flex items-center gap-3">
                                         <Badge variant="outline" className="text-[10px] font-bold uppercase h-5 bg-background">
@@ -68,7 +68,7 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({ session })
                                     {event.message}
                                 </p>
                                 {event.raw_payload && (
-                                    <div className="mt-3 rounded-lg bg-black/40 p-3 border border-white/5 hidden group-hover:block animate-in fade-in slide-in-from-top-1 duration-200">
+                                    <div className="mt-3 rounded-lg bg-card/40 p-3 border border-border hidden group-hover:block animate-in fade-in slide-in-from-top-1 duration-200">
                                         <pre className="text-[10px] font-mono text-muted-foreground overflow-x-auto">
                                             {event.raw_payload}
                                         </pre>

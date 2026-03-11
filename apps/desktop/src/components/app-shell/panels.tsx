@@ -764,6 +764,41 @@ export function IssueDetailView({
   const [secondaryLogsLoading, setSecondaryLogsLoading] = useState(false)
   const [diff, setDiff] = useState<string>('')
   const [diffLoading, setDiffLoading] = useState(false)
+  const [activeDiffFile, setActiveDiffFile] = useState<string | null>(null)
+
+  const parseDiff = (rawDiff: string) => {
+    const files: {path: string, content: string}[] = []
+    const lines = rawDiff.split('\n')
+    let currentFile: string | null = null
+    let currentContent: string[] = []
+
+    lines.forEach(line => {
+        if (line.startsWith('diff --git')) {
+            if (currentFile) {
+                files.push({ path: currentFile, content: currentContent.join('\n') })
+            }
+            const match = line.match(/b\/(.+)$/)
+            currentFile = match ? match[1] : 'unknown'
+            currentContent = [line]
+        } else if (currentFile) {
+            currentContent.push(line)
+        }
+    })
+
+    if (currentFile) {
+        files.push({ path: currentFile, content: currentContent.join('\n') })
+    }
+
+    return files
+  }
+
+  const diffFiles = useMemo(() => parseDiff(diff), [diff])
+
+  useEffect(() => {
+    if (diffFiles.length > 0 && !activeDiffFile) {
+      setActiveDiffFile(diffFiles[0].path)
+    }
+  }, [diffFiles])
   const [artifacts, setArtifacts] = useState<string[]>([])
   const [artifactsLoading, setArtifactsLoading] = useState(false)
   const [selectedArtifact, setSelectedArtifact] = useState<string | null>(null)
@@ -1245,40 +1280,79 @@ export function IssueDetailView({
           </div>
         </div>
         ) : activeTab === 'changes' ? (
-          <div className="relative flex-1 min-h-0 rounded-lg border bg-muted overflow-hidden shadow-inner flex flex-col">
-            <div className="flex items-center justify-between border-b border-border bg-card/20 px-3 py-2">
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <GitBranch className="h-3 w-3" />
-                <span className="text-[10px] font-mono uppercase tracking-wider">workspace.diff</span>
+          <div className="flex flex-1 min-h-0 rounded-xl border border-border bg-background shadow-2xl overflow-hidden">
+            {/* Sidebar: Changed Files */}
+            <div className="w-72 border-r border-border bg-muted/10 flex flex-col shrink-0">
+              <div className="p-3 border-b border-border bg-muted/5 flex items-center justify-between shrink-0">
+                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Changed Files</span>
+                <Badge variant="outline" className="h-4 px-1.5 text-[8px] bg-white/5 text-muted-foreground border-border font-mono">
+                  {diffFiles.length}
+                </Badge>
               </div>
-              {diffLoading && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
+              <div className="flex-1 overflow-auto custom-scrollbar p-2 space-y-1">
+                {diffLoading ? (
+                  Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-8 w-full rounded-lg bg-muted/20" />)
+                ) : diffFiles.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 opacity-20 grayscale">
+                    <GitBranch size={32} className="mb-2" />
+                    <p className="text-[10px] font-black uppercase tracking-widest">No Changes</p>
+                  </div>
+                ) : (
+                  diffFiles.map((file) => (
+                    <AppTooltip key={file.path} content={`View changes in ${file.path}`}>
+                      <button
+                        onClick={() => setActiveDiffFile(file.path)}
+                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-all group ${activeDiffFile === file.path 
+                          ? 'bg-primary/10 border border-primary/20 text-primary shadow-lg shadow-primary/5' 
+                          : 'text-muted-foreground hover:text-foreground hover:bg-muted/10 border border-transparent'
+                        }`}
+                      >
+                        <FileText size={14} className={activeDiffFile === file.path ? 'text-primary' : 'text-muted-foreground/40 group-hover:text-muted-foreground/60'} />
+                        <span className="truncate text-xs font-medium leading-none pt-0.5">{file.path}</span>
+                      </button>
+                    </AppTooltip>
+                  ))
+                )}
+              </div>
             </div>
-            <div className="max-h-[500px] overflow-auto">
-              {diffLoading && !diff ? (
-                <div className="space-y-2 p-4">
-                  <Skeleton className="h-3 w-3/4 bg-muted/20" />
-                  <Skeleton className="h-3 w-1/2 bg-muted/20" />
-                  <Skeleton className="h-3 w-2/3 bg-muted/20" />
-                </div>
-              ) : diff ? (
-                <SyntaxHighlighter
-                  language="diff"
-                  style={oneDark}
-                  customStyle={{ margin: 0, borderRadius: 0, fontSize: '11px', background: 'transparent' }}
-                  showLineNumbers={false}
-                  wrapLines={true}
-                  lineProps={lineNumber => {
-                    const line = diff.split('\n')[lineNumber - 1]
-                    if (line?.startsWith('+')) return { style: { display: 'block', backgroundColor: 'rgba(16, 185, 129, 0.1)' } }
-                    if (line?.startsWith('-')) return { style: { display: 'block', backgroundColor: 'rgba(239, 68, 68, 0.1)' } }
-                    return { style: { display: 'block' } }
-                  }}
-                >
-                  {diff}
-                </SyntaxHighlighter>              ) : (
-                <div className="flex flex-col items-center justify-center p-12 text-center">
-                  <GitBranch className="h-8 w-8 text-foreground/5 mb-3" />
-                  <p className="text-xs text-muted-foreground/50 tracking-wide">No workspace changes detected.</p>
+
+            {/* Main Content: Diff Preview */}
+            <div className="flex-1 min-w-0 bg-muted/5 flex flex-col relative">
+              {activeDiffFile ? (
+                <>
+                  <div className="flex items-center justify-between border-b border-border bg-muted/5 px-4 py-2 shrink-0">
+                    <div className="flex items-center gap-3">
+                      <GitBranch size={14} className="text-primary/60" />
+                      <span className="truncate font-mono text-[11px] text-foreground/90 font-bold">{activeDiffFile}</span>
+                    </div>
+                    {diffLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />}
+                  </div>
+                  <div className="flex-1 overflow-auto custom-scrollbar">
+                    <SyntaxHighlighter
+                      language="diff"
+                      style={oneDark}
+                      customStyle={{ 
+                        margin: 0, 
+                        padding: '1.5rem', 
+                        background: 'transparent', 
+                        fontSize: '12px',
+                        lineHeight: '1.7'
+                      }}
+                      showLineNumbers={false}
+                    >
+                      {diffFiles.find(f => f.path === activeDiffFile)?.content || ''}
+                    </SyntaxHighlighter>
+                  </div>
+                </>
+              ) : (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 opacity-30 grayscale pointer-events-none">
+                  <div className="p-6 rounded-full bg-muted/20 border border-border">
+                    <GitBranch size={48} className="text-muted-foreground" />
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm font-black uppercase tracking-[0.2em]">Zero Delta</p>
+                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-widest mt-1">No file modifications detected in this workspace</p>
+                  </div>
                 </div>
               )}
             </div>

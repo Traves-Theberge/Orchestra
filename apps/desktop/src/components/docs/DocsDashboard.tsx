@@ -18,6 +18,7 @@ import rehypeSlug from 'rehype-slug'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { D3ArchitectureGraph } from '../diagrams/D3ArchitectureGraph'
+import { AppTooltip } from '../ui/tooltip-wrapper'
 
 interface DocsDashboardProps {
     config: BackendConfig | null
@@ -86,8 +87,11 @@ export const DocsDashboard: React.FC<DocsDashboardProps> = ({ config }) => {
             generateToc(text)
             // Scroll to top
             if (scrollRef.current) {
-                const { viewport } = scrollRef.current.osInstance().elements()
-                viewport.scrollTo({ top: 0, behavior: 'smooth' })
+                const instance = scrollRef.current.osInstance()
+                if (instance) {
+                    const { viewport } = instance.elements()
+                    viewport.scrollTo({ top: 0, behavior: 'smooth' })
+                }
             }
         } catch (err) {
             setContent('# Error\nFailed to load document content.')
@@ -146,10 +150,10 @@ export const DocsDashboard: React.FC<DocsDashboardProps> = ({ config }) => {
                     <div key={item.path} className="space-y-0.5">
                         <button
                             onClick={() => toggleFolder(item.path)}
-                            className="w-full flex items-center gap-2 px-2 py-1 rounded-md text-muted-foreground/50 hover:bg-white/5 transition-all text-left group"
+                            className="w-full flex items-center gap-2 px-2 py-1 rounded-md text-muted-foreground/50 hover:bg-muted transition-all text-left group"
                             style={{ paddingLeft: `${level * 12 + 8}px` }}
                         >
-                            <div className="flex items-center gap-2 flex-1">
+                            <div className="flex items-center gap-2 flex-1 text-left">
                                 {isExpanded ? <FolderOpen size={12} className="text-primary/60" /> : <Folder size={12} className="text-muted-foreground/30" />}
                                 <span className="text-[10px] font-black uppercase tracking-widest group-hover:text-muted-foreground transition-colors">{item.name}</span>
                             </div>
@@ -167,14 +171,14 @@ export const DocsDashboard: React.FC<DocsDashboardProps> = ({ config }) => {
                     onClick={() => handleSelectDoc(item.path)}
                     className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-md transition-all text-left relative group ${
                         isActive 
-                            ? 'bg-primary/10 text-primary border border-primary/20 shadow-sm' 
-                            : 'text-muted-foreground/60 hover:bg-white/5 border border-transparent hover:text-foreground'
+                            ? 'bg-primary/10 text-primary border border-primary/20 shadow-sm font-bold' 
+                            : 'text-muted-foreground/60 hover:bg-muted border border-transparent hover:text-foreground'
                     }`}
                     style={{ paddingLeft: `${level * 12 + 8}px` }}
                 >
                     {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 h-3 w-0.5 bg-primary rounded-r-full" />}
                     <FileText size={12} className={isActive ? 'text-primary' : 'text-muted-foreground/30 group-hover:text-muted-foreground/60'} />
-                    <span className={`flex-1 text-[13px] font-medium tracking-tight truncate ${isActive ? 'font-bold' : ''}`}>
+                    <span className={`flex-1 text-[13px] tracking-tight truncate`}>
                         {item.name.replace('.md', '').replace(/_/g, ' ')}
                     </span>
                 </button>
@@ -185,12 +189,12 @@ export const DocsDashboard: React.FC<DocsDashboardProps> = ({ config }) => {
     return (
         <div className="flex flex-col h-full bg-background/20 overflow-hidden">
             {/* Wiki Header */}
-            <div className="flex items-center justify-between px-8 py-5 border-b border-white/5 bg-black/40 backdrop-blur-2xl shrink-0 z-30">
+            <div className="flex items-center justify-between px-8 py-5 border-b border-border bg-background/40 shadow-sm transition-colors duration-300">
                 <div className="flex items-center gap-4">
                     <div className="h-10 w-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shadow-lg shadow-primary/5">
                         <BookOpen className="text-primary h-5 w-5" />
                     </div>
-                    <div>
+                    <div className="text-left">
                         <div className="flex items-center gap-2">
                             <h1 className="text-xl font-black tracking-tight text-foreground/90 uppercase">Knowledge Base</h1>
                             <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 text-[8px] font-black uppercase tracking-widest h-4 px-1.5">v1.0.8</Badge>
@@ -208,25 +212,27 @@ export const DocsDashboard: React.FC<DocsDashboardProps> = ({ config }) => {
                             placeholder="Search wiki..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="h-9 pl-9 pr-4 bg-black/40 border border-white/5 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 w-64 transition-all"
+                            className="h-9 pl-9 pr-4 bg-muted/30 border-border rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 w-64 transition-all"
                         />
                     </div>
-                    <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        onClick={loadDocs} 
-                        disabled={loading}
-                        className="h-9 w-9 p-0 border border-white/5 hover:bg-white/5"
-                    >
-                        <RefreshCcw size={14} className={loading ? 'animate-spin' : ''} />
-                    </Button>
+                    <AppTooltip content="Force documentation scan">
+                        <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={loadDocs} 
+                            disabled={loading}
+                            className="h-9 w-9 p-0 border border-border hover:bg-muted"
+                        >
+                            <RefreshCcw size={14} className={loading ? 'animate-spin' : ''} />
+                        </Button>
+                    </AppTooltip>
                 </div>
             </div>
 
-            <div className="flex-1 flex overflow-hidden min-h-0 relative">
+            <div className="flex-1 flex overflow-hidden min-h-0 relative bg-transparent">
                 {/* Left Sidebar (Navigation) */}
-                <div className="w-72 border-r border-white/5 bg-black/30 flex flex-col min-h-0 z-20">
-                    <div className="p-4 border-b border-white/5 shrink-0 bg-white/[0.01]">
+                <div className="w-72 border-r border-border bg-muted/10 flex flex-col min-h-0 z-20">
+                    <div className="p-4 border-b border-border shrink-0 bg-muted/5">
                         <div className="flex items-center gap-2 px-2 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/40">
                             <LayoutList size={12} />
                             Navigation
@@ -239,7 +245,7 @@ export const DocsDashboard: React.FC<DocsDashboardProps> = ({ config }) => {
                     >
                         <div className="p-3 space-y-1">
                             {loading && docs.length === 0 ? (
-                                [1, 2, 3, 4, 5, 6, 7].map(i => <Skeleton key={i} className="h-8 w-full mb-1 rounded-lg" />)
+                                [1, 2, 3, 4, 5, 6, 7].map(i => <Skeleton key={i} className="h-8 w-full mb-1 rounded-lg bg-muted/30" />)
                             ) : renderTree(docs)}
                         </div>
                     </OverlayScrollbarsComponent>
@@ -253,20 +259,20 @@ export const DocsDashboard: React.FC<DocsDashboardProps> = ({ config }) => {
                         className="flex-1"
                         ref={scrollRef}
                     >
-                        <div className="px-16 py-16 max-w-5xl mx-auto min-h-full flex flex-col">
+                        <div className="px-16 py-16 max-w-5xl mx-auto min-h-full flex flex-col text-left">
                             {contentLoading ? (
                                 <div className="space-y-8 animate-pulse">
-                                    <Skeleton className="h-16 w-3/4 rounded-2xl" />
+                                    <Skeleton className="h-16 w-3/4 rounded-2xl bg-muted/30" />
                                     <div className="space-y-3">
-                                        <Skeleton className="h-4 w-full" />
-                                        <Skeleton className="h-4 w-full" />
-                                        <Skeleton className="h-4 w-5/6" />
+                                        <Skeleton className="h-4 w-full bg-muted/30" />
+                                        <Skeleton className="h-4 w-full bg-muted/30" />
+                                        <Skeleton className="h-4 w-5/6 bg-muted/30" />
                                     </div>
-                                    <Skeleton className="h-96 w-full rounded-3xl" />
+                                    <Skeleton className="h-96 w-full rounded-3xl bg-muted/30" />
                                 </div>
                             ) : !selectedPath ? (
                                 <div className="flex-1 flex flex-col items-center justify-center opacity-20 grayscale">
-                                    <Terminal size={80} className="mb-6 text-primary" />
+                                    <Terminal size={80} className="mb-6 text-primary" strokeWidth={1} />
                                     <p className="text-lg font-black uppercase tracking-[0.4em]">Initialize Wiki Stream</p>
                                 </div>
                             ) : (
@@ -294,17 +300,17 @@ export const DocsDashboard: React.FC<DocsDashboardProps> = ({ config }) => {
                                                         }
 
                                                         return (
-                                                            <div className="my-10 rounded-3xl overflow-hidden border border-white/5 shadow-2xl bg-black/40 backdrop-blur-md">
-                                                                <div className="bg-white/5 px-6 py-3 flex items-center justify-between border-b border-white/5">
+                                                            <div className="my-10 rounded-3xl overflow-hidden border border-border shadow-2xl bg-card">
+                                                                <div className="bg-muted/30 px-6 py-3 flex items-center justify-between border-b border-border">
                                                                     <div className="flex items-center gap-3">
                                                                         <div className="flex gap-1.5">
-                                                                            <div className="h-2.5 w-2.5 rounded-full bg-red-500/20 border border-red-500/10" />
+                                                                            <div className="h-2.5 w-2.5 rounded-full bg-destructive/20 border border-destructive/10" />
                                                                             <div className="h-2.5 w-2.5 rounded-full bg-amber-500/20 border border-amber-500/10" />
                                                                             <div className="h-2.5 w-2.5 rounded-full bg-emerald-500/20 border border-emerald-500/10" />
                                                                         </div>
                                                                         <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/40">{match[1]}</span>
                                                                     </div>
-                                                                    <div className="h-5 w-5 rounded-md bg-white/5 flex items-center justify-center border border-white/5">
+                                                                    <div className="h-5 w-5 rounded-md bg-muted/20 flex items-center justify-center border border-border">
                                                                         <CodeIcon size={12} className="text-muted-foreground/40" />
                                                                     </div>
                                                                 </div>
@@ -333,7 +339,7 @@ export const DocsDashboard: React.FC<DocsDashboardProps> = ({ config }) => {
                                     </article>
                                     
                                     {/* Wiki Footer */}
-                                    <div className="mt-24 pt-10 border-t border-white/5 flex flex-wrap items-center justify-between gap-6 opacity-30">
+                                    <div className="mt-24 pt-10 border-t border-border flex flex-wrap items-center justify-between gap-6 opacity-30">
                                         <div className="flex items-center gap-6">
                                             <div className="flex items-center gap-2">
                                                 <ShieldCheck size={14} className="text-primary" />
@@ -344,7 +350,7 @@ export const DocsDashboard: React.FC<DocsDashboardProps> = ({ config }) => {
                                                 <span className="text-[10px] font-black uppercase tracking-widest">Auto-Synced</span>
                                             </div>
                                         </div>
-                                        <div className="text-[10px] font-mono flex items-center gap-2 bg-white/5 px-3 py-1 rounded-full border border-white/5">
+                                        <div className="text-[10px] font-mono flex items-center gap-2 bg-muted/30 px-3 py-1 rounded-full border border-border">
                                             <Hash size={12} className="text-primary" />
                                             {selectedPath}
                                         </div>
@@ -358,8 +364,11 @@ export const DocsDashboard: React.FC<DocsDashboardProps> = ({ config }) => {
                     <button 
                         onClick={() => {
                             if (scrollRef.current) {
-                                const { viewport } = scrollRef.current.osInstance().elements()
-                                viewport.scrollTo({ top: 0, behavior: 'smooth' })
+                                const instance = scrollRef.current.osInstance()
+                                if (instance) {
+                                    const { viewport } = instance.elements()
+                                    viewport.scrollTo({ top: 0, behavior: 'smooth' })
+                                }
                             }
                         }}
                         className="absolute bottom-8 right-8 h-10 w-10 rounded-full bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shadow-2xl backdrop-blur-xl hover:bg-primary/20 transition-all z-50 group"
@@ -369,8 +378,8 @@ export const DocsDashboard: React.FC<DocsDashboardProps> = ({ config }) => {
                 </div>
 
                 {/* Right Sidebar (Table of Contents) */}
-                <div className="w-80 border-l border-white/5 bg-black/30 flex flex-col min-h-0 z-20">
-                    <div className="p-6 border-b border-white/5 shrink-0 bg-white/[0.01]">
+                <div className="w-80 border-l border-border bg-muted/10 flex flex-col min-h-0 z-20">
+                    <div className="p-6 border-b border-border shrink-0 bg-muted/5">
                         <div className="flex items-center gap-2 mb-2">
                             <ScrollText size={14} className="text-primary" />
                             <h2 className="text-xs font-black uppercase tracking-widest text-foreground/80">On this page</h2>
@@ -382,7 +391,7 @@ export const DocsDashboard: React.FC<DocsDashboardProps> = ({ config }) => {
                         options={osOptions}
                         className="flex-1"
                     >
-                        <div className="p-6">
+                        <div className="p-6 text-left">
                             {toc.length === 0 ? (
                                 <div className="py-10 text-center opacity-20 grayscale">
                                     <Activity size={32} className="mx-auto mb-2" />
@@ -394,7 +403,7 @@ export const DocsDashboard: React.FC<DocsDashboardProps> = ({ config }) => {
                                         <button
                                             key={`${heading.id}-${i}`}
                                             onClick={() => scrollToHeading(heading.id)}
-                                            className={`w-full text-left rounded-lg px-3 py-2 text-xs transition-all hover:bg-white/5 ${
+                                            className={`w-full text-left rounded-lg px-3 py-2 text-xs transition-all hover:bg-muted/50 ${
                                                 heading.level === 1 ? 'font-black uppercase tracking-widest text-foreground/90' : 
                                                 heading.level === 2 ? 'font-bold text-muted-foreground/80 pl-6' : 
                                                 'font-medium text-muted-foreground/60 pl-10'
@@ -406,10 +415,10 @@ export const DocsDashboard: React.FC<DocsDashboardProps> = ({ config }) => {
                                 </nav>
                             )}
 
-                            <div className="mt-12 space-y-4 pt-8 border-t border-white/5">
-                                <h3 className="text-[10px] font-black uppercase tracking-widest text-primary/60 px-3">System Wiki</h3>
+                            <div className="mt-12 space-y-4 pt-8 border-t border-border">
+                                <h3 className="text-[10px] font-black uppercase tracking-widest text-primary/60 px-3 italic">System Wiki</h3>
                                 <div className="grid gap-2">
-                                    <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-2 group hover:bg-white/[0.04] transition-all">
+                                    <div className="p-4 rounded-2xl bg-muted/30 border border-border space-y-2 group hover:bg-muted/50 transition-all">
                                         <div className="flex items-center gap-2 font-black text-[10px] uppercase tracking-widest text-foreground/60">
                                             <Sparkles size={12} className="text-amber-500" />
                                             Contribution
@@ -419,7 +428,7 @@ export const DocsDashboard: React.FC<DocsDashboardProps> = ({ config }) => {
                                         </p>
                                     </div>
                                     
-                                    <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-2 group hover:bg-white/[0.04] transition-all">
+                                    <div className="p-4 rounded-2xl bg-muted/30 border border-border space-y-2 group hover:bg-muted/50 transition-all">
                                         <div className="flex items-center gap-2 font-black text-[10px] uppercase tracking-widest text-foreground/60">
                                             <ShieldCheck size={12} className="text-primary" />
                                             Standards
