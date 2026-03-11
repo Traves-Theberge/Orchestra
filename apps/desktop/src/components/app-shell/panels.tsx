@@ -131,7 +131,7 @@ export function DashboardOverview({
           <CardContent className="flex-1 min-h-0">
             <div className="space-y-1.5">
               {displayProjects.length === 0 ? (
-                <div className="py-12 text-center border border-dashed border-white/10 rounded-2xl bg-white/[0.02]">
+                <div className="py-12 text-center border border-dashed border-border rounded-2xl bg-muted/30">
                   <Folder size={32} className="mx-auto mb-3 opacity-10" />
                   <p className="text-xs text-muted-foreground font-medium uppercase tracking-widest">No projects discovered</p>
                 </div>
@@ -511,7 +511,7 @@ export function SettingsCard({
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-white/5">
+              <div className="pt-4 border-t border-border">
                 <p className="text-[10px] text-muted-foreground italic">Note: Custom shortcut remapping is currently in development and will be available in v1.1.0.</p>
               </div>
             </div>
@@ -1001,7 +1001,7 @@ export function IssueDetailView({
       {activeTab === 'overview' ? (
         <div className="flex-1 min-h-0 overflow-hidden flex flex-col gap-3 pr-1">
           {activeSessions.length > 1 && (
-            <div className="rounded-lg border border-white/5 bg-white/[0.02] p-2 space-y-2 shrink-0">
+            <div className="rounded-lg border border-border bg-muted/30 p-2 space-y-2 shrink-0">
               <div className="flex items-center gap-2">
                 <Activity size={12} className="text-primary" />
                 <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">Active Contexts</span>
@@ -1015,7 +1015,7 @@ export function IssueDetailView({
                         onClick={() => setLocalProvider(sessionProvider)}
                         className={`flex items-center gap-2 px-2 py-1 rounded-md border transition-all ${localProvider === sessionProvider
                           ? 'bg-primary/10 border-primary/20 text-primary'
-                          : 'bg-black/20 border-white/5 text-muted-foreground hover:bg-white/5'
+                          : 'bg-card/20 border-border text-muted-foreground hover:bg-white/5'
                           }`}
                       >
                         <Cpu size={10} />
@@ -1028,20 +1028,20 @@ export function IssueDetailView({
             </div>
           )}
 
-          <div className="rounded-xl border border-white/5 bg-[#0c0c0e] shadow-2xl flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div className="rounded-xl border border-border bg-background shadow-2xl flex-1 flex flex-col min-h-0 overflow-hidden">
             {/* Header Area */}
-            <div className="flex items-center justify-between gap-4 p-3 bg-white/[0.02] border-b border-white/5 shrink-0">
+            <div className="flex items-center justify-between gap-4 p-3 bg-muted/30 border-b border-border shrink-0">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 mb-1">
                   <Badge variant="outline" className="font-mono text-[9px] h-4 uppercase bg-primary/10 text-primary border-primary/20 px-1">
                     {identifier}
                   </Badge>
-                  <h3 className="truncate text-base font-black tracking-tight text-white">{title}</h3>
+                  <h3 className="truncate text-base font-black tracking-tight text-foreground">{title}</h3>
                 </div>
                 <div className="flex items-center gap-2">
                   <AppTooltip content="Task State">
                     <CustomDropdown
-                      className="h-7 w-32 border-white/10 bg-black text-[10px]"
+                      className="h-7 w-32 border-border bg-card text-[10px]"
                       value={localState}
                       options={AGENT_STATES.map((s) => ({ label: s, value: s }))}
                       onChange={handleStateChange}
@@ -1049,7 +1049,7 @@ export function IssueDetailView({
                   </AppTooltip>
                   <AppTooltip content="Active Agent">
                     <CustomDropdown
-                      className="h-7 w-48 border-white/10 bg-black text-[10px]"
+                      className="h-7 w-48 border-border bg-card text-[10px]"
                       value={localAssignee.startsWith('agent-') ? localAssignee : (availableAgents.includes(localAssignee) ? `agent-${localAssignee}` : localAssignee)}
                       options={[
                         { label: 'Unassigned', value: 'Unassigned', icon: <Users className="h-3 w-3 text-muted-foreground" /> },
@@ -1084,13 +1084,13 @@ export function IssueDetailView({
             </div>
 
             {/* Main Content Grid */}
-            <div className="flex-1 grid grid-cols-12 divide-x divide-white/5 overflow-hidden">
+            <div className="flex-1 grid grid-cols-12 divide-x divide-border overflow-hidden">
               {/* Left Column: Context & Capabilities */}
-              <div className="col-span-8 flex flex-col divide-y divide-white/5 overflow-hidden">
+              <div className="col-span-8 flex flex-col divide-y divide-border overflow-hidden">
                 {/* Description */}
                 {description && (
                   <div className="p-3 shrink-0">
-                    <div className="flex items-center gap-2 text-[8px] font-black uppercase tracking-widest text-zinc-500 mb-1.5">
+                    <div className="flex items-center gap-2 text-[8px] font-black uppercase tracking-widest text-muted-foreground mb-1.5">
                       <FileText size={10} /> Description
                     </div>
                     <div className="max-h-24 overflow-auto custom-scrollbar">
@@ -1102,7 +1102,7 @@ export function IssueDetailView({
                 {/* Capabilities */}
                 <div className="p-3 flex-1 flex flex-col overflow-hidden">
                   <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2 text-[8px] font-black uppercase tracking-widest text-zinc-500">
+                    <div className="flex items-center gap-2 text-[8px] font-black uppercase tracking-widest text-muted-foreground">
                       <Wrench size={10} /> Agent Capabilities
                     </div>
                     <span className="text-[8px] font-bold text-primary/60">{allTools.length - disabledTools.length} Enabled</span>
@@ -1115,7 +1115,7 @@ export function IssueDetailView({
                           <button
                             key={tool.name}
                             onClick={() => handleToggleTool(tool.name)}
-                            className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase border transition-all ${isDisabled ? 'border-white/5 text-zinc-600 opacity-40' : 'border-primary/20 bg-primary/10 text-primary'}`}
+                            className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase border transition-all ${isDisabled ? 'border-border text-zinc-600 opacity-40' : 'border-primary/20 bg-primary/10 text-primary'}`}
                           >
                             {tool.name.includes('_') ? tool.name.split('_')[1] : tool.name}
                           </button>
@@ -1126,15 +1126,15 @@ export function IssueDetailView({
                 </div>
 
                 {/* Pulse */}
-                <div className="p-3 bg-white/[0.01] shrink-0">
+                <div className="p-3 bg-muted/10 shrink-0">
                   <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2 text-[8px] font-black uppercase tracking-widest text-zinc-500">
+                    <div className="flex items-center gap-2 text-[8px] font-black uppercase tracking-widest text-muted-foreground">
                       <Activity size={10} /> Runtime Pulse
                     </div>
                   </div>
                   <div className="space-y-1">
                     {issueHistory.slice(0, 2).map((item, idx) => (
-                      <div key={idx} className="flex items-center gap-2 px-2 py-1 rounded bg-white/[0.02] border border-white/5">
+                      <div key={idx} className="flex items-center gap-2 px-2 py-1 rounded bg-muted/30 border border-border">
                         <div className="shrink-0 scale-75">{getEventIcon(item.kind)}</div>
                         <p className="text-[9px] font-bold text-zinc-400 truncate flex-1">{item.message || item.kind}</p>
                         <span className="text-[7px] font-mono text-zinc-600 tabular-nums">{new Date(item.timestamp).toLocaleTimeString()}</span>
@@ -1145,24 +1145,24 @@ export function IssueDetailView({
               </div>
 
               {/* Right Column: Metadata & Hooks */}
-              <div className="col-span-4 flex flex-col divide-y divide-white/5 bg-white/[0.01] overflow-hidden">
+              <div className="col-span-4 flex flex-col divide-y divide-border bg-muted/10 overflow-hidden">
                 {/* Status Grid */}
-                <div className="grid grid-cols-1 divide-y divide-white/5 shrink-0">
+                <div className="grid grid-cols-1 divide-y divide-border shrink-0">
                   <div className="p-2.5">
-                    <div className="text-[8px] font-black uppercase tracking-widest text-zinc-500 mb-1">Status & Priority</div>
+                    <div className="text-[8px] font-black uppercase tracking-widest text-muted-foreground mb-1">Status & Priority</div>
                     <div className="space-y-1.5">
-                      <div className="flex items-center gap-2 text-[11px] font-bold text-zinc-300">
+                      <div className="flex items-center gap-2 text-[11px] font-bold text-foreground/90">
                         <div className={`h-1.5 w-1.5 rounded-full ${localState === 'In Progress' ? 'bg-amber-500 animate-pulse' : 'bg-primary'}`} />
                         {localState}
                       </div>
-                      <div className="flex items-center gap-2 text-[11px] font-bold text-zinc-300">
+                      <div className="flex items-center gap-2 text-[11px] font-bold text-foreground/90">
                         <PriorityIcon priority={priority} className="h-3 w-3" />
                         <PriorityLabel priority={priority} />
                       </div>
                     </div>
                   </div>
                   <div className="p-2.5">
-                    <div className="text-[8px] font-black uppercase tracking-widest text-zinc-500 mb-1">Source Context</div>
+                    <div className="text-[8px] font-black uppercase tracking-widest text-muted-foreground mb-1">Source Context</div>
                     <div className="space-y-1">
                       <div className="flex items-center gap-1.5 text-[10px] font-mono text-zinc-400">
                         <GitBranch size={10} />
@@ -1178,7 +1178,7 @@ export function IssueDetailView({
 
                 {/* External Links */}
                 <div className="p-2.5 shrink-0">
-                  <div className="text-[8px] font-black uppercase tracking-widest text-zinc-500 mb-2">Remote System</div>
+                  <div className="text-[8px] font-black uppercase tracking-widest text-muted-foreground mb-2">Remote System</div>
                   {issueUrl ? (
                     <a href={issueUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 p-1.5 rounded bg-primary/5 border border-primary/10 text-primary hover:bg-primary/10 transition-all">
                       <ExternalLink size={10} />
@@ -1191,15 +1191,15 @@ export function IssueDetailView({
 
                 {/* Execution Hooks */}
                 <div className="p-2.5 flex-1 flex flex-col overflow-hidden">
-                  <div className="text-[8px] font-black uppercase tracking-widest text-zinc-500 mb-2">Execution Hooks</div>
+                  <div className="text-[8px] font-black uppercase tracking-widest text-muted-foreground mb-2">Execution Hooks</div>
                   <div className="space-y-1.5 overflow-auto custom-scrollbar pr-1">
                     {hooks.map((hook) => {
                       const status = getHookStatus(hook.id)
                       return (
-                        <div key={hook.id} className="flex flex-col gap-1 p-1.5 rounded bg-white/[0.02] border border-white/5">
+                        <div key={hook.id} className="flex flex-col gap-1 p-1.5 rounded bg-muted/30 border border-border">
                           <div className="flex items-center justify-between">
-                            <span className="text-[9px] font-bold text-zinc-300">{hook.label}</span>
-                            <Badge variant="outline" className={`h-3 px-1 text-[6px] font-black uppercase ${status === 'completed' ? 'border-primary/20 text-primary' : status === 'active' ? 'border-amber-500/20 text-amber-500 animate-pulse' : 'text-zinc-600 border-white/5'}`}>
+                            <span className="text-[9px] font-bold text-foreground/90">{hook.label}</span>
+                            <Badge variant="outline" className={`h-3 px-1 text-[6px] font-black uppercase ${status === 'completed' ? 'border-primary/20 text-primary' : status === 'active' ? 'border-amber-500/20 text-amber-500 animate-pulse' : 'text-zinc-600 border-border'}`}>
                               {status}
                             </Badge>
                           </div>
@@ -1213,9 +1213,9 @@ export function IssueDetailView({
           </div>
         </div>
         ) : activeTab === 'changes' ? (
-          <div className="relative flex-1 min-h-0 rounded-lg border bg-[#1e1e1e] overflow-hidden shadow-inner flex flex-col">
-            <div className="flex items-center justify-between border-b border-white/5 bg-black/20 px-3 py-2">
-              <div className="flex items-center gap-2 text-zinc-500">
+          <div className="relative flex-1 min-h-0 rounded-lg border bg-muted overflow-hidden shadow-inner flex flex-col">
+            <div className="flex items-center justify-between border-b border-border bg-card/20 px-3 py-2">
+              <div className="flex items-center gap-2 text-muted-foreground">
                 <GitBranch className="h-3 w-3" />
                 <span className="text-[10px] font-mono uppercase tracking-wider">workspace.diff</span>
               </div>
@@ -1245,17 +1245,17 @@ export function IssueDetailView({
                   {diff}
                 </SyntaxHighlighter>              ) : (
                 <div className="flex flex-col items-center justify-center p-12 text-center">
-                  <GitBranch className="h-8 w-8 text-white/5 mb-3" />
+                  <GitBranch className="h-8 w-8 text-foreground/5 mb-3" />
                   <p className="text-xs text-muted-foreground/50 tracking-wide">No workspace changes detected.</p>
                 </div>
               )}
             </div>
           </div>
         ) : activeTab === 'logs' ? (
-          <div className="relative flex-1 min-h-0 rounded-lg border bg-[#0c0c0e] flex flex-col font-mono text-[11px] leading-relaxed text-zinc-300 shadow-inner overflow-hidden border-white/5">
-            <div className="flex items-center justify-between border-b border-white/10 bg-white/5 px-3 py-2 shrink-0">
+          <div className="relative flex-1 min-h-0 rounded-lg border bg-background flex flex-col font-mono text-[11px] leading-relaxed text-foreground/90 shadow-inner overflow-hidden border-border">
+            <div className="flex items-center justify-between border-b border-border bg-white/5 px-3 py-2 shrink-0">
               <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 text-zinc-500">
+                <div className="flex items-center gap-2 text-muted-foreground">
                   <Terminal className="h-3.5 w-3.5 text-primary" />
                   <span className="font-bold text-[10px] uppercase tracking-widest text-primary/70">{localProvider || 'main'}.log</span>
                 </div>
@@ -1272,7 +1272,7 @@ export function IssueDetailView({
                       placeholder="Filter logs..."
                       value={logFilter}
                       onChange={(e) => setLogFilter(e.target.value)}
-                      className="h-6 w-48 rounded bg-white/5 border border-white/10 pl-7 pr-2 text-[10px] text-zinc-300 focus:outline-none focus:ring-1 focus:ring-primary/30"
+                      className="h-6 w-48 rounded bg-white/5 border border-border pl-7 pr-2 text-[10px] text-foreground/90 focus:outline-none focus:ring-1 focus:ring-primary/30"
                     />
                   </div>
                 )}
@@ -1295,7 +1295,7 @@ export function IssueDetailView({
               </div>
             </div>
             
-            <div className="flex-1 min-h-0 bg-[#0c0c0e]">
+            <div className="flex-1 min-h-0 bg-background">
               {localState === 'In Progress' && config ? (
                 <div className="w-full h-full p-2">
                    <TerminalView 
@@ -1308,7 +1308,7 @@ export function IssueDetailView({
                 <div 
                   ref={logContainerRef}
                   onScroll={handleLogScroll}
-                  className="h-full overflow-auto custom-scrollbar bg-[#0c0c0e]"
+                  className="h-full overflow-auto custom-scrollbar bg-background"
                 >
                   {logsLoading && !logs ? (
                     <div className="space-y-2 p-4">
@@ -1320,7 +1320,7 @@ export function IssueDetailView({
                     <div className="flex flex-col w-full py-2">
                       {filteredLogs.split('\n').map((line, i) => (
                         <div key={i} className="flex px-2 py-[1px] hover:bg-white/[0.03] group transition-colors">
-                          <span className="w-10 shrink-0 text-right pr-3 text-zinc-600 select-none border-r border-white/10 mr-3 text-[10px] tabular-nums pt-[1px] group-hover:text-zinc-400">
+                          <span className="w-10 shrink-0 text-right pr-3 text-zinc-600 select-none border-r border-border mr-3 text-[10px] tabular-nums pt-[1px] group-hover:text-zinc-400">
                             {i + 1}
                           </span>
                           <span className="flex-1 whitespace-pre-wrap break-words leading-[1.6]">
@@ -1330,12 +1330,12 @@ export function IssueDetailView({
                       ))}
                     </div>
                   ) : logs ? (
-                    <div className="flex flex-col items-center justify-center py-12 text-center text-zinc-500 opacity-40">
+                    <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground opacity-40">
                       <Search className="h-8 w-8 mb-3" />
                       <p className="text-xs tracking-tight uppercase font-black">No matching logs found</p>
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center justify-center py-12 text-center text-zinc-500">
+                    <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
                       <Terminal className="h-8 w-8 opacity-10 mb-3" />
                       <p className="text-xs tracking-tight">No logs documented for this issue session.</p>
                     </div>
@@ -1345,18 +1345,18 @@ export function IssueDetailView({
             </div>
           </div>
         ) : activeTab === 'artifacts' ? (
-          <div className="flex flex-1 min-h-0 rounded-xl border border-white/5 bg-[#0c0c0e] shadow-2xl overflow-hidden">
+          <div className="flex flex-1 min-h-0 rounded-xl border border-border bg-background shadow-2xl overflow-hidden">
             {/* Sidebar: File List */}
-            <div className="w-72 border-r border-white/5 bg-black/20 flex flex-col shrink-0">
-              <div className="p-3 border-b border-white/5 bg-white/5 flex items-center justify-between shrink-0">
-                <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Generated Files</span>
-                <Badge variant="outline" className="h-4 px-1.5 text-[8px] bg-white/5 text-zinc-500 border-white/10 font-mono">
+            <div className="w-72 border-r border-border bg-card/20 flex flex-col shrink-0">
+              <div className="p-3 border-b border-border bg-white/5 flex items-center justify-between shrink-0">
+                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Generated Files</span>
+                <Badge variant="outline" className="h-4 px-1.5 text-[8px] bg-white/5 text-muted-foreground border-border font-mono">
                   {artifacts.length}
                 </Badge>
               </div>
               <div className="flex-1 overflow-auto custom-scrollbar p-2 space-y-1">
                 {artifactsLoading ? (
-                  Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-8 w-full rounded-lg bg-white/[0.02]" />)
+                  Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-8 w-full rounded-lg bg-muted/30" />)
                 ) : artifacts.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12 opacity-20 grayscale">
                     <FileText size={32} className="mb-2" />
@@ -1369,7 +1369,7 @@ export function IssueDetailView({
                         onClick={() => setSelectedArtifact(path)}
                         className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-all group ${selectedArtifact === path 
                           ? 'bg-primary/10 border border-primary/20 text-primary shadow-lg shadow-primary/5' 
-                          : 'text-zinc-500 hover:text-zinc-200 hover:bg-white/5 border border-transparent'
+                          : 'text-muted-foreground hover:text-zinc-200 hover:bg-white/5 border border-transparent'
                         }`}
                       >
                         <FileText size={14} className={selectedArtifact === path ? 'text-primary' : 'text-zinc-600 group-hover:text-zinc-400'} />
@@ -1382,13 +1382,13 @@ export function IssueDetailView({
             </div>
 
             {/* Main Content: File Preview */}
-            <div className="flex-1 min-w-0 bg-black/40 flex flex-col relative">
+            <div className="flex-1 min-w-0 bg-card/40 flex flex-col relative">
               {selectedArtifact ? (
                 <>
-                  <div className="flex items-center justify-between border-b border-white/5 bg-white/[0.02] px-4 py-2 shrink-0">
+                  <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-2 shrink-0">
                     <div className="flex items-center gap-3">
                       <FileText size={14} className="text-primary/60" />
-                      <span className="truncate font-mono text-[11px] text-zinc-300 font-bold">{selectedArtifact}</span>
+                      <span className="truncate font-mono text-[11px] text-foreground/90 font-bold">{selectedArtifact}</span>
                     </div>
                     {contentLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />}
                   </div>
@@ -1420,12 +1420,12 @@ export function IssueDetailView({
                 </>
               ) : (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 opacity-30 grayscale pointer-events-none">
-                  <div className="p-6 rounded-full bg-white/5 border border-white/5">
+                  <div className="p-6 rounded-full bg-white/5 border border-border">
                     <FileText size={48} className="text-zinc-600" />
                   </div>
                   <div className="text-center">
                     <p className="text-sm font-black uppercase tracking-[0.2em]">Select an Artifact</p>
-                    <p className="text-[10px] font-medium text-zinc-500 uppercase tracking-widest mt-1">Review agent-generated documentation and code</p>
+                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-widest mt-1">Review agent-generated documentation and code</p>
                   </div>
                 </div>
               )}
@@ -1433,7 +1433,7 @@ export function IssueDetailView({
           </div>
       ) : (
         <div className="space-y-6 text-left flex-1 min-h-0 overflow-auto custom-scrollbar pr-1">
-          <div className="rounded-xl border border-white/5 bg-white/[0.02] p-6 min-h-full">
+          <div className="rounded-xl border border-border bg-muted/30 p-6 min-h-full">
             <div className="flex items-center justify-between mb-8">
               <div>
                 <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
@@ -1454,10 +1454,10 @@ export function IssueDetailView({
               <div className="relative space-y-6 before:absolute before:left-[11px] before:top-2 before:h-[calc(100%-16px)] before:w-[1px] before:bg-border/40 text-left">
                 {issueHistory.map((item, idx) => (
                   <div key={`${item.id || idx}`} className="relative pl-10 group text-left">
-                    <div className="absolute left-0 top-0 z-10 grid h-6 w-6 place-items-center rounded-full border border-white/10 bg-black shadow-sm group-hover:border-primary/40 transition-colors">
+                    <div className="absolute left-0 top-0 z-10 grid h-6 w-6 place-items-center rounded-full border border-border bg-card shadow-sm group-hover:border-primary/40 transition-colors">
                       {getEventIcon(item.kind)}
                     </div>
-                    <div className="flex flex-col gap-1 bg-white/[0.01] p-3 rounded-xl border border-transparent group-hover:border-white/5 group-hover:bg-white/[0.02] transition-all text-left">
+                    <div className="flex flex-col gap-1 bg-muted/10 p-3 rounded-xl border border-transparent group-hover:border-border group-hover:bg-muted/30 transition-all text-left">
                       <div className="flex items-center justify-between gap-4">
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-bold text-foreground capitalize">{item.kind.replace(/_/g, ' ')}</span>

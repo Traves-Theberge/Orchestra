@@ -18,13 +18,16 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ sessionId, projectId
     useEffect(() => {
         if (!terminalRef.current) return
 
+        const isDark = document.documentElement.classList.contains('dark')
         const term = new Terminal({
             cursorBlink: true,
             fontSize: 12,
             fontFamily: 'JetBrains Mono, Menlo, Monaco, Consolas, "Courier New", monospace',
             theme: {
-                background: '#0c0c0e',
-                foreground: '#ffffff',
+                background: isDark ? '#0c0c0e' : '#f8fafc',
+                foreground: isDark ? '#ffffff' : '#0f172a',
+                cursor: isDark ? '#ffffff' : '#0f172a',
+                selectionBackground: isDark ? 'rgba(255, 255, 255, 0.3)' : 'rgba(0, 0, 0, 0.2)',
             }
         })
 
@@ -88,7 +91,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ sessionId, projectId
     }, [sessionId, projectId, baseUrl])
 
     return (
-        <div className="w-full h-full bg-[#0c0c0e] p-2 rounded-xl border border-white/5 overflow-hidden">
+        <div className="w-full h-full bg-background p-2 rounded-xl border border-border overflow-hidden">
             <div ref={terminalRef} className="w-full h-full" />
         </div>
     )
