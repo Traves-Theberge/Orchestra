@@ -14,7 +14,12 @@ interface Link extends d3.SimulationLinkDatum<Node> {
     value: number
 }
 
-const data: { nodes: Node[], links: Link[] } = {
+interface GraphData {
+    nodes: Node[]
+    links: Link[]
+}
+
+const DEFAULT_DATA: GraphData = {
     nodes: [
         { id: 'backend', group: 'core', label: 'Go Backend' },
         { id: 'orchestrator', group: 'core', label: 'Orchestrator' },
@@ -49,8 +54,18 @@ const data: { nodes: Node[], links: Link[] } = {
     ]
 }
 
-export const D3ArchitectureGraph: React.FC = () => {
+export const D3ArchitectureGraph: React.FC<{ data?: string }> = ({ data: rawData }) => {
     const svgRef = useRef<SVGSVGElement>(null)
+
+    const graphData = React.useMemo(() => {
+        if (!rawData || rawData.trim() === '') return DEFAULT_DATA
+        try {
+            return JSON.parse(rawData) as GraphData
+        } catch (e) {
+            console.warn('Failed to parse D3 diagram data:', e)
+            return DEFAULT_DATA
+        }
+    }, [rawData])
 
     useEffect(() => {
         if (!svgRef.current) return
@@ -66,8 +81,8 @@ export const D3ArchitectureGraph: React.FC = () => {
         svg.selectAll('*').remove()
 
         // Create copies of data to avoid mutation issues with D3
-        const nodes = data.nodes.map(d => ({ ...d }))
-        const links = data.links.map(d => ({ ...d }))
+        const nodes = graphData.nodes.map(d => ({ ...d }))
+        const links = graphData.links.map(d => ({ ...d }))
 
         const simulation = d3.forceSimulation<Node>(nodes)
             .force('link', d3.forceLink<Node, Link>(links).id(d => d.id).distance(120))
@@ -173,15 +188,15 @@ export const D3ArchitectureGraph: React.FC = () => {
     }, [])
 
     return (
-        <div className="my-10 rounded-3xl border border-white/5 bg-black/40 p-8 shadow-2xl overflow-hidden backdrop-blur-md">
-            <div className="mb-6 flex items-center justify-between border-b border-white/5 pb-4">
-                <div className="flex items-center gap-3">
+        <div className="my-10 rounded-3xl border border-border bg-muted/10 p-8 shadow-2xl overflow-hidden backdrop-blur-md">
+            <div className="mb-6 flex items-center justify-between border-b border-border pb-4">
+                <div className="flex items-center gap-3 text-left">
                     <div className="rounded-lg bg-primary/10 p-2 text-primary">
                         <Activity className="h-5 w-5" />
                     </div>
                     <div>
                         <span className="block text-xs font-black uppercase tracking-widest text-foreground/90">System Relations</span>
-                        <span className="block text-[10px] text-muted-foreground">Interactive Force-Directed Graph</span>
+                        <span className="block text-[10px] text-muted-foreground/60 uppercase tracking-tighter">Interactive Force-Directed Graph</span>
                     </div>
                 </div>
                 <div className="flex gap-6 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">
@@ -190,7 +205,7 @@ export const D3ArchitectureGraph: React.FC = () => {
                     <span className="flex items-center gap-2"><div className="h-2 w-2 rounded-full bg-[#f59e0b]" /> Agents</span>
                 </div>
             </div>
-            <div className="relative rounded-2xl bg-black/20 border border-white/5">
+            <div className="relative rounded-2xl bg-background border border-border">
                 <svg ref={svgRef} className="cursor-grab active:cursor-grabbing w-full h-full min-h-[500px]" />
             </div>
         </div>

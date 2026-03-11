@@ -26,8 +26,8 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ sessionId, projectId
             letterSpacing: 0.5,
             fontFamily: 'JetBrains Mono, Menlo, Monaco, Consolas, "Courier New", monospace',
             theme: {
-                background: isDark ? '#0c0c0e' : '#f8fafc',
-                foreground: isDark ? '#e2e8f0' : '#0f172a',
+                background: isDark ? '#0a0a0b' : '#f8fafc',
+                foreground: isDark ? '#ffffff' : '#0f172a',
                 cursor: isDark ? 'hsl(161, 72%, 45%)' : 'hsl(161, 72%, 38%)',
                 selectionBackground: isDark ? 'rgba(161, 72%, 45%, 0.3)' : 'rgba(161, 72%, 38%, 0.2)',
                 black: '#000000',

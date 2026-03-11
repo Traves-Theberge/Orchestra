@@ -1,13 +1,13 @@
 .terminal-multiplexer .mosaic-window {
     border: 1px solid hsl(var(--border) / 0.5);
-    background: hsl(var(--background));
+    background: #f8fafc;
     border-radius: 8px;
     overflow: hidden;
     transition: border-color 0.2s ease;
 }
 
-.terminal-multiplexer .mosaic-window:hover {
-    border-color: hsl(var(--primary) / 0.3);
+.dark .terminal-multiplexer .mosaic-window {
+    background: #0a0a0b;
 }
 
 .terminal-multiplexer .mosaic-window-toolbar {
@@ -52,7 +52,11 @@
 }
 
 .terminal-multiplexer .mosaic-window-body {
-    background: hsl(var(--background));
+    background: #f8fafc;
+}
+
+.dark .terminal-multiplexer .mosaic-window-body {
+    background: #0a0a0b;
 }
 
 .terminal-multiplexer .mosaic-preview {
