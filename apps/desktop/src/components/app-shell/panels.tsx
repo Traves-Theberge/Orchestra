@@ -1400,16 +1400,27 @@ export function IssueDetailView({
                 <div 
                   ref={logContainerRef}
                   onScroll={handleLogScroll}
-                  className="h-full overflow-auto whitespace-pre-wrap p-4 custom-scrollbar"
+                  className="h-full overflow-auto custom-scrollbar bg-[#0c0c0e]"
                 >
                   {logsLoading && !logs ? (
-                    <div className="space-y-2">
+                    <div className="space-y-2 p-4">
                       <div className="h-3 w-3/4 animate-pulse rounded bg-zinc-800" />
                       <div className="h-3 w-1/2 animate-pulse rounded bg-zinc-800" />
                       <div className="h-3 w-2/3 animate-pulse rounded bg-zinc-800" />
                     </div>
                   ) : filteredLogs ? (
-                    <Ansi>{filteredLogs}</Ansi>
+                    <div className="flex flex-col w-full py-2">
+                      {filteredLogs.split('\n').map((line, i) => (
+                        <div key={i} className="flex px-2 py-[1px] hover:bg-white/[0.03] group transition-colors">
+                          <span className="w-10 shrink-0 text-right pr-3 text-zinc-600 select-none border-r border-white/10 mr-3 text-[10px] tabular-nums pt-[1px] group-hover:text-zinc-400">
+                            {i + 1}
+                          </span>
+                          <span className="flex-1 whitespace-pre-wrap break-words leading-[1.6]">
+                            <Ansi>{line || ' '}</Ansi>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   ) : logs ? (
                     <div className="flex flex-col items-center justify-center py-12 text-center text-zinc-500 opacity-40">
                       <Search className="h-8 w-8 mb-3" />
