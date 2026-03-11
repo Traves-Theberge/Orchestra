@@ -40,7 +40,6 @@ import {
   updateAgentConfig,
   searchIssues,
   stopIssueSession,
-  startIssueRace,
   toDisplayError,
   updateIssue,
   createProject,
@@ -628,18 +627,6 @@ export default function App() {
     }
   }
 
-  const handleStartRace = async (identifier: string, providers: string[]) => {
-    if (!config) return
-    try {
-      await startIssueRace(config, identifier, providers)
-      setStatusMessage(`Parallel race for ${identifier} initiated.`)
-      void handleRefresh()
-      void executeIssueLookup(identifier)
-    } catch (err) {
-      setErrorMessage(`start race failed: ${toDisplayError(err)}`)
-    }
-  }
-
   const handleCreateIssue = (initialState: string) => {
     setCreateTaskInitialState(initialState)
     setCreateTaskDialogOpen(true)
@@ -1158,8 +1145,8 @@ export default function App() {
                 allTools={allTools}
                 onUpdate={(updates) => handleIssueUpdate(issueLookupId, updates)}
                 onStopSession={(p) => handleStopSession(issueLookupId, p)}
-                onStartRace={(providers) => handleStartRace(issueLookupId, providers)}
-              />
+                />
+
             ) : (
               <p className="text-center text-sm text-muted-foreground py-10">No issue data available.</p>
             )}

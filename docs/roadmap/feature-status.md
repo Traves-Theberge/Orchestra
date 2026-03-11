@@ -10,10 +10,8 @@ All planned architectural phases and high-priority features for Orchestra v1.0.0
 
 ## ✅ Multi-Agent Coordination
 - **UI Override**: "Provider Selector" in the Issue Inspector allows manual agent swapping mid-session.
-- **Parallel Races**: "Race Mode" allows multiple agents to work on the same issue simultaneously in isolated workspaces.
-- **Promote to Winner**: Finalize the best results from a race and automatically terminate competitors.
 - **Agent Handoffs**: `request_handoff` tool allows models to autonomously delegate tasks.
-- **Split-Pane Logs**: Side-by-side real-time log comparison for parallel agent sessions.
+- **Context Switcher**: Seamlessly switch between multiple active agent sessions on the same repository.
 
 ## ✅ Stability & Analytics
 - **Artifact Cleanup**: Background Garbage Collector removes orphaned workspace directories hourly.
@@ -21,7 +19,7 @@ All planned architectural phases and high-priority features for Orchestra v1.0.0
 - **Stability Scoring**: Data-driven project health index based on success/retry ratios.
 - **Activity Feed**: Full chronological event audit per issue pulled from the SQLite Warehouse.
 - **Issue History Timeline**: **NEW** - Interactive timeline with event icons, token metrics, and provider badges.
-- **Enhanced Log Viewing**: Split-view logs for parallel races with provider-specific filtering.
+- **Live Terminal Logging**: Dynamic mounting of Xterm.js terminals for active agent sessions.
 
 ## ✅ Developer Experience
 - **Real-time Log Search**: High-speed filter bar for live agent log streams.

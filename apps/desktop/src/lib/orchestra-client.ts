@@ -190,18 +190,6 @@ export async function stopIssueSession(config: BackendConfig, issueIdentifier: s
   })
 }
 
-export async function startIssueRace(config: BackendConfig, issueIdentifier: string, providers: string[]): Promise<void> {
-  const normalized = issueIdentifier.trim()
-  if (normalized === '') {
-    throw new APIError('invalid_request', 'issue identifier is required')
-  }
-  await requestJSON<void>(config, `/api/v1/issues/${encodeURIComponent(normalized)}/race`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ providers }),
-  })
-}
-
 export async function fetchState(config: BackendConfig): Promise<SnapshotPayload> {
   const payload = await requestJSON<unknown>(config, '/api/v1/state')
   return normalizeSnapshotPayload(payload)

@@ -37,7 +37,7 @@ The platform includes automated API testing scripts located in the project root:
 - ✅ `GET /api/v1/issues/{id}/history` - Get activity timeline
 - ✅ `GET /api/v1/issues/{id}/diff` - Workspace diff
 - ✅ `GET /api/v1/issues/{id}/artifacts` - List artifacts
-- ✅ `POST /api/v1/issues/{id}/race` - Start parallel race
+- ✅ `GET /api/v1/terminal/{session_id}` - WebSocket terminal stream
 
 #### MCP Management
 - ✅ `GET /api/v1/mcp/tools` - List available tools

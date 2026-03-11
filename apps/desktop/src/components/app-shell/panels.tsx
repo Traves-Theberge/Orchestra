@@ -694,7 +694,6 @@ export function IssueDetailView({
   result: initialResult,
   onUpdate,
   onStopSession,
-  onStartRace,
   config,
   snapshot,
   timeline = [],
@@ -704,7 +703,6 @@ export function IssueDetailView({
   result: Record<string, unknown> | null
   onUpdate?: (updates: Record<string, unknown>) => Promise<void>
   onStopSession?: (provider?: string) => Promise<void>
-  onStartRace?: (providers: string[]) => Promise<void>
   config: BackendConfig | null
   snapshot: SnapshotPayload | null
   timeline?: TimelineItem[]
@@ -744,7 +742,7 @@ export function IssueDetailView({
   const [issueHistory, setIssueHistory] = useState<any[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   
-  // Split view state for parallel races
+  // Split view state
   const [isSplitView, setIsSplitView] = useState(false)
   const [secondaryProvider, setSecondaryProvider] = useState<string>('')
   const [secondaryLogs, setSecondaryLogs] = useState<string>('')
@@ -759,8 +757,6 @@ export function IssueDetailView({
   const logsEndRef = useRef<HTMLDivElement>(null)
   const [prPending, setPrPending] = useState(false)
   const [prResult, setPrResult] = useState<{ url: string; number: number } | null>(null)
-  const [raceDialogOpen, setRaceDialogOpen] = useState(false)
-  const [selectedRaceProviders, setSelectedRaceProviders] = useState<string[]>([])
   const [disabledTools, setDisabledTools] = useState<string[]>(disabledToolsFromResult)
 
   // Sync local state when result changes
@@ -906,25 +902,6 @@ export function IssueDetailView({
     }
   }
 
-  const handleStartRace = async () => {
-    if (onStartRace && selectedRaceProviders.length > 0) {
-      await onStartRace(selectedRaceProviders)
-      setRaceDialogOpen(false)
-      setSelectedRaceProviders([])
-    }
-  }
-
-  const handlePromoteWinner = async () => {
-    if (!onUpdate) return
-    // In a real scenario, this might trigger a git merge or specific state update.
-    // For now, we'll mark this provider as the official assignee and stop other sessions.
-    await onUpdate({ assignee_id: 'agent-' + localProvider, state: 'In Review' })
-    if (onStopSession) {
-      // Stop all sessions for this issue (calling without provider stops all)
-      await onStopSession()
-    }
-  }
-
   const handleCreatePR = async () => {
     if (!config || !identifier) return
     setPrPending(true)
@@ -1021,15 +998,12 @@ export function IssueDetailView({
       {activeTab === 'overview' ? (
         <div className="space-y-4">
           {activeSessions.length > 1 && (
-            <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4 space-y-3">
+            <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Zap size={14} className="text-blue-500" fill="currentColor" />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-blue-500/80">Active Parallel Race</span>
+                  <Activity size={14} className="text-primary" />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Active Contexts</span>
                 </div>
-                <Badge variant="outline" className="h-4 px-1.5 border-blue-500/30 text-blue-500 text-[8px] font-black">
-                  {activeSessions.length} PARTICIPANTS
-                </Badge>
               </div>
               <div className="flex flex-wrap gap-2">
                 {activeSessions.map((session) => {
@@ -1039,19 +1013,19 @@ export function IssueDetailView({
                       key={sessionProvider}
                       onClick={() => setLocalProvider(sessionProvider)}
                       className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all ${localProvider === sessionProvider
-                        ? 'bg-blue-500 border-blue-500 text-white shadow-lg shadow-blue-500/20'
+                        ? 'bg-primary/10 border-primary/20 text-primary shadow-lg shadow-primary/5'
                         : 'bg-black/20 border-white/5 text-muted-foreground hover:bg-white/5'
                         }`}
                     >
                       <Cpu size={10} />
                       <span className="text-[10px] font-bold uppercase tracking-tight">{sessionProvider}</span>
-                      {localProvider === sessionProvider && <CheckCircle2 size={10} className="text-white" />}
+                      {localProvider === sessionProvider && <CheckCircle2 size={10} className="text-primary" />}
                     </button>
                   )
                 })}
               </div>
-              <p className="text-[9px] text-blue-500/60 leading-tight">
-                Switch between participants to view their unique logs, artifacts, and diffs. Promote a session to finalize the race.
+              <p className="text-[9px] text-muted-foreground/40 leading-tight">
+                Switch between active agent sessions to monitor unique logs and artifacts.
               </p>
             </div>
           )}
@@ -1274,89 +1248,6 @@ export function IssueDetailView({
                 </div>
               </div>
             </div>
-
-
-            <Dialog open={raceDialogOpen} onOpenChange={setRaceDialogOpen}>
-              <DialogContent className="max-w-md bg-card border-border shadow-2xl">
-                <DialogHeader className="border-b border-border/40 pb-4">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="h-10 w-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shadow-lg shadow-blue-500/5">
-                      <Zap className="text-blue-500 h-5 w-5" fill="currentColor" />
-                    </div>
-                    <div>
-                      <DialogTitle className="text-xl font-bold tracking-tight">Start Parallel Race</DialogTitle>
-                      <DialogDescription className="text-xs text-muted-foreground/70 font-medium">
-                        Select multiple agent providers to work on this issue simultaneously.
-                      </DialogDescription>
-                    </div>
-                  </div>
-                </DialogHeader>
-
-                <div className="py-6 space-y-4">
-                  <div className="grid grid-cols-2 gap-3">
-                    {availableAgents.map((agent) => {
-                      const isSelected = selectedRaceProviders.includes(agent)
-                      return (
-                        <button
-                          key={agent}
-                          onClick={() => {
-                            setSelectedRaceProviders(prev =>
-                              prev.includes(agent)
-                                ? prev.filter(a => a !== agent)
-                                : [...prev, agent]
-                            )
-                          }}
-                          className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${isSelected
-                            ? 'border-blue-500/40 bg-blue-500/5 shadow-inner'
-                            : 'border-white/5 bg-white/[0.02] hover:bg-white/[0.05]'
-                            }`}
-                        >
-                          <div className={`h-4 w-4 rounded-md border flex items-center justify-center transition-all ${isSelected
-                            ? 'bg-blue-500 border-blue-500 shadow-lg shadow-blue-500/40'
-                            : 'bg-black/20 border-white/10'
-                            }`}>
-                            {isSelected && <CheckCircle2 className="h-2.5 w-2.5 text-white" />}
-                          </div>
-                          <div className="flex flex-col text-left">
-                            <span className="text-xs font-bold capitalize text-foreground/80">
-                              {agent}
-                            </span>
-                            <span className="text-[9px] text-muted-foreground uppercase tracking-widest opacity-40">Agent</span>
-                          </div>
-                        </button>
-                      )
-                    })}
-                  </div>
-
-                  <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/10 space-y-2">
-                    <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-amber-500/60">
-                      <AlertTriangle size={12} />
-                      Operator Note
-                    </div>
-                    <p className="text-[10px] text-muted-foreground leading-relaxed">
-                      Parallel races will consume tokens from each provider simultaneously. You can stop individual sessions at any time from the Queue.
-                    </p>
-                  </div>
-                </div>
-
-                <DialogFooter className="border-t border-border/40 pt-4">
-                  <Button
-                    variant="ghost"
-                    onClick={() => setRaceDialogOpen(false)}
-                    className="text-xs font-bold uppercase tracking-widest"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleStartRace}
-                    disabled={selectedRaceProviders.length === 0}
-                    className="px-8 bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 text-xs font-bold uppercase tracking-widest"
-                  >
-                    Initiate Race ({selectedRaceProviders.length})
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
           </div>
         ) : activeTab === 'changes' ? (
           <div className="relative min-h-[400px] rounded-lg border bg-[#1e1e1e] overflow-hidden shadow-inner">

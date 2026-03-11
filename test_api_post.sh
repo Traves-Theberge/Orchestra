@@ -57,13 +57,6 @@ if [ -n "$ISSUE_ID" ] && [ "$ISSUE_ID" != "null" ]; then
     -H "Authorization: Bearer $AUTH_TOKEN" \
     -d '{"state": "In Progress"}' | jq . || echo "FAILED: Patch issue"
   
-  # Start race
-  echo "Starting race..."
-  curl -s -X POST "$BASE_URL/api/v1/issues/$ISSUE_ID/race" \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer $AUTH_TOKEN" \
-    -d '{"providers": ["claude", "gemini"]}' | jq . || echo "FAILED: Start race"
-  
   echo ""
   echo "3. Testing MCP Operations"
   

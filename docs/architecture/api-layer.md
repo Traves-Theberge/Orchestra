@@ -26,8 +26,8 @@ The `NewRouter` function mounts several critical middleware components:
 - `GET /api/v1/issues/{issue_identifier}/history`: **NEW** - Returns chronological audit trail of all issue events and state changes.
 - `GET /api/v1/issues/{issue_identifier}/diff`: Shows workspace diff for the issue.
 - `GET /api/v1/issues/{issue_identifier}/artifacts`: Lists generated artifacts and files.
-- `POST /api/v1/issues/{issue_identifier}/race`: Initiates parallel multi-agent race mode.
 - `POST /api/v1/issues/{issue_identifier}/pr`: Creates GitHub pull request from issue changes.
+- `GET /api/v1/terminal/{session_id}`: **NEW** - Bidirectional WebSocket stream for interactive agent terminals.
 
 ### Workspaces & Projects
 - `GET /api/v1/projects`: Lists locally managed repositories.

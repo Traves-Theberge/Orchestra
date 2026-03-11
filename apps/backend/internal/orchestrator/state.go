@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
@@ -648,13 +649,13 @@ func (s *Service) UpdateIssue(ctx context.Context, identifier string, updates ma
 		return nil, nil
 	}
 
+	// 1. Fetch current issue for audit comparison (best effort)
+	oldIssue, _ := client.FetchIssueByIdentifier(ctx, identifier)
+
 	issue, err := client.UpdateIssue(ctx, identifier, updates)
 	if err != nil {
 		return nil, err
 	}
-
-	// 1. Fetch current issue for audit comparison (best effort)
-	oldIssue, _ := client.FetchIssueByIdentifier(ctx, identifier)
 
 	// 2. Log changes to history
 	if oldIssue != nil {
@@ -1530,7 +1531,7 @@ func (s *Service) PersistStateToDB(ctx context.Context) error {
 		return err
 	}
 
-	stmt, err := tx.PrepareContext(ctx, `INSERT INTO runs (id, issue_id, provider, session_id, state, last_event, last_message, turn_count, input_tokens, output_tokens, total_tokens) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	stmt, err := tx.PrepareContext(ctx, `INSERT INTO runs (id, issue_id, issue_identifier, provider, session_id, state, last_event, last_message, turn_count, input_tokens, output_tokens, total_tokens) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -1538,7 +1539,7 @@ func (s *Service) PersistStateToDB(ctx context.Context) error {
 
 	for _, entry := range running {
 		runID := fmt.Sprintf("run_%s_%s", entry.IssueID, entry.Provider)
-		_, err = stmt.ExecContext(ctx, runID, entry.IssueID, entry.Provider, entry.SessionID, entry.State, entry.LastEvent, entry.LastMessage, entry.TurnCount, entry.Tokens.InputTokens, entry.Tokens.OutputTokens, entry.Tokens.TotalTokens)
+		_, err = stmt.ExecContext(ctx, runID, entry.IssueID, entry.IssueIdentifier, entry.Provider, entry.SessionID, entry.State, entry.LastEvent, entry.LastMessage, entry.TurnCount, entry.Tokens.InputTokens, entry.Tokens.OutputTokens, entry.Tokens.TotalTokens)
 		if err != nil {
 			return err
 		}
@@ -1552,7 +1553,7 @@ func (s *Service) RestoreStateFromDB(ctx context.Context) error {
 		return nil
 	}
 
-	rows, err := s.db.QueryContext(ctx, `SELECT issue_id, provider, session_id, state, last_event, last_message, turn_count, input_tokens, output_tokens, total_tokens FROM runs`)
+	rows, err := s.db.QueryContext(ctx, `SELECT issue_id, issue_identifier, provider, session_id, state, last_event, last_message, turn_count, input_tokens, output_tokens, total_tokens FROM runs`)
 	if err != nil {
 		return err
 	}
@@ -1563,12 +1564,17 @@ func (s *Service) RestoreStateFromDB(ctx context.Context) error {
 
 	for rows.Next() {
 		var entry RunningEntry
-		if err := rows.Scan(&entry.IssueID, &entry.Provider, &entry.SessionID, &entry.State, &entry.LastEvent, &entry.LastMessage, &entry.TurnCount, &entry.Tokens.InputTokens, &entry.Tokens.OutputTokens, &entry.Tokens.TotalTokens); err != nil {
+		var identifier sql.NullString
+		if err := rows.Scan(&entry.IssueID, &identifier, &entry.Provider, &entry.SessionID, &entry.State, &entry.LastEvent, &entry.LastMessage, &entry.TurnCount, &entry.Tokens.InputTokens, &entry.Tokens.OutputTokens, &entry.Tokens.TotalTokens); err != nil {
 			return err
 		}
 		entry.StartedAt = now
 		entry.LastEventAt = now
-		entry.IssueIdentifier = entry.IssueID // Best effort fallback
+		if identifier.Valid && identifier.String != "" {
+			entry.IssueIdentifier = identifier.String
+		} else {
+			entry.IssueIdentifier = entry.IssueID
+		}
 		recovered = append(recovered, entry)
 	}
 
@@ -1611,59 +1617,6 @@ func (s *Service) FetchIssueHistory(ctx context.Context, issueID string) ([]map[
 		})
 	}
 	return history, nil
-}
-
-func (s *Service) StartParallelRace(ctx context.Context, identifier string, providers []string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	client := s.trackerClient
-	if client == nil {
-		return fmt.Errorf("tracker client not available")
-	}
-
-	issues, err := client.SearchIssues(ctx, identifier)
-	if err != nil || len(issues) == 0 {
-		return fmt.Errorf("issue not found")
-	}
-	issue := issues[0]
-
-	now := time.Now().UTC().Format(time.RFC3339)
-	for _, p := range providers {
-		p = strings.TrimSpace(strings.ToLower(p))
-		if p == "" {
-			continue
-		}
-
-		// Check if already running this specific provider
-		exists := false
-		for _, r := range s.running {
-			if r.IssueID == issue.ID && r.Provider == p {
-				exists = true
-				break
-			}
-		}
-		if exists {
-			continue
-		}
-
-		entry := RunningEntry{
-			IssueID:         issue.ID,
-			IssueIdentifier: issue.Identifier,
-			Title:           issue.Title,
-			State:           issue.State,
-			AssigneeID:      issue.AssigneeID,
-			Provider:        p,
-			DisabledTools:   append([]string(nil), issue.DisabledTools...),
-			StartedAt:       now,
-			LastEventAt:     now,
-			LastEvent:       "race_started",
-			LastMessage:     fmt.Sprintf("Parallel race started with %s", p),
-		}
-		s.running = append(s.running, entry)
-	}
-
-	return nil
 }
 
 func (s *Service) GetActiveWorkspaceIdentifiers() []string {

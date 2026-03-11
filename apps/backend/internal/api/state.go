@@ -344,24 +344,6 @@ func (s *Server) PatchIssue(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(issue)
 }
 
-func (s *Server) PostIssueRace(w http.ResponseWriter, r *http.Request) {
-	identifier := chi.URLParam(r, "issue_identifier")
-	var body struct {
-		Providers []string `json:"providers"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "invalid_json", "failed to decode request body")
-		return
-	}
-
-	if err := s.orchestrator.StartParallelRace(r.Context(), identifier, body.Providers); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "race_failed", err.Error())
-		return
-	}
-
-	w.WriteHeader(http.StatusAccepted)
-}
-
 func (s *Server) GetIssueHistory(w http.ResponseWriter, r *http.Request) {
 	identifier := chi.URLParam(r, "issue_identifier")
 	runtime, ok := s.orchestrator.LookupIssue(identifier)

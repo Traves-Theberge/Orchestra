@@ -19,7 +19,8 @@ This roadmap outlines the architectural phases of the Orchestra platform.
 - **Multi-Agent Cascading**: Automated provider switching after repeated failures.
 
 ## 🔴 Phase 4: Enterprise & Scale (Complete)
-- **Parallel Races**: Multi-agent concurrent execution with winner promotion.
+- **Interactive Dmux Terminals**: Multi-pane real-time shell orchestration.
+- **Human-In-The-Loop (HITL)**: Direct PTY intervention for automated sessions.
 - **Stability Analytics**: Project health scoring and reliability forecasting.
 - **Extensible Tools**: Dynamic MCP tool schema discovery and resource support.
 - **Automated Maintenance**: Background workspace garbage collection and artifact cleanup.

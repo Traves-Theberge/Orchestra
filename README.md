@@ -18,7 +18,7 @@ Traditional agent execution often relies on manual scripts, lacking isolation, o
 
 ## ✨ Key Features
 
-- **Multi-Agent Coordination**: Support for **Parallel Races** (running multiple models concurrently on the same issue) and **Automated Cascading** (falling back to a different model if one fails repeatedly).
+- **Multi-Agent Coordination**: Run multiple models across different sessions on the same repository with isolated workspaces. Supports automated cascading (falling back to a different model if one fails).
 - **Interactive Dmux Terminals**: Built-in high-performance terminal multiplexer (using `xterm.js` and `creack/pty`) that allows you to watch and interact with agent sessions in real-time. Supports up to 16 concurrent tiled terminal panes.
 - **Human-In-The-Loop (HITL)**: Take direct control of an agent's terminal session. Agents run inside persistent PTYs, allowing you to interject, provide credentials, or debug manually without stopping the automation.
 - **Model Context Protocol (MCP)**: Native integration for external tool servers (JSON-RPC over stdio). Agents automatically discover and utilize MCP tools and resources dynamically.
@@ -114,7 +114,6 @@ Orchestra exposes a REST API (default port `4000`) for status and control:
 - `GET /api/v1/state`: Current orchestrator snapshot (running, claimed, retrying).
 - `GET /api/v1/events`: Server-Sent Events (SSE) stream for real-time updates.
 - `GET /api/v1/mcp/tools`: Discover available tools from connected MCP servers.
-- `POST /api/v1/issues/{id}/race`: Initiate a Parallel Race between multiple agents.
 - `GET /api/v1/docs`: Fetch the platform's Deep Wiki knowledge base tree.
 
 ## 📄 License & Attribution
