@@ -989,7 +989,7 @@ export function IssueDetailView({
       </div>
 
       {activeTab === 'overview' ? (
-        <div className="space-y-4">
+        <div className="space-y-4 h-[70vh] overflow-auto custom-scrollbar pr-1">
           {activeSessions.length > 1 && (
             <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4 space-y-3">
               <div className="flex items-center justify-between">
@@ -1293,7 +1293,7 @@ export function IssueDetailView({
             </div>
           </div>
         ) : activeTab === 'changes' ? (
-          <div className="relative min-h-[400px] rounded-lg border bg-[#1e1e1e] overflow-hidden shadow-inner">
+          <div className="relative h-[70vh] rounded-lg border bg-[#1e1e1e] overflow-hidden shadow-inner">
             <div className="flex items-center justify-between border-b border-white/5 bg-black/20 px-3 py-2">
               <div className="flex items-center gap-2 text-zinc-500">
                 <GitBranch className="h-3 w-3" />
@@ -1332,7 +1332,7 @@ export function IssueDetailView({
             </div>
           </div>
         ) : activeTab === 'logs' ? (
-          <div className="relative min-h-[500px] h-[60vh] rounded-lg border bg-[#0c0c0e] flex flex-col font-mono text-[11px] leading-relaxed text-zinc-300 shadow-inner overflow-hidden border-white/5">
+          <div className="relative h-[70vh] rounded-lg border bg-[#0c0c0e] flex flex-col font-mono text-[11px] leading-relaxed text-zinc-300 shadow-inner overflow-hidden border-white/5">
             <div className="flex items-center justify-between border-b border-white/10 bg-white/5 px-3 py-2 shrink-0">
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2 text-zinc-500">
@@ -1423,7 +1423,7 @@ export function IssueDetailView({
             </div>
           </div>
         ) : activeTab === 'artifacts' ? (
-          <div className="flex h-[60vh] rounded-xl border border-white/5 bg-[#0c0c0e] shadow-2xl overflow-hidden">
+          <div className="flex h-[70vh] rounded-xl border border-white/5 bg-[#0c0c0e] shadow-2xl overflow-hidden">
             {/* Sidebar: File List */}
             <div className="w-72 border-r border-white/5 bg-black/20 flex flex-col shrink-0">
               <div className="p-3 border-b border-white/5 bg-white/5 flex items-center justify-between shrink-0">
@@ -1509,8 +1509,8 @@ export function IssueDetailView({
             </div>
           </div>
       ) : (
-        <div className="space-y-6 text-left">
-          <div className="rounded-xl border border-white/5 bg-white/[0.02] p-6 min-h-[400px]">
+        <div className="space-y-6 text-left h-[70vh] overflow-auto custom-scrollbar pr-1">
+          <div className="rounded-xl border border-white/5 bg-white/[0.02] p-6 min-h-full">
             <div className="flex items-center justify-between mb-8">
               <div>
                 <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
