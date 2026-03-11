@@ -43,6 +43,19 @@ func ProjectInfo(ctx context.Context, dir string) (rootPath string, remoteURL st
 	return rootPath, remoteURL, nil
 }
 
+// CurrentBranch returns the current active branch name
+func CurrentBranch(ctx context.Context, dir string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", "branch", "--show-current")
+	cmd.Dir = dir
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("git branch --show-current failed: %v - %s", err, stderr.String())
+	}
+	return strings.TrimSpace(stdout.String()), nil
+}
+
 // Commit creates a new commit with the given message
 func Commit(ctx context.Context, dir, message string) error {
 	cmd := exec.CommandContext(ctx, "git", "commit", "-am", message)

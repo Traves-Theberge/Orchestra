@@ -78,7 +78,13 @@ func (s *Server) PostGitPush(w http.ResponseWriter, r *http.Request) {
 		req.Remote = "origin"
 	}
 	if req.Branch == "" {
-		req.Branch = "main"
+		current, err := git.CurrentBranch(r.Context(), project.RootPath)
+		if err != nil {
+			s.logger.Warn().Err(err).Str("project_id", projectID).Msg("failed to detect current branch, falling back to main")
+			req.Branch = "main"
+		} else {
+			req.Branch = current
+		}
 	}
 
 	if err := git.Push(r.Context(), project.RootPath, req.Remote, req.Branch); err != nil {
@@ -118,7 +124,13 @@ func (s *Server) PostGitPull(w http.ResponseWriter, r *http.Request) {
 		req.Remote = "origin"
 	}
 	if req.Branch == "" {
-		req.Branch = "main"
+		current, err := git.CurrentBranch(r.Context(), project.RootPath)
+		if err != nil {
+			s.logger.Warn().Err(err).Str("project_id", projectID).Msg("failed to detect current branch, falling back to main")
+			req.Branch = "main"
+		} else {
+			req.Branch = current
+		}
 	}
 
 	if err := git.Pull(r.Context(), project.RootPath, req.Remote, req.Branch); err != nil {
