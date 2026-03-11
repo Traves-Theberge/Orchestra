@@ -1120,7 +1120,7 @@ export default function App() {
       </div>
 
       <Dialog open={inspectDialogOpen} onOpenChange={setInspectDialogOpen}>
-        <DialogContent className="max-w-6xl w-[90vw] max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogContent className="max-w-[98vw] w-[98vw] h-[96vh] max-h-[96vh] overflow-hidden flex flex-col p-4">
           <DialogHeader className="shrink-0">
             <DialogTitle>Issue Inspection</DialogTitle>
             <DialogDescription>View detailed status and diagnostics for this issue.</DialogDescription>
