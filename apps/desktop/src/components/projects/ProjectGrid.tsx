@@ -78,7 +78,7 @@ const ProjectListRow: React.FC<ProjectCardProps> = ({ project, stats, loading, o
                     <span>Reliability Index</span>
                     <span className={reliability > 80 ? 'text-emerald-500' : reliability > 50 ? 'text-amber-500' : 'text-red-500'}>{reliability}%</span>
                 </div>
-                <div className="h-1 w-full rounded-full bg-white/5 overflow-hidden">
+                <div className="h-1 w-full rounded-full bg-muted overflow-hidden">
                     <div
                         className={`h-full rounded-full transition-all duration-1000 ${reliability > 80 ? 'bg-emerald-500' : reliability > 50 ? 'bg-amber-500' : 'bg-red-500'}`}
                         style={{ width: `${reliability}%` }}
@@ -106,7 +106,7 @@ const ProjectListRow: React.FC<ProjectCardProps> = ({ project, stats, loading, o
 const ProjectCard: React.FC<ProjectCardProps> = ({ project, stats, loading, onClick, onDelete }) => {
     if (loading) {
         return (
-            <Card className="h-40 bg-muted/50 border border-border/50 animate-pulse">
+            <Card className="h-44 bg-muted/50 border border-border/50 animate-pulse rounded-2xl">
                 <CardHeader className="pb-2">
                     <Skeleton className="h-4 w-3/4 mb-1" />
                     <Skeleton className="h-3 w-1/2" />
@@ -126,42 +126,60 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project, stats, loading, onCl
     return (
         <Card
             onClick={() => onClick(project.id)}
-            className="group relative overflow-hidden bg-gradient-to-br from-card/40 via-card/30 to-card/20 backdrop-blur-md border border-border/50 transition-all duration-500 hover:scale-[1.02] hover:shadow-2xl hover:shadow-primary/20 cursor-pointer h-40 flex flex-col justify-between shadow-lg hover:ring-1 hover:ring-primary/30 text-left"
+            className="group relative overflow-hidden bg-card/40 backdrop-blur-md border border-border/50 transition-all duration-500 hover:scale-[1.02] hover:shadow-2xl hover:shadow-primary/10 cursor-pointer h-44 flex flex-col justify-between shadow-lg hover:border-primary/30 rounded-2xl"
         >
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary/50 to-transparent" />
+            {/* Animated primary bar */}
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary/50 via-primary to-transparent opacity-30 transition-opacity group-hover:opacity-100" />
 
-            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500 hover:bg-red-500/10"
-                    onClick={(e) => {
-                        e.stopPropagation()
-                        onDelete?.(project)
-                    }}
-                >
-                    <Trash2 size={14} />
-                </Button>
+            <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-all duration-300 z-10 translate-y-1 group-hover:translate-y-0 flex gap-1">
+                <AppTooltip content="Project Settings">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 bg-background/80 backdrop-blur border border-border/50 text-muted-foreground hover:text-foreground shadow-sm"
+                        onClick={(e) => {
+                            e.stopPropagation()
+                            // Logic for settings could go here
+                        }}
+                    >
+                        <Globe size={12} />
+                    </Button>
+                </AppTooltip>
+                <AppTooltip content="Remove from workspace">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 bg-background/80 backdrop-blur border border-border/50 text-muted-foreground hover:text-destructive shadow-sm"
+                        onClick={(e) => {
+                            e.stopPropagation()
+                            onDelete?.(project)
+                        }}
+                    >
+                        <Trash2 size={12} />
+                    </Button>
+                </AppTooltip>
             </div>
 
-            <CardHeader className="pb-2 text-left">
-                <div className="flex items-center gap-2">
-                    <Folder className="w-4 h-4 text-primary/60 shrink-0" />
-                    <CardTitle className="text-sm font-bold truncate group-hover:text-primary transition-colors text-left">{project.name}</CardTitle>
+            <CardHeader className="pb-2 text-left space-y-1">
+                <div className="flex items-center gap-3">
+                    <div className="h-8 w-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all duration-500 shadow-inner group-hover:shadow-primary/20">
+                        <Folder className="w-4 h-4" strokeWidth={2.5} />
+                    </div>
+                    <CardTitle className="text-sm font-black tracking-tight group-hover:text-primary transition-colors text-left truncate">{project.name}</CardTitle>
                 </div>
-                <CardDescription className="text-[9px] text-muted-foreground truncate font-mono opacity-50 ml-6 text-left">{project.root_path}</CardDescription>
+                <CardDescription className="text-[9px] text-muted-foreground/60 truncate font-mono ml-11 text-left">{project.root_path}</CardDescription>
             </CardHeader>
 
             {stats && (
-                <CardContent className="space-y-3 mt-auto pt-3 border-t border-border/40 flex-1 text-left">
-                    <div className="space-y-1">
+                <CardContent className="space-y-3 mt-auto pt-3 border-t border-border/40 flex-1 text-left bg-muted/5 group-hover:bg-muted/10 transition-colors">
+                    <div className="space-y-1.5">
                         <div className="flex items-center justify-between text-[9px] uppercase font-black tracking-widest text-muted-foreground/60">
                             <span>Reliability Index</span>
                             <span className={reliability > 80 ? 'text-emerald-500' : reliability > 50 ? 'text-amber-500' : 'text-red-500'}>
                                 {reliability}%
                             </span>
                         </div>
-                        <div className="h-1 w-full rounded-full bg-white/5 overflow-hidden">
+                        <div className="h-1.5 w-full rounded-full bg-muted/50 overflow-hidden border border-border/20">
                             <div
                                 className={`h-full rounded-full transition-all duration-1000 ${reliability > 80 ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]' :
                                     reliability > 50 ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]' :
@@ -172,14 +190,24 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project, stats, loading, onCl
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2 text-left">
-                        <div className="flex items-center gap-2">
-                            <History size={12} className="text-primary/70" />
-                            <span className="text-xs font-medium">{stats.total_sessions} Sessions</span>
+                    <div className="grid grid-cols-2 gap-4 text-left">
+                        <div className="flex items-center gap-2 group/stat">
+                            <div className="p-1 rounded bg-background border border-border/50 text-primary/70 group-hover/stat:text-primary transition-colors shadow-sm">
+                                <History size={10} strokeWidth={3} />
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-[10px] font-black tabular-nums leading-none">{stats.total_sessions}</span>
+                                <span className="text-[7px] uppercase font-bold text-muted-foreground/40 tracking-wider">Sessions</span>
+                            </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                            <Zap size={12} className="text-primary/70" />
-                            <span className="text-xs font-medium">{((stats.total_input + stats.total_output) / 1000).toFixed(1)}k Tokens</span>
+                        <div className="flex items-center gap-2 group/stat">
+                            <div className="p-1 rounded bg-background border border-border/50 text-primary/70 group-hover/stat:text-primary transition-colors shadow-sm">
+                                <Zap size={10} strokeWidth={3} />
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-[10px] font-black tabular-nums leading-none">{((stats.total_input + stats.total_output) / 1000).toFixed(1)}k</span>
+                                <span className="text-[7px] uppercase font-bold text-muted-foreground/40 tracking-wider">Tokens</span>
+                            </div>
                         </div>
                     </div>
                 </CardContent>
@@ -375,17 +403,17 @@ export const ProjectGrid: React.FC<ProjectGridProps> = ({
 
             {/* Delete Confirmation Dialog */}
             <Dialog open={!!projectToDelete} onOpenChange={(open) => !open && setProjectToDelete(null)}>
-                <DialogContent className="sm:max-w-md bg-zinc-900 border-zinc-800">
+                <DialogContent className="sm:max-w-md bg-popover border-border">
                     <DialogHeader>
-                        <DialogTitle className="text-xl font-bold text-white flex items-center gap-2">
+                        <DialogTitle className="text-xl font-bold text-foreground flex items-center gap-2">
                             <Trash2 className="text-red-500" size={20} />
                             Remove Project
                         </DialogTitle>
-                        <DialogDescription className="text-zinc-400 pt-2 text-left">
-                            Are you sure you want to remove <span className="text-white font-bold">{projectToDelete?.name}</span> from your workspace?
+                        <DialogDescription className="text-muted-foreground pt-2 text-left">
+                            Are you sure you want to remove <span className="text-foreground font-bold">{projectToDelete?.name}</span> from your workspace?
                             <br /><br />
-                            <span className="text-[10px] uppercase tracking-widest font-bold text-zinc-500">Project Path</span>
-                            <div className="bg-black/40 border border-white/5 p-2 rounded mt-1 font-mono text-[10px] text-zinc-300 truncate">
+                            <span className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground/60">Project Path</span>
+                            <div className="bg-muted/10 border border-border/40 p-2 rounded mt-1 font-mono text-[10px] text-muted-foreground truncate">
                                 {projectToDelete?.root_path}
                             </div>
                         </DialogDescription>
@@ -394,7 +422,7 @@ export const ProjectGrid: React.FC<ProjectGridProps> = ({
                         <Button
                             variant="ghost"
                             onClick={() => setProjectToDelete(null)}
-                            className="text-zinc-400 hover:text-white"
+                            className="text-muted-foreground hover:text-foreground"
                         >
                             Cancel
                         </Button>
