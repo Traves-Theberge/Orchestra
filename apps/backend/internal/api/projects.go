@@ -69,9 +69,12 @@ func (s *Server) PostGitPush(w http.ResponseWriter, r *http.Request) {
 		Remote string `json:"remote"`
 		Branch string `json:"branch"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
+	
+	// Decode body if it exists and is not empty
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			s.logger.Warn().Err(err).Msg("failed to decode git push body")
+		}
 	}
 
 	if req.Remote == "" {
@@ -115,9 +118,11 @@ func (s *Server) PostGitPull(w http.ResponseWriter, r *http.Request) {
 		Remote string `json:"remote"`
 		Branch string `json:"branch"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
+	
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			s.logger.Warn().Err(err).Msg("failed to decode git pull body")
+		}
 	}
 
 	if req.Remote == "" {
