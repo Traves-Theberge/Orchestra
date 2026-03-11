@@ -10,10 +10,10 @@ export function AppTooltip({ children, content, side = 'top' }: { children: Reac
           <Tooltip.Content
             side={side}
             sideOffset={5}
-            className="z-[110] select-none rounded-lg bg-zinc-900 px-3 py-2 text-[10px] font-bold uppercase tracking-widest leading-none text-zinc-50 shadow-2xl animate-in fade-in zoom-in-95 dark:bg-zinc-100 dark:text-zinc-900 border border-white/10 dark:border-black/10"
+            className="z-[150] select-none rounded-lg bg-popover border border-border px-3 py-2 text-[10px] font-bold uppercase tracking-widest leading-none text-popover-foreground shadow-2xl animate-in fade-in zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=closed]:zoom-out-95"
           >
             {content}
-            <Tooltip.Arrow className="fill-zinc-900 dark:fill-zinc-100" />
+            <Tooltip.Arrow className="fill-popover" />
           </Tooltip.Content>
         </Tooltip.Portal>
       </Tooltip.Root>

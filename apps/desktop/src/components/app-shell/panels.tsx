@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Ansi from 'ansi-to-react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { Activity, AlertCircle, AlertTriangle, AppWindow, Bot, CheckCircle2, ChevronDown, Circle, CircleDashed, Cpu, FileText, Folder, FolderTree, GitBranch, Loader2, MoreHorizontal, ShieldCheck, SignalHigh, SignalLow, SignalMedium, Square, Terminal, User, Users, Wrench, Clock, Search, LayoutDashboard, ListTodo, History, Ticket, Database, Settings2, Sun, Moon, Download, RefreshCcw, Info, BarChart3, Zap, Layout, Rows, Play, ChevronRight, File, ExternalLink, Plus, Trash2, Keyboard, X, TrendingUp } from 'lucide-react'
+import { Activity, AlertCircle, AlertTriangle, AppWindow, Bot, CheckCircle2, ChevronDown, Circle, CircleDashed, Cpu, FileText, Folder, FolderTree, GitBranch, Loader2, MoreHorizontal, ShieldCheck, SignalHigh, SignalLow, SignalMedium, Square, Terminal, User, Users, Wrench, Clock, Search, LayoutDashboard, ListTodo, History, Ticket, Database, Settings2, Sun, Moon, Download, RefreshCcw, Info, BarChart3, Zap, Layout, Rows, Play, ChevronRight, File, ExternalLink, Plus, Trash2, Keyboard, X, TrendingUp, Code, Layers } from 'lucide-react'
 import * as Tooltip from '@radix-ui/react-tooltip'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -25,6 +25,7 @@ import { TerminalView } from '@/components/terminal/TerminalView'
 import { fetchArtifactContent, fetchArtifacts, fetchIssueDiff, fetchIssueLogs, fetchIssueHistory, updateIssue, createGitHubPR, type BackendConfig } from '@/lib/orchestra-client'
 import type { SnapshotPayload, Project, ProjectStats, GlobalStats } from '@/lib/orchestra-types'
 import { getSortedRetryEntries, getSortedRunningEntries } from '@/lib/view-models'
+import { usePlatform } from '@/hooks/use-platform'
 
 type BackendProfile = {
   id: string
@@ -99,66 +100,82 @@ export function DashboardOverview({
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 min-h-0">
       {/* Workspace Activity (Left) */}
       <div className="lg:col-span-2 flex flex-col min-h-[420px]">
-        <Card className="bg-card/40 backdrop-blur-xl border-border/40 shadow-2xl flex-1 flex flex-col min-h-0">
-          <CardHeader className="flex flex-row items-center justify-between pb-2 px-3 pt-3 shrink-0">
+        <Card className="bg-card/40 backdrop-blur-xl border-border/40 shadow-2xl shadow-primary/5 flex-1 flex flex-col min-h-0 transition-all duration-500 hover:shadow-primary/10">
+          <CardHeader className="flex flex-row items-center justify-between pb-2 px-4 pt-4 shrink-0">
             <div className="space-y-1">
-              <CardTitle className="text-sm font-bold flex items-center gap-2 text-foreground/90">
-                <FolderTree size={16} className="text-primary/70" />
+              <CardTitle className="text-sm font-black uppercase tracking-[0.1em] flex items-center gap-2 text-foreground/90">
+                <FolderTree size={16} className="text-primary" />
                 Active Workspaces
               </CardTitle>
-              <CardDescription className="text-[11px]">Recent activity across managed projects</CardDescription>
+              <CardDescription className="text-[10px] font-medium text-muted-foreground/60">Cross-repository agent coordination hub</CardDescription>
             </div>
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 px-3 text-[10px] uppercase font-black tracking-widest bg-primary/5 border-primary/20 text-primary hover:bg-primary/10 transition-all"
+                className="h-8 rounded-xl px-3 text-[10px] font-black uppercase tracking-widest bg-primary/5 border-primary/20 text-primary hover:bg-primary/10 transition-all shadow-lg shadow-primary/5 hover:-translate-y-0.5 active:translate-y-0"
                 onClick={onCreateTask}
               >
-                <Plus size={14} className="mr-1.5" />
+                <Plus size={14} className="mr-1.5" strokeWidth={3} />
                 New Task
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-8 px-3 text-[10px] uppercase font-black tracking-widest text-primary hover:bg-primary/10 transition-all"
+                className="h-8 rounded-xl px-3 text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-primary hover:bg-primary/5 transition-all"
                 onClick={() => onProjectClick('')}
               >
                 Explore All
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="flex-1 min-h-0">
-            <div className="space-y-1.5">
+          <CardContent className="flex-1 min-h-0 px-3 pb-4">
+            <div className="space-y-1.5 h-full overflow-auto custom-scrollbar">
               {displayProjects.length === 0 ? (
-                <div className="py-12 text-center border border-dashed border-border rounded-2xl bg-muted/30">
-                  <Folder size={32} className="mx-auto mb-3 opacity-10" />
-                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-widest">No projects discovered</p>
+                <div className="py-12 text-center border-2 border-dashed border-border/40 rounded-2xl bg-muted/10">
+                  <Folder size={32} className="mx-auto mb-3 opacity-10" strokeWidth={1} />
+                  <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest">No active workspaces discovered</p>
                 </div>
-              ) : displayProjects.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => onProjectClick(p.id)}
-                  className="flex w-full items-center justify-between rounded-xl border border-transparent bg-muted/20 p-2 transition-all hover:bg-muted/30 hover:border-border/30 group shadow-sm"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="rounded-lg bg-primary/10 p-2.5 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all duration-300">
-                      <Folder size={18} />
+              ) : displayProjects.map((p) => {
+                const isActive = snapshot?.running?.some(r => issues.find(i => i.id === r.issue_id)?.project_id === p.id)
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => onProjectClick(p.id)}
+                    className={`flex w-full items-center justify-between rounded-xl border p-2.5 transition-all duration-300 group shadow-sm ${
+                      isActive 
+                        ? 'border-primary/30 bg-primary/5 hover:bg-primary/10 shadow-lg shadow-primary/5' 
+                        : 'border-border/40 bg-muted/20 hover:bg-muted/40 hover:border-border/60 hover:-translate-y-0.5'
+                    }`}
+                  >
+                    <div className="flex items-center gap-4 min-w-0 flex-1">
+                      <div className={`rounded-xl p-2.5 transition-all duration-500 ${
+                        isActive 
+                          ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/40 rotate-0' 
+                          : 'bg-background border border-border/50 text-muted-foreground group-hover:text-primary group-hover:border-primary/20 -rotate-3 group-hover:rotate-0'
+                      }`}>
+                        <Folder size={18} strokeWidth={2.5} />
+                      </div>
+                      <div className="text-left min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-black tracking-tight group-hover:text-primary transition-colors truncate">{p.name}</p>
+                          {isActive && (
+                            <Badge className="h-3.5 px-1 bg-primary text-primary-foreground text-[7px] font-black uppercase animate-pulse">Running</Badge>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-muted-foreground/50 font-mono truncate">{p.root_path}</p>
+                      </div>
                     </div>
-                    <div className="text-left">
-                      <p className="text-sm font-bold tracking-tight group-hover:text-primary transition-colors">{p.name}</p>
-                      <p className="text-[10px] text-muted-foreground font-mono opacity-40 truncate max-w-[240px]">{p.root_path}</p>
+                    <div className="flex items-center gap-6 shrink-0 pr-2">
+                      <div className="flex flex-col items-end">
+                        <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/40">Sessions</span>
+                        <span className="text-xs font-bold tabular-nums">{stats[p.id]?.total_sessions || 0}</span>
+                      </div>
+                      <ChevronRight size={16} className={`transition-all duration-300 ${isActive ? 'text-primary' : 'text-muted-foreground/20 group-hover:text-primary/40 group-hover:translate-x-0.5'}`} />
                     </div>
-                  </div>
-                  <div className="text-right flex items-center gap-6">
-                    <div>
-                      <p className="text-xs font-black">{stats[p.id]?.total_sessions || 0}</p>
-                      <p className="text-[9px] uppercase font-bold text-muted-foreground/50">Sessions</p>
-                    </div>
-                    <ChevronRight size={14} className="text-muted-foreground/20 group-hover:text-primary transition-colors" />
-                  </div>
-                </button>
-              ))}
+                  </button>
+                )
+              })}
             </div>
           </CardContent>
         </Card>
@@ -228,7 +245,7 @@ export function TimelineCard({ timeline }: { timeline: TimelineItem[] }) {
       case 'run_succeeded': return <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
       case 'run_failed': return <AlertCircle className="h-3.5 w-3.5 text-red-500" />
       case 'retry_scheduled': return <RefreshCcw className="h-3.5 w-3.5 text-amber-500" />
-      case 'hook_started': return <Wrench className="h-3.5 w-3.5 text-zinc-400" />
+      case 'hook_started': return <Wrench className="h-3.5 w-3.5 text-muted-foreground" />
       case 'hook_completed': return <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
       default: return <Info className="h-3.5 w-3.5 text-muted-foreground" />
     }
@@ -343,6 +360,7 @@ export function SettingsCard({
   onSaveAgentConfig: (config: { commands: Record<string, string>; agent_provider: string }) => Promise<void>
   onSaveAgentToken: (name: string, value: string | null) => Promise<void>
 }) {
+  const { isMac } = usePlatform()
   const [activeTab, setActiveTab] = useState<'backend' | 'agents' | 'tokens' | 'migration' | 'shortcuts'>('backend')
 
   const tabs = [
@@ -472,7 +490,7 @@ export function SettingsCard({
                     <p className="text-[10px] text-muted-foreground">Search and navigate instantly across the platform.</p>
                   </div>
                   <div className="flex gap-1.5">
-                    <kbd className="px-2 py-1 rounded bg-muted border border-border text-[10px] font-mono">⌘</kbd>
+                    <kbd className="px-2 py-1 rounded bg-muted border border-border text-[10px] font-mono">{isMac ? '⌘' : 'Ctrl'}</kbd>
                     <kbd className="px-2 py-1 rounded bg-muted border border-border text-[10px] font-mono">K</kbd>
                   </div>
                 </div>
@@ -481,9 +499,8 @@ export function SettingsCard({
                   <div className="space-y-1">
                     <p className="text-sm font-bold">Refresh Tracker</p>
                     <p className="text-[10px] text-muted-foreground">Manually trigger a full state synchronization.</p>
-                  </div>
-                  <div className="flex gap-1.5">
-                    <kbd className="px-2 py-1 rounded bg-muted border border-border text-[10px] font-mono">⌘</kbd>
+                  </div>                   <div className="flex gap-1.5">
+                    <kbd className="px-2 py-1 rounded bg-muted border border-border text-[10px] font-mono">{isMac ? '⌘' : 'Ctrl'}</kbd>
                     <kbd className="px-2 py-1 rounded bg-muted border border-border text-[10px] font-mono">R</kbd>
                   </div>
                 </div>
@@ -492,9 +509,8 @@ export function SettingsCard({
                   <div className="space-y-1">
                     <p className="text-sm font-bold">Toggle Sidebar</p>
                     <p className="text-[10px] text-muted-foreground">Collapse or expand the primary navigation rail.</p>
-                  </div>
-                  <div className="flex gap-1.5">
-                    <kbd className="px-2 py-1 rounded bg-muted border border-border text-[10px] font-mono">⌘</kbd>
+                  </div>                   <div className="flex gap-1.5">
+                    <kbd className="px-2 py-1 rounded bg-muted border border-border text-[10px] font-mono">{isMac ? '⌘' : 'Ctrl'}</kbd>
                     <kbd className="px-2 py-1 rounded bg-muted border border-border text-[10px] font-mono">/</kbd>
                   </div>
                 </div>
@@ -503,9 +519,8 @@ export function SettingsCard({
                   <div className="space-y-1">
                     <p className="text-sm font-bold">Quick Switch (Dashboard)</p>
                     <p className="text-[10px] text-muted-foreground">Jump back to the operations overview.</p>
-                  </div>
-                  <div className="flex gap-1.5">
-                    <kbd className="px-2 py-1 rounded bg-muted border border-border text-[10px] font-mono">⌥</kbd>
+                  </div>                   <div className="flex gap-1.5">
+                    <kbd className="px-2 py-1 rounded bg-muted border border-border text-[10px] font-mono">{isMac ? '⌥' : 'Alt'}</kbd>
                     <kbd className="px-2 py-1 rounded bg-muted border border-border text-[10px] font-mono">1</kbd>
                   </div>
                 </div>
@@ -942,6 +957,23 @@ export function IssueDetailView({
     return <Activity size={12} className="text-muted-foreground/40" />
   }
 
+  const getFileIcon = (path: string, active: boolean) => {
+    const ext = path.split('.').pop()?.toLowerCase()
+    const color = active ? 'text-primary' : 'text-muted-foreground/40 group-hover:text-muted-foreground/60'
+    
+    switch (ext) {
+      case 'md': return <FileText size={14} className={color} />
+      case 'ts':
+      case 'tsx':
+      case 'js':
+      case 'jsx': return <Code size={14} className={active ? 'text-blue-400' : 'text-blue-400/40 group-hover:text-blue-400/60'} />
+      case 'json': return <Database size={14} className={active ? 'text-amber-400' : 'text-amber-400/40 group-hover:text-amber-400/60'} />
+      case 'sh': return <Terminal size={14} className={active ? 'text-emerald-400' : 'text-emerald-400/40 group-hover:text-emerald-400/60'} />
+      case 'css': return <Layers size={14} className={active ? 'text-pink-400' : 'text-pink-400/40 group-hover:text-pink-400/60'} />
+      default: return <File size={14} className={color} />
+    }
+  }
+
   const hooks = [
     { id: 'after_create', label: 'Workspace Setup', description: 'Provisioning environment and dependencies' },
     { id: 'before_run', label: 'Pre-run Hook', description: 'Preparing context for agent execution' },
@@ -1015,7 +1047,7 @@ export function IssueDetailView({
                         onClick={() => setLocalProvider(sessionProvider)}
                         className={`flex items-center gap-2 px-2 py-1 rounded-md border transition-all ${localProvider === sessionProvider
                           ? 'bg-primary/10 border-primary/20 text-primary'
-                          : 'bg-card/20 border-border text-muted-foreground hover:bg-white/5'
+                          : 'bg-card/20 border-border text-muted-foreground hover:bg-muted/20'
                           }`}
                       >
                         <Cpu size={10} />
@@ -1094,7 +1126,7 @@ export function IssueDetailView({
                       <FileText size={10} /> Description
                     </div>
                     <div className="max-h-24 overflow-auto custom-scrollbar">
-                      <p className="text-[11px] leading-relaxed text-zinc-400">{description}</p>
+                      <p className="text-[11px] leading-relaxed text-muted-foreground/80">{description}</p>
                     </div>
                   </div>
                 )}
@@ -1115,7 +1147,7 @@ export function IssueDetailView({
                           <button
                             key={tool.name}
                             onClick={() => handleToggleTool(tool.name)}
-                            className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase border transition-all ${isDisabled ? 'border-border text-zinc-600 opacity-40' : 'border-primary/20 bg-primary/10 text-primary'}`}
+                            className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase border transition-all ${isDisabled ? 'border-border text-muted-foreground/40 opacity-40' : 'border-primary/20 bg-primary/10 text-primary'}`}
                           >
                             {tool.name.includes('_') ? tool.name.split('_')[1] : tool.name}
                           </button>
@@ -1136,8 +1168,8 @@ export function IssueDetailView({
                     {issueHistory.slice(0, 2).map((item, idx) => (
                       <div key={idx} className="flex items-center gap-2 px-2 py-1 rounded bg-muted/30 border border-border">
                         <div className="shrink-0 scale-75">{getEventIcon(item.kind)}</div>
-                        <p className="text-[9px] font-bold text-zinc-400 truncate flex-1">{item.message || item.kind}</p>
-                        <span className="text-[7px] font-mono text-zinc-600 tabular-nums">{new Date(item.timestamp).toLocaleTimeString()}</span>
+                        <p className="text-[9px] font-bold text-muted-foreground/80 truncate flex-1">{item.message || item.kind}</p>
+                        <span className="text-[7px] font-mono text-muted-foreground/40 tabular-nums">{new Date(item.timestamp).toLocaleTimeString()}</span>
                       </div>
                     ))}
                   </div>
@@ -1164,11 +1196,11 @@ export function IssueDetailView({
                   <div className="p-2.5">
                     <div className="text-[8px] font-black uppercase tracking-widest text-muted-foreground mb-1">Source Context</div>
                     <div className="space-y-1">
-                      <div className="flex items-center gap-1.5 text-[10px] font-mono text-zinc-400">
+                      <div className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground/60">
                         <GitBranch size={10} />
                         <span className="truncate">{branchName || 'main'}</span>
                       </div>
-                      <div className="flex items-center gap-1.5 text-[10px] font-mono text-zinc-400">
+                      <div className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground/60">
                         <Clock size={10} />
                         <span>{updatedAt ? new Date(updatedAt).toLocaleDateString() : 'N/A'}</span>
                       </div>
@@ -1185,7 +1217,7 @@ export function IssueDetailView({
                       <span className="text-[9px] font-bold truncate">Open in Tracker</span>
                     </a>
                   ) : (
-                    <div className="text-[9px] text-zinc-600 italic">No external link</div>
+                    <div className="text-[9px] text-muted-foreground/40 italic">No external link</div>
                   )}
                 </div>
 
@@ -1199,7 +1231,7 @@ export function IssueDetailView({
                         <div key={hook.id} className="flex flex-col gap-1 p-1.5 rounded bg-muted/30 border border-border">
                           <div className="flex items-center justify-between">
                             <span className="text-[9px] font-bold text-foreground/90">{hook.label}</span>
-                            <Badge variant="outline" className={`h-3 px-1 text-[6px] font-black uppercase ${status === 'completed' ? 'border-primary/20 text-primary' : status === 'active' ? 'border-amber-500/20 text-amber-500 animate-pulse' : 'text-zinc-600 border-border'}`}>
+                            <Badge variant="outline" className={`h-3 px-1 text-[6px] font-black uppercase ${status === 'completed' ? 'border-primary/20 text-primary' : status === 'active' ? 'border-amber-500/20 text-amber-500 animate-pulse' : 'text-muted-foreground/40 border-border'}`}>
                               {status}
                             </Badge>
                           </div>
@@ -1224,9 +1256,9 @@ export function IssueDetailView({
             <div className="max-h-[500px] overflow-auto">
               {diffLoading && !diff ? (
                 <div className="space-y-2 p-4">
-                  <Skeleton className="h-3 w-3/4 bg-white/5" />
-                  <Skeleton className="h-3 w-1/2 bg-white/5" />
-                  <Skeleton className="h-3 w-2/3 bg-white/5" />
+                  <Skeleton className="h-3 w-3/4 bg-muted/20" />
+                  <Skeleton className="h-3 w-1/2 bg-muted/20" />
+                  <Skeleton className="h-3 w-2/3 bg-muted/20" />
                 </div>
               ) : diff ? (
                 <SyntaxHighlighter
@@ -1253,7 +1285,7 @@ export function IssueDetailView({
           </div>
         ) : activeTab === 'logs' ? (
           <div className="relative flex-1 min-h-0 rounded-lg border bg-background flex flex-col font-mono text-[11px] leading-relaxed text-foreground/90 shadow-inner overflow-hidden border-border">
-            <div className="flex items-center justify-between border-b border-border bg-white/5 px-3 py-2 shrink-0">
+            <div className="flex items-center justify-between border-b border-border bg-muted/10 px-3 py-2 shrink-0">
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Terminal className="h-3.5 w-3.5 text-primary" />
@@ -1272,7 +1304,7 @@ export function IssueDetailView({
                       placeholder="Filter logs..."
                       value={logFilter}
                       onChange={(e) => setLogFilter(e.target.value)}
-                      className="h-6 w-48 rounded bg-white/5 border border-border pl-7 pr-2 text-[10px] text-foreground/90 focus:outline-none focus:ring-1 focus:ring-primary/30"
+                      className="h-6 w-48 rounded bg-muted/10 border border-border pl-7 pr-2 text-[10px] text-foreground/90 focus:outline-none focus:ring-1 focus:ring-primary/30"
                     />
                   </div>
                 )}
@@ -1282,11 +1314,11 @@ export function IssueDetailView({
                       variant="ghost"
                       size="sm"
                       className={`h-6 gap-1.5 px-2 text-[9px] font-bold uppercase tracking-wider transition-all ${
-                        followLogs ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-white/5'
+                        followLogs ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted/10'
                       }`}
                       onClick={() => setFollowLogs(!followLogs)}
                     >
-                      <div className={`h-1 w-1 rounded-full ${followLogs ? 'bg-primary animate-pulse' : 'bg-zinc-600'}`} />
+                      <div className={`h-1 w-1 rounded-full ${followLogs ? 'bg-primary animate-pulse' : 'bg-muted-foreground/30'}`} />
                       Follow
                     </Button>
                   </AppTooltip>
@@ -1312,15 +1344,15 @@ export function IssueDetailView({
                 >
                   {logsLoading && !logs ? (
                     <div className="space-y-2 p-4">
-                      <div className="h-3 w-3/4 animate-pulse rounded bg-zinc-800" />
-                      <div className="h-3 w-1/2 animate-pulse rounded bg-zinc-800" />
-                      <div className="h-3 w-2/3 animate-pulse rounded bg-zinc-800" />
+                      <div className="h-3 w-3/4 animate-pulse rounded bg-muted/20" />
+                      <div className="h-3 w-1/2 animate-pulse rounded bg-muted/20" />
+                      <div className="h-3 w-2/3 animate-pulse rounded bg-muted/20" />
                     </div>
                   ) : filteredLogs ? (
                     <div className="flex flex-col w-full py-2">
                       {filteredLogs.split('\n').map((line, i) => (
-                        <div key={i} className="flex px-2 py-[1px] hover:bg-white/[0.03] group transition-colors">
-                          <span className="w-10 shrink-0 text-right pr-3 text-zinc-600 select-none border-r border-border mr-3 text-[10px] tabular-nums pt-[1px] group-hover:text-zinc-400">
+                        <div key={i} className="flex px-2 py-[1px] hover:bg-muted/10 group transition-colors">
+                          <span className="w-10 shrink-0 text-right pr-3 text-muted-foreground/30 select-none border-r border-border mr-3 text-[10px] tabular-nums pt-[1px] group-hover:text-muted-foreground/60">
                             {i + 1}
                           </span>
                           <span className="flex-1 whitespace-pre-wrap break-words leading-[1.6]">
@@ -1348,9 +1380,9 @@ export function IssueDetailView({
           <div className="flex flex-1 min-h-0 rounded-xl border border-border bg-background shadow-2xl overflow-hidden">
             {/* Sidebar: File List */}
             <div className="w-72 border-r border-border bg-card/20 flex flex-col shrink-0">
-              <div className="p-3 border-b border-border bg-white/5 flex items-center justify-between shrink-0">
+              <div className="p-3 border-b border-border bg-muted/10 flex items-center justify-between shrink-0">
                 <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Generated Files</span>
-                <Badge variant="outline" className="h-4 px-1.5 text-[8px] bg-white/5 text-muted-foreground border-border font-mono">
+                <Badge variant="outline" className="h-4 px-1.5 text-[8px] bg-muted/10 text-muted-foreground/60 border-border font-mono">
                   {artifacts.length}
                 </Badge>
               </div>
@@ -1369,10 +1401,10 @@ export function IssueDetailView({
                         onClick={() => setSelectedArtifact(path)}
                         className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-all group ${selectedArtifact === path 
                           ? 'bg-primary/10 border border-primary/20 text-primary shadow-lg shadow-primary/5' 
-                          : 'text-muted-foreground hover:text-zinc-200 hover:bg-white/5 border border-transparent'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-muted/10 border border-transparent'
                         }`}
                       >
-                        <FileText size={14} className={selectedArtifact === path ? 'text-primary' : 'text-zinc-600 group-hover:text-zinc-400'} />
+                        {getFileIcon(path, selectedArtifact === path)}
                         <span className="truncate text-xs font-medium leading-none pt-0.5">{path}</span>
                       </button>
                     </AppTooltip>
@@ -1395,9 +1427,9 @@ export function IssueDetailView({
                   <div className="flex-1 overflow-auto custom-scrollbar">
                     {contentLoading && !artifactContent ? (
                       <div className="p-6 space-y-3">
-                        <Skeleton className="h-3 w-3/4 bg-white/5" />
-                        <Skeleton className="h-3 w-1/2 bg-white/5" />
-                        <Skeleton className="h-3 w-2/3 bg-white/5" />
+                        <Skeleton className="h-3 w-3/4 bg-muted/10" />
+                        <Skeleton className="h-3 w-1/2 bg-muted/10" />
+                        <Skeleton className="h-3 w-2/3 bg-muted/10" />
                       </div>
                     ) : (
                       <SyntaxHighlighter
@@ -1420,8 +1452,8 @@ export function IssueDetailView({
                 </>
               ) : (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 opacity-30 grayscale pointer-events-none">
-                  <div className="p-6 rounded-full bg-white/5 border border-border">
-                    <FileText size={48} className="text-zinc-600" />
+                  <div className="p-6 rounded-full bg-muted/20 border border-border">
+                    <FileText size={48} className="text-muted-foreground/40" />
                   </div>
                   <div className="text-center">
                     <p className="text-sm font-black uppercase tracking-[0.2em]">Select an Artifact</p>
@@ -1433,7 +1465,7 @@ export function IssueDetailView({
           </div>
       ) : (
         <div className="space-y-6 text-left flex-1 min-h-0 overflow-auto custom-scrollbar pr-1">
-          <div className="rounded-xl border border-border bg-muted/30 p-6 min-h-full">
+          <div className="rounded-xl border border-border bg-muted/10 p-6 min-h-full">
             <div className="flex items-center justify-between mb-8">
               <div>
                 <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
@@ -1763,7 +1795,7 @@ function ProjectSelector({ value, projects, onChange }: { value: string, project
   const project = projects.find(p => p.id === value)
   return (
     <CustomDropdown
-      className="bg-transparent border-none hover:bg-white/5 !h-7 !px-2 rounded-md transition-colors shadow-none"
+      className="bg-transparent border-none hover:bg-muted/20 !h-7 !px-2 rounded-md transition-colors shadow-none"
       value={value}
       direction="up"
       options={[
@@ -1786,7 +1818,7 @@ function AgentSelector({ value, agents, onChange }: { value: string, agents: str
   
   return (
     <CustomDropdown
-      className="bg-transparent border-none hover:bg-white/5 !h-7 !px-2 rounded-md transition-colors shadow-none"
+      className="bg-transparent border-none hover:bg-muted/20 !h-7 !px-2 rounded-md transition-colors shadow-none"
       value={normalizedValue || 'Unassigned'}
       direction="up"
       options={[
@@ -1816,7 +1848,7 @@ function PrioritySelector({ value, onChange }: { value: number, onChange: (p: nu
 
   return (
     <CustomDropdown
-      className="bg-transparent border-none hover:bg-white/5 !h-7 !px-2 rounded-md transition-colors shadow-none"
+      className="bg-transparent border-none hover:bg-muted/20 !h-7 !px-2 rounded-md transition-colors shadow-none"
       value={value.toString()}
       direction="up"
       options={priorities.map(p => ({ label: p.label, value: p.value.toString(), icon: p.icon }))}
@@ -2056,31 +2088,31 @@ function WorkspaceMigrationDialog({
 
 export function MetricCard({ title, value, hint, icon }: { title: string; value: string; hint: string; icon: ReactNode }) {
   return (
-    <Card className="group relative overflow-hidden border border-border/60 bg-gradient-to-br from-card via-card/95 to-muted/20 shadow-lg shadow-black/5 transition-all duration-500 hover:shadow-xl hover:shadow-primary/10 hover:border-primary/30 hover:-translate-y-0.5">
-      {/* Subtle gradient overlay */}
-      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
-      
-      {/* Decorative corner element */}
-      <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rotate-12 rounded-2xl border border-border/30 bg-muted/30 shadow-inner transition-transform duration-500 group-hover:rotate-6 group-hover:scale-110" />
-      
-      <CardHeader className="relative p-5 pb-3">
+    <Card className="group relative overflow-hidden border border-border/60 bg-gradient-to-br from-card via-card/95 to-muted/20 shadow-lg shadow-primary/5 transition-all duration-500 hover:shadow-2xl hover:shadow-primary/10 hover:border-primary/30 hover:-translate-y-1">
+      {/* Subtle glowing overlay */}
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
+
+      {/* Premium corner element */}
+      <div className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rotate-12 rounded-3xl border border-primary/10 bg-primary/5 shadow-inner transition-all duration-700 group-hover:rotate-0 group-hover:scale-125 group-hover:bg-primary/10" />
+
+      <CardHeader className="relative p-5 pb-2">
         <div className="flex items-center justify-between">
-          <CardDescription className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground/70">
-            <span className="h-1 w-1 rounded-full bg-primary/60" />
+          <CardDescription className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">
+            <span className="h-1.5 w-1.5 rounded-full bg-primary/40 shadow-[0_0_8px_rgba(var(--primary),0.4)]" />
             {title}
           </CardDescription>
-          <div className="rounded-lg bg-muted/50 p-1.5 text-primary/70 transition-colors duration-300 group-hover:bg-primary/10 group-hover:text-primary">
+          <div className="rounded-xl bg-muted/50 p-2 text-primary/70 transition-all duration-500 group-hover:bg-primary group-hover:text-primary-foreground group-hover:shadow-lg group-hover:shadow-primary/30 group-hover:rotate-3">
             {icon}
           </div>
         </div>
-        <CardTitle className="mt-2 text-3xl font-black tracking-tight tabular-nums transition-transform duration-300 group-hover:scale-105 origin-left">
+        <CardTitle className="mt-2 text-4xl font-black tracking-tighter tabular-nums transition-all duration-500 group-hover:translate-x-1 group-hover:text-primary">
           {value}
         </CardTitle>
       </CardHeader>
       <CardContent className="relative px-5 pb-5 pt-0">
         <div className="flex items-center gap-2">
           <div className="h-px flex-1 bg-gradient-to-r from-border/50 to-transparent" />
-          <p className="text-[11px] text-muted-foreground/80 font-medium leading-tight">{hint}</p>
+          <p className="text-[11px] text-muted-foreground/80 font-medium leading-tight transition-colors duration-500 group-hover:text-muted-foreground">{hint}</p>
         </div>
       </CardContent>
     </Card>
@@ -2462,106 +2494,121 @@ export function KanbanBoard({
                     <p className="text-[10px] uppercase tracking-widest text-muted-foreground/40">Empty</p>
                   </div>
                 ) : (
-                  column.items.map((item) => (
-                    <Card
-                      key={item.issue_id}
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, item.issue_identifier)}
-                      className="group relative cursor-grab border-transparent bg-card p-3 shadow-sm transition-all hover:border-primary/20 hover:shadow-md active:cursor-grabbing active:scale-[0.98]"
-                      onClick={() => void onInspectIssue(item.issue_identifier)}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-1.5">
-                          <AppTooltip content={<PriorityLabel priority={Number((item as any).priority ?? 0)} />}>
-                            <div>
-                              <PriorityIcon priority={Number((item as any).priority ?? 0)} className="h-3 w-3" />
+                  column.items.map((item) => {
+                    const priority = Number((item as any).priority ?? 0)
+                    const priorityBorderClass = 
+                      priority === 4 ? 'hover:border-red-500/40' :
+                      priority === 3 ? 'hover:border-amber-500/40' :
+                      priority === 2 ? 'hover:border-blue-500/40' :
+                      'hover:border-primary/20'
+                    
+                    return (
+                      <Card
+                        key={item.issue_id}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, item.issue_identifier)}
+                        className={`group relative cursor-grab border-transparent bg-card p-3.5 shadow-sm transition-all duration-300 ${priorityBorderClass} hover:shadow-xl hover:shadow-primary/5 active:cursor-grabbing active:scale-[0.98] rounded-xl`}
+                        onClick={() => void onInspectIssue(item.issue_identifier)}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <AppTooltip content={<PriorityLabel priority={priority} />}>
+                              <div className={`p-1 rounded-md bg-muted/50 border border-border/50`}>
+                                <PriorityIcon priority={priority} className="h-2.5 w-2.5" />
+                              </div>
+                            </AppTooltip>
+                            <span className="font-mono text-[9px] font-black uppercase tracking-tight text-muted-foreground/60 group-hover:text-primary transition-colors">
+                              {item.issue_identifier}
+                            </span>
+                          </div>
+                          <div className="flex flex-col items-end gap-1.5">
+                            <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/30 tabular-nums">
+                              {(item as any).at
+                                ? new Date((item as any).at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                : (item as any).due_at
+                                  ? 'Retry'
+                                  : ''}
+                            </span>
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all translate-x-1 group-hover:translate-x-0">
+                              {item.state === 'Todo' && item.assignee_id && item.assignee_id !== 'Unassigned' && onIssueUpdate && (
+                                <AppTooltip content="Launch agent session">
+                                  <button
+                                    type="button"
+                                    className="p-1 rounded-md text-emerald-500/60 hover:text-emerald-500 hover:bg-emerald-500/10 transition-all"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      void onIssueUpdate(item.issue_identifier, { state: 'In Progress' })
+                                    }}
+                                  >
+                                    <Play className="h-2.5 w-2.5 fill-current" />
+                                  </button>
+                                </AppTooltip>
+                              )}
+                              {item.state === 'In Progress' && onStopSession && (
+                                <AppTooltip content="Stop session">
+                                  <button
+                                    type="button"
+                                    className="p-1 rounded-md text-amber-500/60 hover:text-amber-500 hover:bg-amber-500/10 transition-all"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      void onStopSession(item.issue_identifier)
+                                    }}
+                                  >
+                                    <Square className="h-2 w-2 fill-current" />
+                                  </button>
+                                </AppTooltip>
+                              )}
+                              {onIssueDelete && (
+                                <AppTooltip content="Permanently delete">
+                                  <button
+                                    type="button"
+                                    className="p-1 rounded-md text-muted-foreground/40 hover:text-red-500 hover:bg-red-500/10 transition-all"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setIssueToDelete({ identifier: item.issue_identifier, title: item.title })
+                                      setDeleteDialogOpen(true)
+                                    }}
+                                  >
+                                    <Trash2 className="h-2.5 w-2.5" />
+                                  </button>
+                                </AppTooltip>
+                              )}
                             </div>
-                          </AppTooltip>
-                          <span className="font-mono text-[10px] font-semibold tracking-tight text-muted-foreground/80">
-                            {item.issue_identifier}
-                          </span>
-                        </div>
-                        <div className="flex flex-col items-end gap-1">
-                          <span className="text-[9px] font-medium text-muted-foreground/40 leading-none">
-                            {(item as any).at
-                              ? new Date((item as any).at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                              : (item as any).due_at
-                                ? 'Retry'
-                                : ''}
-                          </span>
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            {item.state === 'Todo' && item.assignee_id && item.assignee_id !== 'Unassigned' && onIssueUpdate && (
-                              <button
-                                type="button"
-                                className="p-1 rounded-md text-emerald-500/60 hover:text-emerald-500 hover:bg-emerald-500/10 transition-all active:scale-95"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  void onIssueUpdate(item.issue_identifier, { state: 'In Progress' })
-                                }}
-                              >
-                                <Play className="h-3 w-3 fill-current" />
-                              </button>
-                            )}
-                            {item.state === 'In Progress' && onStopSession && (
-                              <button
-                                type="button"
-                                className="p-1 rounded-md text-amber-500/60 hover:text-amber-500 hover:bg-amber-500/10 transition-all active:scale-95"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  void onStopSession(item.issue_identifier)
-                                }}
-                              >
-                                <Square className="h-2.5 w-2.5 fill-current" />
-                              </button>
-                            )}
-                            {onIssueDelete && (
-                              <button
-                                type="button"
-                                className="p-1 rounded-md text-muted-foreground/60 hover:text-red-500 hover:bg-red-500/10 transition-all active:scale-95 cursor-pointer relative z-50"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setIssueToDelete({ identifier: item.issue_identifier, title: item.title })
-                                  setDeleteDialogOpen(true)
-                                }}
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
-                            )}
                           </div>
                         </div>
-                      </div>
-                      <p className="mt-2 line-clamp-2 text-[13px] font-medium leading-tight text-foreground/90">
-                        {item.title || item.description || (item as any).last_message || (item as any).error || 'No message'}
-                      </p>
-                      {Array.isArray((item as any).labels) && (item as any).labels.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {(item as any).labels.slice(0, 2).map((label: string) => (
-                            <Badge key={label} variant="secondary" className="px-1 py-0 text-[9px] font-normal text-muted-foreground/70">
-                              {label}
-                            </Badge>
-                          ))}
-                          {(item as any).labels.length > 2 && <span className="text-[9px] text-muted-foreground/40">+{(item as any).labels.length - 2}</span>}
-                        </div>
-                      )}
-                      <div className="mt-3 flex items-center justify-between border-t border-border/10 pt-2">
-                        <AgentSelector
-                          value={item.assignee_id || ''}
-                          agents={availableAgents}
-                          onChange={(val) => {
-                            if (onIssueUpdate) {
-                              void onIssueUpdate(item.issue_identifier, { assignee_id: val })
-                            }
-                          }}
-                        />
-                        {(item as any).session_id ? (
-                          <div className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-tighter text-amber-500/80">
-                            <Activity className="h-2.5 w-2.5 animate-pulse" />
-                            <span>Live</span>
+                        <p className="mt-2.5 line-clamp-2 text-[12px] font-bold leading-[1.4] text-foreground/90 group-hover:text-foreground transition-colors">
+                          {item.title || item.description || (item as any).last_message || (item as any).error || 'No message'}
+                        </p>
+                        {Array.isArray((item as any).labels) && (item as any).labels.length > 0 && (
+                          <div className="mt-2.5 flex flex-wrap gap-1">
+                            {(item as any).labels.slice(0, 2).map((label: string) => (
+                              <Badge key={label} variant="outline" className="px-1 py-0 text-[8px] font-black uppercase tracking-widest bg-muted/30 text-muted-foreground/60 border-border/40">
+                                {label}
+                              </Badge>
+                            ))}
+                            {(item as any).labels.length > 2 && <span className="text-[8px] font-black text-muted-foreground/30">+{(item as any).labels.length - 2}</span>}
                           </div>
-                        ) : null}
-                      </div>
-                    </Card>
-                  ))
+                        )}
+                        <div className="mt-4 flex items-center justify-between border-t border-border/40 pt-2.5">
+                          <AgentSelector
+                            value={item.assignee_id || ''}
+                            agents={availableAgents}
+                            onChange={(val) => {
+                              if (onIssueUpdate) {
+                                void onIssueUpdate(item.issue_identifier, { assignee_id: val })
+                              }
+                            }}
+                          />
+                          {(item as any).session_id ? (
+                            <div className="flex items-center gap-1.5 px-1.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-[8px] font-black uppercase tracking-widest text-amber-500 animate-in fade-in duration-500">
+                              <Activity className="h-2 w-2 animate-pulse" />
+                              <span>Live</span>
+                            </div>
+                          ) : null}
+                        </div>
+                      </Card>
+                    )
+                  })
                 )}
               </OverlayScrollbarsComponent>
             </div>

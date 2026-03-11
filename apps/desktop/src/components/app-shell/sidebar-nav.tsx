@@ -62,10 +62,10 @@ export function SidebarNav({
             <Tooltip.Content
               side="right"
               sideOffset={10}
-              className="z-[110] select-none rounded-md bg-zinc-900 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest leading-none text-zinc-50 shadow-2xl animate-in fade-in zoom-in-95 dark:bg-zinc-100 dark:text-zinc-900 border border-white/10 dark:border-black/10"
+              className="z-[110] select-none rounded-lg bg-popover border border-border px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest leading-none text-popover-foreground shadow-2xl animate-in fade-in zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=closed]:zoom-out-95"
             >
               {sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              <Tooltip.Arrow className="fill-zinc-900 dark:fill-zinc-100" />
+              <Tooltip.Arrow className="fill-popover" />
             </Tooltip.Content>
           </Tooltip.Portal>
         </Tooltip.Root>
@@ -105,26 +105,26 @@ export function SidebarNav({
                     onKeyDown={handleNavKeyDown(index)}
                     aria-current={active ? 'page' : undefined}
                     data-testid={`sidebar-nav-${item.id}`}
-                    className={`group relative flex w-full items-center gap-2 rounded border px-2 py-1 text-left transition-all ${sidebarCollapsed ? 'justify-center' : ''
+                    className={`group relative flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition-all duration-300 ${sidebarCollapsed ? 'justify-center' : ''
                       } ${active
-                        ? 'border-primary/20 bg-primary/10 text-primary shadow-sm dark:border-primary/30 dark:bg-primary/20'
-                        : 'border-transparent text-foreground hover:border-border hover:bg-muted/50 dark:text-muted-foreground dark:hover:border-border dark:hover:bg-muted/70'
+                        ? 'border-primary/30 bg-primary/10 text-primary shadow-[0_0_15px_rgba(var(--primary),0.1)]'
+                        : 'border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground'
                       }`}
                   >
-                    {active ? <span className="absolute left-0 top-1/2 h-3 w-0.5 -translate-y-1/2 rounded-r bg-primary" /> : null}
-                    <span className="grid h-6 w-6 place-items-center rounded bg-background text-foreground group-hover:text-foreground shadow-sm">
-                      <ItemIcon className="h-3 w-3" />
+                    {active ? <span className="absolute left-0 top-1/2 h-4 w-1 -translate-y-1/2 rounded-r-full bg-primary shadow-[0_0_8px_rgba(var(--primary),0.6)]" /> : null}
+                    <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg transition-all duration-300 ${
+                      active ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'bg-muted/50 text-muted-foreground group-hover:bg-muted group-hover:text-foreground'
+                    }`}>
+                      <ItemIcon className="h-3.5 w-3.5" />
                     </span>
                     {!sidebarCollapsed ? (
-                      <span className="min-w-0">
-                        <span className="block truncate text-[11px] font-semibold text-black dark:text-foreground">{item.label}</span>
-                        <span className="block truncate text-[9px] text-black/40 dark:text-muted-foreground leading-tight">{item.description}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className={`block truncate text-[11px] font-bold tracking-tight ${active ? 'text-foreground' : 'text-muted-foreground group-hover:text-foreground'}`}>{item.label}</span>
+                        <span className="block truncate text-[9px] text-muted-foreground/60 leading-tight font-medium">{item.description}</span>
                       </span>
                     ) : null}
                   </button>
                 )
-
-                if (!sidebarCollapsed) return button
 
                 return (
                   <Tooltip.Root key={item.id}>
@@ -134,11 +134,14 @@ export function SidebarNav({
                     <Tooltip.Portal>
                       <Tooltip.Content
                         side="right"
-                        sideOffset={10}
-                        className="z-[110] select-none rounded-md bg-zinc-900 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest leading-none text-zinc-50 shadow-2xl animate-in fade-in zoom-in-95 dark:bg-zinc-100 dark:text-zinc-900 border border-white/10 dark:border-black/10"
+                        sideOffset={12}
+                        className="z-[110] select-none rounded-lg bg-popover border border-border px-3 py-2 text-[10px] font-black uppercase tracking-[0.15em] text-popover-foreground shadow-2xl animate-in fade-in zoom-in-95 slide-in-from-left-2"
                       >
-                        {item.label}
-                        <Tooltip.Arrow className="fill-zinc-900 dark:fill-zinc-100" />
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-foreground">{item.label}</span>
+                          <span className="text-[8px] font-bold text-muted-foreground/70 normal-case tracking-normal">{item.description}</span>
+                        </div>
+                        <Tooltip.Arrow className="fill-border" />
                       </Tooltip.Content>
                     </Tooltip.Portal>
                   </Tooltip.Root>

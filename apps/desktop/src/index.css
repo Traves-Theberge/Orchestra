@@ -12,6 +12,8 @@
   --muted: 210 10% 94%;
   --muted-foreground: 210 10% 40%;
   --border: 210 10% 88%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 161 50% 5%;
 }
 
 .dark {
@@ -24,6 +26,8 @@
   --muted: 160 10% 12%;
   --muted-foreground: 160 5% 65%;
   --border: 160 10% 15%;
+  --popover: 160 10% 8%;
+  --popover-foreground: 160 20% 98%;
 }
 
 * {
