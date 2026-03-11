@@ -3,7 +3,7 @@ import { type ReactNode } from 'react'
 
 export function AppTooltip({ children, content, side = 'top' }: { children: ReactNode; content: ReactNode; side?: 'top' | 'right' | 'bottom' | 'left' }) {
   return (
-    <Tooltip.Provider delayDuration={300}>
+    <Tooltip.Provider delayDuration={100}>
       <Tooltip.Root>
         <Tooltip.Trigger asChild>{children}</Tooltip.Trigger>
         <Tooltip.Portal>

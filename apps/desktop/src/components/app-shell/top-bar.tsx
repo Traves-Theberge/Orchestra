@@ -221,29 +221,15 @@ export function TopBar({
 
 function IconButton({ icon, title, onClick }: { icon: ReactNode; title: string; onClick?: () => void }) {
   return (
-    <Tooltip.Provider delayDuration={300}>
-      <Tooltip.Root>
-        <Tooltip.Trigger asChild>
-          <button
-            type="button"
-            aria-label={title}
-            onClick={onClick}
-            className="grid h-7 w-7 place-items-center rounded-md bg-transparent text-muted-foreground transition hover:bg-muted hover:text-foreground"
-          >
-            {icon}
-          </button>
-        </Tooltip.Trigger>
-        <Tooltip.Portal>
-          <Tooltip.Content
-            className="z-[110] select-none rounded-lg bg-popover border border-border px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest leading-none text-popover-foreground shadow-xl animate-in fade-in zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=closed]:zoom-out-95 !opacity-100 block"
-            sideOffset={5}
-            style={{ backgroundColor: 'hsl(var(--popover))' }}
-          >
-            {title}
-            <Tooltip.Arrow className="fill-popover" />
-          </Tooltip.Content>
-        </Tooltip.Portal>
-      </Tooltip.Root>
-    </Tooltip.Provider>
+    <AppTooltip content={title}>
+      <button
+        type="button"
+        aria-label={title}
+        onClick={onClick}
+        className="grid h-7 w-7 place-items-center rounded-md bg-transparent text-muted-foreground transition hover:bg-muted hover:text-foreground"
+      >
+        {icon}
+      </button>
+    </AppTooltip>
   )
 }

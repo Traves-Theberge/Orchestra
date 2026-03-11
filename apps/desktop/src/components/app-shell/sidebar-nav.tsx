@@ -1,9 +1,9 @@
 import { useMemo, useRef, type KeyboardEvent } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-import * as Tooltip from '@radix-ui/react-tooltip'
 import { OverlayScrollbarsComponent } from 'overlayscrollbars-react'
 import type { SidebarItem } from '@/components/app-shell/types'
 import { getNextSidebarIndex } from '@/lib/navigation'
+import { AppTooltip } from '../ui/tooltip-wrapper'
 
 export function SidebarNav({
   items,
@@ -47,57 +47,55 @@ export function SidebarNav({
       className="relative h-full border-r border-border bg-card shadow-[10px_0_40px_rgba(0,0,0,0.04)] transition-all duration-300 dark:border-border dark:bg-background dark:shadow-[10px_0_40px_rgba(0,0,0,0.2)]"
       style={{ width: `${sidebarWidth}px` }}
     >
-      <Tooltip.Provider delayDuration={300}>
-        <Tooltip.Root>
-          <Tooltip.Trigger asChild>
-            <button
-              type="button"
-              onClick={onToggleCollapsed}
-              className="absolute left-full top-6 z-20 grid h-6 w-6 -translate-x-1/2 place-items-center rounded-full border border-border bg-card text-foreground shadow-lg transition hover:bg-muted dark:border-border dark:bg-background dark:text-foreground dark:hover:bg-muted"
-            >
-              {sidebarCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
-            </button>
-          </Tooltip.Trigger>
-          <Tooltip.Portal>
-            <Tooltip.Content
-              side="right"
-              sideOffset={10}
-              className="z-[110] select-none rounded-lg bg-popover border border-border px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest leading-none text-popover-foreground shadow-2xl animate-in fade-in zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=closed]:zoom-out-95 !opacity-100 block"
-              style={{ backgroundColor: 'hsl(var(--popover))' }}
-            >
-              {sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              <Tooltip.Arrow className="fill-popover" />
-            </Tooltip.Content>
-          </Tooltip.Portal>
-        </Tooltip.Root>
+      <AppTooltip 
+        side="right" 
+        content={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      >
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          className="absolute left-full top-6 z-20 grid h-6 w-6 -translate-x-1/2 place-items-center rounded-full border border-border bg-card text-foreground shadow-lg transition hover:bg-muted dark:border-border dark:bg-background dark:text-foreground dark:hover:bg-muted"
+        >
+          {sidebarCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
+        </button>
+      </AppTooltip>
 
-        <div className="flex h-full flex-col py-3">
-          <div className="mb-2 px-2">
-            <div className={`flex items-center gap-2 ${sidebarCollapsed ? 'justify-center' : ''}`}>
-              <span className="grid h-6 w-6 shrink-0 place-items-center rounded bg-background text-foreground shadow-sm">
-                <AppMonogramIcon className="h-4 w-4" />
-              </span>
-              {!sidebarCollapsed ? (
-                <div className="min-w-0">
-                  <p className="truncate text-[9px] font-bold uppercase tracking-[0.15em] text-black dark:text-muted-foreground leading-none">Orchestra</p>
-                  <p className="truncate text-[8px] text-black/40 dark:text-muted-foreground mt-0.5">Control Plane</p>
-                </div>
-              ) : null}
-            </div>
+      <div className="flex h-full flex-col py-3">
+        <div className="mb-2 px-2">
+          <div className={`flex items-center gap-2 ${sidebarCollapsed ? 'justify-center' : ''}`}>
+            <span className="grid h-6 w-6 shrink-0 place-items-center rounded bg-background text-foreground shadow-sm">
+              <AppMonogramIcon className="h-4 w-4" />
+            </span>
+            {!sidebarCollapsed ? (
+              <div className="min-w-0">
+                <p className="truncate text-[9px] font-bold uppercase tracking-[0.15em] text-black dark:text-muted-foreground leading-none">Orchestra</p>
+                <p className="truncate text-[8px] text-black/40 dark:text-muted-foreground mt-0.5">Control Plane</p>
+              </div>
+            ) : null}
           </div>
+        </div>
 
-          <OverlayScrollbarsComponent
-            element="div"
-            options={osOptions}
-            className="flex-1 px-2 pt-1 min-h-0"
-          >
-            <nav className="space-y-0.5" aria-label="Primary navigation">
-              {items.map((item, index) => {
-                const ItemIcon = item.icon
-                const active = activeSection === item.id
-                const button = (
+        <OverlayScrollbarsComponent
+          element="div"
+          options={osOptions}
+          className="flex-1 px-2 pt-1 min-h-0"
+        >
+          <nav className="space-y-0.5" aria-label="Primary navigation">
+            {items.map((item, index) => {
+              const ItemIcon = item.icon
+              const active = activeSection === item.id
+              return (
+                <AppTooltip 
+                  key={item.id}
+                  side="right"
+                  content={
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-foreground">{item.label}</span>
+                      <span className="text-[8px] font-bold text-muted-foreground/70 normal-case tracking-normal">{item.description}</span>
+                    </div>
+                  }
+                >
                   <button
-                    key={item.id}
                     type="button"
                     ref={(node) => {
                       buttonRefs.current[index] = node
@@ -125,34 +123,12 @@ export function SidebarNav({
                       </span>
                     ) : null}
                   </button>
-                )
-
-                return (
-                  <Tooltip.Root key={item.id}>
-                    <Tooltip.Trigger asChild>
-                      {button}
-                    </Tooltip.Trigger>
-                    <Tooltip.Portal>
-                      <Tooltip.Content
-                        side="right"
-                        sideOffset={12}
-                        className="z-[110] select-none rounded-lg bg-popover border border-border px-3 py-2 text-[10px] font-black uppercase tracking-[0.15em] text-popover-foreground shadow-2xl animate-in fade-in zoom-in-95 slide-in-from-left-2 !opacity-100 block"
-                        style={{ backgroundColor: 'hsl(var(--popover))' }}
-                      >
-                        <div className="flex flex-col gap-0.5 relative z-10">
-                          <span className="text-foreground">{item.label}</span>
-                          <span className="text-[8px] font-bold text-muted-foreground/70 normal-case tracking-normal">{item.description}</span>
-                        </div>
-                        <Tooltip.Arrow className="fill-popover" />
-                      </Tooltip.Content>
-                    </Tooltip.Portal>
-                  </Tooltip.Root>
-                )
-              })}
-            </nav>
-          </OverlayScrollbarsComponent>
-        </div>
-      </Tooltip.Provider>
+                </AppTooltip>
+              )
+            })}
+          </nav>
+        </OverlayScrollbarsComponent>
+      </div>
     </aside>
   )
 }
