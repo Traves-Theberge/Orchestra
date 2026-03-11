@@ -734,7 +734,7 @@ export function IssueDetailView({
   const [localState, setLocalState] = useState(state)
   const [localAssignee, setLocalAssignee] = useState(assigneeId)
   const [localProvider, setLocalProvider] = useState<string>(provider)
-  const [activeTab, setActiveTab] = useState<'overview' | 'changes' | 'logs' | 'artifacts' | 'tools' | 'activity'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'changes' | 'logs' | 'artifacts' | 'activity'>('overview')
   const [logs, setLogs] = useState<string>('')
   const [logFilter, setLogFilter] = useState('')
   const [logsLoading, setLogsLoading] = useState(false)
@@ -978,13 +978,6 @@ export function IssueDetailView({
             }`}
         >
           Artifacts
-        </button>
-        <button
-          onClick={() => setActiveTab('tools')}
-          className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${activeTab === 'tools' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-            }`}
-        >
-          Tools
         </button>
         <button
           onClick={() => setActiveTab('activity')}
@@ -1247,6 +1240,70 @@ export function IssueDetailView({
                   })}
                 </div>
               </div>
+
+              {/* Agent Capabilities (Merged from Tools) */}
+              <div className="p-5 border-t border-white/5 bg-[#0c0c0e]">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                    <Wrench size={10} /> Managed Agent Capabilities
+                  </div>
+                  <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 text-[8px] font-black px-1.5 h-4">
+                    {allTools.length - disabledTools.length} ENABLED
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                  {allTools.map((tool) => {
+                    const isDisabled = disabledTools.includes(tool.name)
+                    return (
+                      <AppTooltip key={tool.name} content={tool.description || 'No documentation'}>
+                        <button
+                          onClick={() => handleToggleTool(tool.name)}
+                          className={`flex items-center gap-2 px-2 py-1.5 rounded-lg border transition-all group ${isDisabled
+                            ? 'border-white/5 bg-transparent opacity-30 grayscale hover:opacity-100 hover:bg-white/5'
+                            : 'border-primary/20 bg-primary/5 hover:bg-primary/10'
+                            }`}
+                        >
+                          <div className={`h-1.5 w-1.5 rounded-full ${isDisabled ? 'bg-zinc-600' : 'bg-primary shadow-[0_0_5px_rgba(var(--primary),0.5)]'}`} />
+                          <span className={`text-[9px] font-bold truncate ${isDisabled ? 'text-zinc-500' : 'text-zinc-300'}`}>
+                            {tool.name.includes('_') ? tool.name.split('_')[1] : tool.name}
+                          </span>
+                        </button>
+                      </AppTooltip>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Condensed Activity Stream */}
+              <div className="p-5 border-t border-white/5 bg-white/[0.01]">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                    <Activity size={10} /> Runtime Pulse
+                  </div>
+                  <button 
+                    onClick={() => setActiveTab('activity')}
+                    className="text-[8px] font-black uppercase tracking-widest text-primary hover:text-white transition-colors"
+                  >
+                    View Full Audit
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {issueHistory.slice(0, 3).map((item, idx) => (
+                    <div key={idx} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-white/[0.02] border border-white/5 group hover:bg-white/[0.04] transition-all">
+                      <div className="shrink-0">{getEventIcon(item.kind)}</div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] font-bold text-zinc-300 truncate">{item.message || item.kind}</p>
+                      </div>
+                      <span className="text-[8px] font-mono text-zinc-600 uppercase tracking-tighter shrink-0">{new Date(item.timestamp).toLocaleTimeString()}</span>
+                    </div>
+                  ))}
+                  {issueHistory.length === 0 && (
+                    <div className="py-4 text-center border border-dashed border-white/5 rounded-xl opacity-20">
+                      <p className="text-[10px] font-black uppercase tracking-widest italic">No pulse detected</p>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         ) : activeTab === 'changes' ? (
@@ -1369,67 +1426,92 @@ export function IssueDetailView({
             </div>
           </div>
         ) : activeTab === 'artifacts' ? (
-          <div className="grid grid-cols-12 gap-4">
-            <div className="col-span-12 rounded-lg border bg-muted/10 p-2 md:col-span-4">
-              <p className="mb-2 px-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60">Files</p>
-              <div className="max-h-[400px] space-y-1 overflow-auto">
+          <div className="flex h-[60vh] rounded-xl border border-white/5 bg-[#0c0c0e] shadow-2xl overflow-hidden">
+            {/* Sidebar: File List */}
+            <div className="w-72 border-r border-white/5 bg-black/20 flex flex-col shrink-0">
+              <div className="p-3 border-b border-white/5 bg-white/5 flex items-center justify-between shrink-0">
+                <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Generated Files</span>
+                <Badge variant="outline" className="h-4 px-1.5 text-[8px] bg-white/5 text-zinc-500 border-white/10 font-mono">
+                  {artifacts.length}
+                </Badge>
+              </div>
+              <div className="flex-1 overflow-auto custom-scrollbar p-2 space-y-1">
                 {artifactsLoading ? (
-                  Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-8 w-full rounded" />)
+                  Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-8 w-full rounded-lg bg-white/[0.02]" />)
                 ) : artifacts.length === 0 ? (
-                  <p className="p-4 text-center text-xs text-muted-foreground">No artifacts found.</p>
+                  <div className="flex flex-col items-center justify-center py-12 opacity-20 grayscale">
+                    <FileText size={32} className="mb-2" />
+                    <p className="text-[10px] font-black uppercase tracking-widest">No Artifacts</p>
+                  </div>
                 ) : (
                   artifacts.map((path) => (
                     <button
                       key={path}
                       onClick={() => setSelectedArtifact(path)}
-                      className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors ${selectedArtifact === path ? 'bg-primary/10 text-primary' : 'text-foreground hover:bg-muted/50'
-                        }`}
+                      className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-all group ${selectedArtifact === path 
+                        ? 'bg-primary/10 border border-primary/20 text-primary shadow-lg shadow-primary/5' 
+                        : 'text-zinc-500 hover:text-zinc-200 hover:bg-white/5 border border-transparent'
+                      }`}
                     >
-                      <FileText className="h-3.5 w-3.5 shrink-0 opacity-60" />
-                      <span className="truncate">{path}</span>
+                      <FileText size={14} className={selectedArtifact === path ? 'text-primary' : 'text-zinc-600 group-hover:text-zinc-400'} />
+                      <span className="truncate text-xs font-medium leading-none pt-0.5">{path}</span>
                     </button>
                   ))
                 )}
               </div>
             </div>
-            <div className="col-span-12 rounded-lg border bg-card p-0 md:col-span-8">
+
+            {/* Main Content: File Preview */}
+            <div className="flex-1 min-w-0 bg-black/40 flex flex-col relative">
               {selectedArtifact ? (
-                <div className="flex h-full flex-col">
-                  <div className="flex items-center justify-between border-b bg-muted/30 px-3 py-2">
-                    <span className="truncate font-mono text-[10px] text-muted-foreground">{selectedArtifact}</span>
-                    {contentLoading && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
+                <>
+                  <div className="flex items-center justify-between border-b border-white/5 bg-white/[0.02] px-4 py-2 shrink-0">
+                    <div className="flex items-center gap-3">
+                      <FileText size={14} className="text-primary/60" />
+                      <span className="truncate font-mono text-[11px] text-zinc-300 font-bold">{selectedArtifact}</span>
+                    </div>
+                    {contentLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />}
                   </div>
-                  <div className="max-h-[500px] overflow-auto">
+                  <div className="flex-1 overflow-auto custom-scrollbar">
                     {contentLoading && !artifactContent ? (
-                      <div className="space-y-2 p-4">
-                        <Skeleton className="h-3 w-3/4" />
-                        <Skeleton className="h-3 w-1/2" />
-                        <Skeleton className="h-3 w-2/3" />
+                      <div className="p-6 space-y-3">
+                        <Skeleton className="h-3 w-3/4 bg-white/5" />
+                        <Skeleton className="h-3 w-1/2 bg-white/5" />
+                        <Skeleton className="h-3 w-2/3 bg-white/5" />
                       </div>
                     ) : (
                       <SyntaxHighlighter
                         language={selectedArtifact.split('.').pop() || 'text'}
                         style={oneDark}
-                        customStyle={{ margin: 0, borderRadius: 0, fontSize: '11px', background: 'transparent' }}
-                        lineNumberStyle={{ minWidth: '2.5em', paddingRight: '1em', color: '#4b5563', textAlign: 'right' }}
+                        customStyle={{ 
+                          margin: 0, 
+                          padding: '1.5rem', 
+                          background: 'transparent', 
+                          fontSize: '12px',
+                          lineHeight: '1.7'
+                        }}
+                        lineNumberStyle={{ minWidth: '3em', paddingRight: '1.5em', color: 'rgba(255,255,255,0.15)', textAlign: 'right', fontSize: '10px' }}
                         showLineNumbers
                       >
                         {artifactContent || ''}
                       </SyntaxHighlighter>
                     )}
                   </div>
-                </div>
+                </>
               ) : (
-                <div className="flex h-[400px] items-center justify-center p-8 text-center">
-                  <div className="space-y-2">
-                    <FileText className="mx-auto h-8 w-8 text-muted-foreground/20" />
-                    <p className="text-xs text-muted-foreground/50">Select a file to view its contents.</p>
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 opacity-30 grayscale pointer-events-none">
+                  <div className="p-6 rounded-full bg-white/5 border border-white/5">
+                    <FileText size={48} className="text-zinc-600" />
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm font-black uppercase tracking-[0.2em]">Select an Artifact</p>
+                    <p className="text-[10px] font-medium text-zinc-500 uppercase tracking-widest mt-1">Review agent-generated documentation and code</p>
                   </div>
                 </div>
               )}
             </div>
           </div>
-      ) : activeTab === 'activity' ? (
+      ) : (
         <div className="space-y-6 text-left">
           <div className="rounded-xl border border-white/5 bg-white/[0.02] p-6 min-h-[400px]">
             <div className="flex items-center justify-between mb-8">
@@ -1489,62 +1571,6 @@ export function IssueDetailView({
                 ))}
               </div>
             )}
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-6 text-left">
-          <div className="rounded-xl border border-white/5 bg-white/[0.02] p-6">
-            <div className="flex items-center justify-between mb-6">
-              <div className="text-left">
-                <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
-                  <Wrench className="h-4 w-4 text-primary" />
-                  Capability Override
-                </h3>
-                <p className="text-xs text-muted-foreground">Select which tools the agent is allowed to use for this specific session.</p>
-              </div>
-              <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 text-[10px]">
-                {allTools.length - disabledTools.length} Active Tools
-              </Badge>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {allTools.map((tool) => {
-                const isDisabled = disabledTools.includes(tool.name)
-                return (
-                  <button
-                    key={tool.name}
-                    onClick={() => handleToggleTool(tool.name)}
-                    className={`flex flex-col text-left p-3 rounded-xl border transition-all group ${isDisabled
-                      ? 'border-white/5 bg-transparent opacity-40 grayscale hover:opacity-60'
-                      : 'border-primary/20 bg-primary/5 hover:bg-primary/10 shadow-lg shadow-primary/5'
-                      }`}
-                  >
-                    <div className="flex items-center justify-between mb-1.5 w-full">
-                      <span className={`text-[11px] font-black tracking-tight ${isDisabled ? 'text-muted-foreground' : 'text-primary'}`}>
-                        {tool.name.includes('_') ? tool.name.split('_')[1] : tool.name}
-                      </span>
-                      {isDisabled ? (
-                        <div className="h-3.5 w-3.5 rounded-full border border-white/10 flex items-center justify-center">
-                          <div className="h-1.5 w-1.5 rounded-full bg-white/5" />
-                        </div>
-                      ) : (
-                        <div className="h-3.5 w-3.5 rounded-full bg-primary flex items-center justify-center shadow-lg shadow-primary/40">
-                          <CheckCircle2 className="h-2 w-2 text-primary-foreground" />
-                        </div>
-                      )}
-                    </div>
-                    <p className="text-[10px] text-muted-foreground leading-snug line-clamp-2">{tool.description || 'No documentation provided'}</p>
-                    {tool.name.includes('_') && (
-                      <div className="mt-2 pt-2 border-t border-white/5 flex items-center gap-1.5">
-                        <Badge variant="outline" className="text-[8px] h-3.5 px-1 bg-white/5 border-white/10 text-muted-foreground font-mono">
-                          {tool.name.split('_')[0]}
-                        </Badge>
-                      </div>
-                    )}
-                  </button>
-                )
-              })}
-            </div>
           </div>
         </div>
       )}
