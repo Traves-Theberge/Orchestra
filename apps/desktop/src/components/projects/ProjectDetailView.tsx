@@ -79,16 +79,58 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     const [selectedDiff, setSelectedDiff] = useState<string | null>(null)
     const [isDiffModalOpen, setIsDiffModalOpen] = useState(false)
     const [diffLoading, setDiffLoading] = useState(false)
+    const [selectedCommitInfo, setSelectedCommitInfo] = useState<any>(null)
+    const [diffFiles, setDiffFiles] = useState<{path: string, content: string}[]>([])
+    const [activeDiffFile, setActiveDiffFile] = useState<string | null>(null)
     const reliability = calculateReliabilityIndex(stats)
+
+    const parseDiff = (rawDiff: string) => {
+        const files: {path: string, content: string}[] = []
+        const lines = rawDiff.split('\n')
+        let currentFile: string | null = null
+        let currentContent: string[] = []
+
+        lines.forEach(line => {
+            if (line.startsWith('diff --git')) {
+                if (currentFile) {
+                    files.push({ path: currentFile, content: currentContent.join('\n') })
+                }
+                const match = line.match(/b\/(.+)$/)
+                currentFile = match ? match[1] : 'unknown'
+                currentContent = [line]
+            } else if (currentFile) {
+                currentContent.push(line)
+            }
+        })
+
+        if (currentFile) {
+            files.push({ path: currentFile, content: currentContent.join('\n') })
+        }
+
+        return files
+    }
 
     const handleViewDiff = async (hash?: string) => {
         if (!config) return
         setDiffLoading(true)
         setIsDiffModalOpen(true)
         setSelectedDiff(null)
+        setDiffFiles([])
+        setActiveDiffFile(null)
+
+        if (hash) {
+            const commit = gitHistory.find(c => c.hash === hash)
+            setSelectedCommitInfo(commit)
+        } else {
+            setSelectedCommitInfo({ message: 'Uncommitted Changes', author: 'Local User', date: new Date().toISOString() })
+        }
+
         try {
             const diff = await fetchProjectGitDiff(config, project.id, hash)
             setSelectedDiff(diff)
+            const parsed = parseDiff(diff)
+            setDiffFiles(parsed)
+            if (parsed.length > 0) setActiveDiffFile(parsed[0].path)
         } catch (err) {
             console.error('Failed to fetch git diff:', err)
             setSelectedDiff('Error: Failed to fetch diff.')
@@ -685,57 +727,127 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
             {/* Git Diff Modal */}
             <Dialog open={isDiffModalOpen} onOpenChange={setIsDiffModalOpen}>
-                <DialogContent className="max-w-4xl w-[90vw] h-[80vh] flex flex-col p-0 bg-[#0c0c0e] border-zinc-800 gap-0 overflow-hidden">
-                    <DialogHeader className="p-4 border-b border-white/5 shrink-0">
-                        <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
-                            <History className="text-primary" size={20} />
-                            Git Inspector
-                        </DialogTitle>
-                        <DialogDescription className="text-zinc-500 text-[10px] uppercase tracking-[0.2em] font-black">
-                            {diffLoading ? 'Analyzing Changes...' : 'Detailed Diff Analysis'}
-                        </DialogDescription>
-                    </DialogHeader>
-                    
-                    <div className="flex-1 min-h-0 bg-black/40 overflow-hidden relative">
-                        {diffLoading ? (
-                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
-                                <RefreshCcw size={32} className="text-primary animate-spin" />
-                                <p className="text-xs font-bold uppercase tracking-widest text-zinc-500 animate-pulse">Fetching Diff Payload</p>
+                <DialogContent className="max-w-6xl w-[95vw] h-[85vh] flex flex-col p-0 bg-[#0c0c0e] border-zinc-800 gap-0 overflow-hidden shadow-2xl">
+                    {/* Modal Header */}
+                    <div className="p-5 border-b border-white/5 bg-zinc-900/50 flex items-center justify-between shrink-0">
+                        <div className="flex items-center gap-4">
+                            <div className="p-2 rounded-lg bg-primary/10 text-primary border border-primary/20">
+                                <History size={20} />
                             </div>
-                        ) : selectedDiff ? (
-                            <OverlayScrollbarsComponent 
-                                element="div" 
-                                options={{ scrollbars: { autoHide: 'move', theme: 'os-theme-light' } }}
-                                className="h-full"
-                            >
-                                <div className="p-4">
-                                    <Prism
-                                        language="diff"
-                                        style={oneDark}
-                                        customStyle={{ 
-                                            margin: 0, 
-                                            padding: '1rem', 
-                                            background: 'transparent', 
-                                            fontSize: '11px',
-                                            lineHeight: '1.6'
-                                        }}
-                                        showLineNumbers={false}
-                                    >
-                                        {selectedDiff}
-                                    </Prism>
+                            <div className="space-y-1">
+                                <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
+                                    {selectedCommitInfo?.message || 'Git Inspector'}
+                                </DialogTitle>
+                                <div className="flex items-center gap-3 text-[10px] text-zinc-500 uppercase tracking-widest font-black">
+                                    <span className="text-primary/70">{selectedCommitInfo?.author || 'Unknown'}</span>
+                                    <span>•</span>
+                                    <span>{selectedCommitInfo?.date ? (
+                                        /^\d+$/.test(selectedCommitInfo.date) 
+                                            ? new Date(parseInt(selectedCommitInfo.date) * 1000).toLocaleString()
+                                            : new Date(selectedCommitInfo.date).toLocaleString()
+                                    ) : 'N/A'}</span>
+                                    {selectedCommitInfo?.hash && (
+                                        <>
+                                            <span>•</span>
+                                            <span className="font-mono text-zinc-400">{selectedCommitInfo.hash}</span>
+                                        </>
+                                    )}
                                 </div>
-                            </OverlayScrollbarsComponent>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 h-6 px-2">
+                                {diffFiles.length} {diffFiles.length === 1 ? 'File' : 'Files'} Changed
+                            </Badge>
+                        </div>
+                    </div>
+                    
+                    {/* Modal Content - Two Pane */}
+                    <div className="flex-1 flex min-h-0 bg-black/40 relative">
+                        {diffLoading ? (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 z-10 bg-black/60 backdrop-blur-sm">
+                                <RefreshCcw size={32} className="text-primary animate-spin" />
+                                <p className="text-xs font-bold uppercase tracking-widest text-zinc-400 animate-pulse">Reconstructing Changes</p>
+                            </div>
+                        ) : diffFiles.length > 0 ? (
+                            <>
+                                {/* Left Pane: File List */}
+                                <div className="w-72 border-r border-white/5 bg-zinc-950/50 flex flex-col shrink-0">
+                                    <div className="p-3 border-b border-white/5 bg-black/20 text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                                        Affected Files
+                                    </div>
+                                    <OverlayScrollbarsComponent 
+                                        element="div"
+                                        options={{ scrollbars: { autoHide: 'move', theme: 'os-theme-light' } }}
+                                        className="flex-1"
+                                    >
+                                        <div className="p-2 space-y-1">
+                                            {diffFiles.map(file => (
+                                                <button
+                                                    key={file.path}
+                                                    onClick={() => setActiveDiffFile(file.path)}
+                                                    className={`w-full text-left p-2 rounded-lg text-xs transition-all flex items-center gap-3 group ${
+                                                        activeDiffFile === file.path 
+                                                            ? 'bg-primary/10 text-primary border border-primary/20 font-bold' 
+                                                            : 'text-zinc-400 hover:text-white hover:bg-white/5 border border-transparent'
+                                                    }`}
+                                                >
+                                                    <File size={14} className={activeDiffFile === file.path ? 'text-primary' : 'text-zinc-600'} />
+                                                    <span className="truncate">{file.path}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </OverlayScrollbarsComponent>
+                                </div>
+
+                                {/* Right Pane: Diff View */}
+                                <div className="flex-1 min-w-0 bg-zinc-950/20">
+                                    <OverlayScrollbarsComponent 
+                                        element="div" 
+                                        options={{ scrollbars: { autoHide: 'move', theme: 'os-theme-light' } }}
+                                        className="h-full"
+                                    >
+                                        <div className="p-6">
+                                            <div className="mb-4 flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <FileText size={16} className="text-primary/60" />
+                                                    <span className="text-sm font-mono text-zinc-300 font-bold">{activeDiffFile}</span>
+                                                </div>
+                                            </div>
+                                            <div className="rounded-xl overflow-hidden border border-white/5 bg-black/40">
+                                                <Prism
+                                                    language="diff"
+                                                    style={oneDark}
+                                                    customStyle={{ 
+                                                        margin: 0, 
+                                                        padding: '1.5rem', 
+                                                        background: 'transparent', 
+                                                        fontSize: '12px',
+                                                        lineHeight: '1.7'
+                                                    }}
+                                                    showLineNumbers={false}
+                                                >
+                                                    {diffFiles.find(f => f.path === activeDiffFile)?.content || ''}
+                                                </Prism>
+                                            </div>
+                                        </div>
+                                    </OverlayScrollbarsComponent>
+                                </div>
+                            </>
                         ) : (
-                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 opacity-20">
-                                <CodeIcon size={48} />
-                                <p className="text-sm font-bold uppercase tracking-widest">No Diff Data Available</p>
+                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 opacity-30 grayscale">
+                                <GitBranch size={64} className="text-zinc-600 mb-2" />
+                                <div className="text-center">
+                                    <p className="text-lg font-bold uppercase tracking-[0.2em]">Zero Delta</p>
+                                    <p className="text-[10px] font-medium text-zinc-500 uppercase tracking-widest mt-1">No file modifications detected in this view</p>
+                                </div>
                             </div>
                         )}
                     </div>
                     
                     <DialogFooter className="p-4 border-t border-white/5 bg-zinc-900/50 shrink-0">
-                        <Button variant="ghost" onClick={() => setIsDiffModalOpen(false)} className="text-zinc-400 hover:text-white">
-                            Close Inspector
+                        <Button variant="ghost" onClick={() => setIsDiffModalOpen(false)} className="text-zinc-400 hover:text-white font-bold uppercase tracking-widest text-[10px]">
+                            Dismiss Inspector
                         </Button>
                     </DialogFooter>
                 </DialogContent>
