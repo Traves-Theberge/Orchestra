@@ -327,45 +327,76 @@ export function TimelineCard({ timeline }: { timeline: TimelineItem[] }) {
                 <p className="text-[10px] font-black uppercase tracking-[0.3em]">Awaiting Uplink...</p>
               </div>
             ) : (
-              timeline.map((item, idx) => {
-                const narrative = getHumanNarrative(item)
-                const data = item.data as any
-                return (
-                  <div key={`${item.at}-${idx}`} className="group flex items-start gap-3 p-2.5 rounded-xl border border-transparent hover:border-border/40 hover:bg-muted/20 transition-all duration-300">
-                    <div className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-border/50 ${narrative.bg} shadow-sm transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3`}>
-                      <Activity className={`h-3.5 w-3.5 ${narrative.color}`} />
-                    </div>
-                    <div className="min-w-0 flex-1 space-y-0.5">
-                      <div className="flex items-center justify-between gap-4">
-                        <p className="truncate text-[11px] font-black uppercase tracking-wider text-foreground/90">{narrative.title}</p>
-                        <span className="shrink-0 font-mono text-[8px] font-bold text-muted-foreground/30 tabular-nums">
-                          {new Date(item.at).toLocaleTimeString([], { hour12: false })}
-                        </span>
-                      </div>
-                      <p className="text-[11px] font-medium text-muted-foreground/70 leading-relaxed group-hover:text-foreground/80 transition-colors">{narrative.desc}</p>
-
-                      <div className="flex items-center gap-2 pt-1">
-                        <div className="flex items-center gap-1 text-[8px] font-black uppercase tracking-widest text-primary/60 bg-primary/5 px-1.5 py-0.5 rounded border border-primary/10">
-                          <Ticket size={8} />
-                          {data.issue_identifier || 'SYS'}
-                        </div>
-                        {data.provider && (
-                          <div className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/40">
-                            via {data.provider}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )
-              })
+              timeline.map((item, idx) => (
+                <TimelineItemRow key={`${item.at}-${idx}`} item={item} narrative={getHumanNarrative(item)} />
+              ))
             )}
           </div>
         </OverlayScrollbarsComponent>
       </CardContent>
     </Card>
   )
-  }
+}
+
+function TimelineItemRow({ item, narrative }: { item: TimelineItem; narrative: any }) {
+  const [expanded, setExpanded] = useState(false)
+  const data = item.data as any
+
+  return (
+    <div className={`group flex flex-col rounded-xl border transition-all duration-300 ${expanded ? 'border-border/60 bg-muted/30 shadow-inner' : 'border-transparent hover:border-border/40 hover:bg-muted/20'}`}>
+      <button 
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-start gap-3 p-2.5 w-full text-left"
+      >
+        <div className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-border/50 ${narrative.bg} shadow-sm transition-transform duration-500 ${expanded ? 'scale-110 rotate-3' : 'group-hover:scale-110 group-hover:rotate-3'}`}>
+          <Activity className={`h-3.5 w-3.5 ${narrative.color}`} />
+        </div>
+        <div className="min-w-0 flex-1 space-y-0.5">
+          <div className="flex items-center justify-between gap-4">
+            <p className="truncate text-[11px] font-black uppercase tracking-wider text-foreground/90">{narrative.title}</p>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="font-mono text-[8px] font-bold text-muted-foreground/30 tabular-nums">
+                {new Date(item.at).toLocaleTimeString([], { hour12: false })}
+              </span>
+              <ChevronDown size={12} className={`text-muted-foreground/40 transition-transform duration-300 ${expanded ? 'rotate-180' : ''}`} />
+            </div>
+          </div>
+          <p className="text-[11px] font-medium text-muted-foreground/70 leading-relaxed group-hover:text-foreground/80 transition-colors line-clamp-1">{narrative.desc}</p>
+          
+          <div className="flex items-center gap-2 pt-1">
+            <div className="flex items-center gap-1 text-[8px] font-black uppercase tracking-widest text-primary/60 bg-primary/5 px-1.5 py-0.5 rounded border border-primary/10">
+              <Ticket size={8} />
+              {data.issue_identifier || 'SYS'}
+            </div>
+            {data.provider && (
+              <div className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/40">
+                via {data.provider}
+              </div>
+            )}
+          </div>
+        </div>
+      </button>
+      
+      {expanded && (
+        <div className="px-4 pb-4 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="rounded-lg bg-black/40 p-3 border border-border/40 shadow-inner">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/40">Raw Telemetry Payload</span>
+              <Badge variant="outline" className="text-[7px] font-black opacity-40">JSON</Badge>
+            </div>
+            <SyntaxHighlighter
+              language="json"
+              style={oneDark}
+              customStyle={{ margin: 0, padding: 0, background: 'transparent', fontSize: '10px' }}
+            >
+              {JSON.stringify(data, null, 2)}
+            </SyntaxHighlighter>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export function SettingsCard({
   loadingConfig,
