@@ -8,9 +8,10 @@ interface TerminalViewProps {
     projectId?: string
     baseUrl: string
     onClose?: () => void
+    theme?: 'light' | 'dark'
 }
 
-export const TerminalView: React.FC<TerminalViewProps> = ({ sessionId, projectId, baseUrl, onClose }) => {
+export const TerminalView: React.FC<TerminalViewProps> = ({ sessionId, projectId, baseUrl, onClose, theme }) => {
     const terminalRef = useRef<HTMLDivElement>(null)
     const xtermRef = useRef<Terminal | null>(null)
     const wsRef = useRef<WebSocket | null>(null)
@@ -18,7 +19,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ sessionId, projectId
     useEffect(() => {
         if (!terminalRef.current) return
 
-        const isDark = document.documentElement.classList.contains('dark')
+        const isDark = theme === 'dark' || document.documentElement.classList.contains('dark')
         const term = new Terminal({
             cursorBlink: true,
             fontSize: 12,
@@ -106,7 +107,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ sessionId, projectId
             ws.close()
             term.dispose()
         }
-    }, [sessionId, projectId, baseUrl])
+    }, [sessionId, projectId, baseUrl, theme])
 
     return (
         <div className="w-full h-full bg-background p-2 rounded-xl border border-border overflow-hidden">

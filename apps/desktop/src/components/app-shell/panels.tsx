@@ -239,79 +239,133 @@ export function TimelineCard({ timeline }: { timeline: TimelineItem[] }) {
     overflow: { x: 'hidden' as const, y: 'scroll' as const }
   }), [])
 
-  const getEventIcon = (type: string) => {
-    switch (type) {
-      case 'run_started': return <Activity className="h-3.5 w-3.5 text-blue-500" />
-      case 'run_succeeded': return <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
-      case 'run_failed': return <AlertCircle className="h-3.5 w-3.5 text-red-500" />
-      case 'retry_scheduled': return <RefreshCcw className="h-3.5 w-3.5 text-amber-500" />
-      case 'hook_started': return <Wrench className="h-3.5 w-3.5 text-muted-foreground" />
-      case 'hook_completed': return <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
-      default: return <Info className="h-3.5 w-3.5 text-muted-foreground" />
+  const getHumanNarrative = (item: TimelineItem) => {
+    const data = item.data as any
+    const id = data.issue_identifier || 'System'
+    const provider = (data.provider as string) || ''
+
+    switch (item.type) {
+      case 'run_started':
+        return {
+          title: 'Session Initiated',
+          desc: `Agent ${provider} started working on ${id}`,
+          color: 'text-blue-500',
+          bg: 'bg-blue-500/10'
+        }
+      case 'run_succeeded':
+        return {
+          title: 'Task Resolved',
+          desc: `${id} successfully completed by ${provider}`,
+          color: 'text-primary',
+          bg: 'bg-primary/10'
+        }
+      case 'run_failed':
+        return {
+          title: 'Execution Fault',
+          desc: `${id} failed during ${provider} turn`,
+          color: 'text-red-500',
+          bg: 'bg-red-500/10'
+        }
+      case 'retry_scheduled':
+        return {
+          title: 'Auto-Recovery',
+          desc: `Rescheduling ${id} for another attempt`,
+          color: 'text-amber-500',
+          bg: 'bg-amber-500/10'
+        }
+      case 'hook_started':
+        return {
+          title: 'Environment Setup',
+          desc: `Provisioning workspace for ${id}`,
+          color: 'text-blue-400',
+          bg: 'bg-blue-400/10'
+        }
+      case 'hook_completed':
+        return {
+          title: 'Setup Verified',
+          desc: `Workspace ready for agent execution`,
+          color: 'text-emerald-500',
+          bg: 'bg-emerald-500/10'
+        }
+      default:
+        return {
+          title: item.type.replace(/_/g, ' '),
+          desc: (data.message as string) || 'System signal recorded',
+          color: 'text-muted-foreground',
+          bg: 'bg-muted/20'
+        }
     }
   }
 
   return (
-    <Card className="h-full border bg-card shadow-lg dark:bg-card flex flex-col">
-      <CardHeader className="pb-3">
+    <Card className="h-full border border-border/40 bg-card/40 backdrop-blur-xl shadow-2xl flex flex-col transition-all duration-500 hover:shadow-primary/5">
+      <CardHeader className="pb-3 border-b border-border/20 bg-muted/5 shrink-0">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-            <History className="h-4 w-4" />
-            Activity Feed
-          </CardTitle>
-          <Badge variant="outline" className="text-[10px] font-mono">{timeline.length} events</Badge>
+          <div className="space-y-1">
+            <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
+              <Activity size={14} className="text-primary" />
+              Runtime Pulse
+            </CardTitle>
+            <CardDescription className="text-[10px] font-medium text-muted-foreground/60">Live operational narrative stream</CardDescription>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="h-5 px-2 bg-background border-border/50 text-[9px] font-black tabular-nums">{timeline.length}</Badge>
+            <div className="h-2 w-2 rounded-full bg-primary animate-pulse shadow-[0_0_8px_rgba(var(--primary),0.6)]" />
+          </div>
         </div>
-        <CardDescription className="text-[11px]">Real-time operational event stream</CardDescription>
       </CardHeader>
-      <OverlayScrollbarsComponent
-        element="div"
-        options={osOptions}
-        className="flex-1 min-h-0"
-      >        <CardContent className="px-4 pb-4">
-          {timeline.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground/40">
-              <Activity className="h-8 w-8 mb-2 opacity-10" />
-              <p className="text-xs italic uppercase tracking-wider">Awaiting telemetry...</p>
-            </div>
-          ) : (
-            <div className="relative space-y-3 before:absolute before:left-[11px] before:top-2 before:h-[calc(100%-16px)] before:w-[1px] before:bg-border/30">
-              {timeline.map((item, idx) => (
-                <div key={`${item.type}-${idx}`} className="relative pl-8 group">
-                  <div className="absolute left-0 top-0.5 z-10 grid h-6 w-6 place-items-center rounded-full border bg-card shadow-sm group-hover:border-primary/40 transition-colors">
-                    {getEventIcon(item.type)}
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-bold text-foreground capitalize">{item.type.replace(/_/g, ' ')}</span>
-                      <span className="text-[9px] font-medium text-muted-foreground/60 font-mono">
-                        {new Date(item.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                      </span>
+      <CardContent className="flex-1 min-h-0 p-0 overflow-hidden">
+        <OverlayScrollbarsComponent
+          element="div"
+          options={osOptions}
+          className="h-full"
+        >
+          <div className="p-3 space-y-2">
+            {timeline.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-32 opacity-20 grayscale">
+                <SignalLow size={48} className="mb-4" strokeWidth={1} />
+                <p className="text-[10px] font-black uppercase tracking-[0.3em]">Awaiting Uplink...</p>
+              </div>
+            ) : (
+              timeline.map((item, idx) => {
+                const narrative = getHumanNarrative(item)
+                const data = item.data as any
+                return (
+                  <div key={`${item.at}-${idx}`} className="group flex items-start gap-3 p-2.5 rounded-xl border border-transparent hover:border-border/40 hover:bg-muted/20 transition-all duration-300">
+                    <div className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-border/50 ${narrative.bg} shadow-sm transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3`}>
+                      <Activity className={`h-3.5 w-3.5 ${narrative.color}`} />
                     </div>
-
-                    {(item.data as any).issue_identifier && (
-                      <div className="flex items-center gap-1.5 text-[10px] font-mono text-primary font-bold">
-                        <Ticket className="h-3 w-3" />
-                        {(item.data as any).issue_identifier}
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      <div className="flex items-center justify-between gap-4">
+                        <p className="truncate text-[11px] font-black uppercase tracking-wider text-foreground/90">{narrative.title}</p>
+                        <span className="shrink-0 font-mono text-[8px] font-bold text-muted-foreground/30 tabular-nums">
+                          {new Date(item.at).toLocaleTimeString([], { hour12: false })}
+                        </span>
                       </div>
-                    )}
+                      <p className="text-[11px] font-medium text-muted-foreground/70 leading-relaxed group-hover:text-foreground/80 transition-colors">{narrative.desc}</p>
 
-                    <div className="rounded-lg border bg-muted/30 p-1.5 group-hover:bg-muted/50 transition-colors">
-                      <pre className="max-h-24 overflow-auto text-[10px] text-muted-foreground leading-relaxed whitespace-pre-wrap">
-                        {typeof (item.data as any).last_message === 'string'
-                          ? (item.data as any).last_message
-                          : JSON.stringify(item.data, null, 2)}
-                      </pre>
+                      <div className="flex items-center gap-2 pt-1">
+                        <div className="flex items-center gap-1 text-[8px] font-black uppercase tracking-widest text-primary/60 bg-primary/5 px-1.5 py-0.5 rounded border border-primary/10">
+                          <Ticket size={8} />
+                          {data.issue_identifier || 'SYS'}
+                        </div>
+                        {data.provider && (
+                          <div className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/40">
+                            via {data.provider}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </OverlayScrollbarsComponent>
+                )
+              })
+            )}
+          </div>
+        </OverlayScrollbarsComponent>
+      </CardContent>
     </Card>
   )
-}
+  }
 
 export function SettingsCard({
   loadingConfig,
@@ -714,6 +768,7 @@ export function IssueDetailView({
   timeline = [],
   availableAgents = [],
   allTools = [],
+  theme,
 }: {
   result: Record<string, unknown> | null
   onUpdate?: (updates: Record<string, unknown>) => Promise<void>
@@ -723,6 +778,7 @@ export function IssueDetailView({
   timeline?: TimelineItem[]
   availableAgents?: string[]
   allTools?: any[]
+  theme?: 'light' | 'dark'
 }) {
   if (!initialResult || typeof initialResult !== 'object') {
     return <div className="p-8 text-center text-muted-foreground italic">Invalid issue data provided.</div>
@@ -1408,6 +1464,7 @@ export function IssueDetailView({
                        sessionId={`issue-${identifier}`} 
                        projectId={projectId} 
                        baseUrl={config.baseUrl} 
+                       theme={theme}
                    />
                 </div>
               ) : (

@@ -1085,11 +1085,12 @@ export default function App() {
               ) : null}
 
               {sectionVisibility.showConsole && config ? (
-                <section className="col-span-12 flex flex-col flex-1 min-h-[600px] border border-white/5 rounded-xl overflow-hidden shadow-2xl">
+                <section className="col-span-12 flex flex-col flex-1 min-h-[600px] border border-border rounded-xl overflow-hidden shadow-2xl">
                   <TerminalMultiplexer
                     activeTerminals={openTerminals}
                     baseUrl={config.baseUrl}
                     onCloseTerminal={handleCloseTerminal}
+                    theme={theme}
                   />
                 </section>
               ) : null}
@@ -1148,12 +1149,14 @@ export default function App() {
                 result={issueLookupResult}
                 config={config}
                 timeline={timeline}
-                snapshot={snapshot}
                 availableAgents={availableAgents}
                 allTools={allTools}
+                snapshot={snapshot}
                 onUpdate={(updates) => handleIssueUpdate(issueLookupId, updates)}
                 onStopSession={(p) => handleStopSession(issueLookupId, p)}
+                theme={theme}
                 />
+
 
             ) : (
               <p className="text-center text-sm text-muted-foreground py-10">No issue data available.</p>

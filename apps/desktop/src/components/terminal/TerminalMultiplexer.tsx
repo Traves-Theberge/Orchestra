@@ -16,12 +16,14 @@ interface TerminalMultiplexerProps {
     activeTerminals: TerminalNode[]
     baseUrl: string
     onCloseTerminal: (id: string) => void
+    theme?: 'light' | 'dark'
 }
 
 export const TerminalMultiplexer: React.FC<TerminalMultiplexerProps> = ({ 
     activeTerminals, 
     baseUrl,
-    onCloseTerminal 
+    onCloseTerminal,
+    theme
 }) => {
     const [currentNode, setCurrentNode] = useState<MosaicNode<string> | null>(null)
 
@@ -88,6 +90,7 @@ export const TerminalMultiplexer: React.FC<TerminalMultiplexerProps> = ({
                                     sessionId={id} 
                                     projectId={term?.projectId} 
                                     baseUrl={baseUrl} 
+                                    theme={theme}
                                 />
                             </MosaicWindow>
                         )
