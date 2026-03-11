@@ -1091,38 +1091,24 @@ export function IssueDetailView({
               {/* Controls Strip */}
               <div className="flex flex-wrap gap-3 p-4 bg-black/40 border-b border-white/5">
                 <CustomDropdown
-                  className="w-40 border-white/10 bg-black hover:bg-white/5"
+                  className="w-44 border-white/10 bg-black hover:bg-white/5"
                   value={localState}
                   options={AGENT_STATES.map((s) => ({ label: s, value: s }))}
                   onChange={handleStateChange}
                 />
                 <CustomDropdown
-                  className="w-48 border-white/10 bg-black hover:bg-white/5"
-                  value={localProvider || 'default'}
-                  options={[
-                    { label: 'System Default', value: 'default', icon: <Settings2 className="h-3 w-3 text-muted-foreground" /> },
-                    ...availableAgents.map((p) => ({
-                      label: p.charAt(0).toUpperCase() + p.slice(1),
-                      value: p,
-                      icon: <Cpu className="h-3 w-3 text-primary/70" />,
-                    })),
-                  ]}
-                  onChange={handleProviderChange}
-                  placeholder="Select Provider..."
-                />
-                <CustomDropdown
-                  className="w-56 border-white/10 bg-black hover:bg-white/5"
+                  className="flex-1 min-w-[240px] border-white/10 bg-black hover:bg-white/5"
                   value={localAssignee.startsWith('agent-') ? localAssignee : (availableAgents.includes(localAssignee) ? `agent-${localAssignee}` : localAssignee)}
                   options={[
                     { label: 'Unassigned', value: 'Unassigned', icon: <Users className="h-3 w-3 text-muted-foreground" /> },
                     ...availableAgents.map((agent) => ({
-                      label: agent.charAt(0).toUpperCase() + agent.slice(1),
+                      label: `Agent: ${agent.charAt(0).toUpperCase() + agent.slice(1)}`,
                       value: `agent-${agent}`,
                       icon: <Bot className="h-3 w-3 text-primary/70" />,
                     })),
                   ]}
                   onChange={handleAssigneeChange}
-                  placeholder="Assign Agent..."
+                  placeholder="Assign Workforce Agent..."
                 />
               </div>
 
