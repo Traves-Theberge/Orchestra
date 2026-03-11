@@ -193,7 +193,7 @@ export function TopBar({
             <IconButton icon={<Settings2 className="h-3.5 w-3.5" />} title="Control Plane Settings" onClick={onOpenSettings} />
             <IconButton
               icon={theme === 'dark' ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-              title={theme === 'dark' ? 'Switch to Radiant Mode' : 'Switch to Midnight Mode'}
+              title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             />
             <Button
