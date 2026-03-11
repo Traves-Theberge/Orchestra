@@ -4,35 +4,28 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/orchestra/orchestra/apps/backend/internal/terminal"
 )
 
 type Registry struct {
-	runners map[Provider]Runner
+	runners     map[Provider]Runner
+	termManager *terminal.Manager
 }
 
 func NewRegistry(commandByProvider map[string]string) *Registry {
-	runners := map[Provider]Runner{}
-	for provider, command := range commandByProvider {
-		p := Provider(strings.ToLower(strings.TrimSpace(provider)))
-		if p == "" || strings.TrimSpace(command) == "" {
-			continue
-		}
-		if p == ProviderCodex && strings.Contains(strings.ToLower(command), "app-server") {
-			runners[p] = NewCodexAppServerRunner(command)
-			continue
-		}
-		switch p {
-		case ProviderClaude:
-			runners[p] = NewClaudeRunner(command)
-		case ProviderOpenCode:
-			runners[p] = NewOpenCodeRunner(command)
-		case ProviderGemini:
-			runners[p] = NewGeminiRunner(command)
-		default:
-			runners[p] = NewCommandRunner(p, command)
-		}
+	return NewRegistryWithTerminal(commandByProvider, nil)
+}
+
+func NewRegistryWithTerminal(commandByProvider map[string]string, tm *terminal.Manager) *Registry {
+	r := &Registry{
+		runners:     map[Provider]Runner{},
+		termManager: tm,
 	}
-	return &Registry{runners: runners}
+	for provider, command := range commandByProvider {
+		r.SetCommand(Provider(provider), command)
+	}
+	return r
 }
 
 func (r *Registry) RunTurn(ctx context.Context, provider Provider, request TurnRequest, onEvent EventHandler) (TurnResult, error) {
@@ -73,6 +66,10 @@ func (r *Registry) SetCommand(provider Provider, command string) {
 	case ProviderGemini:
 		r.runners[p] = NewGeminiRunner(command)
 	default:
-		r.runners[p] = NewCommandRunner(p, command)
+		runner := NewCommandRunner(p, command)
+		if r.termManager != nil {
+			runner.WithTerminalManager(r.termManager)
+		}
+		r.runners[p] = runner
 	}
 }

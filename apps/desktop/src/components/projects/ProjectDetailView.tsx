@@ -2,13 +2,14 @@ import React, { useState, useEffect, useMemo } from 'react'
 import {
     ArrowLeft, Folder, Globe, History, Zap, ExternalLink,
     Calendar, Code as CodeIcon, GitBranch, RefreshCcw, Trash2, Github,
-    FileText, Activity, Layers, ChevronRight, File, Folder as FolderIcon, Info, ShieldCheck, AlertCircle
+    FileText, Activity, Layers, ChevronRight, File, Folder as FolderIcon, Info, ShieldCheck, AlertCircle, Terminal
 } from 'lucide-react'
 import type { Project, ProjectStats, SnapshotPayload, BackendConfig } from '@/lib/orchestra-types'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { KanbanBoard } from '@/components/app-shell/panels'
 import { fetchProjectTree, fetchProjectGitHistory, fetchProjectGitStatus, fetchProjectGitDiff, refreshProject, gitCommit, gitPush, gitPull, fetchProjectFileContent } from '@/lib/orchestra-client'
+import { TerminalMultiplexer } from '../terminal/TerminalMultiplexer'
 import { Skeleton } from '@/components/ui/skeleton'
 import { OverlayScrollbarsComponent } from 'overlayscrollbars-react'
 import { Prism } from 'react-syntax-highlighter'
@@ -39,7 +40,7 @@ interface ProjectDetailViewProps {
     onDeleteProject: (id: string) => Promise<void>
 }
 
-type ProjectTab = 'overview' | 'tasks' | 'files' | 'git'
+type ProjectTab = 'overview' | 'tasks' | 'files' | 'git' | 'terminal'
 
 const calculateReliabilityIndex = (stats?: ProjectStats): number => {
     if (!stats || stats.total_sessions === 0) return 100
@@ -248,6 +249,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         { id: 'tasks', label: 'Board', icon: <CodeIcon size={14} /> },
         { id: 'files', label: 'Files', icon: <FileText size={14} /> },
         { id: 'git', label: 'Git', icon: <GitBranch size={14} /> },
+        { id: 'terminal', label: 'Terminal', icon: <Terminal size={14} /> },
     ] as const
 
     const osOptions = useMemo(() => ({
@@ -720,6 +722,39 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                                     </div>
                                 </div>
                             )}
+                        </div>
+                    )}
+
+                    {activeTab === 'terminal' && config && (
+                        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 flex-1 flex flex-col min-h-0">
+                            <div className="flex-1 flex flex-col bg-[#0c0c0e] rounded-xl border border-white/10 overflow-hidden shadow-2xl relative">
+                                <div className="p-2 border-b border-white/5 bg-white/5 flex items-center justify-between shrink-0">
+                                    <div className="flex items-center gap-3">
+                                        <Terminal size={14} className="text-primary" />
+                                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60">Multi-Agent Orchestration Console</span>
+                                        <Badge variant="outline" className="h-5 px-1.5 text-[9px] bg-primary/5 text-primary border-primary/20">Dmux Active</Badge>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[9px] font-mono text-zinc-500 uppercase tracking-widest">{project.root_path}</span>
+                                    </div>
+                                </div>
+                                <div className="flex-1 min-h-0">
+                                    <TerminalMultiplexer
+                                        baseUrl={config.baseUrl}
+                                        onCloseTerminal={() => { }}
+                                        activeTerminals={[
+                                            { id: `project-${project.id}`, title: 'Project Shell', projectId: project.id },
+                                            ...(snapshot?.running || [])
+                                                .filter(r => boardIssues.some(i => i.id === r.issue_id && i.project_id === project.id))
+                                                .map(r => ({
+                                                    id: `issue-${r.issue_identifier}`,
+                                                    title: `Agent: ${r.issue_identifier}`,
+                                                    projectId: project.id
+                                                }))
+                                        ]}
+                                    />
+                                </div>
+                            </div>
                         </div>
                     )}
                 </div>

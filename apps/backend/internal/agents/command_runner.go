@@ -15,16 +15,24 @@ import (
 	"sync"
 	"time"
 
+	"github.com/acarl005/stripansi"
+	"github.com/orchestra/orchestra/apps/backend/internal/terminal"
 	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
 )
 
 type CommandRunner struct {
-	provider Provider
-	command  string
+	provider    Provider
+	command     string
+	termManager *terminal.Manager
 }
 
 func NewCommandRunner(provider Provider, command string) *CommandRunner {
 	return &CommandRunner{provider: provider, command: strings.TrimSpace(command)}
+}
+
+func (r *CommandRunner) WithTerminalManager(tm *terminal.Manager) *CommandRunner {
+	r.termManager = tm
+	return r
 }
 
 const (
@@ -68,6 +76,11 @@ func (r *CommandRunner) RunTurn(ctx context.Context, request TurnRequest, onEven
 	resolvedCommand := strings.ReplaceAll(commandLine, "{{prompt}}", shellQuote(finalPrompt))
 	commandContainsPrompt := strings.Contains(commandLine, "{{prompt}}")
 
+	// If we have a terminal manager, we can run in a persistent PTY
+	if r.termManager != nil {
+		return r.runInPTY(ctx, request, sessionID, resolvedCommand, finalPrompt, commandContainsPrompt, onEvent)
+	}
+
 	cmdCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	if request.Timeout > 0 {
@@ -77,6 +90,7 @@ func (r *CommandRunner) RunTurn(ctx context.Context, request TurnRequest, onEven
 	}
 
 	cmd := exec.CommandContext(cmdCtx, "sh", "-lc", resolvedCommand)
+	cmd.Env = append(os.Environ(), "ORCHESTRA_SESSION_ID=" + sessionID)
 	cmd.Dir = request.Workspace
 
 	stdout, err := cmd.StdoutPipe()
@@ -294,6 +308,120 @@ func (r *CommandRunner) RunTurn(ctx context.Context, request TurnRequest, onEven
 	return result, nil
 }
 
+func (r *CommandRunner) runInPTY(
+	ctx context.Context,
+	request TurnRequest,
+	sessionID string,
+	resolvedCommand string,
+	finalPrompt string,
+	commandContainsPrompt bool,
+	onEvent EventHandler,
+) (TurnResult, error) {
+	// Create or attach to a persistent PTY session for this issue/project
+	terminalID := fmt.Sprintf("issue-%s", request.IssueIdentifier)
+	session, err := r.termManager.GetOrCreateSession(terminalID, request.Workspace)
+	if err != nil {
+		return TurnResult{}, fmt.Errorf("failed to create terminal session: %w", err)
+	}
+
+	collector := &outputCollector{}
+	
+	// We want to capture the output from now on
+	// Note: Existing data in the log buffer will be replayed when we add the handler,
+	// but for an active turn, we only care about the new output triggered by our prompt.
+	// However, parsing logic expects full SSE streams.
+	
+	done := make(chan bool)
+	var streamErr error
+	var streamErrMu sync.Mutex
+	
+	setStreamErr := func(err error) {
+		if err == nil {
+			return
+		}
+		streamErrMu.Lock()
+		defer streamErrMu.Unlock()
+		if streamErr == nil {
+			streamErr = err
+		}
+	}
+
+	// Add a handler to parse events from the PTY stream
+	// We strip ANSI because PTY includes colors/control chars that break JSON parsing
+	session.AddHandler(func(data []byte) {
+		cleanData := stripansi.Strip(string(data))
+		lines := strings.Split(cleanData, "\n")
+		for _, line := range lines {
+			if strings.TrimSpace(line) == "" {
+				continue
+			}
+			if !collector.append(line) {
+				setStreamErr(fmt.Errorf("agent exceeded maximum output size"))
+				return
+			}
+			
+			event := parseLineToEvent(r.provider, "pty", line)
+			event.SessionID = sessionID
+			
+			if onEvent != nil {
+				onEvent(event)
+			}
+			
+			collector.mergeUsage(event.Usage)
+			
+			if _, blocked := detectBlockingEvent(event); blocked {
+				// In PTY mode, we don't necessarily want to kill the process on blocking events
+				// as the user might want to interject.
+			}
+			
+			// Detect completion event to stop waiting
+			if event.Kind == "turn.completed" || event.Kind == "result" || strings.Contains(event.Kind, "result/") {
+				select {
+				case done <- true:
+				default:
+				}
+			}
+		}
+	})
+
+	// Send the command/prompt to the PTY
+	if !commandContainsPrompt {
+		session.Write([]byte(finalPrompt + "\n"))
+	} else {
+		// If the command itself was resolved with the prompt, we might need a different approach.
+		// For now, assume resolvedCommand is what we want to run if it's a new session.
+		// But in a persistent PTY, we usually just want to send the prompt to an existing shell.
+		session.Write([]byte(resolvedCommand + "\n"))
+	}
+
+	// Wait for completion or timeout
+	timeout := request.Timeout
+	if timeout == 0 {
+		timeout = 10 * time.Minute // Default long timeout for PTY sessions
+	}
+
+	select {
+	case <-done:
+		// Success
+	case <-time.After(timeout):
+		setStreamErr(fmt.Errorf("agent turn timed out in PTY"))
+	case <-ctx.Done():
+		setStreamErr(ctx.Err())
+	}
+
+	streamErrMu.Lock()
+	err = streamErr
+	streamErrMu.Unlock()
+
+	return TurnResult{
+		Provider:  r.provider,
+		SessionID: sessionID,
+		ExitCode:  0, // Exit codes are harder to get from persistent PTYs without closing them
+		Output:    collector.output(),
+		Usage:     collector.usage(),
+	}, err
+}
+
 func detectBlockingEvent(event Event) (string, bool) {
 	payload := event.Raw
 	method := strings.TrimSpace(firstString(payload, "method"))
@@ -357,7 +485,7 @@ func parseLineToEvent(provider Provider, source string, line string) Event {
 	now := time.Now().UTC()
 	trimmed := strings.TrimSpace(line)
 	if trimmed == "" {
-		return Event{Provider: provider, Kind: source, Timestamp: now}
+		return Event{Provider: provider, Kind: source, Timestamp: now, RawLine: line}
 	}
 
 	if strings.HasPrefix(trimmed, "event:") {
@@ -365,12 +493,13 @@ func parseLineToEvent(provider Provider, source string, line string) Event {
 		if eventName == "" {
 			eventName = source
 		}
-		return Event{Provider: provider, Kind: eventName, Timestamp: now}
+		return Event{Provider: provider, Kind: eventName, Timestamp: now, RawLine: line}
 	}
 	if strings.HasPrefix(trimmed, "id:") || strings.HasPrefix(trimmed, "retry:") {
-		return Event{Provider: provider, Kind: source, Timestamp: now}
+		return Event{Provider: provider, Kind: source, Timestamp: now, RawLine: line}
 	}
 
+	rawLineForEvent := line
 	if strings.HasPrefix(trimmed, "data:") {
 		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
 	}
@@ -380,7 +509,7 @@ func parseLineToEvent(provider Provider, source string, line string) Event {
 		usage := extractUsage(payload)
 		kind := extractKind(provider, source, payload)
 		msg := extractMessage(payload)
-		return Event{Provider: provider, Kind: kind, Message: msg, Raw: payload, Usage: usage, Timestamp: now}
+		return Event{Provider: provider, Kind: kind, Message: msg, Raw: payload, Usage: usage, Timestamp: now, RawLine: rawLineForEvent}
 	}
 
 	var payloadList []any
@@ -400,6 +529,7 @@ func parseLineToEvent(provider Provider, source string, line string) Event {
 					Timestamp: now,
 				}
 				if _, blocked := detectBlockingEvent(event); blocked {
+					event.RawLine = rawLineForEvent
 					return event
 				}
 				usage = mergeTokenUsage(usage, event.Usage)
@@ -415,11 +545,11 @@ func parseLineToEvent(provider Provider, source string, line string) Event {
 			}
 		}
 		if raw != nil {
-			return Event{Provider: provider, Kind: kind, Message: msg, Raw: raw, Usage: usage, Timestamp: now}
+			return Event{Provider: provider, Kind: kind, Message: msg, Raw: raw, Usage: usage, Timestamp: now, RawLine: rawLineForEvent}
 		}
 	}
 
-	return Event{Provider: provider, Kind: source, Message: trimmed, Timestamp: now}
+	return Event{Provider: provider, Kind: source, Message: trimmed, Timestamp: now, RawLine: rawLineForEvent}
 }
 
 func mergeTokenUsage(current TokenUsage, update TokenUsage) TokenUsage {

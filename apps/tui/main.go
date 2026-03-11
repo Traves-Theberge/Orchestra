@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"strings"
 	"time"
@@ -19,12 +20,16 @@ type model struct {
 	height      int
 	ready       bool
 	lastLogLen  int
+	followLogs  bool
+	noStart     bool
 }
 
 type eventMsg struct{}
 
-func initialModel() *model {
+func initialModel(noStart bool) *model {
 	m := &model{
+		followLogs: true,
+		noStart:    noStart,
 		backend: &Service{
 			Name: "Orchestra Backend",
 			Cmd:  "./apps/backend/orchestrad",
@@ -42,8 +47,10 @@ func initialModel() *model {
 }
 
 func (m *model) Init() tea.Cmd {
-	// Auto-start backend only
-	m.backend.Start(func() {})
+	// Auto-start backend only if requested
+	if !m.noStart {
+		m.backend.Start(func() {})
+	}
 
 	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
 		return eventMsg{}
@@ -62,13 +69,21 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "tab":
 			m.activeTab = (m.activeTab + 1) % 2
+			m.followLogs = true
 			m.updateViewport()
 		case "1":
 			m.activeTab = 0
+			m.followLogs = true
 			m.updateViewport()
 		case "2":
 			m.activeTab = 1
+			m.followLogs = true
 			m.updateViewport()
+		case "f":
+			m.followLogs = !m.followLogs
+			if m.followLogs {
+				m.viewport.GotoBottom()
+			}
 		case "s":
 			s := m.getCurrentService()
 			s.mu.Lock()
@@ -81,6 +96,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				s.Logs = append(s.Logs, fmt.Sprintf(">>> Starting %s...", s.Name))
 				s.mu.Unlock()
 				s.Start(func() {})
+			}
+		case "up", "pgup", "k":
+			m.followLogs = false
+		case "down", "pgdown", "j":
+			if m.viewport.AtBottom() {
+				m.followLogs = true
 			}
 		}
 
@@ -133,7 +154,7 @@ func (m *model) updateViewport() {
 	}
 	s := m.getCurrentService()
 	s.mu.Lock()
-	if len(s.Logs) == m.lastLogLen {
+	if len(s.Logs) == m.lastLogLen && m.followLogs {
 		s.mu.Unlock()
 		return
 	}
@@ -141,7 +162,9 @@ func (m *model) updateViewport() {
 	m.lastLogLen = len(s.Logs)
 	s.mu.Unlock()
 	m.viewport.SetContent(content)
-	m.viewport.GotoBottom()
+	if m.followLogs {
+		m.viewport.GotoBottom()
+	}
 }
 
 func (m *model) View() string {
@@ -165,14 +188,21 @@ func (m *model) View() string {
 	backendStatus := m.getStatusDisplay(m.backend)
 	frontendStatus := m.getStatusDisplay(m.frontend)
 
+	followStatus := "○ AUTO-SCROLL OFF"
+	if m.followLogs {
+		followStatus = "● FOLLOWING LOGS"
+	}
+
 	stats := lipgloss.JoinVertical(lipgloss.Left,
 		fmt.Sprintf("Backend:  %s", backendStatus),
 		fmt.Sprintf("Frontend: %s", frontendStatus),
+		"",
+		StatusStyleRunning.Render(followStatus),
 	)
 
 	topRow := lipgloss.JoinHorizontal(lipgloss.Top,
 		BoxStyle.Width(m.width/2-2).Render(stats),
-		BoxStyle.Width(m.width/2-2).Render("Press [Tab] to switch views\nPress [s] to Start/Stop Service\nPress [q] to Quit"),
+		BoxStyle.Width(m.width/2-2).Render("Press [Tab] to switch views\nPress [s] to Start/Stop Service\nPress [f] to Toggle Follow\nPress [q] to Quit"),
 	)
 
 	viewTitle := HeaderStyle.Render(fmt.Sprintf(" Logs: %s ", m.getCurrentService().Name))
@@ -204,7 +234,10 @@ func (m *model) getStatusDisplay(s *Service) string {
 }
 
 func main() {
-	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
+	noStart := flag.Bool("no-start", false, "Do not auto-start backend services")
+	flag.Parse()
+
+	p := tea.NewProgram(initialModel(*noStart), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Alas, there's been an error: %v", err)
 	}

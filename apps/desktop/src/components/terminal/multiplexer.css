@@ -1,0 +1,43 @@
+.terminal-multiplexer .mosaic-window {
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    background: #0c0c0e;
+}
+
+.terminal-multiplexer .mosaic-window-toolbar {
+    background: rgba(255, 255, 255, 0.03);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    height: 28px;
+    padding: 0 8px;
+}
+
+.terminal-multiplexer .mosaic-window-title {
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.terminal-multiplexer .mosaic-tile {
+    margin: 2px;
+}
+
+.terminal-multiplexer .mosaic-root {
+    background: transparent;
+}
+
+.terminal-multiplexer .mosaic-window-body {
+    background: #0c0c0e;
+}
+
+/* Custom scrollbars for the multiplexer sidebar if needed */
+.terminal-multiplexer ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+}
+
+.terminal-multiplexer ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+}

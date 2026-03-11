@@ -13,6 +13,7 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/observability"
 	"github.com/orchestra/orchestra/apps/backend/internal/orchestrator"
 	"github.com/orchestra/orchestra/apps/backend/internal/staticassets"
+	"github.com/orchestra/orchestra/apps/backend/internal/terminal"
 	"github.com/orchestra/orchestra/apps/backend/internal/config"
 	"github.com/rs/zerolog"
 )
@@ -25,6 +26,7 @@ type Server struct {
 	pubsub        *observability.PubSub
 	db            *db.DB
 	config        *config.Config
+	termManager   *terminal.Manager
 }
 
 func NewRouter(
@@ -32,7 +34,7 @@ func NewRouter(
 	orchestratorService *orchestrator.Service,
 	cfg *config.Config,
 ) http.Handler {
-	return NewRouterWithPubSub(logger, orchestratorService, cfg, nil, nil)
+	return NewRouterWithPubSub(logger, orchestratorService, cfg, nil, nil, nil)
 }
 
 func NewRouterWithPubSub(
@@ -41,7 +43,11 @@ func NewRouterWithPubSub(
 	cfg *config.Config,
 	pubsub *observability.PubSub,
 	warehouseDB *db.DB,
+	termManager *terminal.Manager,
 ) http.Handler {
+	if termManager == nil {
+		termManager = terminal.NewManager()
+	}
 	server := &Server{
 		logger:        logger,
 		orchestrator:  orchestratorService,
@@ -50,6 +56,7 @@ func NewRouterWithPubSub(
 		pubsub:        pubsub,
 		db:            warehouseDB,
 		config:        cfg,
+		termManager:   termManager,
 	}
 	r := chi.NewRouter()
 
@@ -92,6 +99,8 @@ func NewRouterWithPubSub(
 	r.Get("/api/v1/mcp/servers", server.GetMCPServers)
 	r.Post("/api/v1/mcp/servers", server.PostMCPServer)
 	r.Delete("/api/v1/mcp/servers/{id}", server.DeleteMCPServer)
+
+	r.Get("/api/v1/terminal/{session_id}", server.TerminalWebSocket)
 
 	r.Get("/api/v1/projects", server.GetProjects)
 	r.Post("/api/v1/projects", server.CreateProject)

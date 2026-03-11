@@ -22,6 +22,7 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/prompt"
 	"github.com/orchestra/orchestra/apps/backend/internal/runtime"
 	"github.com/orchestra/orchestra/apps/backend/internal/telemetry"
+	"github.com/orchestra/orchestra/apps/backend/internal/terminal"
 	"github.com/orchestra/orchestra/apps/backend/internal/tools"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
 	trackergithub "github.com/orchestra/orchestra/apps/backend/internal/tracker/github"
@@ -63,8 +64,9 @@ func Run(logger zerolog.Logger) error {
 	trackerClient := newTrackerClient(cfg, warehouseDB)
 	orchestratorService.SetTrackerClient(trackerClient)
 	pubsub := observability.NewPubSub()
+	termManager := terminal.NewManager()
 
-	agentRegistry := agents.NewRegistry(cfg.AgentCommands)
+	agentRegistry := agents.NewRegistryWithTerminal(cfg.AgentCommands, termManager)
 	provider := agents.Provider(cfg.AgentProvider)
 	if !agentRegistry.HasProvider(provider) {
 		return fmt.Errorf("agent provider %q is not configured", cfg.AgentProvider)
@@ -92,7 +94,7 @@ func Run(logger zerolog.Logger) error {
 
 	logger.Info().Str("agent_provider", cfg.AgentProvider).Str("service_id", runtime.ServiceOrchestrator).Msg("agent provider configured")
 
-	router := api.NewRouterWithPubSub(logger, orchestratorService, &cfg, pubsub, warehouseDB)
+	router := api.NewRouterWithPubSub(logger, orchestratorService, &cfg, pubsub, warehouseDB, termManager)
 
 	cleanupTerminalWorkspaces(orchestratorService, trackerClient, workspaceService, cfg.WorkspaceHooks, logger)
 
@@ -354,6 +356,7 @@ func processExecutionTick(
 	}
 
 	sessionID := fmt.Sprintf("%s-%d", entry.IssueIdentifier, time.Now().UnixNano())
+	_ = logfile.ResetLatestLog(workspaceRoot, entry.IssueIdentifier, sessionID)
 
 	if warehouseDB != nil {
 		rootPath, remoteURL, _ := git.ProjectInfo(context.Background(), workspaceRoot)
@@ -389,6 +392,11 @@ func processExecutionTick(
 			_ = warehouseDB.RecordEvent(context.Background(), eventID, event.SessionID, event.Kind, event.Message, raw, int(event.Usage.InputTokens), int(event.Usage.OutputTokens), event.Timestamp.Format(time.RFC3339))
 		}
 
+		// Append to log file in real-time
+		if event.SessionID != "" && event.RawLine != "" {
+			_, _ = logfile.AppendToSessionLog(workspaceRoot, entry.IssueIdentifier, event.SessionID, event.RawLine+"\n")
+		}
+
 		// Log to stdout for TUI visibility
 		if event.Message != "" {
 			logger.Info().
@@ -401,10 +409,6 @@ func processExecutionTick(
 
 	if runErr != nil {
 		runAfterHook()
-		logPath, logErr := logfile.WriteSessionLog(workspaceRoot, entry.IssueIdentifier, result.SessionID, result.Output)
-		if logErr == nil {
-			service.RecordRunArtifact(entry.IssueID, activeProviderName, result.SessionID, logPath)
-		}
 		dueAt := service.NextRetryDue(entry.IssueID, attempt)
 		publishLifecycleEvent(pubsub, "run_failed", map[string]any{
 			"issue_id":         entry.IssueID,
@@ -428,11 +432,6 @@ func processExecutionTick(
 		logger.Error().Err(runErr).Str("issue_id", entry.IssueID).Str("provider", activeProviderName).Msg("agent run failed")
 		publishSnapshot(pubsub, service)
 		return
-	}
-
-	logPath, logErr := logfile.WriteSessionLog(workspaceRoot, entry.IssueIdentifier, result.SessionID, result.Output)
-	if logErr == nil {
-		service.RecordRunArtifact(entry.IssueID, activeProviderName, result.SessionID, logPath)
 	}
 
 	service.RecordRunResult(entry.IssueID, activeProviderName, result.SessionID, result.Usage.InputTokens, result.Usage.OutputTokens, result.Usage.TotalTokens)

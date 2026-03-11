@@ -19,6 +19,8 @@ Traditional agent execution often relies on manual scripts, lacking isolation, o
 ## ✨ Key Features
 
 - **Multi-Agent Coordination**: Support for **Parallel Races** (running multiple models concurrently on the same issue) and **Automated Cascading** (falling back to a different model if one fails repeatedly).
+- **Interactive Dmux Terminals**: Built-in high-performance terminal multiplexer (using `xterm.js` and `creack/pty`) that allows you to watch and interact with agent sessions in real-time. Supports up to 16 concurrent tiled terminal panes.
+- **Human-In-The-Loop (HITL)**: Take direct control of an agent's terminal session. Agents run inside persistent PTYs, allowing you to interject, provide credentials, or debug manually without stopping the automation.
 - **Model Context Protocol (MCP)**: Native integration for external tool servers (JSON-RPC over stdio). Agents automatically discover and utilize MCP tools and resources dynamically.
 - **Deep Wiki & Knowledge Base**: Fully integrated documentation hub within the desktop app featuring D3 architecture graphs, dynamic Table of Contents, and searchable markdown.
 - **Agent Control Plane**: Direct UI management for global `.claude`, `.gemini`, `.codex` configurations and behavioral skills. 

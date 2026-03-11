@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Activity, Database, FolderTree, Gauge, History, LayoutDashboard, ListTodo, RefreshCcw, Settings2, ShieldCheck, Ticket, Cpu, Zap, FileText } from 'lucide-react'
+import { Activity, Database, FolderTree, Gauge, History, LayoutDashboard, ListTodo, RefreshCcw, Settings2, ShieldCheck, Ticket, Cpu, Zap, FileText, Terminal } from 'lucide-react'
 import { SidebarNav } from '@/components/app-shell/sidebar-nav'
 import { TopBar } from '@/components/app-shell/top-bar'
 import {
@@ -59,6 +59,7 @@ import { AnalyticsDashboard } from '@/components/warehouse/AnalyticsDashboard'
 import { SessionDetailView } from '@/components/warehouse/SessionDetailView'
 import { AgentsDashboard } from '@/components/agents/AgentsDashboard'
 import { DocsDashboard } from '@/components/docs/DocsDashboard'
+import { TerminalMultiplexer, type TerminalNode } from '@/components/terminal/TerminalMultiplexer'
 import { Command } from 'cmdk'
 import { OverlayScrollbarsComponent } from 'overlayscrollbars-react'
 import type { BackendConfig } from '@/lib/orchestra-client'
@@ -94,6 +95,12 @@ const sidebarItems: SidebarItem[] = [
     label: 'Activity Feed',
     description: 'Real-time lifecycle events',
     icon: History,
+  },
+  {
+    id: 'console',
+    label: 'Live Console',
+    description: 'Multi-agent terminal dock',
+    icon: Terminal,
   },
   {
     id: 'agents',
@@ -188,6 +195,32 @@ export default function App() {
   const [selectedProjectID, setSelectedProjectID] = useState<string | null>(null)
   const [dataLoading, setDataLoading] = useState(false)
 
+  const [openTerminals, setOpenTerminals] = useState<TerminalNode[]>([])
+
+  // Sync open terminals with running sessions
+  useEffect(() => {
+    if (!snapshot?.running) return
+
+    setOpenTerminals(prev => {
+      // Find sessions that are running but don't have a terminal window yet
+      const newTerms = snapshot.running
+        .filter(r => !prev.some(p => p.id === `issue-${r.issue_identifier}`))
+        .map(r => ({
+          id: `issue-${r.issue_identifier}`,
+          title: `Agent: ${r.issue_identifier}`,
+          projectId: projects.find(p => p.id === r.issue_id)?.id
+        }))
+
+      if (newTerms.length === 0) return prev
+      // Add new ones to the list
+      return [...prev, ...newTerms]
+    })
+  }, [snapshot, projects])
+
+  const handleCloseTerminal = (id: string) => {
+    setOpenTerminals(prev => prev.filter(t => t.id !== id))
+  }
+
   const sidebarWidth = sidebarCollapsed ? 64 : 220
   const sectionVisibility = {
     showDashboard: activeSection === 'dashboard',
@@ -199,6 +232,7 @@ export default function App() {
     showWarehouse: activeSection === 'warehouse',
     showSettings: activeSection === 'settings',
     showDocs: activeSection === 'docs',
+    showConsole: activeSection === 'console',
   }
   const sectionMeta: Record<string, { label: string; title: string }> = {
     dashboard: { label: 'Operations', title: 'Dashboard' },
@@ -210,6 +244,7 @@ export default function App() {
     warehouse: { label: 'Analytics', title: 'Warehouse' },
     settings: { label: 'System', title: 'Settings' },
     docs: { label: 'Knowledge', title: 'Documentation' },
+    console: { label: 'Runtime', title: 'Live Console' },
   }
   const currentSectionMeta = sectionMeta[activeSection] ?? sectionMeta.dashboard
 
@@ -1051,6 +1086,16 @@ export default function App() {
               {sectionVisibility.showDocs ? (
                 <section className="col-span-12 flex flex-col flex-1">
                   <DocsDashboard config={config} />
+                </section>
+              ) : null}
+
+              {sectionVisibility.showConsole && config ? (
+                <section className="col-span-12 flex flex-col flex-1 min-h-[600px] border border-white/5 rounded-xl overflow-hidden shadow-2xl">
+                  <TerminalMultiplexer
+                    activeTerminals={openTerminals}
+                    baseUrl={config.baseUrl}
+                    onCloseTerminal={handleCloseTerminal}
+                  />
                 </section>
               ) : null}
 
