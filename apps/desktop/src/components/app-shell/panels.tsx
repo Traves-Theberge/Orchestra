@@ -21,6 +21,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { OverlayScrollbarsComponent } from 'overlayscrollbars-react'
 import type { TimelineItem } from '@/components/app-shell/types'
+import { TerminalView } from '@/components/terminal/TerminalView'
 import { fetchArtifactContent, fetchArtifacts, fetchIssueDiff, fetchIssueLogs, fetchIssueHistory, updateIssue, createGitHubPR, type BackendConfig } from '@/lib/orchestra-client'
 import type { SnapshotPayload, Project, ProjectStats, GlobalStats } from '@/lib/orchestra-types'
 import { getSortedRetryEntries, getSortedRunningEntries } from '@/lib/view-models'
@@ -1054,23 +1055,27 @@ export function IssueDetailView({
               </p>
             </div>
           )}
-          <div className="rounded-lg border bg-muted/30 p-4">
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-border/40 pb-4">
+            <div className="rounded-xl border border-white/5 bg-[#0c0c0e] shadow-2xl overflow-hidden">
+              {/* Header / Actions */}
+              <div className="flex flex-wrap items-center justify-between gap-4 p-5 bg-white/[0.02] border-b border-white/5">
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="font-mono text-[10px] uppercase tracking-wider">
+                  <div className="flex items-center gap-3 mb-2">
+                    <Badge variant="outline" className="font-mono text-[10px] uppercase tracking-wider bg-primary/10 text-primary border-primary/20">
                       {identifier}
                     </Badge>
-                    <span className="text-xs text-muted-foreground">in {(result.team_id as string) || 'Orchestra'}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 flex items-center gap-1.5">
+                      <FolderTree size={12} />
+                      {(result.team_id as string) || 'Orchestra Workspace'}
+                    </span>
                   </div>
-                  <h3 className="mt-1 truncate text-lg font-semibold text-foreground">{title}</h3>
+                  <h3 className="truncate text-xl font-black tracking-tight text-white">{title}</h3>
                 </div>
                 <div className="flex items-center gap-2">
                   {localState === 'Done' && !prResult && (
                     <Button
                       variant="outline"
                       size="sm"
-                      className="h-8 gap-2 border-primary/30 text-primary hover:bg-primary/5"
+                      className="h-8 gap-2 border-primary/30 text-primary hover:bg-primary/10 bg-primary/5"
                       onClick={handleCreatePR}
                       disabled={prPending}
                     >
@@ -1078,199 +1083,198 @@ export function IssueDetailView({
                       Create PR
                     </Button>
                   )}
-                {prResult && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 gap-2 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/5"
-                    asChild
-                  >
-                    <a href={prResult.url} target="_blank" rel="noreferrer">
-                      <ExternalLink size={12} />
-                      PR #{prResult.number}
-                    </a>
-                  </Button>
-                )}
-                {(localState === 'Todo' || localState === 'Done') && (
-                  <Button
-                    variant="default"
-                    size="sm"
-                    className="h-8 gap-2 bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/20"
-                    onClick={() => handleStateChange('In Progress')}
-                  >
-                    <Play size={12} fill="currentColor" />
-                    Run Task
-                  </Button>
-                )}
-                {localState === 'In Progress' && onStopSession && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 border-red-200 text-xs text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-900/30 dark:text-red-400 dark:hover:bg-red-950/20"
-                    onClick={() => void onStopSession(localProvider)}
-                  >
-                    Stop Session
-                  </Button>
-                )}
+                  {prResult && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-2 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/10 bg-emerald-500/5"
+                      asChild
+                    >
+                      <a href={prResult.url} target="_blank" rel="noreferrer">
+                        <ExternalLink size={12} />
+                        PR #{prResult.number}
+                      </a>
+                    </Button>
+                  )}
+                  {(localState === 'Todo' || localState === 'Done') && (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="h-8 gap-2 bg-emerald-500 hover:bg-emerald-400 text-black font-bold uppercase tracking-widest text-[10px] shadow-lg shadow-emerald-500/20"
+                      onClick={() => handleStateChange('In Progress')}
+                    >
+                      <Play size={12} fill="currentColor" />
+                      Run Task
+                    </Button>
+                  )}
+                  {localState === 'In Progress' && onStopSession && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 border-red-500/30 text-red-500 hover:bg-red-500/10 bg-red-500/5 font-bold uppercase tracking-widest text-[10px]"
+                      onClick={() => void onStopSession(localProvider)}
+                    >
+                      <Square size={10} fill="currentColor" className="mr-1.5" />
+                      Stop Session
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Controls Strip */}
+              <div className="flex flex-wrap gap-3 p-4 bg-black/40 border-b border-white/5">
                 <CustomDropdown
-                  className="w-40"
+                  className="w-40 border-white/10 bg-black hover:bg-white/5"
                   value={localState}
                   options={AGENT_STATES.map((s) => ({ label: s, value: s }))}
                   onChange={handleStateChange}
                 />
                 <CustomDropdown
-                  className="w-48"
+                  className="w-48 border-white/10 bg-black hover:bg-white/5"
                   value={localProvider || 'default'}
                   options={[
-                    { label: 'System Default', value: 'default', icon: <Settings2 className="h-3 w-3" /> },
+                    { label: 'System Default', value: 'default', icon: <Settings2 className="h-3 w-3 text-muted-foreground" /> },
                     ...availableAgents.map((p) => ({
                       label: p.charAt(0).toUpperCase() + p.slice(1),
                       value: p,
-                      icon: <Cpu className="h-3 w-3" />,
+                      icon: <Cpu className="h-3 w-3 text-primary/70" />,
                     })),
                   ]}
                   onChange={handleProviderChange}
                   placeholder="Select Provider..."
                 />
                 <CustomDropdown
-                  className="w-56"
+                  className="w-56 border-white/10 bg-black hover:bg-white/5"
                   value={localAssignee.startsWith('agent-') ? localAssignee : (availableAgents.includes(localAssignee) ? `agent-${localAssignee}` : localAssignee)}
                   options={[
-                    { label: 'Unassigned', value: 'Unassigned', icon: <Users className="h-3 w-3" /> },
+                    { label: 'Unassigned', value: 'Unassigned', icon: <Users className="h-3 w-3 text-muted-foreground" /> },
                     ...availableAgents.map((agent) => ({
                       label: agent.charAt(0).toUpperCase() + agent.slice(1),
                       value: `agent-${agent}`,
-                      icon: <Activity className="h-3 w-3" />,
+                      icon: <Bot className="h-3 w-3 text-primary/70" />,
                     })),
                   ]}
                   onChange={handleAssigneeChange}
                   placeholder="Assign Agent..."
                 />
               </div>
-            </div>
 
-            <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-5 text-left">
-                <div className="space-y-1">
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Status</p>
-                  <div className="flex items-center gap-2">
-                    <div className={`h-2 w-2 rounded-full ${localState === 'In Progress' ? 'bg-amber-500 animate-pulse' : 'bg-primary'}`} />
-                    <span className="font-medium">{localState}</span>
+              {/* Metadata Grid */}
+              <div className="grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-white/5 bg-white/[0.01]">
+                <div className="p-4 space-y-1.5">
+                  <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                    <Activity size={10} /> Status
+                  </div>
+                  <div className="flex items-center gap-2 text-sm font-medium text-zinc-300">
+                    <div className={`h-2 w-2 rounded-full ${localState === 'In Progress' ? 'bg-amber-500 animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.5)]' : 'bg-primary'}`} />
+                    {localState}
                   </div>
                 </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Priority</p>
-                  <div className="flex items-center gap-2">
+                <div className="p-4 space-y-1.5">
+                  <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                    <Zap size={10} /> Priority
+                  </div>
+                  <div className="flex items-center gap-2 text-sm font-medium text-zinc-300">
                     <PriorityIcon priority={priority} className="h-4 w-4" />
-                    <span className="font-medium">
-                      <PriorityLabel priority={priority} />
-                    </span>
+                    <PriorityLabel priority={priority} />
                   </div>
                 </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Assigned Agent</p>
-                  <div className="flex items-center gap-2">
-                    <Users className="h-3.5 w-3.5 text-muted-foreground/60" />
-                    <p className="font-medium capitalize">{localAssignee.replace('agent-', '')}</p>
+                <div className="p-4 space-y-1.5">
+                  <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                    <GitBranch size={10} /> Target Branch
+                  </div>
+                  <div className="text-sm font-mono text-zinc-300 truncate" title={branchName || 'None'}>
+                    {branchName || 'None'}
                   </div>
                 </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Blockers</p>
-                  <div className="flex flex-wrap gap-1">
+                <div className="p-4 space-y-1.5">
+                  <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                    <Clock size={10} /> Last Updated
+                  </div>
+                  <div className="text-sm font-medium text-zinc-300 truncate">
+                    {updatedAt ? new Date(updatedAt).toLocaleString() : 'N/A'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 border-t border-white/5 divide-y md:divide-y-0 md:divide-x divide-white/5 bg-white/[0.01]">
+                <div className="p-4 space-y-2">
+                  <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                    <ShieldCheck size={10} /> Active Blockers
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
                     {Array.isArray(blockedBy) && blockedBy.length > 0 ? (
                       blockedBy.map((blocker: any) => (
-                        <Badge key={blocker.identifier || blocker.id} variant="outline" className="px-1.5 py-0 text-[10px] bg-red-500/10 text-red-500 border-red-500/20">
+                        <Badge key={blocker.identifier || blocker.id} variant="outline" className="px-2 py-0.5 text-[10px] font-bold bg-red-500/10 text-red-500 border-red-500/20">
                           {blocker.identifier || blocker.id}
                         </Badge>
                       ))
                     ) : (
-                      <span className="text-muted-foreground">None</span>
+                      <span className="text-sm font-medium text-zinc-500 italic">No constraints</span>
                     )}
                   </div>
                 </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 text-xs sm:grid-cols-2 lg:grid-cols-4 mt-4 border-t pt-4 border-border/20">
-                <div className="space-y-1">
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Branch</p>
-                  <div className="flex items-center gap-2">
-                    <GitBranch size={12} className="text-muted-foreground" />
-                    <span className="font-mono text-[10px] truncate max-w-[120px]">{branchName || 'None'}</span>
+                <div className="p-4 space-y-2">
+                  <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                    <ExternalLink size={10} /> Remote System
                   </div>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">System URL</p>
-                  <div className="flex items-center gap-2">
-                    <ExternalLink size={12} className="text-muted-foreground" />
+                  <div>
                     {issueUrl ? (
-                      <a href={issueUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline truncate max-w-[150px]">
+                      <a href={issueUrl} target="_blank" rel="noreferrer" className="text-sm font-medium text-primary hover:underline hover:text-primary/80 transition-colors truncate block">
                         {issueUrl}
                       </a>
                     ) : (
-                      <span className="text-muted-foreground">None</span>
+                      <span className="text-sm font-medium text-zinc-500 italic">No external tracker linked</span>
                     )}
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Updated At</p>
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Clock size={12} />
-                    <span>{updatedAt ? new Date(updatedAt).toLocaleString() : 'N/A'}</span>
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Provider</p>
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Cpu size={12} />
-                    <span>{localProvider || 'Default'}</span>
                   </div>
                 </div>
               </div>
 
-              {description ? (
-                <div className="mt-4 border-t pt-4">
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Description</p>
-                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground line-clamp-10">{description}</p>
+              {description && (
+                <div className="p-5 border-t border-white/5 bg-[#0c0c0e]">
+                  <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500 mb-3">
+                    <FileText size={10} /> Description Payload
+                  </div>
+                  <p className="text-sm leading-relaxed text-zinc-300 line-clamp-6">{description}</p>
                 </div>
-              ) : null}
+              )}
 
-              <div className="mt-4 border-t pt-4">
-                <p className="mb-3 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Workspace Hooks</p>
-                <div className="space-y-3">
+              <div className="p-5 border-t border-white/5 bg-[#0c0c0e]">
+                <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500 mb-4">
+                  <Rows size={10} /> Execution Hooks
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {hooks.map((hook) => {
                     const status = getHookStatus(hook.id)
                     return (
-                      <div key={hook.id} className="flex items-start gap-3">
-                        <div className="mt-0.5">
-                          {status === 'completed' && <CheckCircle2 className="h-4 w-4 text-primary" />}
-                          {status === 'active' && <Loader2 className="h-4 w-4 animate-spin text-amber-500" />}
-                          {status === 'failed' && <AlertCircle className="h-4 w-4 text-red-500" />}
-                          {status === 'pending' && <Circle className="h-4 w-4 text-muted-foreground/30" />}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className={`text-xs font-medium ${status === 'pending' ? 'text-muted-foreground/50' : 'text-foreground'}`}>
+                      <div key={hook.id} className="flex flex-col gap-2 p-3 rounded-lg border border-white/5 bg-white/[0.02]">
+                        <div className="flex items-center justify-between">
+                          <p className={`text-xs font-bold ${status === 'pending' ? 'text-zinc-500' : 'text-zinc-200'}`}>
                             {hook.label}
                           </p>
-                          <p className="truncate text-[10px] text-muted-foreground/60">{hook.description}</p>
+                          {status !== 'pending' && (
+                            <Badge
+                              variant="outline"
+                              className={`h-4 px-1.5 text-[8px] font-black uppercase tracking-widest ${status === 'completed'
+                                ? 'border-primary/20 text-primary bg-primary/5'
+                                : status === 'active'
+                                  ? 'border-amber-500/20 text-amber-500 bg-amber-500/5 animate-pulse'
+                                  : 'border-red-500/20 text-red-500 bg-red-500/5'
+                                }`}
+                            >
+                              {status}
+                            </Badge>
+                          )}
+                          {status === 'pending' && <Circle className="h-3 w-3 text-zinc-700" />}
                         </div>
-                        {status !== 'pending' && (
-                          <Badge
-                            variant="outline"
-                            className={`h-4 px-1 text-[9px] uppercase tracking-tighter ${status === 'completed'
-                              ? 'border-primary/20 text-primary'
-                              : status === 'active'
-                                ? 'border-amber-500/20 text-amber-500'
-                                : 'border-red-500/20 text-red-500'
-                              }`}
-                          >
-                            {status}
-                          </Badge>
-                        )}
+                        <p className="text-[10px] text-zinc-500 leading-snug">{hook.description}</p>
                       </div>
                     )
                   })}
                 </div>
               </div>
             </div>
+
 
             <Dialog open={raceDialogOpen} onOpenChange={setRaceDialogOpen}>
               <DialogContent className="max-w-md bg-card border-border shadow-2xl">
@@ -1394,99 +1398,62 @@ export function IssueDetailView({
             </div>
           </div>
         ) : activeTab === 'logs' ? (
-          <div className="relative min-h-[400px] rounded-lg border bg-black p-4 font-mono text-[11px] leading-relaxed text-zinc-300 shadow-inner">
-            <div className="mb-3 flex items-center justify-between border-b border-white/10 pb-2">
-              <div className="flex items-center gap-4">
+          <div className="relative min-h-[500px] h-[60vh] rounded-lg border bg-[#0c0c0e] flex flex-col font-mono text-[11px] leading-relaxed text-zinc-300 shadow-inner overflow-hidden border-white/5">
+            <div className="flex items-center justify-between border-b border-white/10 bg-white/5 px-3 py-2 shrink-0">
+              <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2 text-zinc-500">
-                  <Terminal className="h-3 w-3" />
-                  <span>{localProvider || 'main'}.log</span>
+                  <Terminal className="h-3.5 w-3.5 text-primary" />
+                  <span className="font-bold text-[10px] uppercase tracking-widest text-primary/70">{localProvider || 'main'}.log</span>
                 </div>
-                {activeSessions.length > 1 && (
-                  <button
-                    onClick={() => {
-                      setIsSplitView(!isSplitView)
-                      if (!secondaryProvider && activeSessions.length > 1) {
-                        const other = activeSessions.find(s => s.provider !== localProvider)
-                        if (other) setSecondaryProvider(other.provider || '')
-                        }
-                        }}                    className={`flex items-center gap-1.5 px-2 py-0.5 rounded border transition-all text-[9px] font-black uppercase tracking-tighter ${isSplitView 
-                      ? 'bg-blue-500/20 border-blue-500/40 text-blue-400' 
-                      : 'bg-white/5 border-white/10 text-muted-foreground hover:text-foreground'}`}
-                  >
-                    <Rows className="h-2.5 w-2.5 rotate-90" />
-                    Split View
-                  </button>
+                {localState === 'In Progress' && (
+                  <Badge variant="outline" className="h-5 px-1.5 text-[9px] bg-primary/10 text-primary border-primary/20 animate-pulse">Live PTY Session</Badge>
                 )}
               </div>
               <div className="flex items-center gap-2">
-                {isSplitView && (
-                  <select
-                    value={secondaryProvider}
-                    onChange={(e) => setSecondaryProvider(e.target.value)}
-                    className="h-6 bg-black/40 border border-white/10 rounded px-2 text-[9px] font-bold uppercase text-blue-400 outline-none"
-                  >
-                    {activeSessions.map(s => (
-                      <option key={s.provider} value={s.provider} disabled={s.provider === localProvider}>
-                        VS {s.provider?.toUpperCase()}
-                      </option>
-                    ))}
-                  </select>
+                {!isSplitView && localState !== 'In Progress' && (
+                  <div className="relative">
+                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-2.5 w-2.5 text-muted-foreground/40" />
+                    <input
+                      type="text"
+                      placeholder="Filter logs..."
+                      value={logFilter}
+                      onChange={(e) => setLogFilter(e.target.value)}
+                      className="h-6 w-48 rounded bg-white/5 border border-white/10 pl-7 pr-2 text-[10px] text-zinc-300 focus:outline-none focus:ring-1 focus:ring-primary/30"
+                    />
+                  </div>
                 )}
-                <div className="relative">
-                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-2.5 w-2.5 text-muted-foreground/40" />
-                  <input
-                    type="text"
-                    placeholder="Filter logs..."
-                    value={logFilter}
-                    onChange={(e) => setLogFilter(e.target.value)}
-                    className="h-6 w-48 rounded bg-white/5 border border-white/10 pl-7 pr-2 text-[10px] text-zinc-300 focus:outline-none focus:ring-1 focus:ring-primary/30"
-                  />
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={`h-6 gap-1.5 px-2 text-[9px] font-bold uppercase tracking-wider transition-all ${
-                    followLogs ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-white/5'
-                  }`}
-                  onClick={() => setFollowLogs(!followLogs)}
-                >
-                  <div className={`h-1 w-1 rounded-full ${followLogs ? 'bg-primary animate-pulse' : 'bg-zinc-600'}`} />
-                  Follow
-                </Button>
-                {(logsLoading || secondaryLogsLoading) && <div className="h-2 w-2 animate-pulse rounded-full bg-primary" />}
+                {localState !== 'In Progress' && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={`h-6 gap-1.5 px-2 text-[9px] font-bold uppercase tracking-wider transition-all ${
+                      followLogs ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-white/5'
+                    }`}
+                    onClick={() => setFollowLogs(!followLogs)}
+                  >
+                    <div className={`h-1 w-1 rounded-full ${followLogs ? 'bg-primary animate-pulse' : 'bg-zinc-600'}`} />
+                    Follow
+                  </Button>
+                )}
+                {logsLoading && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
               </div>
-            </div>            <div 
-              ref={logContainerRef}
-              onScroll={handleLogScroll}
-              className="max-h-[500px] overflow-auto whitespace-pre-wrap custom-scrollbar"
-            >
-              {isSplitView ? (
-                <div className="grid grid-cols-2 gap-4 divide-x divide-white/5 h-[500px]">
-                  <div className="pr-4 overflow-auto scroll-smooth custom-scrollbar">
-                    <div className="sticky top-0 bg-black/80 backdrop-blur pb-1 mb-2 text-[8px] font-black uppercase text-zinc-500 flex items-center justify-between z-10">
-                      <span>{localProvider}</span>
-                      {logsLoading && <Loader2 className="h-2 w-2 animate-spin text-primary" />}
-                    </div>
-                    {filteredLogs ? <Ansi>{filteredLogs}</Ansi> : <p className="opacity-20 italic">No output...</p>}
-                  </div>
-                  <div className="pl-4 overflow-auto scroll-smooth border-l border-white/5 custom-scrollbar">
-                    <div className="sticky top-0 bg-black/80 backdrop-blur pb-1 mb-2 text-[8px] font-black uppercase text-blue-400 flex items-center justify-between z-10">
-                      <span>{secondaryProvider}</span>
-                      {secondaryLogsLoading && <Loader2 className="h-2 w-2 animate-spin text-blue-400" />}
-                    </div>
-                    {secondaryLogs.split('\n').filter(line => 
-                      !logFilter.trim() || line.toLowerCase().includes(logFilter.toLowerCase())
-                    ).join('\n') ? (
-                      <Ansi>{secondaryLogs.split('\n').filter(line => 
-                        !logFilter.trim() || line.toLowerCase().includes(logFilter.toLowerCase())
-                      ).join('\n')}</Ansi>
-                    ) : (
-                      <p className="opacity-20 italic">No output...</p>
-                    )}
-                  </div>
+            </div>
+            
+            <div className="flex-1 min-h-0 bg-[#0c0c0e]">
+              {localState === 'In Progress' && config ? (
+                <div className="w-full h-full p-2">
+                   <TerminalView 
+                       sessionId={`issue-${identifier}`} 
+                       projectId={projectId} 
+                       baseUrl={config.baseUrl} 
+                   />
                 </div>
               ) : (
-                <>
+                <div 
+                  ref={logContainerRef}
+                  onScroll={handleLogScroll}
+                  className="h-full overflow-auto whitespace-pre-wrap p-4 custom-scrollbar"
+                >
                   {logsLoading && !logs ? (
                     <div className="space-y-2">
                       <div className="h-3 w-3/4 animate-pulse rounded bg-zinc-800" />
@@ -1506,7 +1473,7 @@ export function IssueDetailView({
                       <p className="text-xs tracking-tight">No logs documented for this issue session.</p>
                     </div>
                   )}
-                </>
+                </div>
               )}
             </div>
           </div>
