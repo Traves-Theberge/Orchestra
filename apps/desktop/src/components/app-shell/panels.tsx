@@ -951,41 +951,51 @@ export function IssueDetailView({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-1 rounded-lg bg-muted/20 p-1">
-        <button
-          onClick={() => setActiveTab('overview')}
-          className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${activeTab === 'overview' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-            }`}
-        >
-          Overview
-        </button>
-        <button
-          onClick={() => setActiveTab('changes')}
-          className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${activeTab === 'changes' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-            }`}
-        >
-          Changes
-        </button>
-        <button
-          onClick={() => setActiveTab('logs')}
-          className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${activeTab === 'logs' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-            }`}
-        >
-          {localState === 'In Progress' ? 'Live Logs' : 'Logs'}
-        </button>
-        <button
-          onClick={() => setActiveTab('artifacts')}
-          className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${activeTab === 'artifacts' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-            }`}
-        >
-          Artifacts
-        </button>
-        <button
-          onClick={() => setActiveTab('activity')}
-          className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${activeTab === 'activity' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-            }`}
-        >
-          Activity
-        </button>
+        <AppTooltip content="Task metadata, agent configuration, and runtime pulse">
+          <button
+            onClick={() => setActiveTab('overview')}
+            className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${activeTab === 'overview' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              }`}
+          >
+            Overview
+          </button>
+        </AppTooltip>
+        <AppTooltip content="Workspace diff and file-level modifications">
+          <button
+            onClick={() => setActiveTab('changes')}
+            className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${activeTab === 'changes' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              }`}
+          >
+            Changes
+          </button>
+        </AppTooltip>
+        <AppTooltip content={localState === 'In Progress' ? 'Connect to live PTY session' : 'View historical agent execution logs'}>
+          <button
+            onClick={() => setActiveTab('logs')}
+            className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${activeTab === 'logs' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              }`}
+          >
+            {localState === 'In Progress' ? 'Live Logs' : 'Logs'}
+          </button>
+        </AppTooltip>
+        <AppTooltip content="Review generated documentation, code, and session assets">
+          <button
+            onClick={() => setActiveTab('artifacts')}
+            className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${activeTab === 'artifacts' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              }`}
+          >
+            Artifacts
+          </button>
+        </AppTooltip>
+        <AppTooltip content="Full chronological audit trail of all session events">
+          <button
+            onClick={() => setActiveTab('activity')}
+            className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${activeTab === 'activity' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              }`}
+          >
+            Activity
+          </button>
+        </AppTooltip>
       </div>
 
       {activeTab === 'overview' ? (
@@ -1002,18 +1012,19 @@ export function IssueDetailView({
                 {activeSessions.map((session) => {
                   const sessionProvider = session.provider || 'default'
                   return (
-                    <button
-                      key={sessionProvider}
-                      onClick={() => setLocalProvider(sessionProvider)}
-                      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all ${localProvider === sessionProvider
-                        ? 'bg-primary/10 border-primary/20 text-primary shadow-lg shadow-primary/5'
-                        : 'bg-black/20 border-white/5 text-muted-foreground hover:bg-white/5'
-                        }`}
-                    >
-                      <Cpu size={10} />
-                      <span className="text-[10px] font-bold uppercase tracking-tight">{sessionProvider}</span>
-                      {localProvider === sessionProvider && <CheckCircle2 size={10} className="text-primary" />}
-                    </button>
+                    <AppTooltip key={sessionProvider} content={`Switch view to ${sessionProvider} agent context`}>
+                      <button
+                        onClick={() => setLocalProvider(sessionProvider)}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all ${localProvider === sessionProvider
+                          ? 'bg-primary/10 border-primary/20 text-primary shadow-lg shadow-primary/5'
+                          : 'bg-black/20 border-white/5 text-muted-foreground hover:bg-white/5'
+                          }`}
+                      >
+                        <Cpu size={10} />
+                        <span className="text-[10px] font-bold uppercase tracking-tight">{sessionProvider}</span>
+                        {localProvider === sessionProvider && <CheckCircle2 size={10} className="text-primary" />}
+                      </button>
+                    </AppTooltip>
                   )
                 })}
               </div>
@@ -1039,148 +1050,172 @@ export function IssueDetailView({
                 </div>
                 <div className="flex items-center gap-2">
                   {localState === 'Done' && !prResult && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 gap-2 border-primary/30 text-primary hover:bg-primary/10 bg-primary/5"
-                      onClick={handleCreatePR}
-                      disabled={prPending}
-                    >
-                      <GitBranch size={12} className={prPending ? 'animate-spin' : ''} />
-                      Create PR
-                    </Button>
+                    <AppTooltip content="Stage changes and create a GitHub Pull Request">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-2 border-primary/30 text-primary hover:bg-primary/10 bg-primary/5"
+                        onClick={handleCreatePR}
+                        disabled={prPending}
+                      >
+                        <GitBranch size={12} className={prPending ? 'animate-spin' : ''} />
+                        Create PR
+                      </Button>
+                    </AppTooltip>
                   )}
                   {prResult && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 gap-2 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/10 bg-emerald-500/5"
-                      asChild
-                    >
-                      <a href={prResult.url} target="_blank" rel="noreferrer">
-                        <ExternalLink size={12} />
-                        PR #{prResult.number}
-                      </a>
-                    </Button>
+                    <AppTooltip content="View created PR on GitHub">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-2 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/10 bg-emerald-500/5"
+                        asChild
+                      >
+                        <a href={prResult.url} target="_blank" rel="noreferrer">
+                          <ExternalLink size={12} />
+                          PR #{prResult.number}
+                        </a>
+                      </Button>
+                    </AppTooltip>
                   )}
                   {(localState === 'Todo' || localState === 'Done') && (
-                    <Button
-                      variant="default"
-                      size="sm"
-                      className="h-8 gap-2 bg-emerald-500 hover:bg-emerald-400 text-black font-bold uppercase tracking-widest text-[10px] shadow-lg shadow-emerald-500/20"
-                      onClick={() => handleStateChange('In Progress')}
-                    >
-                      <Play size={12} fill="currentColor" />
-                      Run Task
-                    </Button>
+                    <AppTooltip content="Wake agent and begin automated task execution">
+                      <Button
+                        variant="default"
+                        size="sm"
+                        className="h-8 gap-2 bg-emerald-500 hover:bg-emerald-400 text-black font-bold uppercase tracking-widest text-[10px] shadow-lg shadow-emerald-500/20"
+                        onClick={() => handleStateChange('In Progress')}
+                      >
+                        <Play size={12} fill="currentColor" />
+                        Run Task
+                      </Button>
+                    </AppTooltip>
                   )}
                   {localState === 'In Progress' && onStopSession && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 border-red-500/30 text-red-500 hover:bg-red-500/10 bg-red-500/5 font-bold uppercase tracking-widest text-[10px]"
-                      onClick={() => void onStopSession(localProvider)}
-                    >
-                      <Square size={10} fill="currentColor" className="mr-1.5" />
-                      Stop Session
-                    </Button>
+                    <AppTooltip content="Gracefully terminate the active agent session">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 border-red-500/30 text-red-500 hover:bg-red-500/10 bg-red-500/5 font-bold uppercase tracking-widest text-[10px]"
+                        onClick={() => void onStopSession(localProvider)}
+                      >
+                        <Square size={10} fill="currentColor" className="mr-1.5" />
+                        Stop Session
+                      </Button>
+                    </AppTooltip>
                   )}
                 </div>
               </div>
 
               {/* Controls Strip */}
               <div className="flex flex-wrap gap-3 p-4 bg-black/40 border-b border-white/5">
-                <CustomDropdown
-                  className="w-44 border-white/10 bg-black hover:bg-white/5"
-                  value={localState}
-                  options={AGENT_STATES.map((s) => ({ label: s, value: s }))}
-                  onChange={handleStateChange}
-                />
-                <CustomDropdown
-                  className="w-64 border-white/10 bg-black hover:bg-white/5"
-                  value={localAssignee.startsWith('agent-') ? localAssignee : (availableAgents.includes(localAssignee) ? `agent-${localAssignee}` : localAssignee)}
-                  options={[
-                    { label: 'Unassigned', value: 'Unassigned', icon: <Users className="h-3 w-3 text-muted-foreground" /> },
-                    ...availableAgents.map((agent) => ({
-                      label: `Agent: ${agent.charAt(0).toUpperCase() + agent.slice(1)}`,
-                      value: `agent-${agent}`,
-                      icon: <Bot className="h-3 w-3 text-primary/70" />,
-                    })),
-                  ]}
-                  onChange={handleAssigneeChange}
-                  placeholder="Assign Workforce Agent..."
-                />
+                <AppTooltip content="Manually override the lifecycle state of this task">
+                  <CustomDropdown
+                    className="w-44 border-white/10 bg-black hover:bg-white/5"
+                    value={localState}
+                    options={AGENT_STATES.map((s) => ({ label: s, value: s }))}
+                    onChange={handleStateChange}
+                  />
+                </AppTooltip>
+                <AppTooltip content="Deploy a specific agent model to handle this task context">
+                  <CustomDropdown
+                    className="w-64 border-white/10 bg-black hover:bg-white/5"
+                    value={localAssignee.startsWith('agent-') ? localAssignee : (availableAgents.includes(localAssignee) ? `agent-${localAssignee}` : localAssignee)}
+                    options={[
+                      { label: 'Unassigned', value: 'Unassigned', icon: <Users className="h-3 w-3 text-muted-foreground" /> },
+                      ...availableAgents.map((agent) => ({
+                        label: `Agent: ${agent.charAt(0).toUpperCase() + agent.slice(1)}`,
+                        value: `agent-${agent}`,
+                        icon: <Bot className="h-3 w-3 text-primary/70" />,
+                      })),
+                    ]}
+                    onChange={handleAssigneeChange}
+                    placeholder="Assign Workforce Agent..."
+                  />
+                </AppTooltip>
               </div>
 
               {/* Metadata Grid */}
               <div className="grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-white/5 bg-white/[0.01]">
-                <div className="p-4 space-y-1.5">
-                  <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
-                    <Activity size={10} /> Status
+                <AppTooltip content="The current stage of the agentic lifecycle">
+                  <div className="p-4 space-y-1.5 cursor-help">
+                    <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                      <Activity size={10} /> Status
+                    </div>
+                    <div className="flex items-center gap-2 text-sm font-medium text-zinc-300">
+                      <div className={`h-2 w-2 rounded-full ${localState === 'In Progress' ? 'bg-amber-500 animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.5)]' : 'bg-primary'}`} />
+                      {localState}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 text-sm font-medium text-zinc-300">
-                    <div className={`h-2 w-2 rounded-full ${localState === 'In Progress' ? 'bg-amber-500 animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.5)]' : 'bg-primary'}`} />
-                    {localState}
+                </AppTooltip>
+                <AppTooltip content="Urgency level assigned by the task tracker">
+                  <div className="p-4 space-y-1.5 cursor-help">
+                    <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                      <Zap size={10} /> Priority
+                    </div>
+                    <div className="flex items-center gap-2 text-sm font-medium text-zinc-300">
+                      <PriorityIcon priority={priority} className="h-4 w-4" />
+                      <PriorityLabel priority={priority} />
+                    </div>
                   </div>
-                </div>
-                <div className="p-4 space-y-1.5">
-                  <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
-                    <Zap size={10} /> Priority
+                </AppTooltip>
+                <AppTooltip content="The active git branch being modified by the agent">
+                  <div className="p-4 space-y-1.5 cursor-help">
+                    <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                      <GitBranch size={10} /> Target Branch
+                    </div>
+                    <div className="text-sm font-mono text-zinc-300 truncate" title={branchName || 'None'}>
+                      {branchName || 'None'}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 text-sm font-medium text-zinc-300">
-                    <PriorityIcon priority={priority} className="h-4 w-4" />
-                    <PriorityLabel priority={priority} />
+                </AppTooltip>
+                <AppTooltip content="Timestamp of the last recorded state transition">
+                  <div className="p-4 space-y-1.5 cursor-help">
+                    <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                      <Clock size={10} /> Last Updated
+                    </div>
+                    <div className="text-sm font-medium text-zinc-300 truncate">
+                      {updatedAt ? new Date(updatedAt).toLocaleString() : 'N/A'}
+                    </div>
                   </div>
-                </div>
-                <div className="p-4 space-y-1.5">
-                  <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
-                    <GitBranch size={10} /> Target Branch
-                  </div>
-                  <div className="text-sm font-mono text-zinc-300 truncate" title={branchName || 'None'}>
-                    {branchName || 'None'}
-                  </div>
-                </div>
-                <div className="p-4 space-y-1.5">
-                  <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
-                    <Clock size={10} /> Last Updated
-                  </div>
-                  <div className="text-sm font-medium text-zinc-300 truncate">
-                    {updatedAt ? new Date(updatedAt).toLocaleString() : 'N/A'}
-                  </div>
-                </div>
+                </AppTooltip>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 border-t border-white/5 divide-y md:divide-y-0 md:divide-x divide-white/5 bg-white/[0.01]">
-                <div className="p-4 space-y-2">
-                  <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
-                    <ShieldCheck size={10} /> Active Blockers
+                <AppTooltip content="Other tasks that must be completed before this one can progress">
+                  <div className="p-4 space-y-2 cursor-help">
+                    <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                      <ShieldCheck size={10} /> Active Blockers
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {Array.isArray(blockedBy) && blockedBy.length > 0 ? (
+                        blockedBy.map((blocker: any) => (
+                          <Badge key={blocker.identifier || blocker.id} variant="outline" className="px-2 py-0.5 text-[10px] font-bold bg-red-500/10 text-red-500 border-red-500/20">
+                            {blocker.identifier || blocker.id}
+                          </Badge>
+                        ))
+                      ) : (
+                        <span className="text-sm font-medium text-zinc-500 italic">No constraints</span>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {Array.isArray(blockedBy) && blockedBy.length > 0 ? (
-                      blockedBy.map((blocker: any) => (
-                        <Badge key={blocker.identifier || blocker.id} variant="outline" className="px-2 py-0.5 text-[10px] font-bold bg-red-500/10 text-red-500 border-red-500/20">
-                          {blocker.identifier || blocker.id}
-                        </Badge>
-                      ))
-                    ) : (
-                      <span className="text-sm font-medium text-zinc-500 italic">No constraints</span>
-                    )}
+                </AppTooltip>
+                <AppTooltip content="Direct link to the origin task in your project management system">
+                  <div className="p-4 space-y-2 cursor-help">
+                    <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                      <ExternalLink size={10} /> Remote System
+                    </div>
+                    <div>
+                      {issueUrl ? (
+                        <a href={issueUrl} target="_blank" rel="noreferrer" className="text-sm font-medium text-primary hover:underline hover:text-primary/80 transition-colors truncate block">
+                          {issueUrl}
+                        </a>
+                      ) : (
+                        <span className="text-sm font-medium text-zinc-500 italic">No external tracker linked</span>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <div className="p-4 space-y-2">
-                  <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
-                    <ExternalLink size={10} /> Remote System
-                  </div>
-                  <div>
-                    {issueUrl ? (
-                      <a href={issueUrl} target="_blank" rel="noreferrer" className="text-sm font-medium text-primary hover:underline hover:text-primary/80 transition-colors truncate block">
-                        {issueUrl}
-                      </a>
-                    ) : (
-                      <span className="text-sm font-medium text-zinc-500 italic">No external tracker linked</span>
-                    )}
-                  </div>
-                </div>
+                </AppTooltip>
               </div>
 
               {description && (
@@ -1200,28 +1235,30 @@ export function IssueDetailView({
                   {hooks.map((hook) => {
                     const status = getHookStatus(hook.id)
                     return (
-                      <div key={hook.id} className="flex flex-col gap-2 p-3 rounded-lg border border-white/5 bg-white/[0.02]">
-                        <div className="flex items-center justify-between">
-                          <p className={`text-xs font-bold ${status === 'pending' ? 'text-zinc-500' : 'text-zinc-200'}`}>
-                            {hook.label}
-                          </p>
-                          {status !== 'pending' && (
-                            <Badge
-                              variant="outline"
-                              className={`h-4 px-1.5 text-[8px] font-black uppercase tracking-widest ${status === 'completed'
-                                ? 'border-primary/20 text-primary bg-primary/5'
-                                : status === 'active'
-                                  ? 'border-amber-500/20 text-amber-500 bg-amber-500/5 animate-pulse'
-                                  : 'border-red-500/20 text-red-500 bg-red-500/5'
-                                }`}
-                            >
-                              {status}
-                            </Badge>
-                          )}
-                          {status === 'pending' && <Circle className="h-3 w-3 text-zinc-700" />}
+                      <AppTooltip key={hook.id} content={hook.description}>
+                        <div className="flex flex-col gap-2 p-3 rounded-lg border border-white/5 bg-white/[0.02] cursor-help">
+                          <div className="flex items-center justify-between">
+                            <p className={`text-xs font-bold ${status === 'pending' ? 'text-zinc-500' : 'text-zinc-200'}`}>
+                              {hook.label}
+                            </p>
+                            {status !== 'pending' && (
+                              <Badge
+                                variant="outline"
+                                className={`h-4 px-1.5 text-[8px] font-black uppercase tracking-widest ${status === 'completed'
+                                  ? 'border-primary/20 text-primary bg-primary/5'
+                                  : status === 'active'
+                                    ? 'border-amber-500/20 text-amber-500 bg-amber-500/5 animate-pulse'
+                                    : 'border-red-500/20 text-red-500 bg-red-500/5'
+                                  }`}
+                              >
+                                {status}
+                              </Badge>
+                            )}
+                            {status === 'pending' && <Circle className="h-3 w-3 text-zinc-700" />}
+                          </div>
+                          <p className="text-[10px] text-zinc-500 leading-snug line-clamp-1">{hook.description}</p>
                         </div>
-                        <p className="text-[10px] text-zinc-500 leading-snug">{hook.description}</p>
-                      </div>
+                      </AppTooltip>
                     )
                   })}
                 </div>
@@ -1357,17 +1394,19 @@ export function IssueDetailView({
                   </div>
                 )}
                 {localState !== 'In Progress' && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={`h-6 gap-1.5 px-2 text-[9px] font-bold uppercase tracking-wider transition-all ${
-                      followLogs ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-white/5'
-                    }`}
-                    onClick={() => setFollowLogs(!followLogs)}
-                  >
-                    <div className={`h-1 w-1 rounded-full ${followLogs ? 'bg-primary animate-pulse' : 'bg-zinc-600'}`} />
-                    Follow
-                  </Button>
+                  <AppTooltip content="Automatically scroll to the latest log output">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={`h-6 gap-1.5 px-2 text-[9px] font-bold uppercase tracking-wider transition-all ${
+                        followLogs ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-white/5'
+                      }`}
+                      onClick={() => setFollowLogs(!followLogs)}
+                    >
+                      <div className={`h-1 w-1 rounded-full ${followLogs ? 'bg-primary animate-pulse' : 'bg-zinc-600'}`} />
+                      Follow
+                    </Button>
+                  </AppTooltip>
                 )}
                 {logsLoading && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
               </div>
@@ -1442,17 +1481,18 @@ export function IssueDetailView({
                   </div>
                 ) : (
                   artifacts.map((path) => (
-                    <button
-                      key={path}
-                      onClick={() => setSelectedArtifact(path)}
-                      className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-all group ${selectedArtifact === path 
-                        ? 'bg-primary/10 border border-primary/20 text-primary shadow-lg shadow-primary/5' 
-                        : 'text-zinc-500 hover:text-zinc-200 hover:bg-white/5 border border-transparent'
-                      }`}
-                    >
-                      <FileText size={14} className={selectedArtifact === path ? 'text-primary' : 'text-zinc-600 group-hover:text-zinc-400'} />
-                      <span className="truncate text-xs font-medium leading-none pt-0.5">{path}</span>
-                    </button>
+                    <AppTooltip key={path} content={`View ${path}`}>
+                      <button
+                        onClick={() => setSelectedArtifact(path)}
+                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-all group ${selectedArtifact === path 
+                          ? 'bg-primary/10 border border-primary/20 text-primary shadow-lg shadow-primary/5' 
+                          : 'text-zinc-500 hover:text-zinc-200 hover:bg-white/5 border border-transparent'
+                        }`}
+                      >
+                        <FileText size={14} className={selectedArtifact === path ? 'text-primary' : 'text-zinc-600 group-hover:text-zinc-400'} />
+                        <span className="truncate text-xs font-medium leading-none pt-0.5">{path}</span>
+                      </button>
+                    </AppTooltip>
                   ))
                 )}
               </div>
