@@ -1097,7 +1097,7 @@ export function IssueDetailView({
                   onChange={handleStateChange}
                 />
                 <CustomDropdown
-                  className="flex-1 min-w-[240px] border-white/10 bg-black hover:bg-white/5"
+                  className="w-64 border-white/10 bg-black hover:bg-white/5"
                   value={localAssignee.startsWith('agent-') ? localAssignee : (availableAgents.includes(localAssignee) ? `agent-${localAssignee}` : localAssignee)}
                   options={[
                     { label: 'Unassigned', value: 'Unassigned', icon: <Users className="h-3 w-3 text-muted-foreground" /> },
