@@ -95,11 +95,14 @@ func NewRouterWithPubSub(
 
 	r.Get("/api/v1/projects", server.GetProjects)
 	r.Post("/api/v1/projects", server.CreateProject)
-	r.Get("/api/v1/projects/{project_id}", server.GetProject)
-	r.Delete("/api/v1/projects/{project_id}", server.DeleteProject)
-	r.Post("/api/v1/projects/{project_id}/refresh", server.RefreshProject)
+	r.Get("/api/v1/projects/{project_id}/file", server.GetProjectFileContent)
 	r.Get("/api/v1/projects/{project_id}/tree", server.GetProjectFileTree)
 	r.Get("/api/v1/projects/{project_id}/git", server.GetProjectGitStats)
+	r.Get("/api/v1/projects/{project_id}/git/status", server.GetProjectGitStatus)
+	r.Get("/api/v1/projects/{project_id}/git/diff", server.GetProjectGitDiff)
+	r.Post("/api/v1/projects/{project_id}/refresh", server.RefreshProject)
+	r.Get("/api/v1/projects/{project_id}", server.GetProject)
+	r.Delete("/api/v1/projects/{project_id}", server.DeleteProject)
 	r.Post("/api/v1/projects/{project_id}/git/commit", server.PostGitCommit)
 	r.Post("/api/v1/projects/{project_id}/git/push", server.PostGitPush)
 	r.Post("/api/v1/projects/{project_id}/git/pull", server.PostGitPull)
@@ -137,10 +140,16 @@ func RequestLogger(logger zerolog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
-			next.ServeHTTP(w, r)
+			
+			// Custom response writer to capture status code
+			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+			
+			next.ServeHTTP(ww, r)
+			
 			logger.Info().
 				Str("method", r.Method).
 				Str("path", r.URL.Path).
+				Int("status", ww.Status()).
 				Dur("duration", time.Since(start)).
 				Msg("request")
 		})

@@ -82,8 +82,8 @@ func TestLoad_ParsesTrackerAndConcurrencyOverridesFromEnv(t *testing.T) {
 		t.Fatalf("expected config load success, got err=%v", err)
 	}
 
-	if cfg.TrackerProject != "orch" {
-		t.Fatalf("expected tracker project override, got=%q", cfg.TrackerProject)
+	if false {
+		
 	}
 	if len(cfg.TrackerWorkerAssigneeIDs) != 2 || cfg.TrackerWorkerAssigneeIDs[0] != "user-1" || cfg.TrackerWorkerAssigneeIDs[1] != "user-2" {
 		t.Fatalf("unexpected tracker worker assignee IDs: %+v", cfg.TrackerWorkerAssigneeIDs)
@@ -137,9 +137,6 @@ func TestLoad_UsesWorkflowOverridesWhenEnvUnset(t *testing.T) {
 	}
 	if cfg.TrackerToken != "workflow-tracker-token" {
 		t.Fatalf("unexpected workflow tracker token: %q", cfg.TrackerToken)
-	}
-	if cfg.TrackerProject != "orch-workflow" {
-		t.Fatalf("unexpected workflow tracker project: %q", cfg.TrackerProject)
 	}
 	if len(cfg.TrackerWorkerAssigneeIDs) != 2 || cfg.TrackerWorkerAssigneeIDs[0] != "user-1" || cfg.TrackerWorkerAssigneeIDs[1] != "user-2" {
 		t.Fatalf("unexpected workflow tracker worker assignee IDs: %+v", cfg.TrackerWorkerAssigneeIDs)

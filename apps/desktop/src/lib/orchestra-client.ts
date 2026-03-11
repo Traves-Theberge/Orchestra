@@ -140,7 +140,12 @@ async function requestJSON<T>(config: BackendConfig, path: string, init?: Reques
     return {} as T
   }
 
-  return (await response.json()) as T
+  const text = await response.text()
+  if (!text) {
+    return {} as T
+  }
+
+  return JSON.parse(text) as T
 }
 
 export async function updateIssue(
@@ -417,14 +422,43 @@ export async function refreshProject(config: BackendConfig, projectId: string): 
   })
 }
 
-export async function fetchProjectTree(config: BackendConfig, projectId: string): Promise<any[]> {
-  const data = await requestJSON<any[]>(config, `/api/v1/projects/${projectId}/tree`)
+export async function fetchProjectTree(config: BackendConfig, projectId: string, path?: string): Promise<any[]> {
+  const query = path ? `?path=${encodeURIComponent(path)}` : ''
+  const data = await requestJSON<any[]>(config, `/api/v1/projects/${projectId}/tree${query}`)
   return data || []
+}
+
+export async function fetchProjectFileContent(config: BackendConfig, projectId: string, path: string): Promise<string> {
+  const response = await fetch(`${config.baseUrl}/api/v1/projects/${projectId}/file?path=${encodeURIComponent(path)}`, {
+    headers: {
+      'Authorization': `Bearer ${config.apiToken}`,
+    },
+  })
+  if (!response.ok) throw new Error('failed to fetch project file content')
+  return response.text()
 }
 
 export async function fetchProjectGitHistory(config: BackendConfig, projectId: string): Promise<any[]> {
   const data = await requestJSON<any[]>(config, `/api/v1/projects/${projectId}/git`)
   return data || []
+}
+
+export async function fetchProjectGitStatus(config: BackendConfig, projectId: string): Promise<any[]> {
+  const data = await requestJSON<any[]>(config, `/api/v1/projects/${projectId}/git/status`)
+  return data || []
+}
+
+export async function fetchProjectGitDiff(config: BackendConfig, projectId: string, hash?: string): Promise<string> {
+  const query = hash ? `?hash=${encodeURIComponent(hash)}` : ''
+  const response = await fetch(`${config.baseUrl}/api/v1/projects/${projectId}/git/diff${query}`, {
+    headers: buildHeaders(config),
+  })
+
+  if (!response.ok) {
+    throw new APIError('diff_failed', 'failed to fetch project git diff')
+  }
+
+  return response.text()
 }
 
 export async function fetchSessionDetail(config: BackendConfig, sessionId: string): Promise<any> {
