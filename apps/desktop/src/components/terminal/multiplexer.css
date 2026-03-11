@@ -1,19 +1,14 @@
 .terminal-multiplexer .mosaic-window {
     border: 1px solid hsl(var(--border));
-    background: #f8fafc;
+    background: hsl(var(--background));
     border-radius: 8px;
     overflow: hidden;
     transition: all 0.2s ease;
 }
 
-.dark .terminal-multiplexer .mosaic-window {
-    border: 1px solid hsl(var(--border));
-    background: #0a0a0b;
-}
-
 .terminal-multiplexer .mosaic-window-toolbar {
     background: linear-gradient(to bottom, hsl(var(--muted) / 0.8), hsl(var(--muted) / 0.4));
-    border-bottom: 1px solid hsl(var(--border) / 0.5);
+    border-bottom: 1px solid hsl(var(--border));
     height: 32px;
     padding: 0 12px;
     display: flex;
@@ -48,22 +43,13 @@
 }
 
 .terminal-multiplexer .mosaic-root {
-    background: #f1f5f9;
+    background: hsl(var(--background));
     padding: 4px;
-    border: 1px solid hsl(var(--border));
-}
-
-.dark .terminal-multiplexer .mosaic-root {
-    background: #050506;
-    border: 1px solid hsl(var(--border));
+    border: 1px solid hsl(var(--border) / 0.5);
 }
 
 .terminal-multiplexer .mosaic-window-body {
-    background: #f8fafc;
-}
-
-.dark .terminal-multiplexer .mosaic-window-body {
-    background: #0a0a0b;
+    background: hsl(var(--background));
 }
 
 .terminal-multiplexer .mosaic-preview {

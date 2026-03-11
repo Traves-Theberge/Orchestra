@@ -97,7 +97,7 @@ export const TerminalMultiplexer: React.FC<TerminalMultiplexerProps> = ({
                     }}
                     value={currentNode}
                     onChange={setCurrentNode}
-                    className="mosaic-blueprint-theme"
+                    className="flex-1"
                 />
             ) : (
                 <div className="w-full h-full flex flex-col items-center justify-center text-muted-foreground/20 space-y-6">
