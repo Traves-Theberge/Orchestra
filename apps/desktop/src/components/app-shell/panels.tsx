@@ -49,29 +49,55 @@ function IconButton({ icon, title, onClick, className = '' }: { icon: ReactNode;
 
 export function DashboardOverview({
   projects,
+  issues,
   stats,
+  snapshot,
   warehouseStats,
   onProjectClick,
   onCreateTask,
 }: {
   projects: Project[]
+  issues: any[]
   stats: Record<string, ProjectStats>
+  snapshot: SnapshotPayload | null
   warehouseStats: GlobalStats | null
   onProjectClick: (id: string) => void
   onCreateTask?: () => void
 }) {
-  const sortedProjects = [...projects].sort((a, b) => {
-    const sA = stats[a.id]?.total_sessions ?? 0
-    const sB = stats[b.id]?.total_sessions ?? 0
-    return sB - sA
-  }).slice(0, 3)
+  const sortedProjects = useMemo(() => {
+    return [...projects].sort((a, b) => {
+      // 1. Check for active sessions in snapshot
+      // Map running issue IDs to their project IDs using the issues list
+      const activeProjectIds = new Set(
+        snapshot?.running
+          ?.map(r => issues.find(i => i.id === r.issue_id)?.project_id)
+          .filter(Boolean)
+      )
 
-  const displayProjects = sortedProjects.length > 0 ? sortedProjects : projects.slice(0, 3)
+      const activeA = activeProjectIds.has(a.id) ? 1 : 0
+      const activeB = activeProjectIds.has(b.id) ? 1 : 0
+      
+      if (activeA !== activeB) return activeB - activeA
+
+      // 2. Check last active date
+      const lastA = stats[a.id]?.last_active ? new Date(stats[a.id].last_active).getTime() : 0
+      const lastB = stats[b.id]?.last_active ? new Date(stats[b.id].last_active).getTime() : 0
+      
+      if (lastA !== lastB) return lastB - lastA
+
+      // 3. Fallback to total sessions
+      const sA = stats[a.id]?.total_sessions ?? 0
+      const sB = stats[b.id]?.total_sessions ?? 0
+      return sB - sA
+    }).slice(0, 6)
+  }, [projects, issues, stats, snapshot])
+
+  const displayProjects = sortedProjects
 
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 min-h-0">
       {/* Workspace Activity (Left) */}
-      <div className="lg:col-span-2 flex flex-col">
+      <div className="lg:col-span-2 flex flex-col min-h-[420px]">
         <Card className="bg-background/40 backdrop-blur-xl border-white/5 shadow-2xl flex-1 flex flex-col min-h-0">
           <CardHeader className="flex flex-row items-center justify-between pb-2 px-3 pt-3 shrink-0">
             <div className="space-y-1">
@@ -818,6 +844,23 @@ export function IssueDetailView({
     ).join('\n')
   }, [logs, logFilter])
 
+  const [followLogs, setFollowLogs] = useState(true)
+  const logContainerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (followLogs && logContainerRef.current) {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight
+    }
+  }, [filteredLogs, followLogs])
+
+  const handleLogScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget
+    const isAtBottom = scrollHeight - scrollTop <= clientHeight + 50
+    if (!isAtBottom && followLogs) {
+      setFollowLogs(false)
+    }
+  }
+
   const handleStateChange = async (newState: string) => {
     setLocalState(newState)
     if (onUpdate) {
@@ -1035,99 +1078,78 @@ export function IssueDetailView({
                       Create PR
                     </Button>
                   )}
-                  {prResult && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 gap-2 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/5"
-                      asChild
-                    >
-                      <a href={prResult.url} target="_blank" rel="noreferrer">
-                        <ExternalLink size={12} />
-                        PR #{prResult.number}
-                      </a>
-                    </Button>
-                  )}
-                  {onStartRace && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 gap-2 border-blue-500/30 text-blue-500 hover:bg-blue-500/5"
-                      onClick={() => setRaceDialogOpen(true)}
-                    >
-                      <Zap size={12} fill="currentColor" className="text-blue-500" />
-                      Start Race
-                    </Button>
-                  )}
-                  {localState === 'In Progress' && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 gap-2 border-primary/30 text-primary hover:bg-primary/5"
-                      onClick={handlePromoteWinner}
-                    >
-                      <ShieldCheck size={12} fill="currentColor" className="text-primary" />
-                      Promote to Winner
-                    </Button>
-                  )}
-                  {(localState === 'Todo' || localState === 'Done') && (
-                    <Button
-                      variant="default"
-                      size="sm"
-                      className="h-8 gap-2 bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/20"
-                      onClick={() => handleStateChange('In Progress')}
-                    >
-                      <Play size={12} fill="currentColor" />
-                      Run Task
-                    </Button>
-                  )}
-                  {localState === 'In Progress' && onStopSession && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 border-red-200 text-xs text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-900/30 dark:text-red-400 dark:hover:bg-red-950/20"
-                      onClick={() => void onStopSession(localProvider)}
-                    >
-                      Stop Session
-                    </Button>
-                  )}
-                  <CustomDropdown
-                    className="w-40"
-                    value={localState}
-                    options={AGENT_STATES.map((s) => ({ label: s, value: s }))}
-                    onChange={handleStateChange}
-                  />
-                  <CustomDropdown
-                    className="w-48"
-                    value={localProvider || 'default'}
-                    options={[
-                      { label: 'System Default', value: 'default', icon: <Settings2 className="h-3 w-3" /> },
-                      ...availableAgents.map((p) => ({
-                        label: p.charAt(0).toUpperCase() + p.slice(1),
-                        value: p,
-                        icon: <Cpu className="h-3 w-3" />,
-                      })),
-                    ]}
-                    onChange={handleProviderChange}
-                    placeholder="Select Provider..."
-                  />
-                  <CustomDropdown
-                    className="w-56"
-                    value={localAssignee.startsWith('agent-') ? localAssignee : (availableAgents.includes(localAssignee) ? `agent-${localAssignee}` : localAssignee)}
-                    options={[
-                      { label: 'Unassigned', value: 'Unassigned', icon: <Users className="h-3 w-3" /> },
-                      ...availableAgents.map((agent) => ({
-                        label: agent.charAt(0).toUpperCase() + agent.slice(1),
-                        value: `agent-${agent}`,
-                        icon: <Activity className="h-3 w-3" />,
-                      })),
-                    ]}
-                    onChange={handleAssigneeChange}
-                    placeholder="Assign Agent..."
-                  />
-                </div>            </div>
+                {prResult && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-2 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/5"
+                    asChild
+                  >
+                    <a href={prResult.url} target="_blank" rel="noreferrer">
+                      <ExternalLink size={12} />
+                      PR #{prResult.number}
+                    </a>
+                  </Button>
+                )}
+                {(localState === 'Todo' || localState === 'Done') && (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="h-8 gap-2 bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/20"
+                    onClick={() => handleStateChange('In Progress')}
+                  >
+                    <Play size={12} fill="currentColor" />
+                    Run Task
+                  </Button>
+                )}
+                {localState === 'In Progress' && onStopSession && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 border-red-200 text-xs text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-900/30 dark:text-red-400 dark:hover:bg-red-950/20"
+                    onClick={() => void onStopSession(localProvider)}
+                  >
+                    Stop Session
+                  </Button>
+                )}
+                <CustomDropdown
+                  className="w-40"
+                  value={localState}
+                  options={AGENT_STATES.map((s) => ({ label: s, value: s }))}
+                  onChange={handleStateChange}
+                />
+                <CustomDropdown
+                  className="w-48"
+                  value={localProvider || 'default'}
+                  options={[
+                    { label: 'System Default', value: 'default', icon: <Settings2 className="h-3 w-3" /> },
+                    ...availableAgents.map((p) => ({
+                      label: p.charAt(0).toUpperCase() + p.slice(1),
+                      value: p,
+                      icon: <Cpu className="h-3 w-3" />,
+                    })),
+                  ]}
+                  onChange={handleProviderChange}
+                  placeholder="Select Provider..."
+                />
+                <CustomDropdown
+                  className="w-56"
+                  value={localAssignee.startsWith('agent-') ? localAssignee : (availableAgents.includes(localAssignee) ? `agent-${localAssignee}` : localAssignee)}
+                  options={[
+                    { label: 'Unassigned', value: 'Unassigned', icon: <Users className="h-3 w-3" /> },
+                    ...availableAgents.map((agent) => ({
+                      label: agent.charAt(0).toUpperCase() + agent.slice(1),
+                      value: `agent-${agent}`,
+                      icon: <Activity className="h-3 w-3" />,
+                    })),
+                  ]}
+                  onChange={handleAssigneeChange}
+                  placeholder="Assign Agent..."
+                />
+              </div>
+            </div>
 
-              <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-5">
+            <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-5 text-left">
                 <div className="space-y-1">
                   <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Status</p>
                   <div className="flex items-center gap-2">
@@ -1420,19 +1442,34 @@ export function IssueDetailView({
                     className="h-6 w-48 rounded bg-white/5 border border-white/10 pl-7 pr-2 text-[10px] text-zinc-300 focus:outline-none focus:ring-1 focus:ring-primary/30"
                   />
                 </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={`h-6 gap-1.5 px-2 text-[9px] font-bold uppercase tracking-wider transition-all ${
+                    followLogs ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-white/5'
+                  }`}
+                  onClick={() => setFollowLogs(!followLogs)}
+                >
+                  <div className={`h-1 w-1 rounded-full ${followLogs ? 'bg-primary animate-pulse' : 'bg-zinc-600'}`} />
+                  Follow
+                </Button>
                 {(logsLoading || secondaryLogsLoading) && <div className="h-2 w-2 animate-pulse rounded-full bg-primary" />}
               </div>
-            </div>            <div className="max-h-[500px] overflow-auto whitespace-pre-wrap">
+            </div>            <div 
+              ref={logContainerRef}
+              onScroll={handleLogScroll}
+              className="max-h-[500px] overflow-auto whitespace-pre-wrap custom-scrollbar"
+            >
               {isSplitView ? (
                 <div className="grid grid-cols-2 gap-4 divide-x divide-white/5 h-[500px]">
-                  <div className="pr-4 overflow-auto scroll-smooth">
+                  <div className="pr-4 overflow-auto scroll-smooth custom-scrollbar">
                     <div className="sticky top-0 bg-black/80 backdrop-blur pb-1 mb-2 text-[8px] font-black uppercase text-zinc-500 flex items-center justify-between z-10">
                       <span>{localProvider}</span>
                       {logsLoading && <Loader2 className="h-2 w-2 animate-spin text-primary" />}
                     </div>
                     {filteredLogs ? <Ansi>{filteredLogs}</Ansi> : <p className="opacity-20 italic">No output...</p>}
                   </div>
-                  <div className="pl-4 overflow-auto scroll-smooth border-l border-white/5">
+                  <div className="pl-4 overflow-auto scroll-smooth border-l border-white/5 custom-scrollbar">
                     <div className="sticky top-0 bg-black/80 backdrop-blur pb-1 mb-2 text-[8px] font-black uppercase text-blue-400 flex items-center justify-between z-10">
                       <span>{secondaryProvider}</span>
                       {secondaryLogsLoading && <Loader2 className="h-2 w-2 animate-spin text-blue-400" />}
@@ -1471,7 +1508,6 @@ export function IssueDetailView({
                   )}
                 </>
               )}
-              <div ref={logsEndRef} />
             </div>
           </div>
         ) : activeTab === 'artifacts' ? (

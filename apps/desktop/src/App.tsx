@@ -951,7 +951,9 @@ export default function App() {
                   <section className="col-span-12 h-fit">
                     <DashboardOverview
                       projects={projects}
+                      issues={boardIssues}
                       stats={projectStats}
+                      snapshot={snapshot}
                       warehouseStats={warehouseStats}
                       onCreateTask={() => setCreateTaskDialogOpen(true)}
                       onProjectClick={(id) => {
