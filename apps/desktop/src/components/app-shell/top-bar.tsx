@@ -235,8 +235,9 @@ function IconButton({ icon, title, onClick }: { icon: ReactNode; title: string; 
         </Tooltip.Trigger>
         <Tooltip.Portal>
           <Tooltip.Content
-            className="z-[110] select-none rounded-lg bg-popover border border-border px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest leading-none text-popover-foreground shadow-xl animate-in fade-in zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=closed]:zoom-out-95"
+            className="z-[110] select-none rounded-lg bg-popover border border-border px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest leading-none text-popover-foreground shadow-xl animate-in fade-in zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=closed]:zoom-out-95 !opacity-100 block"
             sideOffset={5}
+            style={{ backgroundColor: 'hsl(var(--popover))' }}
           >
             {title}
             <Tooltip.Arrow className="fill-popover" />

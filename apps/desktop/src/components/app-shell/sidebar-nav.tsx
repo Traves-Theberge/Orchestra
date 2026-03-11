@@ -62,7 +62,8 @@ export function SidebarNav({
             <Tooltip.Content
               side="right"
               sideOffset={10}
-              className="z-[110] select-none rounded-lg bg-popover border border-border px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest leading-none text-popover-foreground shadow-2xl animate-in fade-in zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=closed]:zoom-out-95"
+              className="z-[110] select-none rounded-lg bg-popover border border-border px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest leading-none text-popover-foreground shadow-2xl animate-in fade-in zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=closed]:zoom-out-95 !opacity-100 block"
+              style={{ backgroundColor: 'hsl(var(--popover))' }}
             >
               {sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
               <Tooltip.Arrow className="fill-popover" />
@@ -135,13 +136,14 @@ export function SidebarNav({
                       <Tooltip.Content
                         side="right"
                         sideOffset={12}
-                        className="z-[110] select-none rounded-lg bg-popover border border-border px-3 py-2 text-[10px] font-black uppercase tracking-[0.15em] text-popover-foreground shadow-2xl animate-in fade-in zoom-in-95 slide-in-from-left-2"
+                        className="z-[110] select-none rounded-lg bg-popover border border-border px-3 py-2 text-[10px] font-black uppercase tracking-[0.15em] text-popover-foreground shadow-2xl animate-in fade-in zoom-in-95 slide-in-from-left-2 !opacity-100 block"
+                        style={{ backgroundColor: 'hsl(var(--popover))' }}
                       >
-                        <div className="flex flex-col gap-0.5">
+                        <div className="flex flex-col gap-0.5 relative z-10">
                           <span className="text-foreground">{item.label}</span>
                           <span className="text-[8px] font-bold text-muted-foreground/70 normal-case tracking-normal">{item.description}</span>
                         </div>
-                        <Tooltip.Arrow className="fill-border" />
+                        <Tooltip.Arrow className="fill-popover" />
                       </Tooltip.Content>
                     </Tooltip.Portal>
                   </Tooltip.Root>
