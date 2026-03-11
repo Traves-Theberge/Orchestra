@@ -342,19 +342,21 @@ function TimelineItemRow({ item, narrative }: { item: TimelineItem; narrative: a
   const [expanded, setExpanded] = useState(false)
   const data = item.data as any
 
-  const cleanOneDark = useMemo(() => ({
-    ...oneDark,
-    'pre[class*="language-"]': {
-      ...oneDark['pre[class*="language-"]'],
-      background: 'transparent',
-      backgroundColor: 'transparent',
-    },
-    'code[class*="language-"]': {
-      ...oneDark['code[class*="language-"]'],
-      background: 'transparent',
-      backgroundColor: 'transparent',
+  // Nuclear reset for the theme: strip all backgrounds from every sub-property
+  const cleanOneDark = useMemo(() => {
+    const theme: any = { ...oneDark }
+    for (const key in theme) {
+      if (theme[key]) {
+        theme[key] = {
+          ...theme[key],
+          background: 'transparent',
+          backgroundColor: 'transparent',
+          backgroundClip: 'padding-box', // Fix for some browsers
+        }
+      }
     }
-  }), [])
+    return theme
+  }, [])
 
   return (
     <div className={`group flex flex-col rounded-xl border transition-all duration-300 ${expanded ? 'border-border/60 bg-muted/30 shadow-inner' : 'border-transparent hover:border-border/40 hover:bg-muted/20'}`}>
