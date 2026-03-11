@@ -342,6 +342,20 @@ function TimelineItemRow({ item, narrative }: { item: TimelineItem; narrative: a
   const [expanded, setExpanded] = useState(false)
   const data = item.data as any
 
+  const cleanOneDark = useMemo(() => ({
+    ...oneDark,
+    'pre[class*="language-"]': {
+      ...oneDark['pre[class*="language-"]'],
+      background: 'transparent',
+      backgroundColor: 'transparent',
+    },
+    'code[class*="language-"]': {
+      ...oneDark['code[class*="language-"]'],
+      background: 'transparent',
+      backgroundColor: 'transparent',
+    }
+  }), [])
+
   return (
     <div className={`group flex flex-col rounded-xl border transition-all duration-300 ${expanded ? 'border-border/60 bg-muted/30 shadow-inner' : 'border-transparent hover:border-border/40 hover:bg-muted/20'}`}>
       <button 
@@ -386,8 +400,19 @@ function TimelineItemRow({ item, narrative }: { item: TimelineItem; narrative: a
             </div>
             <SyntaxHighlighter
               language="json"
-              style={oneDark}
-              customStyle={{ margin: 0, padding: 0, background: 'transparent', fontSize: '10px' }}
+              style={cleanOneDark}
+              customStyle={{ 
+                margin: 0, 
+                padding: 0, 
+                background: 'transparent', 
+                fontSize: '10px',
+                lineHeight: '1.5',
+                textShadow: 'none',
+              }}
+              codeTagProps={{
+                style: { background: 'transparent', textShadow: 'none' }
+              }}
+              useInlineStyles={true}
             >
               {JSON.stringify(data, null, 2)}
             </SyntaxHighlighter>
