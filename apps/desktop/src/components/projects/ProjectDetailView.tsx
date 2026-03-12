@@ -221,6 +221,21 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         window.open(loginUrl, 'GitHub Auth', 'width=600,height=800')
     }
 
+    const handleOpenProjectFolder = async () => {
+        const desktopBridge = window.orchestraDesktop
+        const fileUrl = `file://${encodeURI(project.root_path)}`
+
+        try {
+            if (desktopBridge && typeof desktopBridge.openExternal === 'function') {
+                await desktopBridge.openExternal(fileUrl)
+                return
+            }
+            window.open(fileUrl, '_blank', 'noopener,noreferrer')
+        } catch (err) {
+            console.error('Failed to open project folder:', err)
+        }
+    }
+
     const handleExpandFolder = async (path: string) => {
         if (!config) return []
         try {
@@ -373,9 +388,17 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                             </div>
                             <p className="text-sm text-muted-foreground font-mono opacity-60 flex items-center gap-2">
                                 {project.root_path}
-                                <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-primary">
-                                    <ExternalLink size={12} />
-                                </Button>
+                                <AppTooltip content="Open project folder">
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-6 w-6 p-0 text-muted-foreground hover:text-primary"
+                                        onClick={() => void handleOpenProjectFolder()}
+                                        aria-label="Open project folder"
+                                    >
+                                        <ExternalLink size={12} />
+                                    </Button>
+                                </AppTooltip>
                             </p>
                         </div>
                     </div>
@@ -760,6 +783,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                                 <div className="flex-1 min-h-0">
                                     <TerminalMultiplexer
                                         baseUrl={config.baseUrl}
+                                        apiToken={config.apiToken}
                                         onCloseTerminal={() => { }}
                                         activeTerminals={[
                                             { id: `project-${project.id}`, title: 'Project Shell', projectId: project.id },

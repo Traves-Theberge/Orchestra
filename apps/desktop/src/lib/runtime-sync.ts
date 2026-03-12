@@ -82,7 +82,7 @@ export function startRuntimeSync(config: BackendConfig, handlers: RuntimeSyncHan
 
   const attachStream = () => {
     if (config.apiToken && config.apiToken.trim() !== '') {
-      handlers.onStatus('Polling Mode (SSE Disabled)')
+      handlers.onStatus('SSE disabled while bearer token is set (polling mode)')
       startPolling()
       return
     }
@@ -156,7 +156,7 @@ export function startRuntimeSync(config: BackendConfig, handlers: RuntimeSyncHan
     }
 
     stream.onerror = () => {
-      handlers.onStatus('SSE Offline (Polling)')
+      handlers.onStatus('SSE disconnected (polling fallback)')
       startPolling()
       if (stream) {
         stream.close()

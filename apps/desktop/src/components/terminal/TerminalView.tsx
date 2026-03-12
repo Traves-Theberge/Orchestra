@@ -7,11 +7,12 @@ interface TerminalViewProps {
     sessionId: string
     projectId?: string
     baseUrl: string
+    apiToken?: string
     onClose?: () => void
     theme?: 'light' | 'dark'
 }
 
-export const TerminalView: React.FC<TerminalViewProps> = ({ sessionId, projectId, baseUrl, onClose, theme }) => {
+export const TerminalView: React.FC<TerminalViewProps> = ({ sessionId, projectId, baseUrl, apiToken, onClose, theme }) => {
     const terminalRef = useRef<HTMLDivElement>(null)
     const xtermRef = useRef<Terminal | null>(null)
     const wsRef = useRef<WebSocket | null>(null)
@@ -62,6 +63,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ sessionId, projectId
         wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:'
         wsUrl.pathname = `/api/v1/terminal/${sessionId}`
         if (projectId) wsUrl.searchParams.set('project_id', projectId)
+        if (apiToken && apiToken.trim() !== '') wsUrl.searchParams.set('token', apiToken.trim())
 
         const ws = new WebSocket(wsUrl.toString())
         wsRef.current = ws
@@ -107,7 +109,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ sessionId, projectId
             ws.close()
             term.dispose()
         }
-    }, [sessionId, projectId, baseUrl, theme])
+    }, [sessionId, projectId, baseUrl, apiToken, theme])
 
     return (
         <div className="w-full h-full bg-background p-2 rounded-xl border border-border overflow-hidden">

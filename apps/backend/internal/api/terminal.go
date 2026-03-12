@@ -2,7 +2,9 @@ package api
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -10,13 +12,12 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
 )
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true // In production, refine this
-	},
-}
-
 func (s *Server) TerminalWebSocket(w http.ResponseWriter, r *http.Request) {
+	if !s.isTerminalAuthorized(r) {
+		writeJSONError(w, http.StatusUnauthorized, "unauthorized", "missing or invalid bearer token")
+		return
+	}
+
 	sessionID := chi.URLParam(r, "session_id")
 	projectID := r.URL.Query().Get("project_id")
 
@@ -34,6 +35,7 @@ func (s *Server) TerminalWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	upgrader := websocket.Upgrader{CheckOrigin: s.allowWebSocketOrigin}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		s.logger.Error().Err(err).Msg("failed to upgrade to websocket")
@@ -44,7 +46,7 @@ func (s *Server) TerminalWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Default to bash
 	command := "/bin/bash"
 	args := []string{}
-	
+
 	// If this is an issue session, we launch the specific agent command
 	if strings.HasPrefix(sessionID, "issue-") {
 		issueIdentifier := strings.TrimPrefix(sessionID, "issue-")
@@ -56,7 +58,7 @@ func (s *Server) TerminalWebSocket(w http.ResponseWriter, r *http.Request) {
 					if provider == "" {
 						provider = s.config.AgentProvider
 					}
-					
+
 					if cmd, ok := s.config.AgentCommands[provider]; ok && cmd != "" {
 						// Use shell to run the agent command so we can see its TUI if it has one
 						args = []string{"-c", cmd}
@@ -110,4 +112,51 @@ func (s *Server) TerminalWebSocket(w http.ResponseWriter, r *http.Request) {
 			session.Write(message)
 		}
 	}
+}
+
+func (s *Server) isTerminalAuthorized(r *http.Request) bool {
+	token := strings.TrimSpace(s.authToken)
+	if token == "" {
+		return true
+	}
+
+	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
+	if authHeader == "Bearer "+token {
+		return true
+	}
+
+	queryToken := strings.TrimSpace(r.URL.Query().Get("token"))
+	return queryToken == token
+}
+
+func (s *Server) allowWebSocketOrigin(r *http.Request) bool {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return true
+	}
+
+	originURL, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+
+	originHost := strings.TrimSpace(originURL.Hostname())
+	if originHost == "" {
+		return false
+	}
+
+	requestHost := strings.TrimSpace(r.Host)
+	if requestHost != "" {
+		if parsedReqHost, err := url.Parse("http://" + requestHost); err == nil {
+			if strings.EqualFold(parsedReqHost.Hostname(), originHost) {
+				return true
+			}
+		}
+	}
+
+	if strings.EqualFold(originHost, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(originHost)
+	return ip != nil && ip.IsLoopback()
 }

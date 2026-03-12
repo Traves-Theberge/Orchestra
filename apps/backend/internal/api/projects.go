@@ -69,7 +69,7 @@ func (s *Server) PostGitPush(w http.ResponseWriter, r *http.Request) {
 		Remote string `json:"remote"`
 		Branch string `json:"branch"`
 	}
-	
+
 	// Decode body if it exists and is not empty
 	if r.ContentLength > 0 {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -118,7 +118,7 @@ func (s *Server) PostGitPull(w http.ResponseWriter, r *http.Request) {
 		Remote string `json:"remote"`
 		Branch string `json:"branch"`
 	}
-	
+
 	if r.ContentLength > 0 {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			s.logger.Warn().Err(err).Msg("failed to decode git pull body")
@@ -159,6 +159,10 @@ func (s *Server) GetProjects(w http.ResponseWriter, r *http.Request) {
 		s.logger.Error().Err(err).Msg("failed to get projects")
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
+	}
+
+	for i := range projects {
+		projects[i].GitHubToken = redactProjectToken(projects[i].GitHubToken)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -230,6 +234,12 @@ func (s *Server) CreateProject(w http.ResponseWriter, r *http.Request) {
 		req.RootPath = gitRoot
 	} else {
 		s.logger.Warn().Err(err).Str("path", req.RootPath).Msg("could not get git info for project")
+	}
+
+	if err := workspace.ValidateProjectPath(req.RootPath, s.config.ProjectRoots); err != nil {
+		s.logger.Warn().Err(err).Str("path", req.RootPath).Msg("unauthorized project path")
+		http.Error(w, "Unauthorized project path", http.StatusForbidden)
+		return
 	}
 
 	// Attempt to upsert
@@ -333,11 +343,14 @@ func (s *Server) GetProjectFileContent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Project not found", http.StatusNotFound)
 		return
 	}
+	if err := workspace.ValidateProjectPath(project.RootPath, s.config.ProjectRoots); err != nil {
+		s.logger.Warn().Err(err).Str("path", project.RootPath).Msg("unauthorized project file content attempt")
+		http.Error(w, "Unauthorized project path", http.StatusForbidden)
+		return
+	}
 
-	fullPath := filepath.Join(project.RootPath, filePath)
-	// Safety check: ensure file is within project root
-	rel, err := filepath.Rel(project.RootPath, fullPath)
-	if err != nil || strings.HasPrefix(rel, "..") {
+	fullPath, err := safeProjectSubpath(project.RootPath, filePath)
+	if err != nil {
 		http.Error(w, "Invalid file path", http.StatusForbidden)
 		return
 	}
@@ -363,9 +376,17 @@ func (s *Server) GetProjectFileTree(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Project not found", http.StatusNotFound)
 		return
 	}
-
-	// Simplified: If it's in the DB, we trust the path for local indexing.
-	// This removes brittle path guard checks for registered projects.
+	if err := workspace.ValidateProjectPath(project.RootPath, s.config.ProjectRoots); err != nil {
+		s.logger.Warn().Err(err).Str("path", project.RootPath).Msg("unauthorized project tree attempt")
+		http.Error(w, "Unauthorized project path", http.StatusForbidden)
+		return
+	}
+	if relPath != "" {
+		if _, err := safeProjectSubpath(project.RootPath, relPath); err != nil {
+			http.Error(w, "Invalid tree path", http.StatusForbidden)
+			return
+		}
+	}
 
 	tree, err := walkTree(project.RootPath, relPath, 1)
 	if err != nil {
@@ -384,6 +405,25 @@ func (s *Server) GetProjectFileTree(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(tree)
+}
+
+func redactProjectToken(token string) string {
+	if strings.TrimSpace(token) == "" {
+		return ""
+	}
+	return "configured"
+}
+
+func safeProjectSubpath(root string, relPath string) (string, error) {
+	fullPath := filepath.Join(root, relPath)
+	rel, err := filepath.Rel(root, fullPath)
+	if err != nil {
+		return "", err
+	}
+	if strings.HasPrefix(rel, "..") {
+		return "", filepath.ErrBadPattern
+	}
+	return fullPath, nil
 }
 
 func walkTree(root, rel string, maxDepth int) ([]FileNode, error) {

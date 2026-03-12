@@ -11,7 +11,7 @@ func TestEnsureIssueWorkspaceCreatesAndRunsAfterCreateOnce(t *testing.T) {
 	root := t.TempDir()
 	service := Service{Root: root, HookTimeout: 2 * time.Second}
 
-	workspacePath, created, err := service.EnsureIssueWorkspace("MT-101", "codex", Hooks{AfterCreate: "echo hello > created.txt"})
+	workspacePath, created, _, err := service.EnsureIssueWorkspace("MT-101", "codex", Hooks{AfterCreate: "echo hello > created.txt"})
 	if err != nil {
 		t.Fatalf("expected workspace creation success, got err=%v", err)
 	}
@@ -27,7 +27,7 @@ func TestEnsureIssueWorkspaceCreatesAndRunsAfterCreateOnce(t *testing.T) {
 		t.Fatalf("unexpected hook output: %q", string(content))
 	}
 
-	if _, secondCreated, err := service.EnsureIssueWorkspace("MT-101", "codex", Hooks{AfterCreate: "echo nope > created.txt"}); err != nil {
+	if _, secondCreated, _, err := service.EnsureIssueWorkspace("MT-101", "codex", Hooks{AfterCreate: "echo nope > created.txt"}); err != nil {
 		t.Fatalf("expected second ensure success, got err=%v", err)
 	} else if secondCreated {
 		t.Fatalf("expected second ensure not to recreate workspace")
@@ -55,7 +55,7 @@ func TestEnsureIssueWorkspaceReplacesStaleFilePath(t *testing.T) {
 		t.Fatalf("write stale file: %v", err)
 	}
 
-	workspacePath, created, err := service.EnsureIssueWorkspace("MT-201", "codex", Hooks{})
+	workspacePath, created, _, err := service.EnsureIssueWorkspace("MT-201", "codex", Hooks{})
 	if err != nil {
 		t.Fatalf("ensure workspace: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestRemoveIssueWorkspacesContinuesWhenBeforeRemoveFails(t *testing.T) {
 	root := t.TempDir()
 	service := Service{Root: root, HookTimeout: 2 * time.Second}
 
-	workspacePath, _, err := service.EnsureIssueWorkspace("MT-301", "codex", Hooks{})
+	workspacePath, _, _, err := service.EnsureIssueWorkspace("MT-301", "codex", Hooks{})
 	if err != nil {
 		t.Fatalf("ensure workspace: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestRemoveIssueWorkspacesRunsBeforeRemoveHook(t *testing.T) {
 	root := t.TempDir()
 	service := Service{Root: root, HookTimeout: 2 * time.Second}
 
-	workspacePath, _, err := service.EnsureIssueWorkspace("MT-401", "codex", Hooks{})
+	workspacePath, _, _, err := service.EnsureIssueWorkspace("MT-401", "codex", Hooks{})
 	if err != nil {
 		t.Fatalf("ensure workspace: %v", err)
 	}
@@ -127,12 +127,12 @@ func TestRunBeforeRunHookReturnsErrorOnFailure(t *testing.T) {
 	root := t.TempDir()
 	service := Service{Root: root, HookTimeout: 2 * time.Second}
 
-	workspacePath, _, err := service.EnsureIssueWorkspace("MT-501", "codex", Hooks{})
+	workspacePath, _, _, err := service.EnsureIssueWorkspace("MT-501", "codex", Hooks{})
 	if err != nil {
 		t.Fatalf("ensure workspace: %v", err)
 	}
 
-	err = service.RunBeforeRunHook(workspacePath, Hooks{BeforeRun: "exit 23"})
+	_, err = service.RunBeforeRunHook(workspacePath, Hooks{BeforeRun: "exit 23"})
 	if err == nil {
 		t.Fatalf("expected before_run hook error")
 	}
@@ -142,13 +142,13 @@ func TestRunAfterRunHookIgnoresFailureButRunsHook(t *testing.T) {
 	root := t.TempDir()
 	service := Service{Root: root, HookTimeout: 2 * time.Second}
 
-	workspacePath, _, err := service.EnsureIssueWorkspace("MT-601", "codex", Hooks{})
+	workspacePath, _, _, err := service.EnsureIssueWorkspace("MT-601", "codex", Hooks{})
 	if err != nil {
 		t.Fatalf("ensure workspace: %v", err)
 	}
 
 	marker := filepath.Join(root, "after-run.txt")
-	err = service.RunAfterRunHook(workspacePath, Hooks{AfterRun: "echo ran > \"" + marker + "\"; exit 17"})
+	_, err = service.RunAfterRunHook(workspacePath, Hooks{AfterRun: "echo ran > \"" + marker + "\"; exit 17"})
 	if err != nil {
 		t.Fatalf("expected after_run hook failure to be ignored, got err=%v", err)
 	}

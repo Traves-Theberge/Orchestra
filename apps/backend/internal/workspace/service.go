@@ -105,7 +105,8 @@ func (s Service) RunAfterRunHook(workspacePath string, hooks Hooks) (HookResult,
 	if hooks.AfterRun == "" {
 		return HookResult{}, nil
 	}
-	return RunHook("after_run", hooks.AfterRun, workspacePath, s.timeoutOrDefault())
+	res, _ := RunHook("after_run", hooks.AfterRun, workspacePath, s.timeoutOrDefault())
+	return res, nil
 }
 
 func (s Service) ListArtifacts(issueIdentifier string, provider string) ([]string, error) {

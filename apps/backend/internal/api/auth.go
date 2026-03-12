@@ -1,6 +1,7 @@
 package api
 
 import (
+	"net"
 	"net/http"
 	"strings"
 
@@ -23,4 +24,16 @@ func requireBearerToken(token string) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func runtimeHostIsLoopback(host string) bool {
+	trimmed := strings.TrimSpace(strings.Trim(host, "[]"))
+	if trimmed == "" || strings.EqualFold(trimmed, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(trimmed)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback()
 }

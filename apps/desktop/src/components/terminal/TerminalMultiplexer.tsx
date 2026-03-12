@@ -15,6 +15,7 @@ export type TerminalNode = {
 interface TerminalMultiplexerProps {
     activeTerminals: TerminalNode[]
     baseUrl: string
+    apiToken?: string
     onCloseTerminal: (id: string) => void
     theme?: 'light' | 'dark'
 }
@@ -22,6 +23,7 @@ interface TerminalMultiplexerProps {
 export const TerminalMultiplexer: React.FC<TerminalMultiplexerProps> = ({ 
     activeTerminals, 
     baseUrl,
+    apiToken,
     onCloseTerminal,
     theme
 }) => {
@@ -90,6 +92,7 @@ export const TerminalMultiplexer: React.FC<TerminalMultiplexerProps> = ({
                                     sessionId={id} 
                                     projectId={term?.projectId} 
                                     baseUrl={baseUrl} 
+                                    apiToken={apiToken}
                                     theme={theme}
                                 />
                             </MosaicWindow>

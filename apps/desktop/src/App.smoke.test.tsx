@@ -228,6 +228,19 @@ describe('App smoke render', () => {
     eventSourceInstances = []
     eventSourceConstructCount = 0
     vi.stubGlobal('EventSource', vi.fn().mockImplementation((url) => new MockEventSource(url)))
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    })
   })
 
   afterEach(() => {
@@ -265,6 +278,94 @@ describe('App smoke render', () => {
       expect(screen.getByText(/To Do/i)).toBeTruthy()
       expect(screen.getByText(/In Progress/i)).toBeTruthy()
       expect(screen.getByText(/Done/i)).toBeTruthy()
+    })
+  })
+
+  it('deletes a task from issue board and updates UI', async () => {
+    setupDesktopBridge()
+    const issues = [
+      {
+        id: 'issue-1',
+        issue_identifier: 'OPS-1',
+        identifier: 'OPS-1',
+        title: 'Delete me',
+        description: 'to be removed',
+        state: 'Todo',
+        assignee_id: 'agent-codex',
+        priority: 2,
+        project_id: '',
+      },
+    ]
+    const fetchMock = setupFetch(defaultSnapshot(), {
+      onFetch: (url, init) => {
+        if (url.includes('/api/v1/issues?')) {
+          return new Response(JSON.stringify({ issues }), { status: 200 })
+        }
+        if (url.includes('/api/v1/issues/OPS-1') && init?.method === 'DELETE') {
+          issues.splice(0, issues.length)
+          return new Response(null, { status: 204 })
+        }
+        return null
+      },
+    })
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByTestId('sidebar-nav-issues'))
+
+    await waitFor(() => {
+      expect(screen.getByText('Delete me')).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete task OPS-1' }))
+
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/api/v1/issues/OPS-1') && call[1]?.method === 'DELETE')).toBe(true)
+      expect(screen.queryByText('Delete me')).toBeNull()
+    })
+  })
+
+  it('keeps delete dialog open when task deletion fails', async () => {
+    setupDesktopBridge()
+    const issues = [
+      {
+        id: 'issue-1',
+        issue_identifier: 'OPS-1',
+        identifier: 'OPS-1',
+        title: 'Delete me',
+        description: 'to be removed',
+        state: 'Todo',
+        assignee_id: 'agent-codex',
+        priority: 2,
+        project_id: '',
+      },
+    ]
+    setupFetch(defaultSnapshot(), {
+      onFetch: (url, init) => {
+        if (url.includes('/api/v1/issues?')) {
+          return new Response(JSON.stringify({ issues }), { status: 200 })
+        }
+        if (url.includes('/api/v1/issues/OPS-1') && init?.method === 'DELETE') {
+          return new Response(JSON.stringify({ error: { code: 'delete_failed', message: 'backend failed' } }), { status: 500 })
+        }
+        return null
+      },
+    })
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByTestId('sidebar-nav-issues'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete task OPS-1' }))
+
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeTruthy()
+      expect(screen.getByText(/delete issue failed/i)).toBeTruthy()
     })
   })
 

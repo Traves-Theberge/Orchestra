@@ -215,14 +215,14 @@ export default function App() {
         .map(r => ({
           id: `issue-${r.issue_identifier}`,
           title: `Agent: ${r.issue_identifier}`,
-          projectId: projects.find(p => p.id === r.issue_id)?.id
+          projectId: boardIssues.find((issue) => issue.issue_id === r.issue_id)?.project_id
         }))
 
       if (newTerms.length === 0) return prev
       
       return [...prev, ...newTerms]
     })
-  }, [snapshot, projects])
+  }, [snapshot, boardIssues])
 
   const handleCloseTerminal = (id: string) => {
     setOpenTerminals(prev => prev.filter(t => t.id !== id))
@@ -681,6 +681,12 @@ export default function App() {
       await deleteIssue(config, identifier)
       setStatusMessage(`Task ${identifier} deleted.`)
 
+      // Remove from board immediately so UI reflects deletion even if follow-up refresh fails.
+      setBoardIssues((prev) => prev.filter((issue) => {
+        const candidate = typeof issue.identifier === 'string' ? issue.identifier : issue.issue_identifier
+        return candidate !== identifier
+      }))
+
       // Optimistically remove from snapshot
       setSnapshot(prev => {
         if (!prev) return prev
@@ -690,6 +696,9 @@ export default function App() {
           retrying: prev.retrying.filter(r => r.issue_identifier !== identifier)
         }
       })
+
+      // Close issue-specific terminal if currently open.
+      setOpenTerminals((prev) => prev.filter((terminal) => terminal.id !== `issue-${identifier}`))
 
       // Instantly update the board issues
       const updatedIssues = await fetchIssues(config)
@@ -702,6 +711,7 @@ export default function App() {
       }
     } catch (err) {
       setErrorMessage(`delete issue failed: ${toDisplayError(err)}`)
+      throw err
     }
   }
 
@@ -1106,6 +1116,7 @@ export default function App() {
                   <TerminalMultiplexer
                     activeTerminals={openTerminals}
                     baseUrl={config.baseUrl}
+                    apiToken={config.apiToken}
                     onCloseTerminal={handleCloseTerminal}
                     theme={theme}
                   />
@@ -1126,7 +1137,6 @@ export default function App() {
                     migrationTo={migrationTo}
                     migrationPlan={migrationPlan}
                     agentConfig={agentConfig}
-                    agentTokens={agentTokens}
                     onMigrationFromChange={setMigrationFrom}
                     onMigrationToChange={setMigrationTo}
                     onMigrationPlan={handleMigrationPlan}
@@ -1136,7 +1146,6 @@ export default function App() {
                     onCreateProfile={handleCreateProfile}
                     onDeleteProfile={handleDeleteProfile}
                     onSaveAgentConfig={handleAgentConfigSave}
-                    onSaveAgentToken={handleSaveAgentToken}
                   />
                 </section>
               ) : null}

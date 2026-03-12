@@ -462,7 +462,6 @@ export function SettingsCard({
   migrationTo,
   migrationPlan,
   agentConfig,
-  agentTokens,
   onMigrationFromChange,
   onMigrationToChange,
   onMigrationPlan,
@@ -472,7 +471,6 @@ export function SettingsCard({
   onCreateProfile,
   onDeleteProfile,
   onSaveAgentConfig,
-  onSaveAgentToken,
 }: {
   loadingConfig: boolean
   savingConfig: boolean
@@ -485,7 +483,6 @@ export function SettingsCard({
   migrationTo: string
   migrationPlan: Record<string, unknown> | null
   agentConfig: { commands: Record<string, string>; agent_provider: string } | null
-  agentTokens: Record<string, string>
   onMigrationFromChange: (value: string) => void
   onMigrationToChange: (value: string) => void
   onMigrationPlan: () => Promise<void>
@@ -495,15 +492,13 @@ export function SettingsCard({
   onCreateProfile: (name: string) => Promise<void>
   onDeleteProfile: (profileId: string) => Promise<void>
   onSaveAgentConfig: (config: { commands: Record<string, string>; agent_provider: string }) => Promise<void>
-  onSaveAgentToken: (name: string, value: string | null) => Promise<void>
 }) {
   const { isMac } = usePlatform()
-  const [activeTab, setActiveTab] = useState<'backend' | 'agents' | 'tokens' | 'migration' | 'shortcuts'>('backend')
+  const [activeTab, setActiveTab] = useState<'backend' | 'agents' | 'migration' | 'shortcuts'>('backend')
 
   const tabs = [
     { id: 'backend', label: 'Backend', tooltip: 'Configure backend profiles and API connection', icon: <Database className="h-3.5 w-3.5" /> },
     { id: 'agents', label: 'Agents', tooltip: 'Set provider commands and default runner', icon: <Zap className="h-3.5 w-3.5" /> },
-    { id: 'tokens', label: 'Tokens', tooltip: 'Store provider API keys for agent access', icon: <ShieldCheck className="h-3.5 w-3.5" /> },
     { id: 'migration', label: 'Migration', tooltip: 'Plan and apply workspace migrations', icon: <RefreshCcw className="h-3.5 w-3.5" /> },
     { id: 'shortcuts', label: 'Shortcuts', tooltip: 'View global keyboard shortcuts', icon: <Keyboard className="h-3.5 w-3.5" /> },
   ] as const
@@ -573,16 +568,6 @@ export function SettingsCard({
                   <p className="text-xs italic uppercase tracking-wider">No agent configuration loaded from active profile.</p>
                 </div>
               )}
-            </div>
-          )}
-
-          {activeTab === 'tokens' && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                Credential Vault
-              </div>
-              <AgentTokensForm tokens={agentTokens} onSave={onSaveAgentToken} disabled={savingConfig || loadingConfig} />
             </div>
           )}
 
@@ -3171,6 +3156,7 @@ export function KanbanBoard({
                                   <button
                                     type="button"
                                     data-no-drag="true"
+                                    aria-label={`Delete task ${item.issue_identifier}`}
                                     className="p-1 rounded-md text-muted-foreground/40 hover:text-red-500 hover:bg-red-500/10 transition-all"
                                     onClick={(e) => {
                                       e.stopPropagation()
@@ -3331,6 +3317,7 @@ export function KanbanBoard({
                           {onIssueDelete && (
                             <button
                               type="button"
+                              aria-label={`Delete task ${item.issue_identifier}`}
                               className="p-1 rounded-md text-muted-foreground/60 hover:text-red-500 hover:bg-red-500/10 transition-all cursor-pointer"
                               onClick={(e) => {
                                 e.stopPropagation()
