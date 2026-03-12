@@ -1,17 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Activity, Database, FolderTree, Gauge, History, LayoutDashboard, ListTodo, RefreshCcw, Settings2, ShieldCheck, Ticket, Cpu, Zap, FileText, Terminal } from 'lucide-react'
-import { SidebarNav } from '@/components/app-shell/sidebar-nav'
-import { TopBar } from '@/components/app-shell/top-bar'
 import {
   IssueDetailView,
   CreateTaskDialog,
   CreateProjectDialog,
   DashboardOverview,
-  KanbanBoard,
   MetricCard,
   OperationsQueueCard,
   SettingsCard,
-  TimelineCard,
 } from '@/components/app-shell/panels'
 import {
   Dialog,
@@ -21,7 +17,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
-import { periodFilters, type SidebarItem, type TimelineItem } from '@/components/app-shell/types'
+import { periodFilters, type TimelineItem } from '@/components/app-shell/types'
 import {
   applyWorkspaceMigration,
   fetchAgentConfig,
@@ -59,8 +55,17 @@ import { SessionDetailView } from '@/components/warehouse/SessionDetailView'
 import { AgentsDashboard } from '@/components/agents/AgentsDashboard'
 import { DocsDashboard } from '@/components/docs/DocsDashboard'
 import { TerminalMultiplexer, type TerminalNode } from '@/components/terminal/TerminalMultiplexer'
+import { AppShell } from '@app/layout/AppShell'
+import {
+  getCurrentSectionMeta,
+  getSectionVisibility,
+  isSectionID,
+  sidebarItems,
+  type SectionID,
+} from '@app/routes/sections'
+import { TimelineCard } from '@widgets/timeline'
+import { KanbanBoard } from '@widgets/kanban'
 import { Command } from 'cmdk'
-import { OverlayScrollbarsComponent } from 'overlayscrollbars-react'
 import type { BackendConfig } from '@/lib/orchestra-client'
 
 type BackendProfile = {
@@ -69,63 +74,6 @@ type BackendProfile = {
   baseUrl: string
   apiToken: string
 }
-
-const sidebarItems: SidebarItem[] = [
-  {
-    id: 'dashboard',
-    label: 'Dashboard',
-    description: 'Live runtime overview',
-    icon: LayoutDashboard,
-  },
-  {
-    id: 'issues',
-    label: 'Tasks',
-    description: 'Task board and inspector',
-    icon: Ticket,
-  },
-  {
-    id: 'projects',
-    label: 'Projects',
-    description: 'Local workspace grouping',
-    icon: FolderTree,
-  },
-  {
-    id: 'timeline',
-    label: 'Activity Feed',
-    description: 'Real-time lifecycle events',
-    icon: History,
-  },
-  {
-    id: 'console',
-    label: 'Live Console',
-    description: 'Multi-agent terminal dock',
-    icon: Terminal,
-  },
-  {
-    id: 'agents',
-    label: 'Agents',
-    description: 'Global agent configurations',
-    icon: Cpu,
-  },
-  {
-    id: 'warehouse',
-    label: 'Warehouse',
-    description: 'Token analytics and archives',
-    icon: Database,
-  },
-  {
-    id: 'settings',
-    label: 'Settings',
-    description: 'Backend and migration controls',
-    icon: Settings2,
-  },
-  {
-    id: 'docs',
-    label: 'Documentation',
-    description: 'User & engineering guides',
-    icon: FileText,
-  },
-]
 
 export default function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -171,7 +119,7 @@ export default function App() {
   const [createTaskDialogOpen, setCreateTaskDialogOpen] = useState(false)
   const [createTaskInitialState, setCreateTaskInitialState] = useState('Todo')
   const [createProjectDialogOpen, setCreateProjectDialogOpen] = useState(false)
-  const [activeSection, setActiveSection] = useState('dashboard')
+  const [activeSection, setActiveSection] = useState<SectionID>('dashboard')
   const [activePeriod, setActivePeriod] = useState<'Today' | 'Week' | 'Month'>('Week')
   const [paletteOpen, setPaletteOpen] = useState(false)
 
@@ -236,8 +184,15 @@ export default function App() {
     setActiveSection('console')
   }
 
-  const handleNavigate = (section: string) => {
+  const handleSectionChange = (section: string) => {
+    if (!isSectionID(section)) {
+      return
+    }
     setActiveSection(section)
+  }
+
+  const handleNavigate = (section: string) => {
+    handleSectionChange(section)
     setInspectDialogOpen(false)
   }
 
@@ -249,31 +204,8 @@ export default function App() {
   }
 
   const sidebarWidth = sidebarCollapsed ? 64 : 220
-  const sectionVisibility = {
-    showDashboard: activeSection === 'dashboard',
-    showRunning: activeSection === 'running',
-    showTimeline: activeSection === 'timeline',
-    showIssueBoard: activeSection === 'issues',
-    showProjects: activeSection === 'projects',
-    showAgents: activeSection === 'agents',
-    showWarehouse: activeSection === 'warehouse',
-    showSettings: activeSection === 'settings',
-    showDocs: activeSection === 'docs',
-    showConsole: activeSection === 'console',
-  }
-  const sectionMeta: Record<string, { label: string; title: string }> = {
-    dashboard: { label: 'Operations', title: 'Dashboard' },
-    running: { label: 'Operations', title: 'Running' },
-    timeline: { label: 'Diagnostics', title: 'Activity Feed' },
-    issues: { label: 'Tracker', title: 'Tasks' },
-    projects: { label: 'Workspace', title: 'Projects' },
-    agents: { label: 'Compute', title: 'Agents' },
-    warehouse: { label: 'Analytics', title: 'Warehouse' },
-    settings: { label: 'System', title: 'Settings' },
-    docs: { label: 'Knowledge', title: 'Documentation' },
-    console: { label: 'Runtime', title: 'Live Console' },
-  }
-  const currentSectionMeta = sectionMeta[activeSection] ?? sectionMeta.dashboard
+  const sectionVisibility = getSectionVisibility(activeSection)
+  const currentSectionMeta = getCurrentSectionMeta(activeSection)
 
   const osOptions = useMemo(() => ({
     scrollbars: { autoHide: 'move' as const, theme: 'os-theme-custom' },
@@ -935,45 +867,37 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-background text-foreground">
-      <div className="flex h-full w-full relative">
-        <SidebarNav
-          items={sidebarItems}
-          activeSection={activeSection}
-          onSectionChange={setActiveSection}
-          sidebarCollapsed={sidebarCollapsed}
-          onToggleCollapsed={() => setSidebarCollapsed((prev) => !prev)}
-          sidebarWidth={sidebarWidth}
-        />
-
-        <OverlayScrollbarsComponent
-          element="main"
-          options={osOptions}
-          className="min-w-0 flex-1 bg-gradient-to-b from-background via-background to-muted/30 h-full"
-        >
-          <div className="px-6 pb-6 pt-4 lg:px-8 w-full max-w-[1800px] mx-auto flex flex-col min-h-full transition-all duration-500 origin-top-left" style={{ zoom: 0.6 }}>
-            <TopBar
-              sectionLabel={currentSectionMeta.label}
-              sectionTitle={currentSectionMeta.title}
-              theme={theme}
-              setTheme={setTheme}
-              activePeriod={activePeriod}
-              setActivePeriod={setActivePeriod}
-              refreshPending={refreshPending}
-              configReady={Boolean(config)}
-              onOpenSettings={() => setActiveSection('settings')}
-              onRefresh={handleRefresh}
-              onSearch={(query) => (config ? searchIssues(config, query) : Promise.resolve([]))}
-              onResultClick={handleInspectIssueFromList}
-              statusMessage={statusMessage}
-              errorMessage={errorMessage}
-              generatedAt={generatedAt}
-              usePolling={usePolling}
-              onDownloadDiagnostics={handleDownloadDiagnostics}
-              onTogglePolling={handleTogglePolling}
-            />
-
-            <div className="mt-4 grid min-w-0 grid-cols-12 gap-3 flex-1">
+    <>
+      <AppShell
+        items={sidebarItems}
+        activeSection={activeSection}
+        onSectionChange={handleSectionChange}
+        sidebarCollapsed={sidebarCollapsed}
+        onToggleCollapsed={() => setSidebarCollapsed((prev) => !prev)}
+        sidebarWidth={sidebarWidth}
+        osOptions={osOptions}
+        topBarProps={{
+          sectionLabel: currentSectionMeta.label,
+          sectionTitle: currentSectionMeta.title,
+          theme,
+          setTheme,
+          activePeriod,
+          setActivePeriod,
+          refreshPending,
+          configReady: Boolean(config),
+          onOpenSettings: () => setActiveSection('settings'),
+          onRefresh: handleRefresh,
+          onSearch: (query) => (config ? searchIssues(config, query) : Promise.resolve([])),
+          onResultClick: handleInspectIssueFromList,
+          statusMessage,
+          errorMessage,
+          generatedAt,
+          usePolling,
+          onDownloadDiagnostics: handleDownloadDiagnostics,
+          onTogglePolling: handleTogglePolling,
+        }}
+      >
+        <div className="mt-4 grid min-w-0 grid-cols-12 gap-3 flex-1">
               {sectionVisibility.showDashboard ? (
                 <>
                   <section className="col-span-12 grid grid-cols-2 gap-3 h-fit">
@@ -1134,10 +1058,8 @@ export default function App() {
                   />
                 </section>
               ) : null}
-            </div>
-          </div>
-        </OverlayScrollbarsComponent>
-      </div>
+        </div>
+      </AppShell>
 
       <Dialog open={inspectDialogOpen} onOpenChange={setInspectDialogOpen}>
         <DialogContent className="max-w-[98vw] w-[98vw] h-[96vh] max-h-[96vh] overflow-hidden flex flex-col p-4">
@@ -1301,6 +1223,6 @@ export default function App() {
           )}
         </Command.List>
       </Command.Dialog>
-    </div>
+    </>
   )
 }

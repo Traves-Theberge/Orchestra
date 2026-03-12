@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import App from './App'
 import type { BridgeProfilesPayload, SnapshotPayload } from '@/lib/orchestra-types'
+
+vi.mock('@/components/terminal/TerminalView', () => ({
+  TerminalView: () => <div data-testid="terminal-view-mock" />,
+}))
+
+import App from './App'
 
 // Mock Electron bridge
 const defaultProfiles: BridgeProfilesPayload = {
@@ -228,6 +233,14 @@ describe('App smoke render', () => {
     eventSourceInstances = []
     eventSourceConstructCount = 0
     vi.stubGlobal('EventSource', vi.fn().mockImplementation((url) => new MockEventSource(url)))
+    vi.stubGlobal(
+      'ResizeObserver',
+      class ResizeObserver {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    )
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
       value: vi.fn().mockImplementation((query: string) => ({
@@ -513,7 +526,7 @@ describe('App smoke render', () => {
     // Wait for form to be ready
     await screen.findByText(/Connection Profiles/i)
 
-    fireEvent.change(screen.getByPlaceholderText('http://127.0.0.1:4000'), { target: { value: 'http://127.0.0.1:9999' } })
+    fireEvent.change(screen.getByPlaceholderText('http://127.0.0.1:4010'), { target: { value: 'http://127.0.0.1:9999' } })
     
     const saveButton = await screen.findByRole('button', { name: 'Save Backend Config' })
     fireEvent.click(saveButton)
@@ -602,7 +615,7 @@ describe('App smoke render', () => {
 
     render(<App />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Sync state' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Sync Data' }))
 
     await waitFor(() => {
       expect(screen.getByText(/Refresh queued successfully/i)).toBeTruthy()
@@ -618,7 +631,7 @@ describe('App smoke render', () => {
     fireEvent.click(screen.getByTestId('sidebar-nav-settings'))
     await screen.findByText(/Connection Profiles/i)
 
-    fireEvent.change(screen.getByPlaceholderText('http://127.0.0.1:4000'), { target: { value: 'not-a-url' } })
+    fireEvent.change(screen.getByPlaceholderText('http://127.0.0.1:4010'), { target: { value: 'not-a-url' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save Backend Config' }))
 
     await waitFor(() => {
@@ -639,7 +652,7 @@ describe('App smoke render', () => {
 
     render(<App />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Sync state' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Sync Data' }))
 
     await waitFor(() => {
       expect(screen.getByText(/refresh failed/i)).toBeTruthy()
@@ -705,7 +718,7 @@ describe('App smoke render', () => {
 
     render(<App />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Sync state' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Sync Data' }))
 
     await waitFor(() => {
       expect(screen.getByText(/Protected host detected/i)).toBeTruthy()
@@ -843,7 +856,7 @@ describe('App smoke render', () => {
       () => {
         // Find ALL elements with text matching /Live/i and find the one that is the badge
         const allLive = screen.getAllByText(/Live/i)
-        const liveBadge = allLive.find(el => el.className.includes('tracking-wider'))
+        const liveBadge = allLive.find(el => el.className.includes('tracking-widest'))
         if (!liveBadge) throw new Error('live badge not found')
         expect(liveBadge).toBeTruthy()
       },
@@ -886,7 +899,7 @@ describe('App smoke render', () => {
     window.localStorage.setItem('orchestra-theme', 'dark')
     render(<App />)
 
-    const toggleButton = await screen.findByRole('button', { name: 'Toggle theme' })
+    const toggleButton = await screen.findByRole('button', { name: /Switch to .* Mode/i })
     expect(document.documentElement.classList.contains('dark')).toBe(true)
 
     fireEvent.click(toggleButton)

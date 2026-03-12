@@ -18,13 +18,13 @@ func (s *Server) PostGitCommit(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
 	project, err := s.db.GetProjectByID(r.Context(), projectID)
 	if err != nil {
-		http.Error(w, "Project not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
 	}
 
 	if err := workspace.ValidateProjectPath(project.RootPath, s.config.ProjectRoots); err != nil {
 		s.logger.Warn().Err(err).Str("path", project.RootPath).Msg("unauthorized git commit attempt")
-		http.Error(w, "Unauthorized project path", http.StatusForbidden)
+		writeJSONError(w, http.StatusForbidden, "unauthorized_project_path", "unauthorized project path")
 		return
 	}
 
@@ -32,18 +32,18 @@ func (s *Server) PostGitCommit(w http.ResponseWriter, r *http.Request) {
 		Message string `json:"message"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid_json", "invalid request body")
 		return
 	}
 
 	if req.Message == "" {
-		http.Error(w, "Message is required", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid_request", "message is required")
 		return
 	}
 
 	if err := git.Commit(r.Context(), project.RootPath, req.Message); err != nil {
 		s.logger.Error().Err(err).Str("project_id", projectID).Msg("git commit failed")
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "git_commit_failed", err.Error())
 		return
 	}
 
@@ -55,13 +55,13 @@ func (s *Server) PostGitPush(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
 	project, err := s.db.GetProjectByID(r.Context(), projectID)
 	if err != nil {
-		http.Error(w, "Project not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
 	}
 
 	if err := workspace.ValidateProjectPath(project.RootPath, s.config.ProjectRoots); err != nil {
 		s.logger.Warn().Err(err).Str("path", project.RootPath).Msg("unauthorized git push attempt")
-		http.Error(w, "Unauthorized project path", http.StatusForbidden)
+		writeJSONError(w, http.StatusForbidden, "unauthorized_project_path", "unauthorized project path")
 		return
 	}
 
@@ -92,7 +92,7 @@ func (s *Server) PostGitPush(w http.ResponseWriter, r *http.Request) {
 
 	if err := git.Push(r.Context(), project.RootPath, req.Remote, req.Branch); err != nil {
 		s.logger.Error().Err(err).Str("project_id", projectID).Msg("git push failed")
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "git_push_failed", err.Error())
 		return
 	}
 
@@ -104,13 +104,13 @@ func (s *Server) PostGitPull(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
 	project, err := s.db.GetProjectByID(r.Context(), projectID)
 	if err != nil {
-		http.Error(w, "Project not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
 	}
 
 	if err := workspace.ValidateProjectPath(project.RootPath, s.config.ProjectRoots); err != nil {
 		s.logger.Warn().Err(err).Str("path", project.RootPath).Msg("unauthorized git pull attempt")
-		http.Error(w, "Unauthorized project path", http.StatusForbidden)
+		writeJSONError(w, http.StatusForbidden, "unauthorized_project_path", "unauthorized project path")
 		return
 	}
 
@@ -140,7 +140,7 @@ func (s *Server) PostGitPull(w http.ResponseWriter, r *http.Request) {
 
 	if err := git.Pull(r.Context(), project.RootPath, req.Remote, req.Branch); err != nil {
 		s.logger.Error().Err(err).Str("project_id", projectID).Msg("git pull failed")
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "git_pull_failed", err.Error())
 		return
 	}
 
@@ -150,14 +150,14 @@ func (s *Server) PostGitPull(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) GetProjects(w http.ResponseWriter, r *http.Request) {
 	if s.db == nil {
-		http.Error(w, "Database not available", http.StatusServiceUnavailable)
+		writeJSONError(w, http.StatusServiceUnavailable, "db_unavailable", "database not available")
 		return
 	}
 
 	projects, err := s.db.GetProjects(r.Context())
 	if err != nil {
 		s.logger.Error().Err(err).Msg("failed to get projects")
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "db_failed", "failed to get projects")
 		return
 	}
 
@@ -171,20 +171,20 @@ func (s *Server) GetProjects(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) GetProject(w http.ResponseWriter, r *http.Request) {
 	if s.db == nil {
-		http.Error(w, "Database not available", http.StatusServiceUnavailable)
+		writeJSONError(w, http.StatusServiceUnavailable, "db_unavailable", "database not available")
 		return
 	}
 
 	projectID := chi.URLParam(r, "project_id")
 	if projectID == "" {
-		http.Error(w, "Project ID is required", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid_request", "project_id is required")
 		return
 	}
 
 	stats, err := s.db.GetProjectStats(r.Context(), projectID)
 	if err != nil {
 		s.logger.Error().Err(err).Str("project_id", projectID).Msg("failed to get project stats")
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "db_failed", "failed to get project stats")
 		return
 	}
 
@@ -194,14 +194,14 @@ func (s *Server) GetProject(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) GetWarehouseStats(w http.ResponseWriter, r *http.Request) {
 	if s.db == nil {
-		http.Error(w, "Database not available", http.StatusServiceUnavailable)
+		writeJSONError(w, http.StatusServiceUnavailable, "db_unavailable", "database not available")
 		return
 	}
 
 	stats, err := s.db.GetGlobalStats(r.Context())
 	if err != nil {
 		s.logger.Error().Err(err).Msg("failed to get global stats")
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "db_failed", "failed to get global stats")
 		return
 	}
 
@@ -211,7 +211,7 @@ func (s *Server) GetWarehouseStats(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) CreateProject(w http.ResponseWriter, r *http.Request) {
 	if s.db == nil {
-		http.Error(w, "Database not available", http.StatusServiceUnavailable)
+		writeJSONError(w, http.StatusServiceUnavailable, "db_unavailable", "database not available")
 		return
 	}
 
@@ -219,12 +219,12 @@ func (s *Server) CreateProject(w http.ResponseWriter, r *http.Request) {
 		RootPath string `json:"root_path"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid_json", "invalid request")
 		return
 	}
 
 	if req.RootPath == "" {
-		http.Error(w, "root_path is required", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid_request", "root_path is required")
 		return
 	}
 
@@ -238,7 +238,7 @@ func (s *Server) CreateProject(w http.ResponseWriter, r *http.Request) {
 
 	if err := workspace.ValidateProjectPath(req.RootPath, s.config.ProjectRoots); err != nil {
 		s.logger.Warn().Err(err).Str("path", req.RootPath).Msg("unauthorized project path")
-		http.Error(w, "Unauthorized project path", http.StatusForbidden)
+		writeJSONError(w, http.StatusForbidden, "unauthorized_project_path", "unauthorized project path")
 		return
 	}
 
@@ -246,7 +246,7 @@ func (s *Server) CreateProject(w http.ResponseWriter, r *http.Request) {
 	id, err := s.db.UpsertProject(r.Context(), req.RootPath, remoteURL)
 	if err != nil {
 		s.logger.Error().Err(err).Str("path", req.RootPath).Msg("failed to create project")
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "create_failed", "failed to create project")
 		return
 	}
 
@@ -263,7 +263,7 @@ func (s *Server) CreateProject(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) GetSessions(w http.ResponseWriter, r *http.Request) {
 	if s.db == nil {
-		http.Error(w, "Database not available", http.StatusServiceUnavailable)
+		writeJSONError(w, http.StatusServiceUnavailable, "db_unavailable", "database not available")
 		return
 	}
 
@@ -271,7 +271,7 @@ func (s *Server) GetSessions(w http.ResponseWriter, r *http.Request) {
 	sessions, err := s.db.GetSessions(r.Context(), projectID)
 	if err != nil {
 		s.logger.Error().Err(err).Str("project_id", projectID).Msg("failed to get sessions")
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "db_failed", "failed to get sessions")
 		return
 	}
 
@@ -281,20 +281,20 @@ func (s *Server) GetSessions(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) GetSessionDetail(w http.ResponseWriter, r *http.Request) {
 	if s.db == nil {
-		http.Error(w, "Database not available", http.StatusServiceUnavailable)
+		writeJSONError(w, http.StatusServiceUnavailable, "db_unavailable", "database not available")
 		return
 	}
 
 	sessionID := chi.URLParam(r, "session_id")
 	if sessionID == "" {
-		http.Error(w, "Session ID is required", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid_request", "session_id is required")
 		return
 	}
 
 	session, err := s.db.GetSessionDetail(r.Context(), sessionID)
 	if err != nil {
 		s.logger.Error().Err(err).Str("session_id", sessionID).Msg("failed to get session detail")
-		http.Error(w, "Session not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "session_not_found", "session not found")
 		return
 	}
 
@@ -304,14 +304,14 @@ func (s *Server) GetSessionDetail(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) DeleteProject(w http.ResponseWriter, r *http.Request) {
 	if s.db == nil {
-		http.Error(w, "Database not available", http.StatusServiceUnavailable)
+		writeJSONError(w, http.StatusServiceUnavailable, "db_unavailable", "database not available")
 		return
 	}
 
 	projectID := chi.URLParam(r, "project_id")
 	if err := s.db.DeleteProject(r.Context(), projectID); err != nil {
 		s.logger.Error().Err(err).Str("project_id", projectID).Msg("failed to delete project")
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "delete_failed", "failed to delete project")
 		return
 	}
 
@@ -340,25 +340,25 @@ func (s *Server) GetProjectFileContent(w http.ResponseWriter, r *http.Request) {
 
 	project, err := s.db.GetProjectByID(r.Context(), projectID)
 	if err != nil {
-		http.Error(w, "Project not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
 	}
 	if err := workspace.ValidateProjectPath(project.RootPath, s.config.ProjectRoots); err != nil {
 		s.logger.Warn().Err(err).Str("path", project.RootPath).Msg("unauthorized project file content attempt")
-		http.Error(w, "Unauthorized project path", http.StatusForbidden)
+		writeJSONError(w, http.StatusForbidden, "unauthorized_project_path", "unauthorized project path")
 		return
 	}
 
 	fullPath, err := safeProjectSubpath(project.RootPath, filePath)
 	if err != nil {
-		http.Error(w, "Invalid file path", http.StatusForbidden)
+		writeJSONError(w, http.StatusForbidden, "invalid_path", "invalid file path")
 		return
 	}
 
 	content, err := os.ReadFile(fullPath)
 	if err != nil {
 		s.logger.Error().Err(err).Str("path", fullPath).Msg("failed to read project file")
-		http.Error(w, "Failed to read file", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "read_failed", "failed to read file")
 		return
 	}
 
@@ -373,17 +373,17 @@ func (s *Server) GetProjectFileTree(w http.ResponseWriter, r *http.Request) {
 	project, err := s.db.GetProjectByID(r.Context(), projectID)
 	if err != nil {
 		s.logger.Error().Str("project_id", projectID).Msg("project not found in DB")
-		http.Error(w, "Project not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
 	}
 	if err := workspace.ValidateProjectPath(project.RootPath, s.config.ProjectRoots); err != nil {
 		s.logger.Warn().Err(err).Str("path", project.RootPath).Msg("unauthorized project tree attempt")
-		http.Error(w, "Unauthorized project path", http.StatusForbidden)
+		writeJSONError(w, http.StatusForbidden, "unauthorized_project_path", "unauthorized project path")
 		return
 	}
 	if relPath != "" {
 		if _, err := safeProjectSubpath(project.RootPath, relPath); err != nil {
-			http.Error(w, "Invalid tree path", http.StatusForbidden)
+			writeJSONError(w, http.StatusForbidden, "invalid_path", "invalid tree path")
 			return
 		}
 	}
@@ -394,7 +394,7 @@ func (s *Server) GetProjectFileTree(w http.ResponseWriter, r *http.Request) {
 			Err(err).
 			Str("path", project.RootPath).
 			Msg("failed to walk tree")
-		http.Error(w, "Failed to read project tree", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "read_failed", "failed to read project tree")
 		return
 	}
 
@@ -473,7 +473,7 @@ func (s *Server) GetProjectGitStatus(w http.ResponseWriter, r *http.Request) {
 	project, err := s.db.GetProjectByID(r.Context(), projectID)
 	if err != nil {
 		s.logger.Error().Str("project_id", projectID).Msg("project not found for git status")
-		http.Error(w, "Project not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
 	}
 
@@ -512,7 +512,7 @@ func (s *Server) GetProjectGitStats(w http.ResponseWriter, r *http.Request) {
 	project, err := s.db.GetProjectByID(r.Context(), projectID)
 	if err != nil {
 		s.logger.Error().Str("project_id", projectID).Err(err).Msg("DEBUG: Project not found in DB for git stats")
-		http.Error(w, "Project not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
 	}
 
@@ -571,7 +571,7 @@ func (s *Server) GetProjectGitDiff(w http.ResponseWriter, r *http.Request) {
 	hash := r.URL.Query().Get("hash")
 	project, err := s.db.GetProjectByID(r.Context(), projectID)
 	if err != nil {
-		http.Error(w, "Project not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
 	}
 

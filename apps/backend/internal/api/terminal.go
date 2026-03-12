@@ -22,7 +22,7 @@ func (s *Server) TerminalWebSocket(w http.ResponseWriter, r *http.Request) {
 	projectID := r.URL.Query().Get("project_id")
 
 	if sessionID == "" {
-		http.Error(w, "session_id is required", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid_request", "session_id is required")
 		return
 	}
 
