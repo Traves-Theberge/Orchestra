@@ -123,9 +123,9 @@ func TestPerformRefreshEnqueuesCandidatesUpToConcurrency(t *testing.T) {
 	service := NewService()
 	service.SetMaxConcurrent(2)
 	service.SetTrackerClient(memory.NewClient([]tracker.Issue{
-		{ID: "1", Identifier: "ORC-1", State: "Todo"},
-		{ID: "2", Identifier: "ORC-2", State: "Todo"},
-		{ID: "3", Identifier: "ORC-3", State: "Todo"},
+		{ID: "1", Identifier: "ORC-1", State: "todo", AssignedToWorker: true},
+		{ID: "2", Identifier: "ORC-2", State: "todo", AssignedToWorker: true},
+		{ID: "3", Identifier: "ORC-3", State: "todo", AssignedToWorker: true},
 	}))
 
 	service.QueueRefresh()
@@ -156,15 +156,16 @@ func TestShouldRetryAttemptHonorsMaxRetryPolicy(t *testing.T) {
 
 func TestPerformRefreshHonorsPerStateConcurrencyLimit(t *testing.T) {
 	service := NewService()
-	service.SetMaxConcurrent(5)
-	service.SetMaxConcurrentByState(map[string]int{"Todo": 1, "In Progress": 2})
+	service.SetMaxConcurrent(10)
+	service.SetMaxConcurrentByState(map[string]int{"todo": 2, "in progress": 1})
 	service.SetTrackerClient(memory.NewClient([]tracker.Issue{
-		{ID: "1", Identifier: "ORC-1", State: "Todo"},
-		{ID: "2", Identifier: "ORC-2", State: "Todo"},
-		{ID: "3", Identifier: "ORC-3", State: "In Progress"},
-		{ID: "4", Identifier: "ORC-4", State: "In Progress"},
-		{ID: "5", Identifier: "ORC-5", State: "In Progress"},
+		{ID: "1", Identifier: "ORC-1", State: "todo", AssignedToWorker: true},
+		{ID: "2", Identifier: "ORC-2", State: "todo", AssignedToWorker: true},
+		{ID: "3", Identifier: "ORC-3", State: "todo", AssignedToWorker: true},
+		{ID: "4", Identifier: "ORC-4", State: "in progress", AssignedToWorker: true},
+		{ID: "5", Identifier: "ORC-5", State: "in progress", AssignedToWorker: true},
 	}))
+
 
 	service.QueueRefresh()
 	if err := service.PerformRefresh(context.Background()); err != nil {
@@ -175,28 +176,29 @@ func TestPerformRefreshHonorsPerStateConcurrencyLimit(t *testing.T) {
 	if len(snapshot.Running) != 3 {
 		t.Fatalf("expected 3 running from per-state limits, got %d", len(snapshot.Running))
 	}
-
-	todoCount := 0
-	inProgressCount := 0
-	for _, entry := range snapshot.Running {
-		switch entry.State {
-		case "Todo":
-			todoCount++
-		case "In Progress":
-			inProgressCount++
-		}
+todoCount := 0
+inProgressCount := 0
+for _, entry := range snapshot.Running {
+	if entry.State == "todo" {
+		todoCount++
 	}
-	if todoCount != 1 || inProgressCount != 2 {
-		t.Fatalf("expected todo=1 and in_progress=2, got todo=%d in_progress=%d", todoCount, inProgressCount)
+	if entry.State == "in progress" {
+		inProgressCount++
 	}
 }
 
+if todoCount != 2 || inProgressCount != 1 {
+	t.Fatalf("expected todo=2 and in_progress=1, got todo=%d in_progress=%d", todoCount, inProgressCount)
+}
+}
+
+
 func TestPerformRefreshSkipsIssuesNotAssignedToWorker(t *testing.T) {
 	service := NewService()
-	service.SetTrackerClient(staticTrackerClient{candidates: []tracker.Issue{
-		{ID: "1", Identifier: "ORC-1", State: "Todo", AssignedToWorker: false},
-		{ID: "2", Identifier: "ORC-2", State: "Todo", AssignedToWorker: true},
-	}})
+	service.SetTrackerClient(memory.NewClientWithWorkerAssignees([]tracker.Issue{
+		{ID: "1", Identifier: "ORC-1", State: "Todo", AssignedToWorker: false, AssigneeID: "user-1"},
+		{ID: "2", Identifier: "ORC-2", State: "Todo", AssignedToWorker: true, AssigneeID: "agent-claude"},
+	}, []string{"agent-claude"}))
 
 	service.QueueRefresh()
 	if err := service.PerformRefresh(context.Background()); err != nil {
@@ -426,7 +428,7 @@ func TestClaimNextRunnableClaimsOnlyOnceUntilRelease(t *testing.T) {
 		t.Fatalf("expected no second claim while issue is claimed")
 	}
 
-	service.ReleaseClaim("1", "codex")
+	service.ReleaseClaim("1")
 	if _, ok := service.ClaimNextRunnable(); !ok {
 		t.Fatalf("expected claim available after release")
 	}

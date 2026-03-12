@@ -174,7 +174,7 @@ func processExecutionTick(
 
 	shouldDispatch, revalidateErr := service.RevalidateClaimedIssue(context.Background(), entry.IssueID)
 	if revalidateErr != nil {
-		service.ReleaseClaim(entry.IssueID, entry.Provider)
+		service.ReleaseClaim(entry.IssueID)
 		logger.Warn().Err(revalidateErr).Str("issue_id", entry.IssueID).Msg("issue revalidation failed; skipping dispatch")
 		publishSnapshot(pubsub, service)
 		return
