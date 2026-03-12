@@ -78,11 +78,12 @@ export const D3ArchitectureGraph: React.FC<{ data?: string }> = ({ data: rawData
             .style('width', '100%')
             .style('height', 'auto')
 
+        // Clear previous content to prevent accumulation on re-renders
         svg.selectAll('*').remove()
 
         // Create copies of data to avoid mutation issues with D3
-        const nodes = graphData.nodes.map(d => ({ ...d }))
-        const links = graphData.links.map(d => ({ ...d }))
+        const nodes: Node[] = graphData.nodes.map(d => ({ ...d }))
+        const links: Link[] = graphData.links.map(d => ({ ...d }))
 
         const simulation = d3.forceSimulation<Node>(nodes)
             .force('link', d3.forceLink<Node, Link>(links).id(d => d.id).distance(120))
@@ -96,66 +97,48 @@ export const D3ArchitectureGraph: React.FC<{ data?: string }> = ({ data: rawData
             .attr('stroke-opacity', 0.4)
             .selectAll('line')
             .data(links)
-            .join(
-                enter => enter.append('line')
-                    .attr('stroke-opacity', 0)
-                    .call(enter => enter.transition().duration(750).attr('stroke-opacity', 0.4)),
-                update => update,
-                exit => exit.transition().duration(500).attr('stroke-opacity', 0).remove()
-            )
+            .join('line')
             .attr('stroke-width', d => Math.sqrt(d.value) * 2)
 
         const node = svg.append('g')
             .selectAll<SVGGElement, Node>('g')
             .data(nodes)
-            .join(
-                enter => {
-                    const g = enter.append('g')
-                    g.attr('opacity', 0)
-                        .call(enter => enter.transition().duration(750).attr('opacity', 1))
-                    
-                    g.append('circle')
-                        .attr('r', 0)
-                        .attr('fill', d => {
-                            if (d.group === 'core') return '#10b981'
-                            if (d.group === 'ui') return '#3b82f6'
-                            return '#f59e0b'
-                        })
-                        .attr('stroke', '#18181b')
-                        .attr('stroke-width', 2)
-                        .transition().duration(750)
-                        .attr('r', 10)
-
-                    g.append('text')
-                        .attr('x', 14)
-                        .attr('y', 4)
-                        .text(d => d.label)
-                        .style('font-size', '13px')
-                        .style('font-weight', '600')
-                        .style('fill', '#e4e4e7')
-                        .style('paint-order', 'stroke')
-                        .style('stroke', '#18181b')
-                        .style('stroke-width', '3px')
-                        .style('stroke-linecap', 'round')
-                        .style('stroke-linejoin', 'round')
-                    
-                    return g
-                },
-                update => update,
-                exit => exit.transition().duration(500).attr('opacity', 0).remove()
-            )
+            .join('g')
             .call(drag(simulation) as any)
+
+        node.append('circle')
+            .attr('r', 10)
+            .attr('fill', d => {
+                if (d.group === 'core') return '#10b981'
+                if (d.group === 'ui') return '#3b82f6'
+                return '#f59e0b'
+            })
+            .attr('stroke', '#18181b')
+            .attr('stroke-width', 2)
+
+        node.append('text')
+            .attr('x', 14)
+            .attr('y', 4)
+            .text(d => d.label)
+            .style('font-size', '13px')
+            .style('font-weight', '600')
+            .style('fill', '#e4e4e7')
+            .style('paint-order', 'stroke')
+            .style('stroke', '#18181b')
+            .style('stroke-width', '3px')
+            .style('stroke-linecap', 'round')
+            .style('stroke-linejoin', 'round')
 
         const radius = 10;
         simulation.on('tick', () => {
             link
-                .attr('x1', d => Math.max(radius, Math.min(width - radius, (d.source as any).x || 0)))
-                .attr('y1', d => Math.max(radius, Math.min(height - radius, (d.source as any).y || 0)))
-                .attr('x2', d => Math.max(radius, Math.min(width - radius, (d.target as any).x || 0)))
-                .attr('y2', d => Math.max(radius, Math.min(height - radius, (d.target as any).y || 0)))
+                .attr('x1', d => (d.source as any).x)
+                .attr('y1', d => (d.source as any).y)
+                .attr('x2', d => (d.target as any).x)
+                .attr('y2', d => (d.target as any).y)
 
             node
-                .attr('transform', d => `translate(${Math.max(radius, Math.min(width - radius, d.x || 0))},${Math.max(radius, Math.min(height - radius, d.y || 0))})`)
+                .attr('transform', d => `translate(${d.x},${d.y})`)
         })
 
         function drag(sim: d3.Simulation<Node, undefined>) {
@@ -185,7 +168,7 @@ export const D3ArchitectureGraph: React.FC<{ data?: string }> = ({ data: rawData
         return () => {
             simulation.stop()
         }
-    }, [])
+    }, [graphData])
 
     return (
         <div className="my-10 rounded-3xl border border-border bg-muted/10 p-8 shadow-2xl overflow-hidden backdrop-blur-md">

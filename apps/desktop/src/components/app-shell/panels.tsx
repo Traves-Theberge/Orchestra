@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Ansi from 'ansi-to-react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { Activity, AlertCircle, AlertTriangle, AppWindow, Bot, CheckCircle2, ChevronDown, Circle, CircleDashed, Cpu, FileText, Folder, FolderTree, GitBranch, Loader2, MoreHorizontal, ShieldCheck, SignalHigh, SignalLow, SignalMedium, Square, Terminal, User, Users, Wrench, Clock, Search, LayoutDashboard, ListTodo, History, Ticket, Database, Settings2, Sun, Moon, Download, RefreshCcw, Info, BarChart3, Zap, Layout, Rows, Play, ChevronRight, File, ExternalLink, Plus, Trash2, Keyboard, X, TrendingUp, Code, Layers } from 'lucide-react'
+import { Activity, AlertCircle, AlertTriangle, AppWindow, Bot, Check, CheckCircle2, ChevronDown, Circle, CircleDashed, Cpu, FileText, Folder, FolderTree, GitBranch, Loader2, ListChecks, MoreHorizontal, ShieldCheck, SignalHigh, SignalLow, SignalMedium, Square, Terminal, User, Users, Wrench, Clock, Search, LayoutDashboard, ListTodo, History, Ticket, Database, Settings2, Sun, Moon, Download, RefreshCcw, Info, BarChart3, Zap, Layout, Rows, Play, ChevronRight, File, ExternalLink, Plus, Trash2, Keyboard, X, TrendingUp, Code, Layers } from 'lucide-react'
 import * as Tooltip from '@radix-ui/react-tooltip'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -112,23 +112,27 @@ export function DashboardOverview({
               <CardDescription className="text-[10px] font-medium text-muted-foreground/60">Cross-repository agent coordination hub</CardDescription>
             </div>
             <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 rounded-xl px-3 text-[10px] font-black uppercase tracking-widest bg-primary/5 border-primary/20 text-primary hover:bg-primary/10 transition-all shadow-lg shadow-primary/5 hover:-translate-y-0.5 active:translate-y-0"
-                onClick={onCreateTask}
-              >
-                <Plus size={14} className="mr-1.5" strokeWidth={3} />
-                New Task
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 rounded-xl px-3 text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-primary hover:bg-primary/5 transition-all"
-                onClick={() => onProjectClick('')}
-              >
-                Explore All
-              </Button>
+              <AppTooltip content="Create a new task">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 rounded-xl px-3 text-[10px] font-black uppercase tracking-widest bg-primary/5 border-primary/20 text-primary hover:bg-primary/10 transition-all shadow-lg shadow-primary/5 hover:-translate-y-0.5 active:translate-y-0"
+                  onClick={onCreateTask}
+                >
+                  <Plus size={14} className="mr-1.5" strokeWidth={3} />
+                  New Task
+                </Button>
+              </AppTooltip>
+              <AppTooltip content="Open all workspaces">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 rounded-xl px-3 text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-primary hover:bg-primary/5 transition-all"
+                  onClick={() => onProjectClick('')}
+                >
+                  Explore All
+                </Button>
+              </AppTooltip>
             </div>
           </CardHeader>
           <CardContent className="flex-1 min-h-0 px-3 pb-4">
@@ -497,11 +501,11 @@ export function SettingsCard({
   const [activeTab, setActiveTab] = useState<'backend' | 'agents' | 'tokens' | 'migration' | 'shortcuts'>('backend')
 
   const tabs = [
-    { id: 'backend', label: 'Backend', icon: <Database className="h-3.5 w-3.5" /> },
-    { id: 'agents', label: 'Agents', icon: <Zap className="h-3.5 w-3.5" /> },
-    { id: 'tokens', label: 'Tokens', icon: <ShieldCheck className="h-3.5 w-3.5" /> },
-    { id: 'migration', label: 'Migration', icon: <RefreshCcw className="h-3.5 w-3.5" /> },
-    { id: 'shortcuts', label: 'Shortcuts', icon: <Keyboard className="h-3.5 w-3.5" /> },
+    { id: 'backend', label: 'Backend', tooltip: 'Configure backend profiles and API connection', icon: <Database className="h-3.5 w-3.5" /> },
+    { id: 'agents', label: 'Agents', tooltip: 'Set provider commands and default runner', icon: <Zap className="h-3.5 w-3.5" /> },
+    { id: 'tokens', label: 'Tokens', tooltip: 'Store provider API keys for agent access', icon: <ShieldCheck className="h-3.5 w-3.5" /> },
+    { id: 'migration', label: 'Migration', tooltip: 'Plan and apply workspace migrations', icon: <RefreshCcw className="h-3.5 w-3.5" /> },
+    { id: 'shortcuts', label: 'Shortcuts', tooltip: 'View global keyboard shortcuts', icon: <Keyboard className="h-3.5 w-3.5" /> },
   ] as const
 
   return (
@@ -512,17 +516,18 @@ export function SettingsCard({
 
         <div className="flex gap-1">
           {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 border-b-2 px-4 py-2 text-xs font-bold uppercase tracking-widest transition-all ${activeTab === tab.id
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
-                }`}
-            >
-              {tab.icon}
-              {tab.label}
-            </button>
+            <AppTooltip key={tab.id} content={tab.tooltip}>
+              <button
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 border-b-2 px-4 py-2 text-xs font-bold uppercase tracking-widest transition-all ${activeTab === tab.id
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+                  }`}
+              >
+                {tab.icon}
+                {tab.label}
+              </button>
+            </AppTooltip>
           ))}
         </div>
       </CardHeader>
@@ -1401,18 +1406,22 @@ export function IssueDetailView({
                   </div>
                   <div className="space-y-1.5 max-h-40 overflow-auto custom-scrollbar">
                     {(() => {
-                      const thoughtEvent = timeline.find(e => e.kind === 'thought' && e.message?.includes('- [ ]'))
+                      const thoughtEvent = timeline.find((event) => {
+                        const message = typeof event.data?.message === 'string' ? event.data.message : ''
+                        return event.type === 'thought' && message.includes('- [ ]')
+                      })
                       if (!thoughtEvent) return <div className="text-[10px] text-muted-foreground/40 italic">Waiting for agent to formulate a plan...</div>
-                      
-                      const planItems = thoughtEvent.message
+
+                      const thoughtMessage = typeof thoughtEvent.data?.message === 'string' ? thoughtEvent.data.message : ''
+                      const planItems = thoughtMessage
                         .split('\n')
-                        .filter(line => line.includes('- [ ]') || line.includes('- [x]'))
-                        .map(line => ({
+                        .filter((line: string) => line.includes('- [ ]') || line.includes('- [x]') || line.includes('- [X]'))
+                        .map((line: string) => ({
                           text: line.replace(/-\s*\[\s*[ xX]\s*\]/, '').trim(),
                           done: line.includes('- [x]') || line.includes('- [X]')
                         }))
 
-                      return planItems.map((item, idx) => (
+                      return planItems.map((item: { text: string; done: boolean }, idx: number) => (
                         <div key={idx} className="flex items-start gap-2 group">
                           <div className={`mt-0.5 grid h-3 w-3 shrink-0 place-items-center rounded-sm border transition-colors ${item.done ? 'bg-primary border-primary text-primary-foreground' : 'border-border bg-card'}`}>
                             {item.done && <Check size={8} strokeWidth={4} />}
@@ -2801,7 +2810,15 @@ export function KanbanBoard({
   const [columnOrder, setColumnOrder] = useState<string[]>(['todo', 'progress', 'done'])
   const [draggingColumnId, setDraggingColumnId] = useState<string | null>(null)
 
+  const isNoDragTarget = (target: EventTarget | null) => {
+    return target instanceof Element && !!target.closest('[data-no-drag="true"]')
+  }
+
   const handleDragStart = (e: React.DragEvent, issueIdentifier: string) => {
+    if (isNoDragTarget(e.target)) {
+      e.preventDefault()
+      return
+    }
     e.dataTransfer.setData('issueIdentifier', issueIdentifier)
     e.dataTransfer.setData('type', 'issue')
     e.dataTransfer.effectAllowed = 'move'
@@ -3115,11 +3132,15 @@ export function KanbanBoard({
                                   ? 'Retry'
                                   : ''}
                             </span>
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all translate-x-1 group-hover:translate-x-0">
+                            <div
+                              data-no-drag="true"
+                              className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all translate-x-1 group-hover:translate-x-0"
+                            >
                               {item.state === 'Todo' && item.assignee_id && item.assignee_id !== 'Unassigned' && onIssueUpdate && (
                                 <AppTooltip content="Launch agent session">
                                   <button
                                     type="button"
+                                    data-no-drag="true"
                                     className="p-1 rounded-md text-emerald-500/60 hover:text-emerald-500 hover:bg-emerald-500/10 transition-all"
                                     onClick={(e) => {
                                       e.stopPropagation()
@@ -3134,6 +3155,7 @@ export function KanbanBoard({
                                 <AppTooltip content="Stop session">
                                   <button
                                     type="button"
+                                    data-no-drag="true"
                                     className="p-1 rounded-md text-amber-500/60 hover:text-amber-500 hover:bg-amber-500/10 transition-all"
                                     onClick={(e) => {
                                       e.stopPropagation()
@@ -3148,6 +3170,7 @@ export function KanbanBoard({
                                 <AppTooltip content="Permanently delete">
                                   <button
                                     type="button"
+                                    data-no-drag="true"
                                     className="p-1 rounded-md text-muted-foreground/40 hover:text-red-500 hover:bg-red-500/10 transition-all"
                                     onClick={(e) => {
                                       e.stopPropagation()
@@ -3176,15 +3199,17 @@ export function KanbanBoard({
                           </div>
                         )}
                         <div className="mt-4 flex items-center justify-between border-t border-border/40 pt-2.5">
-                          <AgentSelector
-                            value={item.assignee_id || ''}
-                            agents={availableAgents}
-                            onChange={(val) => {
-                              if (onIssueUpdate) {
-                                void onIssueUpdate(item.issue_identifier, { assignee_id: val })
-                              }
-                            }}
-                          />
+                          <div data-no-drag="true">
+                            <AgentSelector
+                              value={item.assignee_id || ''}
+                              agents={availableAgents}
+                              onChange={(val) => {
+                                if (onIssueUpdate) {
+                                  void onIssueUpdate(item.issue_identifier, { assignee_id: val })
+                                }
+                              }}
+                            />
+                          </div>
                           {(item as any).session_id ? (
                             <div className="flex items-center gap-1.5 px-1.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-[8px] font-black uppercase tracking-widest text-amber-500 animate-in fade-in duration-500">
                               <Activity className="h-2 w-2 animate-pulse" />
@@ -3364,9 +3389,12 @@ export function KanbanBoard({
                 if (issueToDelete && onIssueDelete) {
                   try {
                     await onIssueDelete(issueToDelete.identifier)
+                    setDeleteDialogOpen(false)
+                    setIssueToDelete(null)
                   } catch (err) {
                     console.error('Failed to delete issue:', err)
                   }
+                  return
                 }
                 setDeleteDialogOpen(false)
                 setIssueToDelete(null)
@@ -3615,4 +3643,3 @@ function AgentTokensForm({
     </div>
   )
 }
-
