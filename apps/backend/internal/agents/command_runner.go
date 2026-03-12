@@ -348,7 +348,7 @@ func (r *CommandRunner) runInPTY(
 
 	// Add a handler to parse events from the PTY stream
 	// We strip ANSI because PTY includes colors/control chars that break JSON parsing
-	session.AddHandler(func(data []byte) {
+	handlerID := session.AddHandler(func(data []byte) {
 		cleanData := stripansi.Strip(string(data))
 		lines := strings.Split(cleanData, "\n")
 		for _, line := range lines {
@@ -383,6 +383,10 @@ func (r *CommandRunner) runInPTY(
 			}
 		}
 	})
+	defer session.RemoveHandler(handlerID)
+
+	// If this is a non-persistent session, close it when we're done
+	// Actually, let's keep it open for HITL until explicitly closed by UI.
 
 	// Send the command/prompt to the PTY
 	if !commandContainsPrompt {

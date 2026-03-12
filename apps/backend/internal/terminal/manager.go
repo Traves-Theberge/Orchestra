@@ -11,14 +11,15 @@ import (
 )
 
 type Session struct {
-	ID         string
-	PTY        *os.File
-	Cmd        *exec.Cmd
-	Handlers   []func([]byte)
-	LogBuffer  []byte
-	OutputChan chan []byte
-	mu         sync.Mutex
-	Closed     bool
+	ID            string
+	PTY           *os.File
+	Cmd           *exec.Cmd
+	Handlers      map[int]func([]byte)
+	nextHandlerID int
+	LogBuffer     []byte
+	OutputChan    chan []byte
+	mu            sync.Mutex
+	Closed        bool
 }
 
 type Manager struct {
@@ -53,13 +54,14 @@ func (m *Manager) CreateSession(id string, dir string, command string, args ...s
 		ID:         id,
 		PTY:        f,
 		Cmd:        c,
+		Handlers:   make(map[int]func([]byte)),
 		OutputChan: make(chan []byte, 100),
 	}
 
 	m.sessions[id] = session
 
 	go func() {
-		buf := make([]byte, 1024)
+		buf := make([]byte, 4096)
 		for {
 			n, err := f.Read(buf)
 			if err != nil {
@@ -91,32 +93,38 @@ func (s *Session) broadcast(data []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	
-	// Keep a small buffer of the last 10KB for re-attachment
 	s.LogBuffer = append(s.LogBuffer, data...)
-	if len(s.LogBuffer) > 1024*10 {
-		s.LogBuffer = s.LogBuffer[len(s.LogBuffer)-1024*10:]
+	if len(s.LogBuffer) > 1024*100 { // 100KB buffer
+		s.LogBuffer = s.LogBuffer[len(s.LogBuffer)-1024*100:]
 	}
 
 	for _, h := range s.Handlers {
 		h(data)
 	}
 
-	// Non-blocking send to output channel for agents
 	select {
 	case s.OutputChan <- data:
 	default:
 	}
 }
 
-func (s *Session) AddHandler(h func([]byte)) {
+func (s *Session) AddHandler(h func([]byte)) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.Handlers = append(s.Handlers, h)
+	id := s.nextHandlerID
+	s.nextHandlerID++
+	s.Handlers[id] = h
 	
-	// Replay buffer to new handler
 	if len(s.LogBuffer) > 0 {
 		h(s.LogBuffer)
 	}
+	return id
+}
+
+func (s *Session) RemoveHandler(id int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.Handlers, id)
 }
 
 func (s *Session) Write(data []byte) (int, error) {

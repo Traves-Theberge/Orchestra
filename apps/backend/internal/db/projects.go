@@ -79,16 +79,35 @@ func (db *DB) UpdateSessionProject(ctx context.Context, sessionID, projectID str
 
 // RecordEvent records an atomic agent progression event
 func (db *DB) RecordEvent(ctx context.Context, eventID, sessionID, kind, message string, rawPayload []byte, inputTokens, outputTokens int, timestampStr string) error {
+	// Local-First Optimization: Don't duplicate heavy tool results or logs into the DB.
+	// We keep 'message' and 'tool_use' (parameters) but drop the large output bodies.
+	if kind == "tool_result" || kind == "stdout" || kind == "stderr" || kind == "file_content" {
+		rawPayload = nil
+	}
+
+	// Safety check: Prevent infinite loop bloat by capping events per session
+	var count int
+	_ = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM events WHERE session_id = ?", sessionID).Scan(&count)
+	if count > 2000 {
+		return nil // Silently drop to protect system integrity
+	}
+
 	query := `
 		INSERT INTO events (id, session_id, kind, message, raw_payload, input_tokens, output_tokens, timestamp)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO NOTHING
 	`
 	
-	// If raw payload is empty bytes, use nil so it's stored as NULL in SQLite instead of empty text
+	// Security/Stability: Cap any remaining raw payload size at 512KB
+	const maxPayloadSize = 512 * 1024
 	var raw interface{}
 	if len(rawPayload) > 0 {
-		raw = string(rawPayload)
+		if len(rawPayload) > maxPayloadSize {
+			truncated := append(rawPayload[:maxPayloadSize], []byte("\n... [TRUNCATED] ...")...)
+			raw = string(truncated)
+		} else {
+			raw = string(rawPayload)
+		}
 	}
 
 	var tsTime interface{}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
 	"github.com/orchestra/orchestra/apps/backend/internal/mcp"
 	githubutils "github.com/orchestra/orchestra/apps/backend/internal/utils/github"
+	"github.com/orchestra/orchestra/apps/backend/internal/utils/git"
 )
 
 func (s *Server) CreateGitHubPR(w http.ResponseWriter, r *http.Request) {
@@ -33,20 +35,76 @@ func (s *Server) CreateGitHubPR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Default to project-level settings if missing in request
-	if body.Owner == "" && body.Repo == "" {
-		parts := strings.Split(s.config.TrackerEndpoint, "/")
-		if len(parts) == 2 {
-			body.Owner = parts[0]
-			body.Repo = parts[1]
+	// Try to lookup issue to find project ID
+	var projectID string
+	issue, err := s.orchestrator.FetchIssueByIdentifier(r.Context(), identifier)
+	if err == nil && issue != nil {
+		projectID = issue.ProjectID
+		if projectID != "" {
+			project, err := s.db.GetProjectByID(r.Context(), projectID)
+			if err == nil {
+				if body.Owner == "" {
+					body.Owner = project.GitHubOwner
+				}
+				if body.Repo == "" {
+					body.Repo = project.GitHubRepo
+				}
+				if body.Token == "" {
+					body.Token = project.GitHubToken
+				}
+				
+				// If still missing owner/repo, try to parse from remote URL
+				if (body.Owner == "" || body.Repo == "") && project.RemoteURL != "" {
+					if o, r, ok := git.ParseGitHubRemote(project.RemoteURL); ok {
+						if body.Owner == "" {
+							body.Owner = o
+						}
+						if body.Repo == "" {
+							body.Repo = r
+						}
+					}
+				}
+			}
 		}
 	}
+
+	// Fallback to global config if still missing
+	if body.Owner == "" || body.Repo == "" {
+		parts := strings.Split(s.config.TrackerEndpoint, "/")
+		if len(parts) == 2 {
+			if body.Owner == "" {
+				body.Owner = parts[0]
+			}
+			if body.Repo == "" {
+				body.Repo = parts[1]
+			}
+		}
+	}
+	
+	// Fallback to global token
 	if body.Token == "" {
 		body.Token = s.config.TrackerToken
 	}
+
+	// NEW: Fallback to GitHub CLI token if still missing
+	if body.Token == "" {
+		cmd := exec.Command("gh", "auth", "token")
+		if out, err := cmd.Output(); err == nil {
+			token := strings.TrimSpace(string(out))
+			if token != "" {
+				s.logger.Info().Str("issue_identifier", identifier).Msg("using github cli token for pr creation")
+				body.Token = token
+				
+				// Optional: Save this token back to the project for next time
+				if projectID != "" {
+					_ = s.updateProjectGitHubToken(r.Context(), projectID, token)
+				}
+			}
+		}
+	}
 	
 	if body.Owner == "" || body.Repo == "" || body.Token == "" {
-		writeJSONError(w, http.StatusBadRequest, "missing_params", "owner, repo, and token are required (could not be inferred from config)")
+		writeJSONError(w, http.StatusBadRequest, "missing_params", "owner, repo, and token are required (could not be inferred from project, config, or GitHub CLI)")
 		return
 	}
 

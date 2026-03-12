@@ -9,12 +9,12 @@ import (
 
 func TestWorkspacePath_SanitizesIdentifier(t *testing.T) {
 	root := t.TempDir()
-	path, err := WorkspacePath(root, "MT/Det")
+	path, err := WorkspacePath(root, "MT/Det", "codex")
 	if err != nil {
 		t.Fatalf("expected workspace path, got err=%v", err)
 	}
 
-	if filepath.Base(path) != "MT_Det" {
+	if filepath.Base(path) != "MT_Det-codex" {
 		t.Fatalf("expected sanitized identifier MT_Det, got=%q", filepath.Base(path))
 	}
 }

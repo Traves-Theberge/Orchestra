@@ -36,7 +36,11 @@ func (failingTrackerClient) SearchIssues(context.Context, string) ([]tracker.Iss
 	return nil, errors.New("search-issues failure")
 }
 
-func (failingTrackerClient) CreateIssue(ctx context.Context, title, description, state string, priority int, assigneeID, projectID string) (*tracker.Issue, error) {
+func (failingTrackerClient) DeleteIssue(_ context.Context, _ string) error { return errors.New("delete failure") }
+
+func (failingTrackerClient) FetchIssueByIdentifier(_ context.Context, _ string) (*tracker.Issue, error) { return nil, errors.New("fetch-by-identifier failure") }
+
+func (failingTrackerClient) CreateIssue(ctx context.Context, title, description, state string, priority int, assigneeID, projectID, branchName string, labels []string) (*tracker.Issue, error) {
 	return nil, errors.New("create-issue failure")
 }
 
@@ -91,7 +95,7 @@ func TestPerformRefreshClearsClaimsForReconciledOutIssues(t *testing.T) {
 		t.Fatalf("perform refresh: %v", err)
 	}
 
-	service.RecordRunSuccess("1")
+	service.RecordRunSuccess("1", "codex")
 	if _, ok := service.ClaimNextRunnable(); ok {
 		t.Fatalf("expected no stale claimed issue after reconcile")
 	}

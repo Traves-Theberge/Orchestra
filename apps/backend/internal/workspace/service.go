@@ -22,14 +22,14 @@ type Hooks struct {
 	AfterRun     string
 }
 
-func (s Service) EnsureIssueWorkspace(issueIdentifier string, provider string, hooks Hooks) (string, bool, error) {
+func (s Service) EnsureIssueWorkspace(issueIdentifier string, provider string, hooks Hooks) (string, bool, HookResult, error) {
 	path, err := WorkspacePath(s.Root, issueIdentifier, provider)
 	if err != nil {
-		return "", false, err
+		return "", false, HookResult{}, err
 	}
 
 	if err := os.MkdirAll(s.Root, 0o755); err != nil {
-		return "", false, fmt.Errorf("create workspace root: %w", err)
+		return "", false, HookResult{}, fmt.Errorf("create workspace root: %w", err)
 	}
 
 	created := false
@@ -37,33 +37,32 @@ func (s Service) EnsureIssueWorkspace(issueIdentifier string, provider string, h
 	switch {
 	case statErr == nil && info.IsDir():
 		if err := ValidateWorkspacePath(s.Root, path); err != nil {
-			return "", false, err
+			return "", false, HookResult{}, err
 		}
 	case statErr == nil && !info.IsDir():
 		if err := os.Remove(path); err != nil {
-			return "", false, fmt.Errorf("remove stale workspace path: %w", err)
+			return "", false, HookResult{}, fmt.Errorf("remove stale workspace path: %w", err)
 		}
 		if err := os.MkdirAll(path, 0o755); err != nil {
-			return "", false, fmt.Errorf("create workspace directory: %w", err)
+			return "", false, HookResult{}, fmt.Errorf("create workspace directory: %w", err)
 		}
 		created = true
 	case statErr != nil:
 		if !isNotExist(statErr) {
-			return "", false, fmt.Errorf("inspect workspace path: %w", statErr)
+			return "", false, HookResult{}, fmt.Errorf("inspect workspace path: %w", statErr)
 		}
 		if err := os.MkdirAll(path, 0o755); err != nil {
-			return "", false, fmt.Errorf("create workspace directory: %w", err)
+			return "", false, HookResult{}, fmt.Errorf("create workspace directory: %w", err)
 		}
 		created = true
 	}
 
 	if created && hooks.AfterCreate != "" {
-		if _, err := RunHook("after_create", hooks.AfterCreate, path, s.timeoutOrDefault()); err != nil {
-			return "", false, err
-		}
+		res, err := RunHook("after_create", hooks.AfterCreate, path, s.timeoutOrDefault())
+		return path, created, res, err
 	}
 
-	return path, created, nil
+	return path, created, HookResult{}, nil
 }
 
 func (s Service) RemoveIssueWorkspaces(issueIdentifier string, provider string, hooks Hooks) error {
@@ -95,20 +94,18 @@ func (s Service) RemoveIssueWorkspaces(issueIdentifier string, provider string, 
 	return nil
 }
 
-func (s Service) RunBeforeRunHook(workspacePath string, hooks Hooks) error {
+func (s Service) RunBeforeRunHook(workspacePath string, hooks Hooks) (HookResult, error) {
 	if hooks.BeforeRun == "" {
-		return nil
+		return HookResult{}, nil
 	}
-	_, err := RunHook("before_run", hooks.BeforeRun, workspacePath, s.timeoutOrDefault())
-	return err
+	return RunHook("before_run", hooks.BeforeRun, workspacePath, s.timeoutOrDefault())
 }
 
-func (s Service) RunAfterRunHook(workspacePath string, hooks Hooks) error {
+func (s Service) RunAfterRunHook(workspacePath string, hooks Hooks) (HookResult, error) {
 	if hooks.AfterRun == "" {
-		return nil
+		return HookResult{}, nil
 	}
-	_, _ = RunHook("after_run", hooks.AfterRun, workspacePath, s.timeoutOrDefault())
-	return nil
+	return RunHook("after_run", hooks.AfterRun, workspacePath, s.timeoutOrDefault())
 }
 
 func (s Service) ListArtifacts(issueIdentifier string, provider string) ([]string, error) {

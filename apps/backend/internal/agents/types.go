@@ -40,6 +40,7 @@ type Event struct {
 	SessionID string         `json:"session_id,omitempty"`
 	Kind      string         `json:"kind"`
 	Message   string         `json:"message,omitempty"`
+	RawLine   string         `json:"raw_line,omitempty"`
 	Raw       map[string]any `json:"raw,omitempty"`
 	Usage     TokenUsage     `json:"usage,omitempty"`
 	Timestamp time.Time      `json:"timestamp"`

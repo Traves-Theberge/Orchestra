@@ -291,12 +291,12 @@ export const DocsDashboard: React.FC<DocsDashboardProps> = ({ config }) => {
                                             rehypePlugins={[rehypeSlug]}
                                             components={{
                                                 code({node, className, children, ...props}) {
-                                                    const match = /language-(\w+)/.exec(className || '')
+                                                    const match = /language-([a-zA-Z0-9-]+)/.exec(className || '')
                                                     const isInline = node?.tagName === 'code' && !match
                                                     
                                                     if (!isInline && match) {
                                                         if (match[1] === 'diagram-architecture') {
-                                                            return <D3ArchitectureGraph />
+                                                            return <D3ArchitectureGraph data={String(children)} />
                                                         }
 
                                                         return (

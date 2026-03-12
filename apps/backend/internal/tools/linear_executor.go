@@ -12,11 +12,11 @@ type LinearToolExecutor struct {
 	tracker tracker.Client
 }
 
-func LinearToolSpecs() []map[string]any {
+func TrackerToolSpecs() []map[string]any {
 	return []map[string]any{
 		{
-			"name":        "linear_query",
-			"description": "Query Linear state for candidate dispatch and state refresh operations.",
+			"name":        "tracker_query",
+			"description": "Query issue tracker state for candidate dispatch and state refresh operations.",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -124,7 +124,7 @@ func (e *LinearToolExecutor) Execute(tool string, arguments map[string]any) map[
 			"issue":  issue,
 			"note":   "The orchestrator will switch to the new provider on the next turn cycle.",
 		})
-	case "linear_query":
+	case "tracker_query":
 		arguments := arguments
 
 		mode, _ := arguments["mode"].(string)

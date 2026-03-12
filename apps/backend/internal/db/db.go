@@ -46,6 +46,7 @@ func Connect(dbPath string) (*DB, error) {
 	_, _ = db.Exec("ALTER TABLE issues ADD COLUMN provider TEXT")
 	_, _ = db.Exec("ALTER TABLE issues ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP")
 	_, _ = db.Exec("ALTER TABLE runs ADD COLUMN provider TEXT")
+	_, _ = db.Exec("ALTER TABLE runs ADD COLUMN issue_identifier TEXT")
 	_, _ = db.Exec("ALTER TABLE sessions ADD COLUMN issue_id TEXT")
 
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS issue_history (

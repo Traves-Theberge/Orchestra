@@ -150,7 +150,7 @@ func TestEventsEndpointStreamsSnapshotFrame(t *testing.T) {
 func TestEventsEndpointSnapshotIncludesRateLimits(t *testing.T) {
 	service := orchestrator.NewService()
 	service.SetRunningForTest([]orchestrator.RunningEntry{{IssueID: "1", IssueIdentifier: "ORC-1"}})
-	service.RecordRunEvent("1", agents.Event{
+	service.RecordRunEvent("1", "codex", agents.Event{
 		Kind:      "thread/rate_limits",
 		Timestamp: time.Now().UTC(),
 		Raw: map[string]any{
@@ -189,7 +189,7 @@ func TestEventsEndpointStreamingSnapshotReflectsUpdatedRateLimits(t *testing.T) 
 
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		service.RecordRunEvent("1", agents.Event{
+		service.RecordRunEvent("1", "codex", agents.Event{
 			Kind:      "thread/rate_limits",
 			Timestamp: time.Now().UTC(),
 			Raw:       map[string]any{"meta": map[string]any{"data": []any{map[string]any{"rate_limits": map[string]any{"remaining": 5}}}}},
@@ -261,7 +261,7 @@ func TestEventsEndpointPublishesImmediateSnapshotAfterPubSubEvent(t *testing.T) 
 
 	go func() {
 		time.Sleep(50 * time.Millisecond)
-		service.RecordRunEvent("1", agents.Event{
+		service.RecordRunEvent("1", "codex", agents.Event{
 			Kind:      "thread/rate_limits",
 			Timestamp: time.Now().UTC(),
 			Raw:       map[string]any{"rate_limits": map[string]any{"remaining": 4}},
@@ -467,7 +467,7 @@ func TestEventsEndpointSnapshotFrameCarriesExpectedShape(t *testing.T) {
 		DueAt:           "2026-01-01T00:00:00Z",
 		Error:           "transient",
 	}})
-	service.RecordRunEvent("1", agents.Event{
+	service.RecordRunEvent("1", "codex", agents.Event{
 		Kind:      "thread/rate_limits",
 		Timestamp: time.Now().UTC(),
 		Raw:       map[string]any{"rate_limits": map[string]any{"remaining": 6}},

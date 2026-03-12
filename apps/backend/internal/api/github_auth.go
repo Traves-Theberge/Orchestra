@@ -2,12 +2,25 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
+	"os/exec"
 	"strings"
+
+	"github.com/google/go-github/v69/github"
+	"golang.org/x/oauth2"
+	githuboauth "golang.org/x/oauth2/github"
 )
+
+func (s *Server) oauthConfig() *oauth2.Config {
+	return &oauth2.Config{
+		ClientID:     s.config.GitHubClientID,
+		ClientSecret: s.config.GitHubClientSecret,
+		Scopes:       []string{"repo", "user"},
+		Endpoint:     githuboauth.Endpoint,
+		RedirectURL:  "http://127.0.0.1:4010/api/v1/github/callback",
+	}
+}
 
 func (s *Server) HandleGitHubLogin(w http.ResponseWriter, r *http.Request) {
 	projectID := r.URL.Query().Get("project_id")
@@ -16,96 +29,80 @@ func (s *Server) HandleGitHubLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	clientID := s.config.GitHubClientID
-	if clientID == "" {
-		writeJSONError(w, http.StatusPreconditionFailed, "github_client_id_not_configured", "GitHub Client ID is not configured on the server")
+	// NEW: Local-First Discovery
+	// Try to grab the token from the GitHub CLI if it exists on the system
+	cmd := exec.Command("gh", "auth", "token")
+	if out, err := cmd.Output(); err == nil {
+		token := strings.TrimSpace(string(out))
+		if token != "" {
+			s.logger.Info().Str("project_id", projectID).Msg("automatically discovered github cli token")
+			if err := s.updateProjectGitHubToken(r.Context(), projectID, token); err == nil {
+				// We found it! Send a success page immediately.
+				w.Header().Set("Content-Type", "text/html")
+				fmt.Fprintf(w, "<html><body style='font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;background:#09090b;color:white;'>"+
+					"<div style='text-align:center;padding:2rem;background:#18181b;border-radius:1rem;border:1px solid #27272a;box-shadow:0 25px 50px -12px rgba(0,0,0,0.5)'>"+
+					"<h1 style='color:#10b981;'>Connected!</h1><p>Using GitHub CLI credentials from your machine.</p>"+
+					"<p style='font-size:0.8rem;color:#71717a;'>This window will close automatically.</p>"+
+					"<script>setTimeout(() => window.close(), 1500);</script></div></body></html>")
+				return
+			}
+		}
+	}
+
+	if s.config.GitHubClientID == "" {
+		writeJSONError(w, http.StatusPreconditionFailed, "github_client_id_not_configured", "GitHub Client ID is not configured. Please login via 'gh auth login' on your machine.")
 		return
 	}
 
-	// In a real app, we'd generate a random state and store it in a session/cookie.
-	// For now, we'll encode the projectID in the state to know where to save the token.
-	state := projectID
-	
-	redirectURI := fmt.Sprintf("https://github.com/login/oauth/authorize?client_id=%s&state=%s&scope=repo,user", 
-		url.QueryEscape(clientID), 
-		url.QueryEscape(state),
-	)
-
-	http.Redirect(w, r, redirectURI, http.StatusTemporaryRedirect)
+	// Fallback to browser OAuth if CLI is missing/not logged in
+	authURL := s.oauthConfig().AuthCodeURL(projectID, oauth2.AccessTypeOffline)
+	http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
 }
 
 func (s *Server) HandleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	code := r.URL.Query().Get("code")
-	state := r.URL.Query().Get("state") // This is our projectID
+	state := r.URL.Query().Get("state") // projectID
 
 	if code == "" || state == "" {
 		writeJSONError(w, http.StatusBadRequest, "invalid_callback", "missing code or state")
 		return
 	}
 
-	projectID := state
+	ctx := r.Context()
+	conf := s.oauthConfig()
 
-	// Exchange code for token
-	token, err := s.exchangeGitHubCode(r.Context(), code)
+	tok, err := conf.Exchange(ctx, code)
 	if err != nil {
 		s.logger.Error().Err(err).Msg("failed to exchange github code")
-		writeJSONError(w, http.StatusInternalServerError, "token_exchange_failed", err.Error())
+		writeJSONError(w, http.StatusInternalServerError, "token_exchange_failed", "failed to exchange code for token")
 		return
 	}
 
-	// Store token in DB for the project
-	err = s.updateProjectGitHubToken(r.Context(), projectID, token)
+	// Use the official client to verify the user/token
+	client := github.NewClient(conf.Client(ctx, tok))
+	user, _, err := client.Users.Get(ctx, "")
+	if err != nil {
+		s.logger.Error().Err(err).Msg("failed to fetch github user")
+		writeJSONError(w, http.StatusInternalServerError, "user_fetch_failed", "failed to verify github token")
+		return
+	}
+
+	s.logger.Info().Str("github_user", user.GetLogin()).Str("project_id", state).Msg("github authentication successful")
+
+	// Store token in DB
+	err = s.updateProjectGitHubToken(ctx, state, tok.AccessToken)
 	if err != nil {
 		s.logger.Error().Err(err).Msg("failed to update project with github token")
-		writeJSONError(w, http.StatusInternalServerError, "db_update_failed", err.Error())
+		writeJSONError(w, http.StatusInternalServerError, "db_update_failed", "failed to save authentication state")
 		return
 	}
 
-	// Redirect back to frontend
-	// We'll assume the frontend is running on the same host or we have a configured base URL.
-	// For now, let's just show a success message or redirect to a known path.
 	w.Header().Set("Content-Type", "text/html")
-	fmt.Fprintf(w, "<html><body><h1>GitHub Authorized!</h1><p>You can close this window now.</p><script>window.close();</script></body></html>")
-}
-
-func (s *Server) exchangeGitHubCode(ctx context.Context, code string) (string, error) {
-	values := url.Values{}
-	values.Set("client_id", s.config.GitHubClientID)
-	values.Set("client_secret", s.config.GitHubClientSecret)
-	values.Set("code", code)
-
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://github.com/login/oauth/access_token", strings.NewReader(values.Encode()))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("github returned status %d", resp.StatusCode)
-	}
-
-	var result struct {
-		AccessToken string `json:"access_token"`
-		Error       string `json:"error"`
-		ErrorDesc   string `json:"error_description"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", err
-	}
-
-	if result.Error != "" {
-		return "", fmt.Errorf("github error: %s (%s)", result.Error, result.ErrorDesc)
-	}
-
-	return result.AccessToken, nil
+	fmt.Fprintf(w, "<html><body style='font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;background:#09090b;color:white;'>"+
+		"<div style='text-align:center;padding:2rem;background:#18181b;border-radius:1rem;border:1px solid #27272a;box-shadow:0 25px 50px -12px rgba(0,0,0,0.5)'>"+
+		"<h1 style='color:#10b981;'>Success!</h1><p>GitHub account connected to project.</p>"+
+		"<p style='font-size:0.8rem;color:#71717a;'>You can close this window now.</p>"+
+		"<script>setTimeout(() => window.close(), 2000);</script></div></body></html>")
 }
 
 func (s *Server) updateProjectGitHubToken(ctx context.Context, projectID, token string) error {

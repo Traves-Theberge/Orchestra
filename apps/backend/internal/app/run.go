@@ -242,17 +242,17 @@ func processExecutionTick(
 	}
 	runAfterHook := func() {
 		publishLifecycleEvent(pubsub, "hook_started", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_run"})
-		if err := workspaceService.RunAfterRunHook(workspacePath, workspaceHooks); err != nil {
-			publishLifecycleEvent(pubsub, "hook_failed", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_run", "error": err.Error()})
+		if res, err := workspaceService.RunAfterRunHook(workspacePath, workspaceHooks); err != nil {
+			publishLifecycleEvent(pubsub, "hook_failed", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_run", "error": err.Error(), "output": res.Output})
 		} else {
-			publishLifecycleEvent(pubsub, "hook_completed", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_run"})
+			publishLifecycleEvent(pubsub, "hook_completed", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_run", "output": res.Output})
 		}
 	}
 
 	if entry.TurnCount == 0 {
 		publishLifecycleEvent(pubsub, "hook_started", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "before_run"})
-		if err := workspaceService.RunBeforeRunHook(workspacePath, workspaceHooks); err != nil {
-			publishLifecycleEvent(pubsub, "hook_failed", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "before_run", "error": err.Error()})
+		if res, err := workspaceService.RunBeforeRunHook(workspacePath, workspaceHooks); err != nil {
+			publishLifecycleEvent(pubsub, "hook_failed", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "before_run", "error": err.Error(), "output": res.Output})
 			runAfterHook()
 			attempt := entry.TurnCount + 1
 			dueAt := service.NextRetryDue(entry.IssueID, attempt)

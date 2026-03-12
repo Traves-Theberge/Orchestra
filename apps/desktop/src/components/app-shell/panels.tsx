@@ -940,6 +940,7 @@ export function IssueDetailView({
   const [artifactsLoading, setArtifactsLoading] = useState(false)
   const [selectedArtifact, setSelectedArtifact] = useState<string | null>(null)
   const [artifactContent, setArtifactContent] = useState<string | null>(null)
+  const [reportContent, setReportContent] = useState<string | null>(null)
   const [contentLoading, setArtifactContentLoading] = useState(false)
   const logsEndRef = useRef<HTMLDivElement>(null)
   const [prPending, setPrPending] = useState(false)
@@ -949,6 +950,8 @@ export function IssueDetailView({
   const [prBody, setPrBody] = useState('')
   const [prHead, setPrHead] = useState('')
   const [disabledTools, setDisabledTools] = useState<string[]>(disabledToolsFromResult)
+  const [hookOutputs, setHookOutputs] = useState<Record<string, string>>({})
+  const [selectedHookLog, setSelectedHookLog] = useState<{ id: string; label: string; output: string } | null>(null)
 
   // Sync local state when result changes
   useEffect(() => {
@@ -957,6 +960,21 @@ export function IssueDetailView({
     setLocalProvider(provider)
     setDisabledTools(disabledToolsFromResult)
   }, [result])
+
+  useEffect(() => {
+    const relevant = timeline.filter((e) => (e.data as any)?.issue_id === result.id || (e.data as any)?.issue_identifier === identifier)
+    const outputs: Record<string, string> = {}
+    relevant.forEach(e => {
+      if (e.type === 'hook_completed' || e.type === 'hook_failed') {
+        const type = (e.data as any)?.hook_type
+        const output = (e.data as any)?.output
+        if (type && output) {
+          outputs[type] = output
+        }
+      }
+    })
+    setHookOutputs(prev => ({ ...prev, ...outputs }))
+  }, [timeline, result.id, identifier])
 
   // Get all providers for this issue from snapshot to support switching between parallel runs
   const activeSessions = useMemo(() => {
@@ -983,6 +1001,7 @@ export function IssueDetailView({
         })
         .finally(() => setDiffLoading(false))
     }
+  useEffect(() => {
     if (activeTab === 'artifacts' && identifier && config) {
       setArtifactsLoading(true)
       fetchArtifacts(config, identifier, localProvider)
@@ -1000,6 +1019,17 @@ export function IssueDetailView({
         .finally(() => setHistoryLoading(false))
     }
   }, [activeTab, identifier, config, localProvider])
+
+  useEffect(() => {
+    const reportPath = artifacts.find(p => p.toLowerCase().includes('report.md') || p.toLowerCase().includes('summary.md'))
+    if (reportPath && config && identifier) {
+      fetchArtifactContent(config, identifier, reportPath, localProvider)
+        .then(setReportContent)
+        .catch(console.error)
+    } else {
+      setReportContent(null)
+    }
+  }, [artifacts, config, identifier, localProvider])
 
   useEffect(() => {
     if (selectedArtifact && identifier && config) {
@@ -1167,6 +1197,17 @@ export function IssueDetailView({
   return (
     <div className="flex flex-col gap-4 h-full">
       <div className="flex items-center gap-1 rounded-lg bg-muted/20 p-1 shrink-0">
+        {reportContent && (
+          <AppTooltip content="Executive summary and autonomous verification report">
+            <button
+              onClick={() => setActiveTab('artifacts')}
+              className={`flex-1 flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition-all bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20 shadow-lg shadow-primary/5`}
+            >
+              <FileText size={12} strokeWidth={3} />
+              REPORT
+            </button>
+          </AppTooltip>
+        )}
         <AppTooltip content="Task metadata, agent configuration, and runtime pulse">
           <button
             onClick={() => setActiveTab('overview')}
@@ -1315,6 +1356,73 @@ export function IssueDetailView({
                   </div>
                 )}
 
+                {/* Autonomous Report Summary */}
+                {reportContent && (
+                  <div className="p-3 bg-primary/5 border-b border-border/10">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2 text-[8px] font-black uppercase tracking-widest text-primary">
+                        <FileText size={10} /> Autonomous Report
+                      </div>
+                      <Badge variant="outline" className="text-[7px] border-primary/20 text-primary px-1">Verified Summary</Badge>
+                    </div>
+                    <div className="bg-background/40 border border-primary/10 rounded-xl p-4 prose prose-invert prose-xs max-w-none overflow-hidden max-h-64 relative group">
+                      <div className="text-[11px] leading-relaxed text-foreground/90 font-medium">
+                        <SyntaxHighlighter
+                          language="markdown"
+                          style={oneDark}
+                          customStyle={{ background: 'transparent', padding: 0, margin: 0, fontSize: '11px' }}
+                        >
+                          {reportContent.slice(0, 500) + (reportContent.length > 500 ? '...' : '')}
+                        </SyntaxHighlighter>
+                      </div>
+                      {reportContent.length > 500 && (
+                        <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-background/80 to-transparent flex items-end justify-center pb-2">
+                           <button 
+                             onClick={() => setActiveTab('artifacts')}
+                             className="text-[9px] font-black uppercase tracking-widest text-primary hover:underline"
+                           >
+                             Read Full Report
+                           </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Plan Checklist */}
+                <div className="p-3 bg-primary/5 border-b border-border/10">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2 text-[8px] font-black uppercase tracking-widest text-primary/80">
+                      <ListChecks size={10} /> Operational Plan
+                    </div>
+                  </div>
+                  <div className="space-y-1.5 max-h-40 overflow-auto custom-scrollbar">
+                    {(() => {
+                      const thoughtEvent = timeline.find(e => e.kind === 'thought' && e.message?.includes('- [ ]'))
+                      if (!thoughtEvent) return <div className="text-[10px] text-muted-foreground/40 italic">Waiting for agent to formulate a plan...</div>
+                      
+                      const planItems = thoughtEvent.message
+                        .split('\n')
+                        .filter(line => line.includes('- [ ]') || line.includes('- [x]'))
+                        .map(line => ({
+                          text: line.replace(/-\s*\[\s*[ xX]\s*\]/, '').trim(),
+                          done: line.includes('- [x]') || line.includes('- [X]')
+                        }))
+
+                      return planItems.map((item, idx) => (
+                        <div key={idx} className="flex items-start gap-2 group">
+                          <div className={`mt-0.5 grid h-3 w-3 shrink-0 place-items-center rounded-sm border transition-colors ${item.done ? 'bg-primary border-primary text-primary-foreground' : 'border-border bg-card'}`}>
+                            {item.done && <Check size={8} strokeWidth={4} />}
+                          </div>
+                          <span className={`text-[10px] font-medium leading-tight transition-colors ${item.done ? 'text-muted-foreground/60 line-through' : 'text-foreground/80'}`}>
+                            {item.text}
+                          </span>
+                        </div>
+                      ))
+                    })()}
+                  </div>
+                </div>
+
                 {/* Capabilities */}
                 <div className="p-3 flex-1 flex flex-col overflow-hidden">
                   <div className="flex items-center justify-between mb-2">
@@ -1411,14 +1519,27 @@ export function IssueDetailView({
                   <div className="space-y-1.5 overflow-auto custom-scrollbar pr-1">
                     {hooks.map((hook) => {
                       const status = getHookStatus(hook.id)
+                      const output = hookOutputs[hook.id]
                       return (
-                        <div key={hook.id} className="flex flex-col gap-1 p-1.5 rounded bg-muted/30 border border-border">
+                        <div key={hook.id} className={`flex flex-col gap-1 p-1.5 rounded bg-muted/30 border transition-all ${output ? 'cursor-pointer hover:bg-muted/50 border-border/60' : 'border-border opacity-60'}`}
+                          onClick={() => {
+                            if (output) {
+                              setSelectedHookLog({ id: hook.id, label: hook.label, output })
+                            }
+                          }}
+                        >
                           <div className="flex items-center justify-between">
-                            <span className="text-[9px] font-bold text-foreground/90">{hook.label}</span>
-                            <Badge variant="outline" className={`h-3 px-1 text-[6px] font-black uppercase ${status === 'completed' ? 'border-primary/20 text-primary' : status === 'active' ? 'border-amber-500/20 text-amber-500 animate-pulse' : 'text-muted-foreground/40 border-border'}`}>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="text-[9px] font-bold text-foreground/90 truncate">{hook.label}</span>
+                              {output && <Terminal size={8} className="text-primary/60 shrink-0" />}
+                            </div>
+                            <Badge variant="outline" className={`h-3 px-1 text-[6px] font-black uppercase ${status === 'completed' ? 'border-primary/20 text-primary' : status === 'active' ? 'border-amber-500/20 text-amber-500 animate-pulse' : status === 'failed' ? 'border-red-500/30 text-red-500' : 'text-muted-foreground/40 border-border'}`}>
                               {status}
                             </Badge>
                           </div>
+                          {status === 'failed' && (
+                            <p className="text-[8px] text-red-500/60 font-medium leading-none">Initialization failed</p>
+                          )}
                         </div>
                       )
                     })}
@@ -3136,8 +3257,53 @@ export function KanbanBoard({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Hook Log Viewer Dialog */}
+      <Dialog open={!!selectedHookLog} onOpenChange={(open) => !open && setSelectedHookLog(null)}>
+        <DialogContent className="max-w-4xl bg-card border-none shadow-2xl p-0 overflow-hidden rounded-2xl">
+          <div className="flex flex-col h-[70vh]">
+            <div className="p-4 border-b border-border/10 bg-muted/20 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20">
+                  <Terminal className="h-4 w-4 text-primary" />
+                </div>
+                <div>
+                  <DialogTitle className="text-sm font-bold tracking-tight">{selectedHookLog?.label} Output</DialogTitle>
+                  <DialogDescription className="text-[10px] text-muted-foreground/60">Execution transcript from the workspace lifecycle hook.</DialogDescription>
+                </div>
+              </div>
+              <Badge variant="outline" className="h-5 px-2 text-[8px] font-black uppercase tracking-widest bg-white/5 border-border">
+                {selectedHookLog?.id}
+              </Badge>
+            </div>
+            
+            <div className="flex-1 overflow-auto bg-black/40 p-6 font-mono text-xs leading-relaxed selection:bg-primary/30">
+              <SyntaxHighlighter
+                language="bash"
+                style={oneDark}
+                customStyle={{ 
+                  margin: 0, 
+                  padding: 0, 
+                  background: 'transparent', 
+                  fontSize: '11px',
+                  lineHeight: '1.6'
+                }}
+              >
+                {selectedHookLog?.output || 'No output captured for this hook.'}
+              </SyntaxHighlighter>
+            </div>
+            
+            <div className="p-4 border-t border-border/10 bg-muted/20 flex items-center justify-end">
+              <Button size="sm" onClick={() => setSelectedHookLog(null)} className="h-8 px-4 text-[10px] font-black uppercase tracking-widest">
+                Close
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
+}
 }
 
 export function OperationsQueueCard({

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"os"
@@ -596,6 +597,18 @@ func (s *Service) ListIssues(ctx context.Context, filter tracker.IssueFilter) ([
 	}
 
 	return client.FetchIssues(ctx, filter)
+}
+
+func (s *Service) FetchIssueByIdentifier(ctx context.Context, identifier string) (*tracker.Issue, error) {
+	s.mu.RLock()
+	client := s.trackerClient
+	s.mu.RUnlock()
+
+	if client == nil {
+		return nil, errors.New("tracker client not available")
+	}
+
+	return client.FetchIssueByIdentifier(ctx, identifier)
 }
 
 func (s *Service) SearchIssues(ctx context.Context, query string) ([]tracker.Issue, error) {

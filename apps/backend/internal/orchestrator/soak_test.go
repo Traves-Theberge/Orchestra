@@ -49,16 +49,16 @@ func TestOrchestratorSoakRefreshDispatchRetryLoop(t *testing.T) {
 
 			attempt := entry.TurnCount + 1
 			if (cycle+claims)%9 == 0 {
-				service.RecordRunFailure(entry.IssueID, entry.IssueIdentifier, attempt, time.Now().UTC().Add(2*time.Millisecond), errors.New("transient"))
+				service.RecordRunFailure(entry.IssueID, entry.IssueIdentifier, "ISSUE-1", int64(attempt), time.Now().UTC().Add(2*time.Millisecond), errors.New("transient"))
 				continue
 			}
 
-			service.RecordRunEvent(entry.IssueID, agents.Event{
+			service.RecordRunEvent(entry.IssueID, "codex", agents.Event{
 				Kind:      "token_update",
 				Timestamp: time.Now().UTC(),
 				Usage:     agents.TokenUsage{InputTokens: 10, OutputTokens: 3, TotalTokens: 13},
 			})
-			service.RecordRunSuccess(entry.IssueID)
+			service.RecordRunSuccess(entry.IssueID, "codex")
 			trackerClient.SetIssueState(entry.IssueID, "Done")
 		}
 

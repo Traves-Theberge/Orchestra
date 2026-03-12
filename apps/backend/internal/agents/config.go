@@ -213,8 +213,24 @@ func readOrCreate(path string) string {
 		return string(bytes)
 	}
 	_ = os.MkdirAll(filepath.Dir(path), 0o755)
-	_ = os.WriteFile(path, []byte(""), 0o644)
-	return ""
+	
+	name := filepath.Base(path)
+	content := ""
+	switch name {
+	case ".claude", ".claude.json":
+		content = "{\n  \"message\": \"Runtime configuration for Claude Code\",\n  \"custom_instructions\": \"You are an autonomous coding agent...\",\n  \"preferred_tools\": []\n}"
+	case ".gemini", ".gemini.json":
+		content = "{\n  \"message\": \"Runtime configuration for Gemini\",\n  \"model\": \"gemini-2.0-flash-thinking-exp\",\n  \"temperature\": 0.7\n}"
+	case ".opencode", "opencode.json":
+		content = "{\n  \"message\": \"Runtime configuration for OpenCode\",\n  \"capabilities\": {\n    \"browsing\": true,\n    \"shell\": true\n  }\n}"
+	case ".codex":
+		content = "[agent]\nname = \"Codex\"\nversion = \"1.0.0\"\n\n[runtime]\nmax_turns = 50\ntimeout = \"10m\"\n"
+	case "workspace.json":
+		content = "{\n  \"pointers\": {},\n  \"settings\": {\n    \"theme\": \"dark\"\n  }\n}"
+	}
+
+	_ = os.WriteFile(path, []byte(content), 0o644)
+	return content
 }
 
 func UpdateGlobalAgentConfig(workspaceRoot string, name string, content string) error {

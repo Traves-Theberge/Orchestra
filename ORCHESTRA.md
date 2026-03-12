@@ -5,6 +5,12 @@ server:
   api_token: dev-token
 workspace:
   root: /tmp/orchestra
+  project_roots:
+    - /home/traves/Development
+    - /tmp/orchestra
+github:
+  client_id: YOUR_GITHUB_CLIENT_ID_HERE
+  client_secret: YOUR_GITHUB_CLIENT_SECRET_HERE
 agent:
   provider: gemini
   skills:

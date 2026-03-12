@@ -3,8 +3,6 @@ package api
 import (
 	"encoding/json"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -43,39 +41,30 @@ func (s *Server) TerminalWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	// Try to launch orchestra-dash TUI if it exists, otherwise bash
-	wd, _ := os.Getwd()
-	tuiPath := filepath.Join(wd, "apps/tui/orchestra-dash")
-	
+	// Default to bash
 	command := "/bin/bash"
 	args := []string{}
 	
-	// Check if this is an issue session
+	// If this is an issue session, we launch the specific agent command
 	if strings.HasPrefix(sessionID, "issue-") {
 		issueIdentifier := strings.TrimPrefix(sessionID, "issue-")
 		// Find the issue to get its provider
 		if issues, err := s.orchestrator.ListIssues(r.Context(), tracker.IssueFilter{}); err == nil {
 			for _, issue := range issues {
 				if issue.Identifier == issueIdentifier {
-					// We found the issue! Use its agent command if available.
 					provider := issue.Provider
 					if provider == "" {
 						provider = s.config.AgentProvider
 					}
 					
 					if cmd, ok := s.config.AgentCommands[provider]; ok && cmd != "" {
-						// We found an agent command!
 						// Use shell to run the agent command so we can see its TUI if it has one
-						command = "/bin/bash"
 						args = []string{"-c", cmd}
 					}
 					break
 				}
 			}
 		}
-	} else if _, err := os.Stat(tuiPath); err == nil {
-		command = tuiPath
-		args = []string{"--no-start"}
 	}
 
 	session, err := s.termManager.CreateSession(sessionID, dir, command, args...)
@@ -84,13 +73,14 @@ func (s *Server) TerminalWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Send initial data to client
-	session.AddHandler(func(data []byte) {
+	// Send data to client
+	handlerID := session.AddHandler(func(data []byte) {
 		err := conn.WriteMessage(websocket.BinaryMessage, data)
 		if err != nil {
-			s.logger.Warn().Err(err).Msg("failed to write to websocket")
+			// Don't log as error, it just means client disconnected
 		}
 	})
+	defer session.RemoveHandler(handlerID)
 
 	// Read from client
 	for {

@@ -64,6 +64,60 @@ type ClaudeLogEntry struct {
 		Input  int `json:"input"`
 		Output int `json:"output"`
 	} `json:"tokens,omitempty"`
+	// Support for newer Claude logs
+	Usage *struct {
+		InputTokens  int `json:"input_tokens"`
+		OutputTokens int `json:"output_tokens"`
+	} `json:"usage,omitempty"`
+}
+
+func extractTokens(raw map[string]interface{}) (input, output int) {
+	// 1. Direct tokens (old format)
+	if tokens, ok := raw["tokens"].(map[string]interface{}); ok {
+		if in, ok := tokens["input"].(float64); ok {
+			input = int(in)
+		}
+		if out, ok := tokens["output"].(float64); ok {
+			output = int(out)
+		}
+		if input > 0 || output > 0 {
+			return
+		}
+	}
+
+	// 2. Claude message.usage format
+	if msg, ok := raw["message"].(map[string]interface{}); ok {
+		if usage, ok := msg["usage"].(map[string]interface{}); ok {
+			if in, ok := usage["input_tokens"].(float64); ok {
+				input = int(in)
+			}
+			if out, ok := usage["output_tokens"].(float64); ok {
+				output = int(out)
+			}
+			if input > 0 || output > 0 {
+				return
+			}
+		}
+	}
+
+	// 3. Codex payload.info.last_token_usage format
+	if payload, ok := raw["payload"].(map[string]interface{}); ok {
+		if info, ok := payload["info"].(map[string]interface{}); ok {
+			if usage, ok := info["last_token_usage"].(map[string]interface{}); ok {
+				if in, ok := usage["input_tokens"].(float64); ok {
+					input = int(in)
+				}
+				if out, ok := usage["output_tokens"].(float64); ok {
+					output = int(out)
+				}
+				if input > 0 || output > 0 {
+					return
+				}
+			}
+		}
+	}
+
+	return
 }
 
 // StartWatcher begins watching external agent log directories
@@ -310,7 +364,9 @@ func processFile(ctx context.Context, database *db.DB, manualRoots []string, pat
 				eventID := uuid.New().String()
 				msg := sanitizePII(entry.Message)
 				kind := stripPreamble(entry.Type)
-				_ = database.RecordEvent(ctx, eventID, sid, kind, msg, []byte(line), entry.Tokens.Input, entry.Tokens.Output, entry.Timestamp)
+				
+				input, output := extractTokens(raw)
+				_ = database.RecordEvent(ctx, eventID, sid, kind, msg, []byte(line), input, output, entry.Timestamp)
 			}
 		} else {
 			// Fallback for plain text .log files

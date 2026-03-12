@@ -3,6 +3,29 @@
 The Orchestra backend initializes through a precise, dependency-ordered sequence designed for stability and observability.
 
 ```diagram-architecture
+{
+  "nodes": [
+    { "id": "main", "group": "core", "label": "main.go" },
+    { "id": "run", "group": "core", "label": "Run()" },
+    { "id": "config", "group": "core", "label": "Config Load" },
+    { "id": "db", "group": "core", "label": "DB Connect" },
+    { "id": "restore", "group": "core", "label": "Restore State" },
+    { "id": "registry", "group": "core", "label": "Agent Registry" },
+    { "id": "mcp", "group": "core", "label": "MCP Registry" },
+    { "id": "workers", "group": "core", "label": "Background Workers" },
+    { "id": "api", "group": "core", "label": "API Server (Listen)" }
+  ],
+  "links": [
+    { "source": "main", "target": "run", "value": 5 },
+    { "source": "run", "target": "config", "value": 3 },
+    { "source": "run", "target": "db", "value": 3 },
+    { "source": "db", "target": "restore", "value": 2 },
+    { "source": "run", "target": "registry", "value": 3 },
+    { "source": "run", "target": "mcp", "value": 3 },
+    { "source": "run", "target": "workers", "value": 2 },
+    { "source": "run", "target": "api", "value": 5 }
+  ]
+}
 ```
 
 ## Entrypoint: `cmd/orchestrad/main.go`
