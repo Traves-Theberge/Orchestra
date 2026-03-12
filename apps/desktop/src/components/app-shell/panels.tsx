@@ -833,6 +833,7 @@ export function IssueDetailView({
   onUpdate,
   onStopSession,
   onJumpToTerminal,
+  onNavigate,
   config,
   snapshot,
   timeline = [],
@@ -844,6 +845,7 @@ export function IssueDetailView({
   onUpdate?: (updates: Record<string, unknown>) => Promise<void>
   onStopSession?: (provider?: string) => Promise<void>
   onJumpToTerminal?: (identifier: string) => void
+  onNavigate?: (section: string) => void
   config: BackendConfig | null
   snapshot: SnapshotPayload | null
   timeline?: TimelineItem[]
@@ -1328,6 +1330,17 @@ export function IssueDetailView({
                 {localState === 'In Progress' && onStopSession && (
                   <Button variant="outline" size="sm" className="h-7 border-red-500/30 text-red-500 text-[10px]" onClick={() => void onStopSession(localProvider)}>
                     <Square size={8} fill="currentColor" className="mr-1" /> STOP
+                  </Button>
+                )}
+                {(localState === 'Retry' || localState === 'Blocked') && onNavigate && (
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="h-7 px-2 gap-1.5 border-amber-500/30 text-amber-500 hover:bg-amber-500/10 text-[10px] font-black uppercase tracking-widest"
+                    onClick={() => onNavigate('settings')}
+                  >
+                    <Settings2 size={10} />
+                    Update Credentials
                   </Button>
                 )}
               </div>
@@ -2857,18 +2870,19 @@ export function KanbanBoard({
 
   // Merge tracker issues with runtime snapshot data
   const enrichedIssues = boardIssues.map(issue => {
+    const issueID = issue.issue_id || issue.id || ''
     let lane = null
     let detail = issue.title || issue.description || 'No Title'
     let at = issue.created_at || ''
 
     if (snapshot) {
-      const running = snapshot.running?.find(r => r.issue_id === issue.id)
+      const running = snapshot.running?.find(r => r.issue_id === issueID)
       if (running) {
         lane = 'running'
         detail = running.last_message || running.last_event || detail
         at = running.last_event_at || running.started_at || at
       } else {
-        const retrying = snapshot.retrying?.find(r => r.issue_id === issue.id)
+        const retrying = snapshot.retrying?.find(r => r.issue_id === issueID)
         if (retrying) {
           lane = 'retrying'
           detail = retrying.error || `attempt ${retrying.attempt}`
@@ -2879,6 +2893,7 @@ export function KanbanBoard({
 
     return {
       ...issue,
+      issue_id: issueID,
       issue_identifier: issue.identifier || issue.issue_identifier,
       lane,
       detail,
@@ -3378,8 +3393,8 @@ export function KanbanBoard({
                     await onIssueDelete(issueToDelete.identifier)
                     setDeleteDialogOpen(false)
                     setIssueToDelete(null)
-                  } catch (err) {
-                    console.error('Failed to delete issue:', err)
+                  } catch {
+                    // Keep dialog open so the operator can retry after inline error feedback.
                   }
                   return
                 }
@@ -3555,78 +3570,5 @@ export function OperationsQueueCard({
         </OverlayScrollbarsComponent>
       </CardContent>
     </Card>
-  )
-}
-
-function AgentTokensForm({
-  tokens,
-  onSave,
-  disabled,
-}: {
-  tokens: Record<string, string>
-  onSave: (name: string, value: string | null) => Promise<void>
-  disabled: boolean
-}) {
-  const [newTokenName, setNewTokenName] = useState('')
-  const [newTokenValue, setNewTokenValue] = useState('')
-
-  const handleAdd = async () => {
-    if (!newTokenName.trim() || !newTokenValue.trim()) return
-    await onSave(newTokenName.trim(), newTokenValue.trim())
-    setNewTokenName('')
-    setNewTokenValue('')
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        {Object.keys(tokens).length === 0 ? (
-          <p className="text-xs text-muted-foreground/50 italic">No secure tokens stored.</p>
-        ) : (
-          <div className="grid grid-cols-1 gap-2">
-            {Object.keys(tokens).map((name) => (
-              <div key={name} className="flex items-center justify-between rounded border bg-background px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <ShieldCheck className="h-3.5 w-3.5 text-primary" />
-                  <span className="text-xs font-medium">{name}</span>
-                  <span className="text-[10px] text-muted-foreground font-mono">{tokens[name]}</span>
-                </div>
-                <button
-                  onClick={() => void onSave(name, null)}
-                  className="text-[10px] text-red-500 hover:text-red-600 font-medium"
-                  disabled={disabled}
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="space-y-3 border-t border-border/40 pt-3">
-        <p className="text-[10px] font-bold uppercase text-muted-foreground/60">Add New Token</p>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <input
-            className="h-9 rounded-md border border-border bg-background px-3 text-sm"
-            placeholder="Token Name (e.g. ANTHROPIC_API_KEY)"
-            value={newTokenName}
-            onChange={(e) => setNewTokenName(e.target.value)}
-            disabled={disabled}
-          />
-          <input
-            type="password"
-            className="h-9 rounded-md border border-border bg-background px-3 text-sm"
-            placeholder="Token Value"
-            value={newTokenValue}
-            onChange={(e) => setNewTokenValue(e.target.value)}
-            disabled={disabled}
-          />
-        </div>
-        <Button size="sm" onClick={() => void handleAdd()} disabled={disabled || !newTokenName || !newTokenValue}>
-          Store Encrypted Token
-        </Button>
-      </div>
-    </div>
   )
 }

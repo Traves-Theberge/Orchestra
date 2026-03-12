@@ -655,6 +655,19 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                                                 </Button>
                                             </AppTooltip>
                                         </div>
+
+                                        <div className="flex items-center gap-2 px-3 border-l border-border/40">
+                                            <AppTooltip content="Launch a new autonomous agent task for this project">
+                                                <Button
+                                                    size="sm"
+                                                    className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20 font-black uppercase tracking-widest text-[10px]"
+                                                    onClick={() => onCreateIssue('Todo')}
+                                                >
+                                                    <Zap size={14} fill="currentColor" />
+                                                    Spawn Agent Fix
+                                                </Button>
+                                            </AppTooltip>
+                                        </div>
                                     </div>
 
                                     {showCommitDialog && (

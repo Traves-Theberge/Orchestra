@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react'
-import { Database, TrendingUp, Zap, Cpu, History as HistoryIcon, Search, Eye, Folder } from 'lucide-react'
+import { Database, TrendingUp, Zap, Cpu, History as HistoryIcon, Search, Eye, Folder, RefreshCcw } from 'lucide-react'
 import type { GlobalStats } from '@/lib/orchestra-types'
 import { Badge } from '@/components/ui/badge'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
@@ -24,9 +24,10 @@ interface AnalyticsDashboardProps {
     stats: GlobalStats | null
     loading: boolean
     onInspectSession?: (sessionId: string) => void
+    onCloneSession?: (session: any) => void
 }
 
-export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ stats, loading, onInspectSession }) => {
+export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ stats, loading, onInspectSession, onCloneSession }) => {
     const chartData = useMemo(() => {
         if (!stats?.recent_sessions) return []
         return [...stats.recent_sessions].reverse().map(session => ({
@@ -234,16 +235,30 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ stats, l
                                         </div>
                                     </td>
                                     <td className="px-6 py-5 text-center">
-                                        <AppTooltip content="Inspect telemetry data">
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                className="h-9 w-9 p-0 rounded-xl opacity-0 group-hover:opacity-100 transition-all hover:bg-primary/10 border border-transparent hover:border-primary/20"
-                                                onClick={() => onInspectSession?.(session.id)}
-                                            >
-                                                <Eye size={16} className="text-primary" strokeWidth={2.5} />
-                                            </Button>
-                                        </AppTooltip>
+                                        <div className="flex items-center justify-center gap-2">
+                                            {onCloneSession && (
+                                                <AppTooltip content="Clone session & optimize parameters">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="h-9 w-9 p-0 rounded-xl opacity-0 group-hover:opacity-100 transition-all hover:bg-amber-500/10 border border-transparent hover:border-amber-500/20"
+                                                        onClick={() => onCloneSession(session)}
+                                                    >
+                                                        <RefreshCcw size={16} className="text-amber-500" strokeWidth={2.5} />
+                                                    </Button>
+                                                </AppTooltip>
+                                            )}
+                                            <AppTooltip content="Inspect telemetry data">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-9 w-9 p-0 rounded-xl opacity-0 group-hover:opacity-100 transition-all hover:bg-primary/10 border border-transparent hover:border-primary/20"
+                                                    onClick={() => onInspectSession?.(session.id)}
+                                                >
+                                                    <Eye size={16} className="text-primary" strokeWidth={2.5} />
+                                                </Button>
+                                            </AppTooltip>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}

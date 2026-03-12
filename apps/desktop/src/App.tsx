@@ -148,7 +148,6 @@ export default function App() {
   const [agentConfig, setAgentConfig] = useState<{ commands: Record<string, string>; agent_provider: string } | null>(null)
   const [availableAgents, setAvailableAgents] = useState<string[]>([])
   const [allTools, setAllTools] = useState<any[]>([])
-  const [agentTokens, setAgentTokens] = useState<Record<string, string>>({})
   const [loadingState, setLoadingState] = useState(true)
   const [usePolling, setUsePolling] = useState(false)
   const syncControls = useRef<{ startPolling: () => void; stopPolling: () => void } | null>(null)
@@ -235,6 +234,18 @@ export default function App() {
       return [...prev, { id: termId, title: `Agent: ${identifier}` }]
     })
     setActiveSection('console')
+  }
+
+  const handleNavigate = (section: string) => {
+    setActiveSection(section)
+    setInspectDialogOpen(false)
+  }
+
+  const handleCloneSession = (session: any) => {
+    setSelectedProjectID(session.project_id || null)
+    setCreateTaskInitialState('Todo')
+    setCreateTaskDialogOpen(true)
+    setActiveSection('issues')
   }
 
   const sidebarWidth = sidebarCollapsed ? 64 : 220
@@ -900,33 +911,6 @@ export default function App() {
     setUsePolling(!usePolling)
   }
 
-  useEffect(() => {
-    let mounted = true
-    const desktopBridge = window.orchestraDesktop
-    if (!desktopBridge) return
-
-    desktopBridge.getAgentTokens().then((tokens) => {
-      if (mounted) setAgentTokens(tokens)
-    })
-
-    return () => {
-      mounted = false
-    }
-  }, [])
-
-  const handleSaveAgentToken = async (name: string, value: string | null) => {
-    const desktopBridge = window.orchestraDesktop
-    if (!desktopBridge) return
-    try {
-      await desktopBridge.setAgentToken(name, value)
-      const nextTokens = await desktopBridge.getAgentTokens()
-      setAgentTokens(nextTokens)
-      setStatusMessage(value ? `Token ${name} stored securely.` : `Token ${name} removed.`)
-    } catch (err) {
-      setOperatorError('save token failed', err)
-    }
-  }
-
   const handleDownloadDiagnostics = () => {
     const data = {
       app: 'orchestra-desktop',
@@ -1066,6 +1050,7 @@ export default function App() {
                     stats={warehouseStats}
                     loading={dataLoading}
                     onInspectSession={handleInspectSession}
+                    onCloneSession={handleCloneSession}
                   />
                 </section>
               ) : null}
@@ -1181,6 +1166,7 @@ export default function App() {
                 onUpdate={(updates) => handleIssueUpdate(issueLookupId, updates)}
                 onStopSession={(p) => handleStopSession(issueLookupId, p)}
                 onJumpToTerminal={handleJumpToTerminal}
+                onNavigate={handleNavigate}
                 theme={theme}
                 />
 
