@@ -861,6 +861,43 @@ export function IssueDetailView({
   allTools?: any[]
   theme?: 'light' | 'dark'
 }) {
+  const [localState, setLocalState] = useState('Todo')
+  const [localAssignee, setLocalAssignee] = useState('Unassigned')
+  const [localProvider, setLocalProvider] = useState<string>('')
+  const [activeTab, setActiveTab] = useState<'overview' | 'changes' | 'logs' | 'artifacts' | 'activity'>('overview')
+  const [logs, setLogs] = useState<string>('')
+  const [logFilter, setLogFilter] = useState('')
+  const [logsLoading, setLogsLoading] = useState(false)
+  
+  const [issueHistory, setIssueHistory] = useState<any[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  
+  // Split view state
+  const [isSplitView, setIsSplitView] = useState(false)
+  const [secondaryProvider, setSecondaryProvider] = useState<string>('')
+  const [secondaryLogs, setSecondaryLogs] = useState<string>('')
+  const [secondaryLogsLoading, setSecondaryLogsLoading] = useState(false)
+  const [diff, setDiff] = useState<string>('')
+  const [diffLoading, setDiffLoading] = useState(false)
+  const [activeDiffFile, setActiveDiffFile] = useState<string | null>(null)
+
+  const [artifacts, setArtifacts] = useState<string[]>([])
+  const [artifactsLoading, setArtifactsLoading] = useState(false)
+  const [selectedArtifact, setSelectedArtifact] = useState<string | null>(null)
+  const [artifactContent, setArtifactContent] = useState<string | null>(null)
+  const [reportContent, setReportContent] = useState<string | null>(null)
+  const [contentLoading, setArtifactContentLoading] = useState(false)
+  const logsEndRef = useRef<HTMLDivElement>(null)
+  const [prPending, setPrPending] = useState(false)
+  const [prResult, setPrResult] = useState<{ url: string; number: number } | null>(null)
+  const [prDialogOpen, setPrDialogOpen] = useState(false)
+  const [prTitle, setPrTitle] = useState('')
+  const [prBody, setPrBody] = useState('')
+  const [prHead, setPrHead] = useState('')
+  const [disabledTools, setDisabledTools] = useState<string[]>([])
+  const [hookOutputs, setHookOutputs] = useState<Record<string, string>>({})
+  const [selectedHookLog, setSelectedHookLog] = useState<{ id: string; label: string; output: string } | null>(null)
+
   if (!initialResult || typeof initialResult !== 'object') {
     return <div className="p-8 text-center text-muted-foreground italic">Invalid issue data provided.</div>
   }
@@ -882,26 +919,6 @@ export function IssueDetailView({
   const disabledToolsFromResult = (result.disabled_tools as string[]) || []
   const createdAt = (result.created_at as string) || ''
   const updatedAt = (result.updated_at as string) || ''
-
-  const [localState, setLocalState] = useState(state)
-  const [localAssignee, setLocalAssignee] = useState(assigneeId)
-  const [localProvider, setLocalProvider] = useState<string>(provider)
-  const [activeTab, setActiveTab] = useState<'overview' | 'changes' | 'logs' | 'artifacts' | 'activity'>('overview')
-  const [logs, setLogs] = useState<string>('')
-  const [logFilter, setLogFilter] = useState('')
-  const [logsLoading, setLogsLoading] = useState(false)
-  
-  const [issueHistory, setIssueHistory] = useState<any[]>([])
-  const [historyLoading, setHistoryLoading] = useState(false)
-  
-  // Split view state
-  const [isSplitView, setIsSplitView] = useState(false)
-  const [secondaryProvider, setSecondaryProvider] = useState<string>('')
-  const [secondaryLogs, setSecondaryLogs] = useState<string>('')
-  const [secondaryLogsLoading, setSecondaryLogsLoading] = useState(false)
-  const [diff, setDiff] = useState<string>('')
-  const [diffLoading, setDiffLoading] = useState(false)
-  const [activeDiffFile, setActiveDiffFile] = useState<string | null>(null)
 
   const parseDiff = (rawDiff: string) => {
     const files: {path: string, content: string}[] = []
@@ -936,22 +953,6 @@ export function IssueDetailView({
       setActiveDiffFile(diffFiles[0].path)
     }
   }, [diffFiles])
-  const [artifacts, setArtifacts] = useState<string[]>([])
-  const [artifactsLoading, setArtifactsLoading] = useState(false)
-  const [selectedArtifact, setSelectedArtifact] = useState<string | null>(null)
-  const [artifactContent, setArtifactContent] = useState<string | null>(null)
-  const [reportContent, setReportContent] = useState<string | null>(null)
-  const [contentLoading, setArtifactContentLoading] = useState(false)
-  const logsEndRef = useRef<HTMLDivElement>(null)
-  const [prPending, setPrPending] = useState(false)
-  const [prResult, setPrResult] = useState<{ url: string; number: number } | null>(null)
-  const [prDialogOpen, setPrDialogOpen] = useState(false)
-  const [prTitle, setPrTitle] = useState('')
-  const [prBody, setPrBody] = useState('')
-  const [prHead, setPrHead] = useState('')
-  const [disabledTools, setDisabledTools] = useState<string[]>(disabledToolsFromResult)
-  const [hookOutputs, setHookOutputs] = useState<Record<string, string>>({})
-  const [selectedHookLog, setSelectedHookLog] = useState<{ id: string; label: string; output: string } | null>(null)
 
   // Sync local state when result changes
   useEffect(() => {
