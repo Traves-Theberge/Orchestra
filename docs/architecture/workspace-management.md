@@ -17,16 +17,26 @@ When an agent begins a task, it never works directly on the host machine's prima
 
 To bridge the gap between a blank directory and a fully functional development environment, Orchestra implements a robust hook system.
 
-Hooks are arbitrary shell scripts defined in your global `workspace.json` or project-specific `ORCHESTRA.md`. They run at precise moments during the session lifecycle:
+Hooks are arbitrary shell scripts defined in your global `ORCHESTRA.md`. They run at precise moments during the session lifecycle:
 
 *   **`after_create`**: Fired immediately after the workspace directory is created. **Use Case**: Cloning the git repository, checking out the specific branch, and running `npm install` or `go mod download`.
 *   **`before_run`**: Fired right before the agent CLI is invoked. **Use Case**: Setting up local environment variables or starting background database containers.
 *   **`after_run`**: Fired immediately after the agent CLI exits. **Use Case**: Capturing test coverage reports or tearing down temporary containers.
-*   **`before_remove`**: Fired before the orchestrator deletes the workspace directory. **Use Case**: Pushing a final backup to a remote server or cleaning up registered cloud resources.
+*   **`before_remove`**: Fired before the orchestrator deletes the workspace directory.
 
-### Hook Execution
-Hooks are executed via `os/exec` inside the workspace directory. They are subject to strict timeouts to prevent hanging the orchestrator.
+### Hook Result Diagnostics
+Unlike basic command execution, Orchestra captures the raw `stdout` and `stderr` of every hook in a `HookResult` object. 
+- **Persistence**: These logs are stored in the telemetry stream.
+- **UI Visibility**: If a hook fails, its status badge in the **Issue Detail** view becomes interactive. Operators can click the badge to view the full execution transcript, making environment debugging near-instant.
 
 ## 📦 Artifact Management
 
-The `workspace` service also provides APIs for the Desktop UI to inspect the results of an agent's work. The `ListArtifacts` function recursively walks the workspace directory (ignoring internal folders like `.git` and `.orchestra`) to build the file tree presented in the Issue Inspector, allowing operators to download generated code, logs, or analysis reports.
+The `workspace` service also provides APIs for the Desktop UI to inspect the results of an agent's work. 
+- **Recursive Discovery**: The `ListArtifacts` function recursively walks the workspace directory.
+- **Autonomous Reports**: Orchestra automatically promotes files named `ORCHESTRA_REPORT.md` or `SUMMARY.md` to the primary **Report** tab in the UI, providing a verified executive summary of the agent's work.
+
+## 🔒 Security & Path Guard
+
+The system uses `ValidateWorkspacePath` and `ValidateProjectPath` to ensure all filesystem operations are strictly jail-bound within the configured roots. 
+- **Marker Enforcement**: A hidden `.orchestra` marker file is required for workspace deletion.
+- **Path Escape Prevention**: All relative paths are sanitized to prevent `../` attacks.

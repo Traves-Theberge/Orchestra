@@ -7,7 +7,7 @@ Welcome to **Orchestra**. This guide will get you from zero to your first autono
 Orchestra relies on a Go-based control plane. Ensure your backend is running and reachable.
 
 1.  Navigate to the **Settings** tab.
-2.  Verify the **API Endpoint** (default is usually `http://127.0.0.1:4000`).
+2.  Verify the **API Endpoint** (default is usually `http://127.0.0.1:4010`).
 3.  Click **Test Connection** to ensure the desktop app can talk to the orchestrator.
 
 ## 2. Agent Authentication
@@ -32,8 +32,8 @@ To start an autonomous session:
 1.  Open the **Tasks** tab.
 2.  Drag an issue from `Todo` to `In Progress`.
 3.  The orchestrator will automatically provision a workspace and dispatch the default agent.
-4.  Monitor the live logs in the **Activity Feed** or by clicking the issue to open the **Inspector**.
+4.  Monitor the live logs in the **Live Console** (the multi-agent terminal dock) or by clicking the issue to open the **Inspector**.
 
 ---
 
-> **Tip**: Use `⌘ K` to quickly find and jump to any issue identifier once it has been discovered.
+> **Tip**: Look for the **Terminal Icon** on active task cards to "Jump to Terminal" and take direct control of the agent's PTY session.

@@ -4,13 +4,18 @@ Orchestra is designed to be provider-agnostic. While most platforms lock you int
 
 ## 🏗️ The Coordination Model
 
-Coordination happens at the **Session** level. When an issue is claimed by the orchestrator, it is assigned a specific `Provider`.
+Coordination happens at the **Session** level. Orchestra supports both sequential cascading and **Parallel Execution**.
 
 ### 1. Provider Resolution
 When a turn starts, the system resolves which agent to use in the following order:
 1.  **Session sticky-provider**: If the session is already running or retrying, it continues with its previously assigned provider.
 2.  **Assignee Override**: If the issue is assigned to a specific worker (e.g., `agent-gemini`), that provider is used.
-3.  **System Default**: Falls back to the global `ORCHESTRA_AGENT_PROVIDER` configured in the backend.
+3.  **Parallel Multi-Agent**: Users can manually trigger multiple agent providers for the same issue to compare outputs or split sub-tasks.
+
+### 2. The Operational Plan Checklist
+To maintain cohesion during coordination, Orchestra parses the agent's initial `thought` event into an **Interactive Plan Checklist**.
+- **Shared State**: All agents working on the issue contribute to the same checklist.
+- **Visual Progress**: Real-time `- [ ]` to `- [x]` transitions in the UI allow operators to see exactly which stage of the coordination the agents are in.
 
 ## 🔄 Automated Cascading (Failover)
 
