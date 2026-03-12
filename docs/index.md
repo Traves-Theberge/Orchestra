@@ -11,10 +11,11 @@ Orchestra transforms autonomous coding into a managed, observable, and repeatabl
 Explore how the platform is built and how data flows through the system.
 
 - **[System Overview](/architecture/overview)**: High-level component map.
-- **[Backend Design](/architecture/backend)**: Go control plane and state management.
+- **[Backend Design](/backend-bootstrap)**: **NEW** - Go control plane and internal worker loops.
+- **[Dmux Terminals](/architecture/dmux-terminals)**: **NEW** - Persistent PTY management and multiplexing logic.
+- **[Multi-Agent Coordination](/architecture/multi-agent-coordination)**: **NEW** - Parallel execution and fallback strategies.
 - **[Frontend Design](/architecture/frontend)**: Electron and high-density UI patterns.
 - **[API Layer](/architecture/api-layer)**: REST endpoints and middleware.
-- **[API Testing](/architecture/api-testing)**: **NEW** - Comprehensive endpoint validation and testing framework.
 
 ## 🧭 Using Orchestra
 
