@@ -3304,7 +3304,6 @@ export function KanbanBoard({
     </div>
   )
 }
-}
 
 export function OperationsQueueCard({
   loadingState,
