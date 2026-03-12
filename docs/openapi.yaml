@@ -1,0 +1,1604 @@
+openapi: 3.1.0
+info:
+  title: Orchestra API
+  version: 1.0.0
+  license:
+    name: Proprietary
+  description: |
+    OpenAPI specification for the Orchestra backend used by the desktop control plane.
+
+    Authentication:
+    - Most `/api/v1/*` endpoints require `Authorization: Bearer <token>` when `APIToken` is configured.
+    - Terminal websocket endpoint supports bearer auth OR `token` query parameter.
+
+    Notes:
+    - Some legacy endpoints may return plain-text errors using `http.Error` instead of JSON error envelopes.
+    - SSE events stream on `/api/v1/events` with `event:` and `data:` frames.
+servers:
+  - url: http://127.0.0.1:4010
+    description: Local default
+tags:
+  - name: System
+    description: Service shell and health endpoints.
+  - name: Runtime
+    description: Runtime snapshots, SSE stream, and refresh controls.
+  - name: Issues
+    description: Task lifecycle, detail views, logs, and artifacts.
+  - name: Projects
+    description: Project registration, filesystem, and git operations.
+  - name: Sessions
+    description: Historical session summaries and details.
+  - name: Workspace
+    description: Workspace migration planning and execution.
+  - name: Agents
+    description: Agent provider and configuration resources.
+  - name: MCP
+    description: MCP tool and server management.
+  - name: Docs
+    description: Documentation discovery and content retrieval.
+  - name: GitHub
+    description: GitHub auth and pull request flow.
+  - name: Terminal
+    description: Interactive terminal websocket access.
+  - name: Warehouse
+    description: Global analytics and token usage.
+security:
+  - bearerAuth: []
+paths:
+  /:
+    get:
+      tags: [System]
+      operationId: getDashboardHtml
+      summary: Get dashboard HTML shell
+      security: []
+      responses:
+        "200":
+          description: Dashboard HTML
+          content:
+            text/html:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /healthz:
+    get:
+      tags: [System]
+      operationId: getHealthLegacy
+      summary: Health check (legacy path)
+      security: []
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "405":
+          description: Method not allowed
+
+  /api/v1/healthz:
+    get:
+      tags: [System]
+      operationId: getHealth
+      summary: Health check
+      security: []
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "405":
+          description: Method not allowed
+
+  /api/v1/state:
+    get:
+      tags: [Runtime]
+      operationId: getRuntimeState
+      summary: Get orchestrator snapshot state
+      responses:
+        "200":
+          description: Runtime snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatePayload"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/events:
+    get:
+      tags: [Runtime]
+      operationId: streamRuntimeEvents
+      summary: Stream runtime events via Server-Sent Events
+      description: |
+        Emits `snapshot` events every 5 seconds and after lifecycle events.
+        Use `once=1` to return a single snapshot frame and close the connection.
+      parameters:
+        - in: query
+          name: once
+          schema:
+            type: string
+            enum: ["1"]
+          description: Return one snapshot frame and close stream.
+      responses:
+        "200":
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                example: |
+                  event: snapshot
+                  data: {"counts":{"running":0,"retrying":0}}
+
+                  event: run_started
+                  data: {"type":"run_started","timestamp":"2026-01-01T00:00:00Z","data":{"issue_identifier":"OPS-1"}}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/search:
+    get:
+      tags: [Issues]
+      operationId: searchIssues
+      summary: Search issues
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Matching issues
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/issues:
+    get:
+      tags: [Issues]
+      operationId: listIssues
+      summary: List issues
+      parameters:
+        - in: query
+          name: states
+          schema:
+            type: string
+          description: Comma-separated states.
+        - in: query
+          name: project_id
+          schema:
+            type: string
+        - in: query
+          name: assignee_id
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Issues
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Issues]
+      operationId: createIssue
+      summary: Create a new issue/task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIssueRequest"
+      responses:
+        "201":
+          description: Issue created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Issue"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/issues/{issue_identifier}:
+    parameters:
+      - $ref: "#/components/parameters/IssueIdentifier"
+    get:
+      tags: [Issues]
+      operationId: getIssueDetail
+      summary: Get issue detail and runtime context
+      responses:
+        "200":
+          description: Issue detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    patch:
+      tags: [Issues]
+      operationId: updateIssue
+      summary: Update issue fields
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IssuePatchRequest"
+      responses:
+        "200":
+          description: Updated issue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Issue"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      tags: [Issues]
+      operationId: deleteIssue
+      summary: Delete issue
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/issues/{issue_identifier}/session:
+    parameters:
+      - $ref: "#/components/parameters/IssueIdentifier"
+    delete:
+      tags: [Issues]
+      operationId: stopIssueSession
+      summary: Stop active session(s) for issue
+      parameters:
+        - in: query
+          name: provider
+          schema:
+            type: string
+          description: Stop only session for this provider.
+      responses:
+        "204":
+          description: Session(s) stopped
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: No active session for provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/issues/{issue_identifier}/history:
+    parameters:
+      - $ref: "#/components/parameters/IssueIdentifier"
+    get:
+      tags: [Issues]
+      operationId: getIssueHistory
+      summary: Get issue history timeline
+      responses:
+        "200":
+          description: History entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  history:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/HistoryEntry"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/issues/{issue_identifier}/logs:
+    parameters:
+      - $ref: "#/components/parameters/IssueIdentifier"
+    get:
+      tags: [Issues]
+      operationId: getIssueLogs
+      summary: Get latest issue logs
+      responses:
+        "200":
+          description: Log content
+          content:
+            text/plain:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/issues/{issue_identifier}/diff:
+    parameters:
+      - $ref: "#/components/parameters/IssueIdentifier"
+    get:
+      tags: [Issues]
+      operationId: getIssueDiff
+      summary: Get issue workspace diff
+      parameters:
+        - in: query
+          name: provider
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Diff content
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/issues/{issue_identifier}/artifacts:
+    parameters:
+      - $ref: "#/components/parameters/IssueIdentifier"
+    get:
+      tags: [Issues]
+      operationId: listIssueArtifacts
+      summary: List issue artifacts
+      parameters:
+        - in: query
+          name: provider
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Artifact relative paths
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  artifacts:
+                    type: array
+                    items:
+                      type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/issues/{issue_identifier}/artifacts/{artifact_path}:
+    parameters:
+      - $ref: "#/components/parameters/IssueIdentifier"
+      - in: path
+        name: artifact_path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Issues]
+      operationId: getIssueArtifactContent
+      summary: Download artifact content
+      parameters:
+        - in: query
+          name: provider
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Artifact bytes
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/issues/{issue_identifier}/pr:
+    parameters:
+      - $ref: "#/components/parameters/IssueIdentifier"
+    post:
+      tags: [GitHub, Issues]
+      operationId: createIssuePullRequest
+      summary: Create GitHub pull request for issue
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePullRequestRequest"
+      responses:
+        "201":
+          description: Pull request created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PullRequestResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/refresh:
+    post:
+      tags: [Runtime]
+      operationId: postRefresh
+      summary: Trigger refresh cycle
+      responses:
+        "202":
+          description: Refresh accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/workspace/migration/plan:
+    get:
+      tags: [Workspace]
+      operationId: getWorkspaceMigrationPlan
+      summary: Get workspace migration plan
+      parameters:
+        - in: query
+          name: from
+          schema:
+            type: string
+        - in: query
+          name: to
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Migration plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceMigrationPlanResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/workspace/migrate:
+    post:
+      tags: [Workspace]
+      operationId: postWorkspaceMigrate
+      summary: Execute workspace migration
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceMigrationRequest"
+      responses:
+        "202":
+          description: Migration request accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceMigrationApplyResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/projects:
+    get:
+      tags: [Projects]
+      operationId: listProjects
+      summary: List tracked projects
+      responses:
+        "200":
+          description: Projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Projects]
+      operationId: createProject
+      summary: Create or upsert project by root path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectRequest"
+      responses:
+        "201":
+          description: Project created/upserted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateProjectResponse"
+        "400":
+          description: Invalid request body
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Unauthorized project path
+
+  /api/v1/projects/{project_id}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Projects]
+      operationId: getProjectStats
+      summary: Get project aggregate stats
+      responses:
+        "200":
+          description: Stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectStats"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      tags: [Projects]
+      operationId: deleteProject
+      summary: Delete project
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/projects/{project_id}/refresh:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Projects]
+      operationId: refreshProject
+      summary: Refresh project metadata
+      responses:
+        "200":
+          description: Refreshed
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/projects/{project_id}/tree:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Projects]
+      operationId: getProjectFileTree
+      summary: Get project file tree
+      parameters:
+        - in: query
+          name: path
+          schema:
+            type: string
+          description: Relative subpath
+      responses:
+        "200":
+          description: File tree nodes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FileNode"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/projects/{project_id}/file:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Projects]
+      operationId: getProjectFileContent
+      summary: Get project file content
+      parameters:
+        - in: query
+          name: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: File content
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/projects/{project_id}/git:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Projects]
+      operationId: getProjectGitHistory
+      summary: Get project git history
+      responses:
+        "200":
+          description: Git commits
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GitCommitEntry"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/projects/{project_id}/git/status:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Projects]
+      operationId: getProjectGitStatus
+      summary: Get git status entries
+      responses:
+        "200":
+          description: Git status items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GitStatusEntry"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/projects/{project_id}/git/diff:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Projects]
+      operationId: getProjectGitDiff
+      summary: Get git diff (working tree or commit)
+      parameters:
+        - in: query
+          name: hash
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Diff text
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/projects/{project_id}/git/commit:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Projects]
+      operationId: postProjectGitCommit
+      summary: Commit staged/unstaged changes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GitCommitRequest"
+      responses:
+        "200":
+          description: Commit completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOk"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/projects/{project_id}/git/push:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Projects]
+      operationId: postProjectGitPush
+      summary: Push branch to remote
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GitRemoteBranchRequest"
+      responses:
+        "200":
+          description: Push completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOk"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/projects/{project_id}/git/pull:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Projects]
+      operationId: postProjectGitPull
+      summary: Pull from remote
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GitRemoteBranchRequest"
+      responses:
+        "200":
+          description: Pull completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOk"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/sessions:
+    get:
+      tags: [Sessions]
+      operationId: listSessions
+      summary: List recorded sessions
+      parameters:
+        - in: query
+          name: project_id
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SessionSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/sessions/{session_id}:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    get:
+      tags: [Sessions]
+      operationId: getSessionDetail
+      summary: Get detailed session with events
+      responses:
+        "200":
+          description: Session detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/warehouse/stats:
+    get:
+      tags: [Warehouse]
+      operationId: getWarehouseStats
+      summary: Get global token/session analytics
+      responses:
+        "200":
+          description: Warehouse stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WarehouseStats"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/config/agents:
+    get:
+      tags: [Agents]
+      operationId: getAgentConfig
+      summary: Get global agent command/provider config
+      responses:
+        "200":
+          description: Agent config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentConfig"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Agents]
+      operationId: postAgentConfig
+      summary: Update global agent config
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentConfig"
+      responses:
+        "204":
+          description: Updated
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/config/agents/items:
+    get:
+      tags: [Agents]
+      operationId: listAgentConfigs
+      summary: List agent config items
+      parameters:
+        - in: query
+          name: project_id
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Agent config items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  configs:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Agents]
+      operationId: updateAgentConfigByPath
+      summary: Update config file by path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentConfigPathUpdateRequest"
+      responses:
+        "204":
+          description: Updated
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/config/agents/new:
+    post:
+      tags: [Agents]
+      operationId: createAgentConfigResource
+      summary: Create new agent resource file
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentConfigNewRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  path:
+                    type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/agents:
+    get:
+      tags: [Agents]
+      operationId: listAgents
+      summary: List available agent providers
+      responses:
+        "200":
+          description: Agent provider IDs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agents:
+                    type: array
+                    items:
+                      type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/mcp/tools:
+    get:
+      tags: [MCP]
+      operationId: listMcpTools
+      summary: List available MCP tools
+      responses:
+        "200":
+          description: MCP tools
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tools:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/mcp/servers:
+    get:
+      tags: [MCP]
+      operationId: listMcpServers
+      summary: List configured MCP servers
+      responses:
+        "200":
+          description: MCP servers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  servers:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/McpServer"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [MCP]
+      operationId: createMcpServer
+      summary: Create MCP server
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMcpServerRequest"
+      responses:
+        "201":
+          description: Created MCP server
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/McpServer"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/mcp/servers/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+    delete:
+      tags: [MCP]
+      operationId: deleteMcpServer
+      summary: Delete MCP server
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/docs:
+    get:
+      tags: [Docs]
+      operationId: listDocs
+      summary: List markdown docs tree
+      responses:
+        "200":
+          description: Docs tree
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  docs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/DocItem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/docs/{doc_path}:
+    parameters:
+      - in: path
+        name: doc_path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Docs]
+      operationId: getDocContent
+      summary: Get markdown doc content
+      responses:
+        "200":
+          description: Markdown content
+          content:
+            text/markdown:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/github/login:
+    get:
+      tags: [GitHub]
+      operationId: beginGithubAuth
+      summary: Start GitHub auth flow for project
+      security: []
+      parameters:
+        - in: query
+          name: project_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "307":
+          description: Redirect to GitHub OAuth
+        "200":
+          description: HTML success page (when GitHub CLI token discovered)
+          content:
+            text/html:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v1/github/callback:
+    get:
+      tags: [GitHub]
+      operationId: completeGithubAuth
+      summary: Complete GitHub OAuth callback
+      security: []
+      parameters:
+        - in: query
+          name: code
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: state
+          required: true
+          schema:
+            type: string
+          description: Project ID
+      responses:
+        "200":
+          description: HTML success page
+          content:
+            text/html:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v1/terminal/{session_id}:
+    parameters:
+      - in: path
+        name: session_id
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Terminal]
+      operationId: terminalWebSocket
+      summary: Upgrade to terminal websocket session
+      description: |
+        WebSocket endpoint. Browser clients should connect with:
+        - `Authorization: Bearer <token>` header, or
+        - `?token=<api-token>` query parameter.
+
+        Optional query parameter:
+        - `project_id`: working directory project context.
+      security:
+        - bearerAuth: []
+        - terminalToken: []
+      parameters:
+        - in: query
+          name: project_id
+          schema:
+            type: string
+        - in: query
+          name: token
+          schema:
+            type: string
+          description: Alternative auth for browser websocket clients.
+      responses:
+        "200":
+          description: Non-websocket response (upgrade not completed)
+        "101":
+          description: Switching Protocols (WebSocket)
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Token
+    terminalToken:
+      type: apiKey
+      in: query
+      name: token
+
+  parameters:
+    IssueIdentifier:
+      in: path
+      name: issue_identifier
+      required: true
+      schema:
+        type: string
+    ProjectId:
+      in: path
+      name: project_id
+      required: true
+      schema:
+        type: string
+    SessionId:
+      in: path
+      name: session_id
+      required: true
+      schema:
+        type: string
+
+  responses:
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+
+  schemas:
+    ErrorEnvelope:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+      required: [error]
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        app:
+          type: string
+          example: orchestra
+
+    StatePayload:
+      type: object
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        counts:
+          type: object
+          properties:
+            running:
+              type: integer
+            retrying:
+              type: integer
+        running:
+          type: array
+          items:
+            $ref: "#/components/schemas/RunningEntry"
+        retrying:
+          type: array
+          items:
+            $ref: "#/components/schemas/RetryEntry"
+        codex_totals:
+          type: object
+          properties:
+            input_tokens: { type: integer }
+            output_tokens: { type: integer }
+            total_tokens: { type: integer }
+            seconds_run: { type: integer }
+        rate_limits:
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: "null"
+        mcp_servers:
+          type: object
+          additionalProperties:
+            type: string
+      additionalProperties: true
+
+    RunningEntry:
+      type: object
+      properties:
+        issue_id: { type: string }
+        issue_identifier: { type: string }
+        state: { type: string }
+        session_id: { type: string }
+        turn_count: { type: integer }
+        last_event: { type: string }
+        last_message: { type: string }
+        last_event_at: { type: string }
+        started_at: { type: string }
+      additionalProperties: true
+
+    RetryEntry:
+      type: object
+      properties:
+        issue_id: { type: string }
+        issue_identifier: { type: string }
+        state: { type: string }
+        attempt: { type: integer }
+        due_at: { type: string }
+        error: { type: string }
+      additionalProperties: true
+
+    Issue:
+      type: object
+      properties:
+        id: { type: string }
+        identifier: { type: string }
+        title: { type: string }
+        description: { type: string }
+        state: { type: string }
+        assignee_id: { type: string }
+        project_id: { type: string }
+        priority: { type: integer }
+        branch_name: { type: string }
+        url: { type: string }
+        labels:
+          type: array
+          items: { type: string }
+        blocked_by:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        provider: { type: string }
+        disabled_tools:
+          type: array
+          items: { type: string }
+        created_at: { type: string }
+        updated_at: { type: string }
+      additionalProperties: true
+
+    IssueDetail:
+      allOf:
+        - $ref: "#/components/schemas/Issue"
+        - type: object
+          properties:
+            issue_id: { type: string }
+            issue_identifier: { type: string }
+            status: { type: string }
+            running:
+              oneOf:
+                - type: object
+                  additionalProperties: true
+                - type: "null"
+            retry:
+              oneOf:
+                - type: object
+                  additionalProperties: true
+                - type: "null"
+            attempts:
+              type: object
+              additionalProperties: true
+            history:
+              type: array
+              items:
+                $ref: "#/components/schemas/HistoryEntry"
+            workspace:
+              type: object
+              properties:
+                path: { type: string }
+            recent_events:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+            last_error:
+              type: string
+
+    HistoryEntry:
+      type: object
+      properties:
+        source: { type: string }
+        id: { type: string }
+        provider: { type: string }
+        kind: { type: string }
+        message: { type: string }
+        input_tokens: { type: integer }
+        output_tokens: { type: integer }
+        timestamp: { type: string }
+      additionalProperties: true
+
+    IssueListResponse:
+      type: object
+      properties:
+        issues:
+          type: array
+          items:
+            $ref: "#/components/schemas/Issue"
+
+    CreateIssueRequest:
+      type: object
+      required: [title, description, state, priority, assignee_id, project_id]
+      properties:
+        title: { type: string }
+        description: { type: string }
+        state: { type: string }
+        priority: { type: integer }
+        assignee_id: { type: string }
+        project_id: { type: string }
+        provider: { type: string }
+        disabled_tools:
+          type: array
+          items: { type: string }
+
+    IssuePatchRequest:
+      type: object
+      additionalProperties: true
+      description: Arbitrary issue field updates.
+
+    CreatePullRequestRequest:
+      type: object
+      required: [title, body, head, base]
+      properties:
+        title: { type: string }
+        body: { type: string }
+        head: { type: string }
+        base: { type: string }
+        owner: { type: string }
+        repo: { type: string }
+        token: { type: string }
+
+    PullRequestResponse:
+      type: object
+      additionalProperties: true
+
+    WorkspaceMigrationRequest:
+      type: object
+      properties:
+        from: { type: string }
+        to: { type: string }
+        dry_run: { type: boolean }
+
+    WorkspaceMigrationPlanResponse:
+      type: object
+      properties:
+        from: { type: string }
+        to: { type: string }
+        result:
+          type: object
+          additionalProperties: true
+
+    WorkspaceMigrationApplyResponse:
+      type: object
+      properties:
+        from: { type: string }
+        to: { type: string }
+        dry_run: { type: boolean }
+        result:
+          type: object
+          additionalProperties: true
+
+    Project:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        root_path: { type: string }
+        remote_url: { type: string }
+        github_owner: { type: string }
+        github_repo: { type: string }
+        github_token:
+          type: string
+          description: Redacted marker when token exists (e.g. "configured").
+
+    CreateProjectRequest:
+      type: object
+      required: [root_path]
+      properties:
+        root_path: { type: string }
+
+    CreateProjectResponse:
+      type: object
+      properties:
+        id: { type: string }
+
+    ProjectStats:
+      type: object
+      properties:
+        total_sessions: { type: integer }
+        total_input: { type: integer }
+        total_output: { type: integer }
+        success_count: { type: integer }
+        failure_count: { type: integer }
+        last_active: { type: string }
+
+    FileNode:
+      type: object
+      properties:
+        name: { type: string }
+        path: { type: string }
+        is_dir: { type: boolean }
+        children:
+          type: array
+          items:
+            $ref: "#/components/schemas/FileNode"
+
+    GitCommitRequest:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string }
+
+    GitRemoteBranchRequest:
+      type: object
+      properties:
+        remote: { type: string, default: origin }
+        branch: { type: string }
+
+    StatusOk:
+      type: object
+      properties:
+        status: { type: string, example: ok }
+
+    GitStatusEntry:
+      type: object
+      properties:
+        status: { type: string }
+        path: { type: string }
+
+    GitCommitEntry:
+      type: object
+      properties:
+        hash: { type: string }
+        author: { type: string }
+        date: { type: string }
+        message: { type: string }
+
+    SessionSummary:
+      type: object
+      properties:
+        id: { type: string }
+        project_id: { type: string }
+        project_name: { type: string }
+        session_uuid: { type: string }
+        provider: { type: string }
+        branch: { type: string }
+        created_at: { type: string }
+        updated_at: { type: string }
+        total_input: { type: integer }
+        total_output: { type: integer }
+
+    SessionEvent:
+      type: object
+      properties:
+        id: { type: string }
+        session_id: { type: string }
+        kind: { type: string }
+        message: { type: string }
+        raw_payload: { type: string }
+        input_tokens: { type: integer }
+        output_tokens: { type: integer }
+        timestamp: { type: string }
+
+    SessionDetail:
+      allOf:
+        - $ref: "#/components/schemas/SessionSummary"
+        - type: object
+          properties:
+            events:
+              type: array
+              items:
+                $ref: "#/components/schemas/SessionEvent"
+
+    WarehouseStats:
+      type: object
+      properties:
+        total_tokens: { type: integer }
+        total_input: { type: integer }
+        total_output: { type: integer }
+        provider_usage:
+          type: object
+          additionalProperties:
+            type: integer
+        recent_sessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionSummary"
+
+    AgentConfig:
+      type: object
+      properties:
+        commands:
+          type: object
+          additionalProperties:
+            type: string
+        agent_provider:
+          type: string
+
+    AgentConfigNewRequest:
+      type: object
+      required: [provider, type, name, scope]
+      properties:
+        provider: { type: string }
+        type: { type: string, enum: [core, skill, mcp] }
+        name: { type: string }
+        scope: { type: string }
+        project_id: { type: string }
+
+    AgentConfigPathUpdateRequest:
+      type: object
+      required: [path, content]
+      properties:
+        path: { type: string }
+        content: { type: string }
+
+    McpServer:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        command: { type: string }
+
+    CreateMcpServerRequest:
+      type: object
+      required: [name, command]
+      properties:
+        name: { type: string }
+        command: { type: string }
+
+    DocItem:
+      type: object
+      properties:
+        name: { type: string }
+        path: { type: string }
+        category: { type: string }
+        is_folder: { type: boolean }
+        children:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocItem"

@@ -87,6 +87,7 @@ func NewRouterWithPubSub(
 	r.Get("/", server.GetDashboard)
 	r.Get("/healthz", Healthz)
 	r.Get("/api/v1/healthz", Healthz)
+	r.Get("/api/v1/openapi.yaml", server.GetOpenAPIYAML)
 	protected.Get("/api/v1/state", server.GetState)
 	protected.Get("/api/v1/issues", server.GetIssues)
 	protected.Post("/api/v1/issues", server.PostIssue)
