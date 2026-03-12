@@ -36,6 +36,7 @@ interface ProjectDetailViewProps {
     loadingState: boolean
     onBack: () => void
     onInspectIssue: (id: string) => Promise<void>
+    onJumpToTerminal?: (id: string) => void
     onIssueUpdate: (id: string, updates: Record<string, unknown>) => Promise<void>
     onCreateIssue: (state: string) => void
     onDeleteProject: (id: string) => Promise<void>
@@ -60,6 +61,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     loadingState,
     onBack,
     onInspectIssue,
+    onJumpToTerminal,
     onIssueUpdate,
     onCreateIssue,
     onDeleteProject,
@@ -502,6 +504,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                                     boardIssues={boardIssues.filter(i => i.project_id === project.id)}
                                     projects={[project]}
                                     onInspectIssue={onInspectIssue}
+                                    onJumpToTerminal={onJumpToTerminal}
                                     onIssueUpdate={onIssueUpdate}
                                     onCreateIssue={onCreateIssue}
                                 />

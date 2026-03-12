@@ -228,6 +228,15 @@ export default function App() {
     setOpenTerminals(prev => prev.filter(t => t.id !== id))
   }
 
+  const handleJumpToTerminal = (identifier: string) => {
+    const termId = `issue-${identifier}`
+    setOpenTerminals(prev => {
+      if (prev.some(p => p.id === termId)) return prev
+      return [...prev, { id: termId, title: `Agent: ${identifier}` }]
+    })
+    setActiveSection('console')
+  }
+
   const sidebarWidth = sidebarCollapsed ? 64 : 220
   const sectionVisibility = {
     showDashboard: activeSection === 'dashboard',
@@ -986,6 +995,7 @@ export default function App() {
                       snapshot={snapshot}
                       warehouseStats={warehouseStats}
                       onCreateTask={() => setCreateTaskDialogOpen(true)}
+                      onJumpToTerminal={handleJumpToTerminal}
                       onProjectClick={(id) => {
                         if (id) {
                           setSelectedProjectID(id)
@@ -1016,6 +1026,7 @@ export default function App() {
                       loadingState={loadingState}
                       onBack={() => setSelectedProjectID(null)}
                       onInspectIssue={handleInspectIssueFromList}
+                      onJumpToTerminal={handleJumpToTerminal}
                       onIssueUpdate={handleIssueUpdate}
                       onCreateIssue={handleCreateIssue}
                       onDeleteProject={handleDeleteProject}
@@ -1058,6 +1069,7 @@ export default function App() {
                     projects={projects}
                     availableAgents={availableAgents}
                     onInspectIssue={handleInspectIssueFromList}
+                    onJumpToTerminal={handleJumpToTerminal}
                     onIssueUpdate={handleIssueUpdate}
                     onIssueDelete={handleIssueDelete}
                     onStopSession={handleStopSession}
@@ -1068,7 +1080,12 @@ export default function App() {
 
               {sectionVisibility.showRunning ? (
                 <section className="col-span-12 flex flex-col">
-                  <OperationsQueueCard loadingState={loadingState} snapshot={snapshot} onInspectIssue={handleInspectIssueFromList} />
+                  <OperationsQueueCard 
+                    loadingState={loadingState} 
+                    snapshot={snapshot} 
+                    onInspectIssue={handleInspectIssueFromList} 
+                    onJumpToTerminal={handleJumpToTerminal}
+                  />
                 </section>
               ) : null}
 
@@ -1154,6 +1171,7 @@ export default function App() {
                 snapshot={snapshot}
                 onUpdate={(updates) => handleIssueUpdate(issueLookupId, updates)}
                 onStopSession={(p) => handleStopSession(issueLookupId, p)}
+                onJumpToTerminal={handleJumpToTerminal}
                 theme={theme}
                 />
 
@@ -1195,6 +1213,7 @@ export default function App() {
         onOpenChange={setCreateTaskDialogOpen}
         initialState={createTaskInitialState}
         availableAgents={availableAgents}
+        allTools={allTools}
         projects={projects}
         initialProjectID={selectedProjectID || ''}
         onSubmit={handleTaskSubmit}

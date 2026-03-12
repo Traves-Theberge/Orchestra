@@ -56,6 +56,7 @@ export function DashboardOverview({
   snapshot,
   warehouseStats,
   onProjectClick,
+  onJumpToTerminal,
   onCreateTask,
 }: {
   projects: Project[]
@@ -64,6 +65,7 @@ export function DashboardOverview({
   snapshot: SnapshotPayload | null
   warehouseStats: GlobalStats | null
   onProjectClick: (id: string) => void
+  onJumpToTerminal?: (identifier: string) => void
   onCreateTask?: () => void
 }) {
   const sortedProjects = useMemo(() => {
@@ -137,43 +139,62 @@ export function DashboardOverview({
                   <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest">No active workspaces discovered</p>
                 </div>
               ) : displayProjects.map((p) => {
-                const isActive = snapshot?.running?.some(r => issues.find(i => i.id === r.issue_id)?.project_id === p.id)
+                const runningIssue = snapshot?.running?.find(r => issues.find(i => i.id === r.issue_id)?.project_id === p.id)
+                const isActive = !!runningIssue
                 return (
-                  <button
-                    key={p.id}
-                    onClick={() => onProjectClick(p.id)}
-                    className={`flex w-full items-center justify-between rounded-xl border p-2.5 transition-all duration-300 group shadow-sm ${
-                      isActive 
-                        ? 'border-primary/30 bg-primary/5 hover:bg-primary/10 shadow-lg shadow-primary/5' 
-                        : 'border-border/40 bg-muted/20 hover:bg-muted/40 hover:border-border/60 hover:-translate-y-0.5'
-                    }`}
-                  >
-                    <div className="flex items-center gap-4 min-w-0 flex-1">
-                      <div className={`rounded-xl p-2.5 transition-all duration-500 ${
+                  <div key={p.id} className="relative group">
+                    <button
+                      onClick={() => onProjectClick(p.id)}
+                      className={`flex w-full items-center justify-between rounded-xl border p-2.5 transition-all duration-300 shadow-sm ${
                         isActive 
-                          ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/40 rotate-0' 
-                          : 'bg-background border border-border/50 text-muted-foreground group-hover:text-primary group-hover:border-primary/20 -rotate-3 group-hover:rotate-0'
-                      }`}>
-                        <Folder size={18} strokeWidth={2.5} />
-                      </div>
-                      <div className="text-left min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-black tracking-tight group-hover:text-primary transition-colors truncate">{p.name}</p>
-                          {isActive && (
-                            <Badge className="h-3.5 px-1 bg-primary text-primary-foreground text-[7px] font-black uppercase animate-pulse">Running</Badge>
-                          )}
+                          ? 'border-primary/30 bg-primary/5 hover:bg-primary/10 shadow-lg shadow-primary/5' 
+                          : 'border-border/40 bg-muted/20 hover:bg-muted/40 hover:border-border/60 hover:-translate-y-0.5'
+                      }`}
+                    >
+                      <div className="flex items-center gap-4 min-w-0 flex-1">
+                        <div className={`rounded-xl p-2.5 transition-all duration-500 ${
+                          isActive 
+                            ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/40 rotate-0' 
+                            : 'bg-background border border-border/50 text-muted-foreground group-hover:text-primary group-hover:border-primary/20 -rotate-3 group-hover:rotate-0'
+                        }`}>
+                          <Folder size={18} strokeWidth={2.5} />
                         </div>
-                        <p className="text-[10px] text-muted-foreground/50 font-mono truncate">{p.root_path}</p>
+                        <div className="text-left min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-black tracking-tight group-hover:text-primary transition-colors truncate">{p.name}</p>
+                            {isActive && (
+                              <Badge className="h-3.5 px-1 bg-primary text-primary-foreground text-[7px] font-black uppercase animate-pulse">Running</Badge>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-muted-foreground/50 font-mono truncate">{p.root_path}</p>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-6 shrink-0 pr-2">
-                      <div className="flex flex-col items-end">
-                        <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/40">Sessions</span>
-                        <span className="text-xs font-bold tabular-nums">{stats[p.id]?.total_sessions || 0}</span>
+                      <div className="flex items-center gap-6 shrink-0 pr-2">
+                        <div className="flex flex-col items-end">
+                          <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/40">Sessions</span>
+                          <span className="text-xs font-bold tabular-nums">{stats[p.id]?.total_sessions || 0}</span>
+                        </div>
+                        <ChevronRight size={16} className={`transition-all duration-300 ${isActive ? 'text-primary' : 'text-muted-foreground/20 group-hover:text-primary/40 group-hover:translate-x-0.5'}`} />
                       </div>
-                      <ChevronRight size={16} className={`transition-all duration-300 ${isActive ? 'text-primary' : 'text-muted-foreground/20 group-hover:text-primary/40 group-hover:translate-x-0.5'}`} />
-                    </div>
-                  </button>
+                    </button>
+                    {isActive && onJumpToTerminal && (
+                      <div className="absolute right-12 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                        <AppTooltip content="Jump to Terminal">
+                          <Button
+                            variant="secondary"
+                            size="icon"
+                            className="h-7 w-7 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20 border border-primary/40"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onJumpToTerminal(runningIssue.issue_identifier)
+                            }}
+                          >
+                            <Terminal size={12} strokeWidth={3} />
+                          </Button>
+                        </AppTooltip>
+                      </div>
+                    )}
+                  </div>
                 )
               })}
             </div>
@@ -821,6 +842,7 @@ export function IssueDetailView({
   result: initialResult,
   onUpdate,
   onStopSession,
+  onJumpToTerminal,
   config,
   snapshot,
   timeline = [],
@@ -831,6 +853,7 @@ export function IssueDetailView({
   result: Record<string, unknown> | null
   onUpdate?: (updates: Record<string, unknown>) => Promise<void>
   onStopSession?: (provider?: string) => Promise<void>
+  onJumpToTerminal?: (identifier: string) => void
   config: BackendConfig | null
   snapshot: SnapshotPayload | null
   timeline?: TimelineItem[]
@@ -921,6 +944,10 @@ export function IssueDetailView({
   const logsEndRef = useRef<HTMLDivElement>(null)
   const [prPending, setPrPending] = useState(false)
   const [prResult, setPrResult] = useState<{ url: string; number: number } | null>(null)
+  const [prDialogOpen, setPrDialogOpen] = useState(false)
+  const [prTitle, setPrTitle] = useState('')
+  const [prBody, setPrBody] = useState('')
+  const [prHead, setPrHead] = useState('')
   const [disabledTools, setDisabledTools] = useState<string[]>(disabledToolsFromResult)
 
   // Sync local state when result changes
@@ -1066,17 +1093,25 @@ export function IssueDetailView({
     }
   }
 
-  const handleCreatePR = async () => {
+  const handleCreatePR = () => {
+    setPrTitle(title || `feat(${identifier}): solution implementation`)
+    setPrBody(description || `Resolves ${identifier}\n\nThis PR was autonomously generated by Orchestra after a successful task execution.`)
+    setPrHead(`task/${identifier}`)
+    setPrDialogOpen(true)
+  }
+
+  const handleFinalizePR = async () => {
     if (!config || !identifier) return
     setPrPending(true)
     try {
       const res = await createGitHubPR(config, identifier, {
-        title: title || `PR for ${identifier}`,
-        body: description || `Fixes ${identifier}`,
-        head: `task/${identifier}`,
+        title: prTitle,
+        body: prBody,
+        head: prHead,
         base: 'main',
       })
       setPrResult(res)
+      setPrDialogOpen(false)
     } catch (err) {
       console.error('Failed to create PR:', err)
       alert('Failed to create PR: ' + (err instanceof Error ? err.message : String(err)))
@@ -1828,6 +1863,7 @@ export function CreateTaskDialog({
   onOpenChange,
   initialState,
   availableAgents,
+  allTools = [],
   projects = [],
   initialProjectID = '',
   onSubmit,
@@ -1836,6 +1872,7 @@ export function CreateTaskDialog({
   onOpenChange: (open: boolean) => void
   initialState: string
   availableAgents: string[]
+  allTools?: any[]
   projects?: any[]
   initialProjectID?: string
   onSubmit: (payload: {
@@ -1872,6 +1909,14 @@ export function CreateTaskDialog({
     }
   }, [open, initialState, initialProjectID, availableAgents])
 
+  const handleToggleTool = (name: string) => {
+    setDisabledTools(prev => 
+      prev.includes(name) 
+        ? prev.filter(t => t !== name) 
+        : [...prev, name]
+    )
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!title.trim()) return
@@ -1901,7 +1946,7 @@ export function CreateTaskDialog({
         <div className="flex-1 overflow-y-auto custom-scrollbar p-0">
           <form onSubmit={handleSubmit} className="flex flex-col h-full min-h-[400px]">
             {/* Main Content Area */}
-            <div className="flex-1 p-8 space-y-4">
+            <div className="flex-1 p-8 space-y-6">
               <input
                 autoFocus
                 className="w-full bg-transparent border-none text-2xl font-semibold placeholder:text-muted-foreground/30 focus:ring-0 p-0 selection:bg-primary/30"
@@ -1911,11 +1956,38 @@ export function CreateTaskDialog({
                 required
               />
               <textarea
-                className="w-full bg-transparent border-none text-base placeholder:text-muted-foreground/20 focus:ring-0 p-0 resize-none min-h-[120px] selection:bg-primary/20 leading-relaxed"
+                className="w-full bg-transparent border-none text-base placeholder:text-muted-foreground/20 focus:ring-0 p-0 resize-none min-h-[100px] selection:bg-primary/20 leading-relaxed"
                 placeholder="Add a description..."
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
               />
+
+              {/* Tool Management Section */}
+              {allTools.length > 0 && (
+                <div className="space-y-3 pt-4 border-t border-border/10">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-[8px] font-black uppercase tracking-widest text-muted-foreground">
+                      <Wrench size={10} /> Initial Capabilities
+                    </div>
+                    <span className="text-[8px] font-bold text-primary/60">{allTools.length - disabledTools.length} Tools Enabled</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {allTools.map((tool) => {
+                      const isDisabled = disabledTools.includes(tool.name)
+                      return (
+                        <button
+                          key={tool.name}
+                          type="button"
+                          onClick={() => handleToggleTool(tool.name)}
+                          className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase border transition-all ${isDisabled ? 'border-border text-muted-foreground/40 opacity-40 hover:opacity-60' : 'border-primary/20 bg-primary/10 text-primary hover:bg-primary/20'}`}
+                        >
+                          {tool.name.includes('_') ? tool.name.split('_')[1] : tool.name}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Attribute & Action Bar */}
@@ -2349,6 +2421,87 @@ function queueRowsFromSnapshot(snapshot: SnapshotPayload | null): QueueRow[] {
   return [...runningRows, ...retryRows].sort((a, b) => a.issue_identifier.localeCompare(b.issue_identifier, 'en', { sensitivity: 'base' }))
 }
 
+function KanbanItem({
+  item,
+  onInspectIssue,
+  onJumpToTerminal,
+  handleDragStart,
+}: {
+  item: any
+  onInspectIssue: (id: string) => void
+  onJumpToTerminal?: (id: string) => void
+  handleDragStart: (e: any, id: string) => void
+}) {
+  const priority = Number(item.priority ?? 0)
+  const priorityBorderClass = 
+    priority === 4 ? 'hover:border-red-500/40' :
+    priority === 3 ? 'hover:border-amber-500/40' :
+    priority === 2 ? 'hover:border-blue-500/40' :
+    'hover:border-primary/20'
+
+  return (
+    <Card
+      draggable
+      onDragStart={(e) => handleDragStart(e, item.issue_identifier)}
+      className={`group relative cursor-grab border-transparent bg-card p-3.5 shadow-sm transition-all duration-300 ${priorityBorderClass} hover:shadow-xl hover:shadow-primary/5 active:cursor-grabbing active:scale-[0.98] rounded-xl`}
+      onClick={() => void onInspectIssue(item.issue_identifier)}
+    >
+      <div className="flex flex-col gap-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="font-mono text-[9px] h-4 bg-muted/40 border-border/50 text-muted-foreground/60 px-1">
+              {item.issue_identifier}
+            </Badge>
+            {item.lane === 'running' && (
+              <Badge className="h-3.5 px-1 bg-primary text-primary-foreground text-[7px] font-black uppercase animate-pulse">Running</Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {item.lane === 'running' && onJumpToTerminal && (
+              <AppTooltip content="Jump to Terminal">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 rounded-md text-primary bg-primary/5 hover:bg-primary/20"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onJumpToTerminal(item.issue_identifier)
+                  }}
+                >
+                  <Terminal size={10} />
+                </Button>
+              </AppTooltip>
+            )}
+            <PriorityIcon priority={priority} className="h-3.5 w-3.5 opacity-60" />
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <p className="text-xs font-bold tracking-tight text-foreground line-clamp-2 leading-relaxed">
+            {item.title || item.issue_identifier}
+          </p>
+          <p className="text-[10px] text-muted-foreground/60 line-clamp-2 italic font-medium">
+            {item.detail}
+          </p>
+        </div>
+        <div className="flex items-center justify-between pt-1 mt-auto border-t border-border/5">
+          <div className="flex items-center gap-2 text-[8px] font-black uppercase tracking-widest text-muted-foreground/40">
+            <Clock size={10} />
+            <span>{item.at ? new Date(item.at).toLocaleDateString() : 'New'}</span>
+          </div>
+          {item.assignee_id !== 'Unassigned' && (
+            <div className="flex items-center gap-1.5">
+              <div className="h-4 w-4 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center">
+                <Bot size={8} className="text-primary/60" />
+              </div>
+              <span className="text-[9px] font-bold text-muted-foreground/70">{item.assignee_id.replace('agent-', '')}</span>
+            </div>
+          )}
+        </div>
+      </div>
+    </Card>
+  )
+}
+
 export function KanbanBoard({
   loadingState,
   snapshot,
@@ -2356,6 +2509,7 @@ export function KanbanBoard({
   projects = [],
   availableAgents = [],
   onInspectIssue,
+  onJumpToTerminal,
   onIssueUpdate,
   onIssueDelete,
   onStopSession,
@@ -2367,6 +2521,7 @@ export function KanbanBoard({
   projects?: any[]
   availableAgents?: string[]
   onInspectIssue: (issueIdentifier: string) => Promise<void>
+  onJumpToTerminal?: (identifier: string) => void
   onIssueUpdate?: (identifier: string, updates: Record<string, unknown>) => Promise<void>
   onIssueDelete?: (identifier: string) => Promise<void>
   onStopSession?: (identifier: string) => Promise<void>
@@ -2989,10 +3144,12 @@ export function OperationsQueueCard({
   loadingState,
   snapshot,
   onInspectIssue,
+  onJumpToTerminal,
 }: {
   loadingState: boolean
   snapshot: SnapshotPayload | null
   onInspectIssue: (issueIdentifier: string) => Promise<void>
+  onJumpToTerminal?: (identifier: string) => void
 }) {
   const [laneFilter, setLaneFilter] = useState<'all' | 'running' | 'retrying'>('all')
   const [stateFilter, setStateFilter] = useState<string>('all')
