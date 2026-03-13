@@ -15,7 +15,7 @@ In a Ralph Loop, the agent does not start with a "blank slate" on every turn. In
 
 ## 🛠️ Recommended Prompt Patterns
 
-To implement an effective Ralph Loop, your `ORCHESTRA.md` prompt should instruct the agent to use the following structures.
+To implement an effective Ralph Loop, your `WORKFLOW.md` prompt should instruct the agent to use the following structures.
 
 ### 1. The Checklist Pattern
 Encourage the agent to maintain a markdown checklist in the issue description or a pinned comment.

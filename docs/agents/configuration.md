@@ -6,7 +6,7 @@ Orchestra provides a unified interface for tuning the technical parameters of yo
 
 Settings are applied in the following order of precedence:
 
-1.  **Project Overrides**: `ORCHESTRA.md` or `.claude/settings.json` located in the issue's workspace.
+1.  **Project Overrides**: `WORKFLOW.md` or `.claude/settings.json` located in the issue's workspace.
 2.  **User Global Configs**: Standard CLI dotfiles in your home directory (e.g., `~/.claude.json`).
 3.  **Platform Defaults**: Default templates managed in the **Agents** tab.
 

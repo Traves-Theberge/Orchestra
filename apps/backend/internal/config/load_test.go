@@ -83,7 +83,7 @@ func TestLoad_ParsesTrackerAndConcurrencyOverridesFromEnv(t *testing.T) {
 	}
 
 	if false {
-		
+
 	}
 	if len(cfg.TrackerWorkerAssigneeIDs) != 2 || cfg.TrackerWorkerAssigneeIDs[0] != "user-1" || cfg.TrackerWorkerAssigneeIDs[1] != "user-2" {
 		t.Fatalf("unexpected tracker worker assignee IDs: %+v", cfg.TrackerWorkerAssigneeIDs)
@@ -149,7 +149,7 @@ func TestLoad_UsesWorkflowOverridesWhenEnvUnset(t *testing.T) {
 	}
 }
 
-func TestLoad_FallsBackToOrchestraMDWhenWorkflowMissing(t *testing.T) {
+func TestLoad_UsesDefaultsWhenWorkflowFileIsMissing(t *testing.T) {
 	t.Setenv("ORCHESTRA_SERVER_HOST", "")
 	t.Setenv("ORCHESTRA_SERVER_PORT", "")
 	t.Setenv("ORCHESTRA_WORKSPACE_ROOT", "")
@@ -168,21 +168,16 @@ func TestLoad_FallsBackToOrchestraMDWhenWorkflowMissing(t *testing.T) {
 		t.Fatalf("chdir temp: %v", err)
 	}
 
-	content := "---\nserver:\n  host: 0.0.0.0\n  port: 4777\n---\nPrompt"
-	if err := os.WriteFile(filepath.Join(tempDir, "ORCHESTRA.md"), []byte(content), 0o644); err != nil {
-		t.Fatalf("write ORCHESTRA.md: %v", err)
-	}
-
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("expected load success, got err=%v", err)
 	}
 
-	if cfg.Host != "0.0.0.0" || cfg.Port != 4777 {
-		t.Fatalf("expected ORCHESTRA.md overrides, got=%+v", cfg)
+	if cfg.Host != "127.0.0.1" || cfg.Port != 4010 {
+		t.Fatalf("expected default config without WORKFLOW.md fallback, got=%+v", cfg)
 	}
-	if cfg.WorkflowFile != "ORCHESTRA.md" {
-		t.Fatalf("expected workflow fallback to ORCHESTRA.md, got=%q", cfg.WorkflowFile)
+	if cfg.WorkflowFile != "WORKFLOW.md" {
+		t.Fatalf("expected workflow file to remain WORKFLOW.md, got=%q", cfg.WorkflowFile)
 	}
 }
 

@@ -41,7 +41,7 @@ func TestStoreCurrentAndForceReload(t *testing.T) {
 func TestStoreSetPath(t *testing.T) {
 	temp := t.TempDir()
 	pathA := filepath.Join(temp, "WORKFLOW.md")
-	pathB := filepath.Join(temp, "ORCHESTRA.md")
+	pathB := filepath.Join(temp, "WORKFLOW-ALT.md")
 
 	if err := os.WriteFile(pathA, []byte("---\n---\nPrompt A"), 0o644); err != nil {
 		t.Fatalf("write path A workflow: %v", err)

@@ -17,7 +17,7 @@ When an agent begins a task, it never works directly on the host machine's prima
 
 To bridge the gap between a blank directory and a fully functional development environment, Orchestra implements a robust hook system.
 
-Hooks are arbitrary shell scripts defined in your global `ORCHESTRA.md`. They run at precise moments during the session lifecycle:
+Hooks are arbitrary shell scripts defined in your `WORKFLOW.md`. They run at precise moments during the session lifecycle:
 
 *   **`after_create`**: Fired immediately after the workspace directory is created. **Use Case**: Cloning the git repository, checking out the specific branch, and running `npm install` or `go mod download`.
 *   **`before_run`**: Fired right before the agent CLI is invoked. **Use Case**: Setting up local environment variables or starting background database containers.

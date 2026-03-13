@@ -22,3 +22,10 @@ agent:
     - run_shell_command
 ---
 Standard Orchestra agent session initialized. Use available tools to fulfill requests.
+
+Before implementation, write an "Operational Plan" that mirrors the task list from the issue description using markdown checkboxes.
+Use this exact checklist style so the UI can parse it:
+- [ ] analyze
+- [ ] implement
+- [ ] verify
+Update checklist items to `- [x]` as work is completed.

@@ -380,9 +380,6 @@ func resolveWorkflowPath(path string) string {
 	if trimmed == "" {
 		return ""
 	}
-	if trimmed == "WORKFLOW.md" && !fileExists(trimmed) && fileExists("ORCHESTRA.md") {
-		return "ORCHESTRA.md"
-	}
 	return trimmed
 }
 
@@ -464,11 +461,6 @@ func lookupNested(root map[string]any, path []string) any {
 	}
 
 	return current
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }
 
 func getenvOrEmpty(key string) string {
