@@ -103,7 +103,16 @@ cd apps/backend && go run ./cmd/orchestrad
 cd apps/desktop && npm ci && npm run dev
 ```
 
-Then open the desktop app and verify the backend profile points to `http://127.0.0.1:4010` (plus token if enabled).
+Then open the desktop app and verify the backend profile points to `http://127.0.0.1:4010`.
+
+If the backend requires auth, configure the token in the desktop UI:
+
+1. Open **Settings** (gear icon in the sidebar).
+2. Go to **Backend Configuration**.
+3. Set **API Token** to `dev-token`.
+4. Save.
+
+The app reconnects and should show all 20 projects.
 
 ## Installation
 

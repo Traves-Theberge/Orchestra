@@ -33,17 +33,17 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: apps/backend/go.mod
           cache-dependency-path: apps/backend/go.sum
@@ -56,7 +56,7 @@ jobs:
 
       - name: Upload parity report artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: orchestra-desktop-parity-report
           path: apps/desktop/reports
