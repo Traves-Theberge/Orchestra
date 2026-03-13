@@ -145,7 +145,7 @@ func TestCommandRunnerReturnsApprovalRequiredFromStructuredEvent(t *testing.T) {
 }
 
 func TestCommandRunnerReturnsInputRequiredFromStructuredEvent(t *testing.T) {
-	runner := NewCommandRunner(ProviderOpenCode, "echo '{\"method\":\"turn/input_required\",\"params\":{\"requiresInput\":true}}'")
+	runner := NewCommandRunner(ProviderOpenCode, "echo '{\"event\":\"turn/input_required\"}'")
 	root := t.TempDir()
 	workspacePath := filepath.Join(root, "ORC-4")
 	if err := os.MkdirAll(workspacePath, 0o755); err != nil {
