@@ -3,7 +3,7 @@
 # API Testing Script for Orchestra - Project Operations
 # Tests project-specific endpoints
 
-BASE_URL="http://localhost:4000"
+BASE_URL="http://localhost:4010"
 PROJECT_ID="f3a6da1e86bc8ccb146ad55d16e474c3"
 
 echo "=== Project Operations Test ==="

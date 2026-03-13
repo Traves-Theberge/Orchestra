@@ -3,7 +3,7 @@
 # API Testing Script for Orchestra - Part 2
 # Tests POST endpoints and issue operations
 
-BASE_URL="http://localhost:4000"
+BASE_URL="http://localhost:4010"
 AUTH_TOKEN="test-token"  # Update if needed
 
 echo "=== Orchestra API Test Suite - Part 2 ==="

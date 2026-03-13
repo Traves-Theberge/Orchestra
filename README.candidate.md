@@ -250,9 +250,9 @@ npm run release:gate
 
 ```bash
 docker build -f ops/docker/Dockerfile.backend -t orchestra-backend .
-docker run --rm -p 4000:4000 \
+docker run --rm -p 4010:4010 \
   -e ORCHESTRA_SERVER_HOST=0.0.0.0 \
-  -e ORCHESTRA_SERVER_PORT=4000 \
+  -e ORCHESTRA_SERVER_PORT=4010 \
   orchestra-backend
 ```
 
@@ -346,7 +346,5 @@ Observed license artifacts:
 
 ## Assumptions & Uncertainties
 
-- Port defaults are inconsistent across files: backend config defaults to `4010`, while Docker/systemd and some test scripts use `4000`.
 - License signals are mixed: `docs/openapi.yaml` advertises `Proprietary`, while `apps/backend/LICENSE` contains Apache-2.0 text and additional license artifacts exist under `licenses/`.
-- Two CI workflows target an `elixir/` directory that is not present at repository root: `.github/workflows/make-all.yml` and `.github/workflows/pr-description-lint.yml`.
 - `apps/desktop/README.md` references files under `docs/plans/` that are not present in this repository snapshot.

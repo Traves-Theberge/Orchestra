@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 WorkingDirectory=/opt/orchestra
 Environment=ORCHESTRA_SERVER_HOST=127.0.0.1
-Environment=ORCHESTRA_SERVER_PORT=4000
+Environment=ORCHESTRA_SERVER_PORT=4010
 ExecStart=/usr/local/bin/orchestrad
 Restart=always
 RestartSec=2
