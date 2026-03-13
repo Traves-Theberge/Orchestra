@@ -1,7 +1,180 @@
 const { app, BrowserWindow, ipcMain, safeStorage, shell, dialog, Menu } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs/promises')
+const fsSync = require('node:fs')
 const crypto = require('node:crypto')
+const net = require('node:net')
+const { spawn } = require('node:child_process')
+
+let managedBackendState = null
+
+function backendBinaryName() {
+  return process.platform === 'win32' ? 'orchestrad.exe' : 'orchestrad'
+}
+
+function backendTargetKey() {
+  return `${process.platform}-${process.arch}`
+}
+
+function resolveManagedBackendBinaryPath() {
+  const overridePath = process.env.ORCHESTRA_BACKEND_BIN
+  if (overridePath && fsSync.existsSync(overridePath)) {
+    return overridePath
+  }
+
+  const binaryName = backendBinaryName()
+  const targetKey = backendTargetKey()
+
+  const packagedPath = path.join(process.resourcesPath, 'backend', targetKey, binaryName)
+  const devCandidates = [
+    path.join(__dirname, '..', 'resources', 'backend', targetKey, binaryName),
+    path.join(__dirname, '..', '..', 'backend', binaryName),
+    path.join(__dirname, '..', '..', 'backend', 'dist', 'orchestra', binaryName),
+  ]
+
+  const candidates = app.isPackaged ? [packagedPath] : [packagedPath, ...devCandidates]
+  return candidates.find((candidate) => fsSync.existsSync(candidate)) || ''
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function isPortAvailable(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer()
+    server.unref()
+    server.on('error', () => resolve(false))
+    server.listen({ host: '127.0.0.1', port }, () => {
+      server.close(() => resolve(true))
+    })
+  })
+}
+
+async function findAvailablePort(startPort, maxAttempts = 50) {
+  for (let offset = 0; offset < maxAttempts; offset += 1) {
+    const nextPort = startPort + offset
+    if (await isPortAvailable(nextPort)) {
+      return nextPort
+    }
+  }
+  throw new Error(`unable to find available port after ${maxAttempts} attempts from ${startPort}`)
+}
+
+async function waitForManagedBackendReady(baseUrl, token, child, timeoutMs = 20000) {
+  const started = Date.now()
+  let lastError = 'no response yet'
+
+  while (Date.now() - started < timeoutMs) {
+    if (child.exitCode !== null) {
+      throw new Error(`backend exited with code ${child.exitCode}`)
+    }
+
+    try {
+      const response = await fetch(new URL('/api/v1/state', baseUrl), {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (response.ok) {
+        return
+      }
+
+      lastError = `status ${response.status}`
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error)
+    }
+
+    await wait(250)
+  }
+
+  throw new Error(`managed backend health check timed out: ${lastError}`)
+}
+
+async function startManagedBackend() {
+  const explicitToggle = process.env.ORCHESTRA_MANAGED_BACKEND
+  const devServerUrl = process.env.VITE_DEV_SERVER_URL
+  const shouldRun = explicitToggle === '1' || (explicitToggle !== '0' && !devServerUrl)
+  if (!shouldRun) {
+    return null
+  }
+
+  const backendBin = resolveManagedBackendBinaryPath()
+  if (!backendBin) {
+    if (app.isPackaged) {
+      throw new Error(`unable to locate bundled backend binary for ${backendTargetKey()}`)
+    }
+    console.warn('Managed backend disabled: orchestrad binary not found in development mode')
+    return null
+  }
+
+  const preferredPort = Number.parseInt(process.env.ORCHESTRA_SERVER_PORT || '4010', 10)
+  const port = Number.isFinite(preferredPort) && preferredPort > 0 ? await findAvailablePort(preferredPort) : await findAvailablePort(4010)
+  const token = crypto.randomBytes(24).toString('hex')
+  const workspaceRoot = path.join(app.getPath('userData'), 'workspaces')
+  await fs.mkdir(workspaceRoot, { recursive: true })
+
+  const child = spawn(backendBin, [], {
+    cwd: path.dirname(backendBin),
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: {
+      ...process.env,
+      ORCHESTRA_SERVER_HOST: '127.0.0.1',
+      ORCHESTRA_SERVER_PORT: String(port),
+      ORCHESTRA_WORKSPACE_ROOT: workspaceRoot,
+      ORCHESTRA_API_TOKEN: token,
+    },
+  })
+
+  child.stdout.on('data', (chunk) => {
+    process.stdout.write(`[orchestrad] ${chunk}`)
+  })
+  child.stderr.on('data', (chunk) => {
+    process.stderr.write(`[orchestrad] ${chunk}`)
+  })
+
+  const baseUrl = `http://127.0.0.1:${port}`
+  await waitForManagedBackendReady(baseUrl, token, child)
+
+  return {
+    child,
+    config: {
+      baseUrl,
+      apiToken: token,
+    },
+  }
+}
+
+async function stopManagedBackend() {
+  const child = managedBackendState?.child
+  if (!child || child.killed || child.exitCode !== null) {
+    managedBackendState = null
+    return
+  }
+
+  await new Promise((resolve) => {
+    let settled = false
+    const finish = () => {
+      if (!settled) {
+        settled = true
+        resolve()
+      }
+    }
+
+    child.once('exit', finish)
+    child.kill('SIGTERM')
+    setTimeout(() => {
+      if (!settled) {
+        child.kill('SIGKILL')
+        finish()
+      }
+    }, 1200)
+  })
+
+  managedBackendState = null
+}
 
 app.disableHardwareAcceleration()
 app.commandLine.appendSwitch('disable-gpu')
@@ -10,11 +183,12 @@ app.commandLine.appendSwitch('in-process-gpu')
 app.commandLine.appendSwitch('disable-gpu-sandbox')
 
 function createDefaultProfile() {
+  const managed = managedBackendState?.config
   return {
     id: 'default',
     name: 'Default',
-    baseUrl: process.env.ORCHESTRA_BASE_URL || 'http://127.0.0.1:4010',
-    apiToken: process.env.ORCHESTRA_API_TOKEN || '',
+    baseUrl: managed?.baseUrl || process.env.ORCHESTRA_BASE_URL || 'http://127.0.0.1:4010',
+    apiToken: managed?.apiToken || process.env.ORCHESTRA_API_TOKEN || '',
   }
 }
 
@@ -120,6 +294,45 @@ async function loadProfilesState() {
     backendProfilesState = ensureProfilesState(getProfilesPayload())
     await persistProfilesState()
   }
+}
+
+function applyManagedBackendProfile() {
+  if (!managedBackendState?.config) {
+    return
+  }
+
+  const managed = managedBackendState.config
+  let hasDefault = false
+
+  const profiles = backendProfilesState.profiles.map((profile) => {
+    if (profile.id !== 'default') {
+      return profile
+    }
+    hasDefault = true
+    return {
+      ...profile,
+      baseUrl: managed.baseUrl,
+      apiToken: managed.apiToken,
+    }
+  })
+
+  const nextProfiles = hasDefault
+    ? profiles
+    : [
+        {
+          id: 'default',
+          name: 'Default',
+          baseUrl: managed.baseUrl,
+          apiToken: managed.apiToken,
+        },
+        ...profiles,
+      ]
+
+  const nextActive = backendProfilesState.activeProfileId || 'default'
+  backendProfilesState = ensureProfilesState({
+    activeProfileId: nextActive,
+    profiles: nextProfiles,
+  })
 }
 
 function createWindow() {
@@ -304,15 +517,29 @@ ipcMain.handle('orchestra:select-folder', async () => {
 })
 
 app.whenReady().then(async () => {
-  await loadProfilesState()
-  await loadTokens()
-  createWindow()
+  try {
+    managedBackendState = await startManagedBackend()
+    await loadProfilesState()
+    applyManagedBackendProfile()
+    await persistProfilesState()
+    await loadTokens()
+    createWindow()
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    dialog.showErrorBox('Orchestra startup failed', `Unable to start local Orchestra backend.\n\n${message}`)
+    app.quit()
+    return
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow()
     }
   })
+})
+
+app.on('before-quit', () => {
+  void stopManagedBackend()
 })
 
 app.on('window-all-closed', () => {

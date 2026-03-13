@@ -1,0 +1,166 @@
+name: orchestra-desktop-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_title:
+        description: 'Release title (for manual runs)'
+        required: true
+        type: string
+      release_notes:
+        description: 'Release notes markdown (must include ## Summary and ## Validation)'
+        required: true
+        type: string
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-release-message:
+    runs-on: ubuntu-latest
+    outputs:
+      release_title: ${{ steps.prepare.outputs.release_title }}
+      release_notes: ${{ steps.prepare.outputs.release_notes }}
+
+    steps:
+      - name: Checkout tags
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release title and notes
+        id: prepare
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            title='${{ inputs.release_title }}'
+            notes='${{ inputs.release_notes }}'
+          else
+            title="${GITHUB_REF_NAME}"
+            notes="$(git for-each-ref "refs/tags/${GITHUB_REF_NAME}" --format='%(contents)')"
+          fi
+
+          if [[ -z "${title//[[:space:]]/}" ]]; then
+            echo "release title is required" >&2
+            exit 1
+          fi
+
+          if [[ -z "${notes//[[:space:]]/}" ]]; then
+            echo "release notes are required; use an annotated tag message or workflow_dispatch input" >&2
+            exit 1
+          fi
+
+          if ! grep -qE '^##[[:space:]]+Summary' <<<"${notes}"; then
+            echo "release notes must include a '## Summary' section" >&2
+            exit 1
+          fi
+
+          if ! grep -qE '^##[[:space:]]+Validation' <<<"${notes}"; then
+            echo "release notes must include a '## Validation' section" >&2
+            exit 1
+          fi
+
+          {
+            echo "release_title=${title}"
+            echo "release_notes<<EOF"
+            echo "${notes}"
+            echo "EOF"
+          } >>"${GITHUB_OUTPUT}"
+
+  package-desktop:
+    needs: validate-release-message
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/backend/go.mod
+
+      - name: Install desktop dependencies
+        run: npm ci
+        working-directory: apps/desktop
+
+      - name: Build backend sidecar (linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p ../desktop/resources/backend/linux-x64
+          go build -o ../desktop/resources/backend/linux-x64/orchestrad ./cmd/orchestrad
+        working-directory: apps/backend
+
+      - name: Build backend sidecar (windows)
+        if: runner.os == 'Windows'
+        run: |
+          New-Item -ItemType Directory -Force -Path ../desktop/resources/backend/win32-x64 | Out-Null
+          go build -o ../desktop/resources/backend/win32-x64/orchestrad.exe ./cmd/orchestrad
+        working-directory: apps/backend
+
+      - name: Build backend sidecar (macos)
+        if: runner.os == 'macOS'
+        run: |
+          ARCH=$(go env GOARCH)
+          mkdir -p ../desktop/resources/backend/darwin-${ARCH}
+          go build -o ../desktop/resources/backend/darwin-${ARCH}/orchestrad ./cmd/orchestrad
+        working-directory: apps/backend
+
+      - name: Build desktop installers
+        run: npm run dist:desktop
+        working-directory: apps/desktop
+
+      - name: Upload packaged desktop artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: orchestra-desktop-${{ runner.os }}
+          path: apps/desktop/release/*
+
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs:
+      - validate-release-message
+      - package-desktop
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Publish GitHub release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" --title "${{ needs.validate-release-message.outputs.release_title }}" --notes "${{ needs.validate-release-message.outputs.release_notes }}" || true
+          shopt -s globstar nullglob
+          for artifact in dist/**/*; do
+            if [ -f "${artifact}" ]; then
+              gh release upload "${GITHUB_REF_NAME}" "${artifact}" --clobber
+            fi
+          done

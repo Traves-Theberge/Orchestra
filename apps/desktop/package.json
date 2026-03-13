@@ -7,6 +7,9 @@
   "scripts": {
     "dev": "concurrently -k \"vite --port 5173 --strictPort\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron electron/main.cjs\"",
     "build": "vite build",
+    "dist:prep": "npm run build && node scripts/stage-backend-binary.mjs",
+    "dist:dir": "npm run dist:prep && electron-builder --dir",
+    "dist:desktop": "npm run dist:prep && electron-builder",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -56,6 +59,7 @@
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.2",
     "cross-env": "^7.0.3",
+    "electron-builder": "^24.13.3",
     "electron": "^33.2.1",
     "jsdom": "^25.0.1",
     "postcss": "^8.4.49",
@@ -65,5 +69,52 @@
     "vite": "^6.0.3",
     "vitest": "^2.1.8",
     "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "com.orchestra.desktop",
+    "productName": "Orchestra Desktop",
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/backend",
+        "to": "backend",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "artifactName": "orchestra-desktop-${version}-${arch}.${ext}"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "orchestra-desktop-${version}-${arch}.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility",
+      "artifactName": "orchestra-desktop-${version}-${arch}.${ext}"
+    }
   }
 }
