@@ -23,13 +23,6 @@ interface ProjectCardProps {
     onDelete?: (project: Project) => void
 }
 
-const calculateReliabilityIndex = (stats?: ProjectStats): number => {
-    if (!stats || stats.total_sessions === 0) return 100
-    const finished = stats.success_count + stats.failure_count
-    if (finished === 0) return 100
-    return Math.round((stats.success_count / finished) * 100)
-}
-
 const ProjectListRow: React.FC<ProjectCardProps> = ({ project, stats, loading, onClick, onDelete }) => {
     if (loading) {
         return (
@@ -44,8 +37,6 @@ const ProjectListRow: React.FC<ProjectCardProps> = ({ project, stats, loading, o
             </div>
         )
     }
-
-    const reliability = calculateReliabilityIndex(stats)
 
     return (
         <div
@@ -70,19 +61,6 @@ const ProjectListRow: React.FC<ProjectCardProps> = ({ project, stats, loading, o
                         <Zap size={10} className="text-muted-foreground" />
                         <span className="text-[11px] text-muted-foreground font-medium">{(((stats?.total_input || 0) + (stats?.total_output || 0)) / 1000).toFixed(1)}k Tokens</span>
                     </div>
-                </div>
-            </div>
-
-            <div className="w-48 flex flex-col gap-1 px-4">
-                <div className="flex items-center justify-between text-[8px] uppercase font-black tracking-widest text-muted-foreground/40">
-                    <span>Reliability Index</span>
-                    <span className={reliability > 80 ? 'text-emerald-500' : reliability > 50 ? 'text-amber-500' : 'text-red-500'}>{reliability}%</span>
-                </div>
-                <div className="h-1 w-full rounded-full bg-muted overflow-hidden">
-                    <div
-                        className={`h-full rounded-full transition-all duration-1000 ${reliability > 80 ? 'bg-emerald-500' : reliability > 50 ? 'bg-amber-500' : 'bg-red-500'}`}
-                        style={{ width: `${reliability}%` }}
-                    />
                 </div>
             </div>
 
@@ -121,8 +99,6 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project, stats, loading, onCl
             </Card>
         );
     }
-    const reliability = calculateReliabilityIndex(stats)
-
     return (
         <Card
             onClick={() => onClick(project.id)}
@@ -172,24 +148,6 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project, stats, loading, onCl
 
             {stats && (
                 <CardContent className="space-y-3 mt-auto pt-3 border-t border-border/40 flex-1 text-left bg-muted/5 group-hover:bg-muted/10 transition-colors">
-                    <div className="space-y-1.5">
-                        <div className="flex items-center justify-between text-[9px] uppercase font-black tracking-widest text-muted-foreground/60">
-                            <span>Reliability Index</span>
-                            <span className={reliability > 80 ? 'text-emerald-500' : reliability > 50 ? 'text-amber-500' : 'text-red-500'}>
-                                {reliability}%
-                            </span>
-                        </div>
-                        <div className="h-1.5 w-full rounded-full bg-muted/50 overflow-hidden border border-border/20">
-                            <div
-                                className={`h-full rounded-full transition-all duration-1000 ${reliability > 80 ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]' :
-                                    reliability > 50 ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]' :
-                                        'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]'
-                                    }`}
-                                style={{ width: `${reliability}%` }}
-                            />
-                        </div>
-                    </div>
-
                     <div className="grid grid-cols-2 gap-4 text-left">
                         <div className="flex items-center gap-2 group/stat">
                             <div className="p-1 rounded bg-background border border-border/50 text-primary/70 group-hover/stat:text-primary transition-colors shadow-sm">
@@ -223,6 +181,13 @@ interface ProjectGridProps {
     onProjectClick: (id: string) => void
     onAddProject?: () => void
     onDeleteProject?: (id: string) => void
+}
+
+const LOADING_PROJECT_PLACEHOLDER: Project = {
+    id: '__loading__',
+    name: 'Loading',
+    root_path: '',
+    remote_url: '',
 }
 
 export const ProjectGrid: React.FC<ProjectGridProps> = ({
@@ -264,7 +229,7 @@ export const ProjectGrid: React.FC<ProjectGridProps> = ({
         return (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6">
                 {[1, 2, 3, 4, 5, 6].map((i) => (
-                    <ProjectCard key={i} project={{} as any} loading onClick={() => { }} />
+                    <ProjectCard key={i} project={LOADING_PROJECT_PLACEHOLDER} loading onClick={() => { }} />
                 ))}
             </div>
         )

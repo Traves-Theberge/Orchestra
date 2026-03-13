@@ -21,6 +21,6 @@ This roadmap outlines the architectural phases of the Orchestra platform.
 ## 🔴 Phase 4: Enterprise & Scale (Complete)
 - **Interactive Dmux Terminals**: Multi-pane real-time shell orchestration.
 - **Human-In-The-Loop (HITL)**: Direct PTY intervention for automated sessions.
-- **Stability Analytics**: Project health scoring and reliability forecasting.
+- **Stability Analytics**: Project health scoring and trend forecasting.
 - **Extensible Tools**: Dynamic MCP tool schema discovery and resource support.
 - **Automated Maintenance**: Background workspace garbage collection and artifact cleanup.

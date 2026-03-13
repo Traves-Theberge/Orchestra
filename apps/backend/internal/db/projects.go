@@ -56,7 +56,7 @@ func (db *DB) RecordSession(ctx context.Context, sessionID, projectID, issueID, 
 	if issueID != "" {
 		issID = &issueID
 	}
-	
+
 	query := `
 		INSERT INTO sessions (id, project_id, issue_id, session_uuid, provider, branch)
 		VALUES (?, ?, ?, ?, ?, ?)
@@ -97,7 +97,7 @@ func (db *DB) RecordEvent(ctx context.Context, eventID, sessionID, kind, message
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO NOTHING
 	`
-	
+
 	// Security/Stability: Cap any remaining raw payload size at 512KB
 	const maxPayloadSize = 512 * 1024
 	var raw interface{}
@@ -201,11 +201,9 @@ type Project struct {
 }
 
 type ProjectStats struct {
-	TotalSessions int64 `json:"total_sessions"`
-	TotalInput    int64 `json:"total_input"`
-	TotalOutput   int64 `json:"total_output"`
-	SuccessCount  int64 `json:"success_count"`
-	FailureCount  int64 `json:"failure_count"`
+	TotalSessions int64  `json:"total_sessions"`
+	TotalInput    int64  `json:"total_input"`
+	TotalOutput   int64  `json:"total_output"`
 	LastActive    string `json:"last_active"`
 }
 
@@ -233,16 +231,14 @@ func (db *DB) GetProjectStats(ctx context.Context, projectID string) (ProjectSta
 			COUNT(DISTINCT s.id),
 			COALESCE(SUM(e.input_tokens), 0),
 			COALESCE(SUM(e.output_tokens), 0),
-			MAX(s.created_at),
-			COUNT(DISTINCT CASE WHEN e.kind = 'run_succeeded' THEN s.id END),
-			COUNT(DISTINCT CASE WHEN e.kind = 'run_failed' THEN s.id END)
+			MAX(s.created_at)
 		FROM sessions s
 		LEFT JOIN events e ON s.id = e.session_id
 		WHERE s.project_id = ?
 	`
 	var stats ProjectStats
 	var lastActive sql.NullString
-	err := db.QueryRowContext(ctx, query, projectID).Scan(&stats.TotalSessions, &stats.TotalInput, &stats.TotalOutput, &lastActive, &stats.SuccessCount, &stats.FailureCount)
+	err := db.QueryRowContext(ctx, query, projectID).Scan(&stats.TotalSessions, &stats.TotalInput, &stats.TotalOutput, &lastActive)
 	if err != nil {
 		return stats, err
 	}
@@ -343,7 +339,7 @@ func (db *DB) GetSessions(ctx context.Context, projectID string) ([]Session, err
 
 func (db *DB) GetSessionDetail(ctx context.Context, sessionID string) (*SessionDetail, error) {
 	var detail SessionDetail
-	
+
 	sessionQuery := `
 		SELECT 
 			s.id, s.project_id, p.name, s.session_uuid, s.provider, s.branch, s.created_at,
@@ -358,7 +354,7 @@ func (db *DB) GetSessionDetail(ctx context.Context, sessionID string) (*SessionD
 	`
 	var prjName sql.NullString
 	err := db.QueryRowContext(ctx, sessionQuery, sessionID).Scan(
-		&detail.ID, &detail.ProjectID, &prjName, &detail.SessionUUID, &detail.Provider, 
+		&detail.ID, &detail.ProjectID, &prjName, &detail.SessionUUID, &detail.Provider,
 		&detail.Branch, &detail.CreatedAt, &detail.UpdatedAt, &detail.TotalInput, &detail.TotalOutput,
 	)
 	if err != nil {
@@ -391,10 +387,10 @@ func (db *DB) GetSessionDetail(ctx context.Context, sessionID string) (*SessionD
 }
 
 type GlobalStats struct {
-	TotalTokens   int64            `json:"total_tokens"`
-	TotalInput    int64            `json:"total_input"`
-	TotalOutput   int64            `json:"total_output"`
-	ProviderUsage map[string]int64 `json:"provider_usage"`
+	TotalTokens    int64            `json:"total_tokens"`
+	TotalInput     int64            `json:"total_input"`
+	TotalOutput    int64            `json:"total_output"`
+	ProviderUsage  map[string]int64 `json:"provider_usage"`
 	RecentSessions []Session        `json:"recent_sessions"`
 }
 

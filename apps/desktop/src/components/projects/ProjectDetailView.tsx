@@ -4,11 +4,27 @@ import {
     Calendar, Code as CodeIcon, GitBranch, RefreshCcw, Trash2, Github,
     FileText, Activity, Layers, ChevronRight, File, Folder as FolderIcon, Info, ShieldCheck, AlertCircle, Terminal
 } from 'lucide-react'
-import type { Project, ProjectStats, SnapshotPayload, BackendConfig } from '@/lib/orchestra-types'
+import type { Project, ProjectStats, SnapshotPayload } from '@/lib/orchestra-types'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { KanbanBoard } from '@/components/app-shell/panels'
-import { fetchProjectTree, fetchProjectGitHistory, fetchProjectGitStatus, fetchProjectGitDiff, refreshProject, gitCommit, gitPush, gitPull, fetchProjectFileContent } from '@/lib/orchestra-client'
+import {
+    fetchProjectTree,
+    fetchProjectGitHistory,
+    fetchProjectGitStatus,
+    fetchProjectGitDiff,
+    refreshProject,
+    gitCommit,
+    gitPush,
+    gitPull,
+    fetchProjectFileContent,
+    type BackendConfig,
+    type GitCommit,
+    type GitStatusEntry,
+    type IssueListItem,
+    type IssueUpdatePayload,
+    type ProjectTreeNode,
+} from '@/lib/orchestra-client'
 import { TerminalMultiplexer } from '../terminal/TerminalMultiplexer'
 import { AppTooltip } from '../ui/tooltip-wrapper'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -31,25 +47,20 @@ interface ProjectDetailViewProps {
     stats?: ProjectStats
     config: BackendConfig | null
     snapshot: SnapshotPayload | null
-    boardIssues: any[]
+    boardIssues: IssueListItem[]
     availableAgents: string[]
     loadingState: boolean
     onBack: () => void
     onInspectIssue: (id: string) => Promise<void>
     onJumpToTerminal?: (id: string) => void
-    onIssueUpdate: (id: string, updates: Record<string, unknown>) => Promise<void>
+    onIssueUpdate: (id: string, updates: IssueUpdatePayload) => Promise<void>
     onCreateIssue: (state: string) => void
     onDeleteProject: (id: string) => Promise<void>
 }
 
-type ProjectTab = 'overview' | 'tasks' | 'files' | 'git' | 'terminal'
+type CommitInfo = GitCommit | { message: string; author: string; date: string; hash?: string }
 
-const calculateReliabilityIndex = (stats?: ProjectStats): number => {
-    if (!stats || stats.total_sessions === 0) return 100
-    const finished = stats.success_count + stats.failure_count
-    if (finished === 0) return 100
-    return Math.round((stats.success_count / finished) * 100)
-}
+type ProjectTab = 'overview' | 'tasks' | 'files' | 'git' | 'terminal'
 
 export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     project,
@@ -67,12 +78,12 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     onDeleteProject,
 }) => {
     const [activeTab, setActiveTab] = useState<ProjectTab>('overview')
-    const [fileTree, setFileTree] = useState<any[]>([])
+    const [fileTree, setFileTree] = useState<ProjectTreeNode[]>([])
     const [selectedFile, setSelectedFile] = useState<string | null>(null)
     const [fileContent, setFileContent] = useState<string | null>(null)
     const [contentLoading, setContentLoading] = useState(false)
-    const [gitHistory, setGitHistory] = useState<any[]>([])
-    const [gitStatus, setGitStatus] = useState<any[]>([])
+    const [gitHistory, setGitHistory] = useState<GitCommit[]>([])
+    const [gitStatus, setGitStatus] = useState<GitStatusEntry[]>([])
     const [loadingTab, setLoadingTab] = useState(false)
     const [refreshing, setRefreshing] = useState(false)
     const [tabError, setTabError] = useState<string | null>(null)
@@ -83,10 +94,9 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     const [selectedDiff, setSelectedDiff] = useState<string | null>(null)
     const [isDiffModalOpen, setIsDiffModalOpen] = useState(false)
     const [diffLoading, setDiffLoading] = useState(false)
-    const [selectedCommitInfo, setSelectedCommitInfo] = useState<any>(null)
+    const [selectedCommitInfo, setSelectedCommitInfo] = useState<CommitInfo | null>(null)
     const [diffFiles, setDiffFiles] = useState<{path: string, content: string}[]>([])
     const [activeDiffFile, setActiveDiffFile] = useState<string | null>(null)
-    const reliability = calculateReliabilityIndex(stats)
 
     const parseDiff = (rawDiff: string) => {
         const files: {path: string, content: string}[] = []
@@ -124,7 +134,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
         if (hash) {
             const commit = gitHistory.find(c => c.hash === hash)
-            setSelectedCommitInfo(commit)
+            setSelectedCommitInfo(commit ?? null)
         } else {
             setSelectedCommitInfo({ message: 'Uncommitted Changes', author: 'Local User', date: new Date().toISOString() })
         }
@@ -236,7 +246,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         }
     }
 
-    const handleExpandFolder = async (path: string) => {
+    const handleExpandFolder = async (path: string): Promise<ProjectTreeNode[]> => {
         if (!config) return []
         try {
             return await fetchProjectTree(config, project.id, path)
@@ -459,61 +469,10 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                     {activeTab === 'overview' && (
                         <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 flex-1">
                             {/* Stats Grid */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
                                 <StatCard title="Total Sessions" value={stats?.total_sessions || 0} icon={<History size={20} />} color="blue" />
                                 <StatCard title="Token Throughput" value={((stats?.total_input || 0) + (stats?.total_output || 0)).toLocaleString()} icon={<Zap size={20} />} color="amber" />
                                 <StatCard title="Last Active" value={stats?.last_active ? new Date(stats.last_active).toLocaleDateString() : 'N/A'} icon={<Calendar size={20} />} color="green" />
-                                <StatCard title="Reliability Index" value={`${reliability}%`} icon={<ShieldCheck size={20} />} color={reliability > 80 ? "primary" : reliability > 50 ? "amber" : "destructive"} />
-                            </div>
-
-                            {/* Recent Activity Mini-Timeline */}
-                            <div className="bg-card/40 rounded-2xl border border-border/40 p-6 backdrop-blur-sm mb-8">
-                                <div className="flex items-center justify-between mb-6">
-                                    <div className="space-y-1">
-                                        <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Reliability Index</h3>
-                                        <p className="text-[10px] text-muted-foreground/60">Historical run performance and reliability index.</p>
-                                    </div>
-                                    <Badge variant="outline" className={reliability > 80 ? "text-emerald-500 border-emerald-500/20" : reliability > 50 ? "text-amber-500 border-amber-500/20" : "text-red-500 border-red-500/20"}>
-                                        {reliability > 80 ? 'Stable' : reliability > 50 ? 'Degraded' : 'Unstable'}
-                                    </Badge>
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                    <div className="space-y-4">
-                                        <div className="space-y-1">
-                                            <div className="flex items-center justify-between text-xs mb-1">
-                                                <span className="text-muted-foreground font-medium uppercase tracking-tighter text-[10px]">Reliability Index</span>
-                                                <span className="font-bold">{reliability}%</span>
-                                            </div>
-                                            <div className="h-2 w-full rounded-full bg-muted/20 overflow-hidden">
-                                                <div
-                                                    className={`h-full rounded-full transition-all duration-1000 ${reliability > 80 ? 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.4)]' :
-                                                        reliability > 50 ? 'bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.4)]' :
-                                                            'bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.4)]'
-                                                        }`}
-                                                    style={{ width: `${reliability}%` }}
-                                                />
-                                            </div>
-                                        </div>
-                                        <div className="mt-4 grid grid-cols-3 gap-4 text-center">
-                                            <div className="space-y-1">
-                                                <p className="text-[9px] font-black uppercase text-muted-foreground/40 tracking-tighter">Total</p>
-                                                <p className="text-sm font-bold">{stats?.total_sessions || 0}</p>
-                                            </div>
-                                            <div className="space-y-1 border-x border-border/40">
-                                                <p className="text-[9px] font-black uppercase text-emerald-500/40 tracking-tighter text-emerald-500/60">Success</p>
-                                                <p className="text-sm font-bold text-emerald-500">{stats?.success_count || 0}</p>
-                                            </div>
-                                            <div className="space-y-1">
-                                                <p className="text-[9px] font-black uppercase text-red-500/40 tracking-tighter text-red-500/60">Failures</p>
-                                                <p className="text-sm font-bold text-red-500">{stats?.failure_count || 0}</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="flex flex-col justify-center items-center p-4 border border-dashed border-border/40 rounded-xl bg-muted/10">
-                                        <Activity className="text-primary/20 mb-2" size={32} />
-                                        <p className="text-[10px] text-muted-foreground text-center uppercase font-bold tracking-widest opacity-40">Predictive Analytics Inactive</p>
-                                    </div>
-                                </div>
                             </div>
                         </div>
                     )}
@@ -801,7 +760,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                                         activeTerminals={[
                                             { id: `project-${project.id}`, title: 'Project Shell', projectId: project.id },
                                             ...(snapshot?.running || [])
-                                                .filter(r => boardIssues.some(i => i.id === r.issue_id && i.project_id === project.id))
+                                                .filter(r => boardIssues.some(i => (i.id === r.issue_id || i.issue_id === r.issue_id) && i.project_id === project.id))
                                                 .map(r => ({
                                                     id: `issue-${r.issue_identifier}`,
                                                     title: `Agent: ${r.issue_identifier}`,
@@ -970,7 +929,7 @@ function StatCard({ title, value, icon, color }: { title: string, value: string 
     )
 }
 
-function FileTree({ items, level = 0, onExpand, onFileClick, activeFile }: { items: any[], level?: number, onExpand?: (path: string) => Promise<any[]>, onFileClick?: (path: string) => void, activeFile?: string | null }) {
+function FileTree({ items, level = 0, onExpand, onFileClick, activeFile }: { items: ProjectTreeNode[], level?: number, onExpand?: (path: string) => Promise<ProjectTreeNode[]>, onFileClick?: (path: string) => void, activeFile?: string | null }) {
     return (
         <div className="divide-y divide-border/20">
             {items.map((item, idx) => (
@@ -980,9 +939,9 @@ function FileTree({ items, level = 0, onExpand, onFileClick, activeFile }: { ite
     )
 }
 
-function FileTreeNode({ item, level, onExpand, onFileClick, activeFile }: { item: any, level: number, onExpand?: (path: string) => Promise<any[]>, onFileClick?: (path: string) => void, activeFile?: string | null }) {
+function FileTreeNode({ item, level, onExpand, onFileClick, activeFile }: { item: ProjectTreeNode, level: number, onExpand?: (path: string) => Promise<ProjectTreeNode[]>, onFileClick?: (path: string) => void, activeFile?: string | null }) {
     const [isOpen, setIsOpen] = useState(false)
-    const [children, setChildren] = useState<any[]>(item.children || [])
+    const [children, setChildren] = useState<ProjectTreeNode[]>(item.children || [])
     const [loading, setLoading] = useState(false)
 
     const hasChildren = item.is_dir

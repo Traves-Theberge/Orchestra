@@ -106,8 +106,8 @@ export type ProjectStats = {
   total_sessions: number
   total_input: number
   total_output: number
-  success_count: number
-  failure_count: number
+  success_count?: number
+  failure_count?: number
   last_active: string
 }
 
@@ -116,7 +116,19 @@ export type GlobalStats = {
   total_input: number
   total_output: number
   provider_usage: Record<string, number>
-  recent_sessions: any[]
+  recent_sessions: SessionSummary[]
+}
+
+export type SessionSummary = {
+  id: string
+  source?: string
+  provider?: string
+  project_id?: string
+  project_name?: string
+  total_input: number
+  total_output: number
+  updated_at: string
+  [key: string]: unknown
 }
 
 export type AgentConfig = {
@@ -133,6 +145,27 @@ export type DocItem = {
   category: string
   is_folder: boolean
   children?: DocItem[]
+}
+
+export type SessionEvent = {
+  kind: string
+  timestamp: string
+  message: string
+  input_tokens?: number
+  output_tokens?: number
+  raw_payload?: string
+  [key: string]: unknown
+}
+
+export type SessionDetail = {
+  id: string
+  provider: string
+  project_name?: string
+  created_at: string
+  total_input: number
+  total_output: number
+  events?: SessionEvent[]
+  [key: string]: unknown
 }
 
 export type Blocker = {

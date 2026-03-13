@@ -19,7 +19,7 @@ To maintain cohesion during coordination, Orchestra parses the agent's initial `
 
 ## 🔄 Automated Cascading (Failover)
 
-To increase the reliability of autonomous execution, Orchestra implements an **Agent Cascading** logic within the `RecordRunFailure` lifecycle.
+To make autonomous execution more robust, Orchestra implements an **Agent Cascading** logic within the `RecordRunFailure` lifecycle.
 
 ### How it works:
 If an issue fails repeatedly (exceeds 3 retry attempts) with a specific model:

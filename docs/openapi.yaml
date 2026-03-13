@@ -1717,10 +1717,6 @@ components:
           type: integer
         total_output:
           type: integer
-        success_count:
-          type: integer
-        failure_count:
-          type: integer
         last_active:
           type: string
     FileNode:
