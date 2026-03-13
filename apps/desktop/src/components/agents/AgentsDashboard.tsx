@@ -11,7 +11,18 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { AppTooltip } from '../ui/tooltip-wrapper'
-import { fetchAgentConfigs, updateAgentConfigByPath, fetchProjects, createAgentResource, fetchMCPTools, fetchMCPServers, createMCPServer, deleteMCPServer } from '@/lib/orchestra-client'
+import {
+    fetchAgentConfigs,
+    updateAgentConfigByPath,
+    fetchProjects,
+    createAgentResource,
+    fetchMCPTools,
+    fetchMCPServers,
+    createMCPServer,
+    deleteMCPServer,
+    type MCPServer,
+    type MCPTool,
+} from '@/lib/orchestra-client'
 import { OverlayScrollbarsComponent } from 'overlayscrollbars-react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -34,8 +45,8 @@ type MainTab = 'agents' | 'skills' | 'mcp'
 export const AgentsDashboard: React.FC<AgentsDashboardProps> = ({ config, snapshot }) => {
     const [configs, setConfigs] = useState<AgentConfig[]>([])
     const [projects, setProjects] = useState<Project[]>([])
-    const [mcpTools, setMcpTools] = useState<any[]>([])
-    const [mcpServers, setMcpServers] = useState<any[]>([])
+    const [mcpTools, setMcpTools] = useState<MCPTool[]>([])
+    const [mcpServers, setMcpServers] = useState<MCPServer[]>([])
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState<string | null>(null)
     const [activeTab, setActiveTab] = useState<MainTab>('agents')
@@ -80,8 +91,9 @@ export const AgentsDashboard: React.FC<AgentsDashboardProps> = ({ config, snapsh
             if (activeTab === 'agents') {
                 syncActiveAgentConfig(selectedAgent, configsData)
             }
-        } catch (err: any) {
-            setError(err.message || 'Failed to load data')
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err)
+            setError(message || 'Failed to load data')
         } finally {
             setLoading(false)
         }
@@ -112,8 +124,9 @@ export const AgentsDashboard: React.FC<AgentsDashboardProps> = ({ config, snapsh
             await updateAgentConfigByPath(config, activeConfig.path, editedContent)
             setConfigs(prev => prev.map(c => c.path === activeConfig.path ? { ...c, content: editedContent } : c))
             setError('')
-        } catch (err: any) {
-            setError(err.message || 'Save failed')
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err)
+            setError(message || 'Save failed')
         } finally {
             setSaving(null)
         }
@@ -128,8 +141,9 @@ export const AgentsDashboard: React.FC<AgentsDashboardProps> = ({ config, snapsh
             setMcpDialogOpen(false)
             setNewMcpName('')
             setNewMcpCommand('')
-        } catch (err: any) {
-            setError(err.message || 'Failed to create MCP server')
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err)
+            setError(message || 'Failed to create MCP server')
         } finally {
             setCreating(false)
         }
@@ -218,15 +232,15 @@ export const AgentsDashboard: React.FC<AgentsDashboardProps> = ({ config, snapsh
                                         Project Overrides
                                     </button>
                                 </div>
-                                {scope === 'project' && (
-                                    <CustomDropdown
-                                        value={selectedProjectID}
-                                        onChange={setSelectedProjectID}
-                                        options={projects.map(p => ({ label: p.name, value: p.id, icon: <Folder size={12} /> }))}
-                                        placeholder="Select Project..."
-                                        className="min-w-[200px]"
-                                    />
-                                )}
+                                 {scope === 'project' && (
+                                     <CustomDropdown
+                                         value={selectedProjectID}
+                                         onChange={(value) => setSelectedProjectID(String(value))}
+                                         options={projects.map(p => ({ label: p.name, value: p.id, icon: <Folder size={12} /> }))}
+                                         placeholder="Select Project..."
+                                         className="min-w-[200px]"
+                                     />
+                                 )}
                             </div>
                         </div>
 
@@ -360,7 +374,7 @@ function CustomDropdown({
 }: {
     value: string | number
     options: { label: string; value: string | number; icon?: React.ReactNode }[]
-    onChange: (value: any) => void
+    onChange: (value: string | number) => void
     className?: string
     placeholder?: string
 }) {

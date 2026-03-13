@@ -2,9 +2,10 @@ import React from 'react'
 import { History, Zap, Activity, Clock, ShieldCheck, Database, Layout, Terminal } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import type { SessionDetail, SessionEvent } from '@/lib/orchestra-types'
 
 interface SessionDetailViewProps {
-    session: any
+    session: SessionDetail
 }
 
 export const SessionDetailView: React.FC<SessionDetailViewProps> = ({ session }) => {
@@ -48,7 +49,7 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({ session })
                 </h3>
                 <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden shadow-inner">
                     <div className="max-h-[400px] overflow-y-auto custom-scrollbar p-1">
-                        {session.events?.map((event: any, idx: number) => (
+                        {session.events?.map((event: SessionEvent, idx: number) => (
                             <div key={idx} className="p-3 border-b border-border last:border-0 hover:bg-muted/50 transition-colors group">
                                 <div className="flex items-center justify-between mb-2">
                                     <div className="flex items-center gap-3">
@@ -60,8 +61,8 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({ session })
                                         </span>
                                     </div>
                                     <div className="text-[9px] font-mono text-muted-foreground flex gap-2">
-                                        {event.input_tokens > 0 && <span className="text-emerald-500/70">+{event.input_tokens} IN</span>}
-                                        {event.output_tokens > 0 && <span className="text-blue-500/70">+{event.output_tokens} OUT</span>}
+                                        {(event.input_tokens ?? 0) > 0 && <span className="text-emerald-500/70">+{event.input_tokens ?? 0} IN</span>}
+                                        {(event.output_tokens ?? 0) > 0 && <span className="text-blue-500/70">+{event.output_tokens ?? 0} OUT</span>}
                                     </div>
                                 </div>
                                 <p className="text-sm text-foreground leading-relaxed pl-1 border-l-2 border-primary/20 group-hover:border-primary transition-colors">

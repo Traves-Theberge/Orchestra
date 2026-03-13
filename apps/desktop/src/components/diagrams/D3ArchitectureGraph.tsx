@@ -92,6 +92,13 @@ export const D3ArchitectureGraph: React.FC<{ data?: string }> = ({ data: rawData
             .force('x', d3.forceX(width / 2).strength(0.1))
             .force('y', d3.forceY(height / 2).strength(0.1))
 
+        const resolveNode = (value: string | Node): Node => {
+            if (typeof value === 'string') {
+                return nodes.find((node) => node.id === value) ?? { id: value, group: 'core', label: value, x: 0, y: 0 }
+            }
+            return value
+        }
+
         const link = svg.append('g')
             .attr('stroke', '#444')
             .attr('stroke-opacity', 0.4)
@@ -104,7 +111,7 @@ export const D3ArchitectureGraph: React.FC<{ data?: string }> = ({ data: rawData
             .selectAll<SVGGElement, Node>('g')
             .data(nodes)
             .join('g')
-            .call(drag(simulation) as any)
+            .call(drag(simulation))
 
         node.append('circle')
             .attr('r', 10)
@@ -129,31 +136,30 @@ export const D3ArchitectureGraph: React.FC<{ data?: string }> = ({ data: rawData
             .style('stroke-linecap', 'round')
             .style('stroke-linejoin', 'round')
 
-        const radius = 10;
         simulation.on('tick', () => {
             link
-                .attr('x1', d => (d.source as any).x)
-                .attr('y1', d => (d.source as any).y)
-                .attr('x2', d => (d.target as any).x)
-                .attr('y2', d => (d.target as any).y)
+                .attr('x1', d => resolveNode(d.source).x ?? 0)
+                .attr('y1', d => resolveNode(d.source).y ?? 0)
+                .attr('x2', d => resolveNode(d.target).x ?? 0)
+                .attr('y2', d => resolveNode(d.target).y ?? 0)
 
             node
                 .attr('transform', d => `translate(${d.x},${d.y})`)
         })
 
         function drag(sim: d3.Simulation<Node, undefined>) {
-            function dragstarted(event: any) {
+            function dragstarted(event: d3.D3DragEvent<SVGGElement, Node, Node>) {
                 if (!event.active) sim.alphaTarget(0.3).restart()
                 event.subject.fx = event.subject.x
                 event.subject.fy = event.subject.y
             }
 
-            function dragged(event: any) {
+            function dragged(event: d3.D3DragEvent<SVGGElement, Node, Node>) {
                 event.subject.fx = event.x
                 event.subject.fy = event.y
             }
 
-            function dragended(event: any) {
+            function dragended(event: d3.D3DragEvent<SVGGElement, Node, Node>) {
                 if (!event.active) sim.alphaTarget(0)
                 event.subject.fx = null
                 event.subject.fy = null

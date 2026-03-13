@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react'
 import { Database, TrendingUp, Zap, Cpu, History as HistoryIcon, Search, Eye, Folder, RefreshCcw } from 'lucide-react'
-import type { GlobalStats } from '@/lib/orchestra-types'
+import type { GlobalStats, SessionSummary } from '@/lib/orchestra-types'
 import { Badge } from '@/components/ui/badge'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Button } from '@/components/ui/button'
@@ -24,7 +24,7 @@ interface AnalyticsDashboardProps {
     stats: GlobalStats | null
     loading: boolean
     onInspectSession?: (sessionId: string) => void
-    onCloneSession?: (session: any) => void
+    onCloneSession?: (session: SessionSummary) => void
 }
 
 export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ stats, loading, onInspectSession, onCloneSession }) => {
@@ -201,7 +201,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ stats, l
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-border/20">
-                            {stats.recent_sessions?.map((session: any) => (
+                            {stats.recent_sessions?.map((session: SessionSummary) => (
                                 <tr key={session.id} className="hover:bg-primary/[0.03] transition-all group">
                                     <td className="px-6 py-5">
                                         <div className="flex flex-col gap-1.5 text-left">

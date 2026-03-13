@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type CSSProperties } from 'react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { Activity, ChevronDown, SignalLow, Ticket } from 'lucide-react'
@@ -7,6 +7,29 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import type { TimelineItem } from '@/components/app-shell/types'
 
+type TimelineNarrative = {
+  title: string
+  desc: string
+  color: string
+  bg: string
+}
+
+const asString = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined)
+
+const toTransparentTheme = (theme: Record<string, CSSProperties>): Record<string, CSSProperties> => {
+  return Object.fromEntries(
+    Object.entries(theme).map(([key, styles]) => [
+      key,
+      {
+        ...styles,
+        background: 'transparent',
+        backgroundColor: 'transparent',
+        backgroundClip: 'padding-box',
+      },
+    ]),
+  ) as Record<string, CSSProperties>
+}
+
 export function TimelineCard({ timeline }: { timeline: TimelineItem[] }) {
   const osOptions = useMemo(() => ({
     scrollbars: { autoHide: 'move' as const, theme: 'os-theme-custom' },
@@ -14,9 +37,9 @@ export function TimelineCard({ timeline }: { timeline: TimelineItem[] }) {
   }), [])
 
   const getHumanNarrative = (item: TimelineItem) => {
-    const data = item.data as any
-    const id = data.issue_identifier || 'System'
-    const provider = (data.provider as string) || ''
+    const id = asString(item.data.issue_identifier) || 'System'
+    const provider = asString(item.data.provider) || ''
+    const message = asString(item.data.message)
 
     switch (item.type) {
       case 'run_started':
@@ -64,7 +87,7 @@ export function TimelineCard({ timeline }: { timeline: TimelineItem[] }) {
       default:
         return {
           title: item.type.replace(/_/g, ' '),
-          desc: (data.message as string) || 'System signal recorded',
+          desc: message || 'System signal recorded',
           color: 'text-muted-foreground',
           bg: 'bg-muted/20',
         }
@@ -112,23 +135,13 @@ export function TimelineCard({ timeline }: { timeline: TimelineItem[] }) {
   )
 }
 
-function TimelineItemRow({ item, narrative }: { item: TimelineItem; narrative: any }) {
+function TimelineItemRow({ item, narrative }: { item: TimelineItem; narrative: TimelineNarrative }) {
   const [expanded, setExpanded] = useState(false)
-  const data = item.data as any
+  const issueIdentifier = asString(item.data.issue_identifier)
+  const provider = asString(item.data.provider)
 
   const cleanOneDark = useMemo(() => {
-    const theme: any = { ...oneDark }
-    for (const key in theme) {
-      if (theme[key]) {
-        theme[key] = {
-          ...theme[key],
-          background: 'transparent',
-          backgroundColor: 'transparent',
-          backgroundClip: 'padding-box',
-        }
-      }
-    }
-    return theme
+    return toTransparentTheme(oneDark as Record<string, CSSProperties>)
   }, [])
 
   return (
@@ -155,11 +168,11 @@ function TimelineItemRow({ item, narrative }: { item: TimelineItem; narrative: a
           <div className="flex items-center gap-2 pt-1">
             <div className="flex items-center gap-1 text-[8px] font-black uppercase tracking-widest text-primary/60 bg-primary/5 px-1.5 py-0.5 rounded border border-primary/10">
               <Ticket size={8} />
-              {data.issue_identifier || 'SYS'}
+              {issueIdentifier || 'SYS'}
             </div>
-            {data.provider && (
+            {provider && (
               <div className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/40">
-                via {data.provider}
+                via {provider}
               </div>
             )}
           </div>
@@ -189,7 +202,7 @@ function TimelineItemRow({ item, narrative }: { item: TimelineItem; narrative: a
               }}
               useInlineStyles
             >
-              {JSON.stringify(data, null, 2)}
+              {JSON.stringify(item.data, null, 2)}
             </SyntaxHighlighter>
           </div>
         </div>

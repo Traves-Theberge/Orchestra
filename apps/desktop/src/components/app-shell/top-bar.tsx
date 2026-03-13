@@ -6,6 +6,7 @@ import { AppTooltip } from '@/components/ui/tooltip-wrapper'
 import { Badge } from '@/components/ui/badge'
 import { periodFilters } from '@/components/app-shell/types'
 import { usePlatform } from '@/hooks/use-platform'
+import type { IssueListItem } from '@/lib/orchestra-client'
 
 export function TopBar({
   sectionLabel,
@@ -37,7 +38,7 @@ export function TopBar({
   configReady: boolean
   onOpenSettings: () => void
   onRefresh: () => Promise<void>
-  onSearch?: (query: string) => Promise<any[]>
+  onSearch?: (query: string) => Promise<IssueListItem[]>
   onResultClick?: (issueIdentifier: string) => void
   statusMessage?: string
   errorMessage?: string
@@ -48,7 +49,7 @@ export function TopBar({
 }) {
   const { isMac } = usePlatform()
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [searchResults, setSearchResults] = useState<IssueListItem[]>([])
   const [searchPending, setSearchPending] = useState(false)
   const [showResults, setShowResults] = useState(false)
   const searchRef = useRef<HTMLDivElement>(null)
@@ -164,19 +165,22 @@ export function TopBar({
             {showResults && searchResults.length > 0 && (
               <div className="absolute top-full right-0 z-50 mt-2 w-[300px] overflow-hidden rounded-xl border border-border bg-card shadow-2xl animate-in fade-in zoom-in-95 duration-100">
                 <div className="max-h-[300px] overflow-auto py-1">
-                  {searchResults.map((result) => (
+                  {searchResults.map((result, idx) => (
                     <button
-                      key={result.id}
+                      key={result.id ?? result.issue_id ?? result.identifier ?? result.issue_identifier ?? `result-${idx}`}
                       className="flex w-full flex-col gap-0.5 px-3 py-2 text-left hover:bg-muted/50 transition-colors"
                       onClick={() => {
-                        onResultClick?.(result.identifier)
+                        const issueIdentifier = result.identifier ?? result.issue_identifier
+                        if (issueIdentifier) {
+                          onResultClick?.(issueIdentifier)
+                        }
                         setShowResults(false)
                         setSearchQuery('')
                       }}
                     >
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-[10px] font-bold text-primary">{result.identifier}</span>
-                        <span className="truncate text-xs font-medium text-foreground">{result.title}</span>
+                        <span className="font-mono text-[10px] font-bold text-primary">{result.identifier ?? result.issue_identifier ?? 'n/a'}</span>
+                        <span className="truncate text-xs font-medium text-foreground">{result.title ?? 'Untitled issue'}</span>
                       </div>
                       <span className="truncate text-[10px] text-muted-foreground/60">{result.state}</span>
                     </button>

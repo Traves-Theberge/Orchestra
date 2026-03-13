@@ -1,9 +1,102 @@
-import type { APIErrorEnvelope, EventEnvelope, GlobalStats, IssueDetailPayload, Project, ProjectStats, SnapshotPayload, AgentConfig, DocItem } from '@/lib/orchestra-types'
+import type { APIErrorEnvelope, EventEnvelope, GlobalStats, IssueDetailPayload, Project, ProjectStats, SnapshotPayload, AgentConfig, DocItem, Issue, SessionDetail, SessionSummary } from '@/lib/orchestra-types'
 
 export type BackendConfig = {
   baseUrl: string
   apiToken: string
   mcpServers?: Record<string, string>
+}
+
+export type MCPTool = {
+  name: string
+  [key: string]: unknown
+}
+
+export type MCPServer = {
+  id?: string
+  name: string
+  command: string
+  [key: string]: unknown
+}
+
+export type IssueListItem = Partial<Issue> & {
+  id?: string
+  issue_id?: string
+  identifier?: string
+  issue_identifier?: string
+  state: string
+  title?: string
+  assigned_to_worker?: boolean
+  due_at?: string
+  error?: string
+  last_message?: string
+  session_id?: string
+  [key: string]: unknown
+}
+
+export type IssueHistoryEntry = {
+  id?: string
+  kind: string
+  message?: string
+  timestamp: string
+  provider?: string
+  input_tokens?: number
+  output_tokens?: number
+  [key: string]: unknown
+}
+
+export type ProjectTreeNode = {
+  name: string
+  path: string
+  is_dir: boolean
+  children?: ProjectTreeNode[]
+  [key: string]: unknown
+}
+
+export type GitCommit = {
+  hash?: string
+  message: string
+  author?: string
+  date: string
+  [key: string]: unknown
+}
+
+export type GitStatusEntry = {
+  path: string
+  status: string
+  [key: string]: unknown
+}
+
+export type WorkspaceMigrationResult = Record<string, unknown>
+
+export type RefreshResult = Record<string, unknown>
+
+export type IssueUpdatePayload = {
+  state?: string
+  assignee_id?: string
+  provider?: string
+  priority?: number
+  title?: string
+  description?: string
+  project_id?: string
+  disabled_tools?: string[]
+  [key: string]: unknown
+}
+
+export type IssueCreatePayload = {
+  title: string
+  description: string
+  state: string
+  priority: number
+  assignee_id: string
+  project_id: string
+  provider?: string
+  disabled_tools?: string[]
+}
+
+export type GitHubPRResult = {
+  url: string
+  number: number
+  [key: string]: unknown
 }
 
 class APIError extends Error {
@@ -151,13 +244,13 @@ async function requestJSON<T>(config: BackendConfig, path: string, init?: Reques
 export async function updateIssue(
   config: BackendConfig,
   issueIdentifier: string,
-  updates: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
+  updates: IssueUpdatePayload,
+): Promise<IssueListItem> {
   const normalized = issueIdentifier.trim()
   if (normalized === '') {
     throw new APIError('invalid_request', 'issue identifier is required')
   }
-  return requestJSON<Record<string, unknown>>(config, `/api/v1/issues/${encodeURIComponent(normalized)}`, {
+  return requestJSON<IssueListItem>(config, `/api/v1/issues/${encodeURIComponent(normalized)}`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -195,38 +288,29 @@ export async function fetchState(config: BackendConfig): Promise<SnapshotPayload
   return normalizeSnapshotPayload(payload)
 }
 
-export async function fetchIssues(config: BackendConfig, states?: string[], projectID?: string, assigneeID?: string): Promise<any[]> {
+export async function fetchIssues(config: BackendConfig, states?: string[], projectID?: string, assigneeID?: string): Promise<IssueListItem[]> {
   const params = new URLSearchParams()
   if (states && states.length > 0) params.set('states', states.join(','))
   if (projectID) params.set('project_id', projectID)
   if (assigneeID) params.set('assignee_id', assigneeID)
-  const payload = await requestJSON<{ issues: any[] }>(config, `/api/v1/issues?${params.toString()}`)
+  const payload = await requestJSON<{ issues: IssueListItem[] }>(config, `/api/v1/issues?${params.toString()}`)
   return payload.issues || []
 }
 
 export async function createIssue(
   config: BackendConfig,
-  payload: {
-    title: string;
-    description: string;
-    state: string;
-    priority: number;
-    assignee_id: string;
-    project_id: string;
-    provider?: string;
-    disabled_tools?: string[];
-  },
-): Promise<any> {
-  return requestJSON<any>(config, '/api/v1/issues', {
+  payload: IssueCreatePayload,
+): Promise<IssueListItem> {
+  return requestJSON<IssueListItem>(config, '/api/v1/issues', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
 }
 
-export async function searchIssues(config: BackendConfig, query: string): Promise<any[]> {
+export async function searchIssues(config: BackendConfig, query: string): Promise<IssueListItem[]> {
   const params = new URLSearchParams({ q: query })
-  const payload = await requestJSON<{ issues: any[] }>(config, `/api/v1/search?${params.toString()}`)
+  const payload = await requestJSON<{ issues: IssueListItem[] }>(config, `/api/v1/search?${params.toString()}`)
   return payload.issues || []
 }
 
@@ -239,8 +323,8 @@ export async function fetchAgentConfig(config: BackendConfig): Promise<{ command
   return requestJSON<{ commands: Record<string, string>; agent_provider: string }>(config, '/api/v1/config/agents')
 }
 
-export async function postRefresh(config: BackendConfig): Promise<Record<string, unknown>> {
-  return requestJSON<Record<string, unknown>>(config, '/api/v1/refresh', {
+export async function postRefresh(config: BackendConfig): Promise<RefreshResult> {
+  return requestJSON<RefreshResult>(config, '/api/v1/refresh', {
     method: 'POST',
   })
 }
@@ -249,20 +333,20 @@ export async function fetchWorkspaceMigrationPlan(
   config: BackendConfig,
   from: string,
   to: string,
-): Promise<Record<string, unknown>> {
+): Promise<WorkspaceMigrationResult> {
   const query = new URLSearchParams()
   if (from.trim() !== '') query.set('from', from.trim())
   if (to.trim() !== '') query.set('to', to.trim())
   const suffix = query.toString() ? `?${query.toString()}` : ''
-  return requestJSON<Record<string, unknown>>(config, `/api/v1/workspace/migration/plan${suffix}`)
+  return requestJSON<WorkspaceMigrationResult>(config, `/api/v1/workspace/migration/plan${suffix}`)
 }
 
 export async function applyWorkspaceMigration(
   config: BackendConfig,
   from: string,
   to: string,
-): Promise<Record<string, unknown>> {
-  return requestJSON<Record<string, unknown>>(config, '/api/v1/workspace/migrate', {
+): Promise<WorkspaceMigrationResult> {
+  return requestJSON<WorkspaceMigrationResult>(config, '/api/v1/workspace/migrate', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -275,33 +359,33 @@ export async function applyWorkspaceMigration(
   })
 }
 
-export async function fetchProjects(config: BackendConfig): Promise<any[]> {
-  const data = await requestJSON<any[]>(config, '/api/v1/projects')
+export async function fetchProjects(config: BackendConfig): Promise<Project[]> {
+  const data = await requestJSON<Project[]>(config, '/api/v1/projects')
   return data || []
 }
 
-export async function fetchProjectStats(config: BackendConfig, projectID: string): Promise<any> {
-  return requestJSON<any>(config, `/api/v1/projects/${encodeURIComponent(projectID)}`)
+export async function fetchProjectStats(config: BackendConfig, projectID: string): Promise<ProjectStats> {
+  return requestJSON<ProjectStats>(config, `/api/v1/projects/${encodeURIComponent(projectID)}`)
 }
 
-export async function fetchWarehouseStats(config: BackendConfig): Promise<any> {
-  return requestJSON<any>(config, '/api/v1/warehouse/stats')
+export async function fetchWarehouseStats(config: BackendConfig): Promise<GlobalStats> {
+  return requestJSON<GlobalStats>(config, '/api/v1/warehouse/stats')
 }
 
-export async function createProject(config: BackendConfig, rootPath: string): Promise<any> {
-  return requestJSON<any>(config, '/api/v1/projects', {
+export async function createProject(config: BackendConfig, rootPath: string): Promise<Project> {
+  return requestJSON<Project>(config, '/api/v1/projects', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ root_path: rootPath }),
   })
 }
 
-export async function fetchIssueDetail(config: BackendConfig, issueIdentifier: string): Promise<any> {
+export async function fetchIssueDetail(config: BackendConfig, issueIdentifier: string): Promise<IssueListItem> {
   const normalized = issueIdentifier.trim()
   if (normalized === '') {
     throw new APIError('invalid_request', 'issue identifier is required')
   }
-  return requestJSON<any>(config, `/api/v1/issues/${encodeURIComponent(normalized)}`)
+  return requestJSON<IssueListItem>(config, `/api/v1/issues/${encodeURIComponent(normalized)}`)
 }
 
 export async function fetchIssueLogs(config: BackendConfig, issueIdentifier: string, provider?: string): Promise<string> {
@@ -323,12 +407,12 @@ export async function fetchIssueLogs(config: BackendConfig, issueIdentifier: str
   return response.text()
 }
 
-export async function fetchIssueHistory(config: BackendConfig, issueIdentifier: string): Promise<any[]> {
+export async function fetchIssueHistory(config: BackendConfig, issueIdentifier: string): Promise<IssueHistoryEntry[]> {
   const normalized = issueIdentifier.trim()
   if (normalized === '') {
     throw new APIError('invalid_request', 'issue identifier is required')
   }
-  const data = await requestJSON<{ history: any[] }>(config, `/api/v1/issues/${encodeURIComponent(normalized)}/history`)
+  const data = await requestJSON<{ history: IssueHistoryEntry[] }>(config, `/api/v1/issues/${encodeURIComponent(normalized)}/history`)
   return data.history || []
 }
 
@@ -392,9 +476,9 @@ export function toDisplayError(error: unknown): string {
   return 'unexpected error'
 }
 
-export async function fetchSessions(config: BackendConfig, projectId?: string): Promise<any[]> {
+export async function fetchSessions(config: BackendConfig, projectId?: string): Promise<SessionSummary[]> {
   const url = projectId ? `/api/v1/sessions?project_id=${projectId}` : '/api/v1/sessions'
-  const data = await requestJSON<any[]>(config, url)
+  const data = await requestJSON<SessionSummary[]>(config, url)
   return data || []
 }
 
@@ -410,9 +494,9 @@ export async function refreshProject(config: BackendConfig, projectId: string): 
   })
 }
 
-export async function fetchProjectTree(config: BackendConfig, projectId: string, path?: string): Promise<any[]> {
+export async function fetchProjectTree(config: BackendConfig, projectId: string, path?: string): Promise<ProjectTreeNode[]> {
   const query = path ? `?path=${encodeURIComponent(path)}` : ''
-  const data = await requestJSON<any[]>(config, `/api/v1/projects/${projectId}/tree${query}`)
+  const data = await requestJSON<ProjectTreeNode[]>(config, `/api/v1/projects/${projectId}/tree${query}`)
   return data || []
 }
 
@@ -426,13 +510,13 @@ export async function fetchProjectFileContent(config: BackendConfig, projectId: 
   return response.text()
 }
 
-export async function fetchProjectGitHistory(config: BackendConfig, projectId: string): Promise<any[]> {
-  const data = await requestJSON<any[]>(config, `/api/v1/projects/${projectId}/git`)
+export async function fetchProjectGitHistory(config: BackendConfig, projectId: string): Promise<GitCommit[]> {
+  const data = await requestJSON<GitCommit[]>(config, `/api/v1/projects/${projectId}/git`)
   return data || []
 }
 
-export async function fetchProjectGitStatus(config: BackendConfig, projectId: string): Promise<any[]> {
-  const data = await requestJSON<any[]>(config, `/api/v1/projects/${projectId}/git/status`)
+export async function fetchProjectGitStatus(config: BackendConfig, projectId: string): Promise<GitStatusEntry[]> {
+  const data = await requestJSON<GitStatusEntry[]>(config, `/api/v1/projects/${projectId}/git/status`)
   return data || []
 }
 
@@ -449,8 +533,8 @@ export async function fetchProjectGitDiff(config: BackendConfig, projectId: stri
   return response.text()
 }
 
-export async function fetchSessionDetail(config: BackendConfig, sessionId: string): Promise<any> {
-  return requestJSON<any>(config, `/api/v1/sessions/${sessionId}`)
+export async function fetchSessionDetail(config: BackendConfig, sessionId: string): Promise<SessionDetail> {
+  return requestJSON<SessionDetail>(config, `/api/v1/sessions/${sessionId}`)
 }
 
 export async function gitCommit(config: BackendConfig, projectId: string, message: string): Promise<void> {
@@ -481,8 +565,8 @@ export async function createGitHubPR(
   config: BackendConfig,
   issueIdentifier: string,
   payload: { title: string; body: string; head: string; base: string; owner?: string; repo?: string; token?: string }
-): Promise<any> {
-  return requestJSON<any>(config, `/api/v1/issues/${encodeURIComponent(issueIdentifier)}/pr`, {
+): Promise<GitHubPRResult> {
+  return requestJSON<GitHubPRResult>(config, `/api/v1/issues/${encodeURIComponent(issueIdentifier)}/pr`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -533,18 +617,18 @@ export async function fetchDocContent(config: BackendConfig, path: string): Prom
   return response.text()
 }
 
-export async function fetchMCPTools(config: BackendConfig): Promise<any[]> {
-  const data = await requestJSON<{ tools: any[] }>(config, '/api/v1/mcp/tools')
+export async function fetchMCPTools(config: BackendConfig): Promise<MCPTool[]> {
+  const data = await requestJSON<{ tools: MCPTool[] }>(config, '/api/v1/mcp/tools')
   return data.tools || []
 }
 
-export async function fetchMCPServers(config: BackendConfig): Promise<any[]> {
-  const data = await requestJSON<{ servers: any[] }>(config, '/api/v1/mcp/servers')
+export async function fetchMCPServers(config: BackendConfig): Promise<MCPServer[]> {
+  const data = await requestJSON<{ servers: MCPServer[] }>(config, '/api/v1/mcp/servers')
   return data.servers || []
 }
 
-export async function createMCPServer(config: BackendConfig, name: string, command: string): Promise<any> {
-  return requestJSON<any>(config, '/api/v1/mcp/servers', {
+export async function createMCPServer(config: BackendConfig, name: string, command: string): Promise<MCPServer> {
+  return requestJSON<MCPServer>(config, '/api/v1/mcp/servers', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, command }),

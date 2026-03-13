@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { fetchDocs, fetchDocContent } from '@/lib/orchestra-client'
-import { OverlayScrollbarsComponent } from 'overlayscrollbars-react'
+import { OverlayScrollbarsComponent, type OverlayScrollbarsComponentRef } from 'overlayscrollbars-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeSlug from 'rehype-slug'
@@ -34,8 +34,7 @@ export const DocsDashboard: React.FC<DocsDashboardProps> = ({ config }) => {
     const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['plans', 'specs']))
     const [toc, setToc] = useState<{ id: string, text: string, level: number }[]>([])
     
-    const contentRef = useRef<HTMLDivElement>(null)
-    const scrollRef = useRef<any>(null)
+    const scrollRef = useRef<OverlayScrollbarsComponentRef<'div'> | null>(null)
 
     const osOptions = useMemo(() => ({
         scrollbars: { autoHide: 'move' as const, theme: 'os-theme-custom' },
@@ -127,14 +126,8 @@ export const DocsDashboard: React.FC<DocsDashboardProps> = ({ config }) => {
 
     const scrollToHeading = (id: string) => {
         const element = document.getElementById(id)
-        if (element && scrollRef.current) {
-            const instance = scrollRef.current.osInstance()
-            instance.scroll({
-                el: element,
-                scroll: { y: 'begin', x: 'never' },
-                block: { y: 'begin' },
-                margin: { top: 20 }
-            })
+        if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'start' })
         }
     }
 

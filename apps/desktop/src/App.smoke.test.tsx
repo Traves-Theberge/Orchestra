@@ -26,6 +26,8 @@ function setupDesktopBridge(overrides?: {
   activeConfig?: { baseUrl: string; apiToken: string }
   agentTokens?: Record<string, string>
 }) {
+  type BridgeProfile = BridgeProfilesPayload['profiles'][number]
+
   const state = {
     profilesPayload: overrides?.profilesPayload ?? JSON.parse(JSON.stringify(defaultProfiles)),
     activeConfig:
@@ -43,7 +45,7 @@ function setupDesktopBridge(overrides?: {
       return state.activeConfig
     }),
     getBackendProfiles: vi.fn(async () => state.profilesPayload),
-    saveBackendProfile: vi.fn(async (payload: { name: string; baseUrl: string; apiToken: string; makeActive: boolean }) => {
+    saveBackendProfile: vi.fn(async (payload: { name: string; baseUrl: string; apiToken: string; makeActive?: boolean }) => {
       const id = payload.name.toLowerCase()
       state.profilesPayload.profiles.push({ id, ...payload })
       if (payload.makeActive) {
@@ -54,7 +56,7 @@ function setupDesktopBridge(overrides?: {
     }),
     setActiveBackendProfile: vi.fn(async (profileId: string) => {
       state.profilesPayload.activeProfileId = profileId
-      const nextProfiles = state.profilesPayload.profiles.filter((entry: any) => entry.id === profileId)
+      const nextProfiles = state.profilesPayload.profiles.filter((entry: BridgeProfile) => entry.id === profileId)
       const nextActiveProfile = nextProfiles[0]
       if (nextActiveProfile) {
         state.activeConfig = { baseUrl: nextActiveProfile.baseUrl, apiToken: nextActiveProfile.apiToken }
@@ -62,7 +64,7 @@ function setupDesktopBridge(overrides?: {
       return state.activeConfig
     }),
     deleteBackendProfile: vi.fn(async (profileId: string) => {
-      const nextProfiles = state.profilesPayload.profiles.filter((entry: any) => entry.id !== profileId)
+      const nextProfiles = state.profilesPayload.profiles.filter((entry: BridgeProfile) => entry.id !== profileId)
       const nextActive = nextProfiles[0]?.id ?? ''
       state.profilesPayload.profiles = nextProfiles
       state.profilesPayload.activeProfileId = nextActive
@@ -79,12 +81,12 @@ function setupDesktopBridge(overrides?: {
       } else {
         state.agentTokens[name] = value
       }
-      return true
     }),
     selectFolder: vi.fn(async () => '/mock/selected/path'),
+    openExternal: vi.fn(async () => {}),
   }
 
-  window.orchestraDesktop = bridge as any
+  window.orchestraDesktop = bridge
   return bridge
 }
 
@@ -97,19 +99,19 @@ class MockEventSource {
   onmessage: ((ev: MessageEvent) => void) | null = null
   onerror: ((ev: Event) => void) | null = null
   closed = false
-  listeners: Record<string, any[]> = {}
+  listeners: Record<string, Array<(event: MessageEvent | Event) => void>> = {}
 
   constructor(public url: string) {
     eventSourceConstructCount++
     eventSourceInstances.push(this)
   }
 
-  addEventListener = vi.fn((type: string, listener: any) => {
+  addEventListener = vi.fn((type: string, listener: (event: MessageEvent | Event) => void) => {
     if (!this.listeners[type]) this.listeners[type] = []
     this.listeners[type].push(listener)
   })
 
-  removeEventListener = vi.fn((type: string, listener: any) => {
+  removeEventListener = vi.fn((type: string, listener: (event: MessageEvent | Event) => void) => {
     if (this.listeners[type]) {
       this.listeners[type] = this.listeners[type].filter(l => l !== listener)
     }
@@ -119,7 +121,7 @@ class MockEventSource {
     this.closed = true
   })
 
-  emit(type: string, data?: any) {
+  emit(type: string, data?: unknown) {
     if (this.listeners[type]) {
       act(() => {
         // Use a copy to avoid issues if listeners remove themselves during iteration
@@ -134,7 +136,7 @@ class MockEventSource {
     }
   }
 
-  emitMessage(data: any) {
+  emitMessage(data: unknown) {
     act(() => {
       this.emit('message', data)
     })
@@ -160,7 +162,7 @@ const lifecycleEventTypes = [
   'hook_failed',
 ]
 
-function setupFetch(snapshotPayload: any, options?: { onFetch?: (url: string, init?: RequestInit) => Response | null }) {
+function setupFetch(snapshotPayload: SnapshotPayload, options?: { onFetch?: (url: string, init?: RequestInit) => Response | null }) {
   fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (url.includes('/api/v1/warehouse/stats')) {
       return new Response(JSON.stringify({ 
@@ -760,8 +762,8 @@ describe('App smoke render', () => {
     fireEvent.keyDown(dashboardButton, { key: 'ArrowDown' })
 
     await waitFor(() => {
-      const runningButton = screen.getByTestId('sidebar-nav-running')
-      expect(runningButton.getAttribute('aria-current')).toBe('page')
+      const issuesButton = screen.getByTestId('sidebar-nav-issues')
+      expect(issuesButton.getAttribute('aria-current')).toBe('page')
     })
   })
 
@@ -775,12 +777,12 @@ describe('App smoke render', () => {
 
     fireEvent.keyDown(dashboardButton, { key: 'End' })
     await waitFor(() => {
-      const settingsButton = screen.getByTestId('sidebar-nav-settings')
-      expect(settingsButton.getAttribute('aria-current')).toBe('page')
+      const docsButton = screen.getByTestId('sidebar-nav-docs')
+      expect(docsButton.getAttribute('aria-current')).toBe('page')
     })
 
-    const settingsButton = screen.getByTestId('sidebar-nav-settings')
-    fireEvent.keyDown(settingsButton, { key: 'Home' })
+    const docsButton = screen.getByTestId('sidebar-nav-docs')
+    fireEvent.keyDown(docsButton, { key: 'Home' })
     await waitFor(() => {
       const firstButton = screen.getByTestId('sidebar-nav-dashboard')
       expect(firstButton.getAttribute('aria-current')).toBe('page')

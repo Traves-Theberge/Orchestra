@@ -6,7 +6,6 @@ import {
   CreateProjectDialog,
   DashboardOverview,
   MetricCard,
-  OperationsQueueCard,
   SettingsCard,
 } from '@/components/app-shell/panels'
 import {
@@ -44,10 +43,14 @@ import {
   deleteIssue,
   fetchSessionDetail,
   fetchMCPTools,
+  type IssueCreatePayload,
+  type IssueUpdatePayload,
+  type IssueListItem,
+  type WorkspaceMigrationResult,
 } from '@/lib/orchestra-client'
 import { startRuntimeSync } from '@/lib/runtime-sync'
 import { appendTimelineEvent, applySnapshotUpdate } from '@/lib/runtime-store'
-import type { GlobalStats, Project, ProjectStats, SnapshotPayload } from '@/lib/orchestra-types'
+import type { GlobalStats, Project, ProjectStats, SessionDetail, SessionSummary, SnapshotPayload } from '@/lib/orchestra-types'
 import { ProjectGrid } from '@/components/projects/ProjectGrid'
 import { ProjectDetailView } from '@/components/projects/ProjectDetailView'
 import { AnalyticsDashboard } from '@/components/warehouse/AnalyticsDashboard'
@@ -65,6 +68,8 @@ import {
 } from '@app/routes/sections'
 import { TimelineCard } from '@widgets/timeline'
 import { KanbanBoard } from '@widgets/kanban'
+import { OperationsQueueCard } from '@widgets/running'
+import type { IssueDetailResult, ToolSummary } from '@widgets/issue-detail/types'
 import { Command } from 'cmdk'
 import type { BackendConfig } from '@/lib/orchestra-client'
 
@@ -87,7 +92,7 @@ export default function App() {
   const [config, setConfig] = useState<BackendConfig | null>(null)
   const [snapshot, setSnapshot] = useState<SnapshotPayload | null>(null)
   const [timeline, setTimeline] = useState<TimelineItem[]>([])
-  const [boardIssues, setBoardIssues] = useState<any[]>([])
+  const [boardIssues, setBoardIssues] = useState<IssueListItem[]>([])
   const [loadingConfig, setLoadingConfig] = useState(false)
   const [savingConfig, setSavingConfig] = useState(false)
   const [profilesPending, setProfilesPending] = useState(false)
@@ -95,7 +100,7 @@ export default function App() {
   const [activeProfileId, setActiveProfileId] = useState('')
   const [agentConfig, setAgentConfig] = useState<{ commands: Record<string, string>; agent_provider: string } | null>(null)
   const [availableAgents, setAvailableAgents] = useState<string[]>([])
-  const [allTools, setAllTools] = useState<any[]>([])
+  const [allTools, setAllTools] = useState<ToolSummary[]>([])
   const [loadingState, setLoadingState] = useState(true)
   const [usePolling, setUsePolling] = useState(false)
   const syncControls = useRef<{ startPolling: () => void; stopPolling: () => void } | null>(null)
@@ -104,13 +109,13 @@ export default function App() {
   const [statusMessage, setStatusMessage] = useState('')
   const [migrationFrom, setMigrationFrom] = useState('')
   const [migrationTo, setMigrationTo] = useState('')
-  const [migrationPlan, setMigrationPlan] = useState<Record<string, unknown> | null>(null)
+  const [migrationPlan, setMigrationPlan] = useState<WorkspaceMigrationResult | null>(null)
   const [migrationPending, setMigrationPending] = useState(false)
   const [issueLookupId, setIssueLookupId] = useState('')
   const [issueLookupPending, setIssueLookupPending] = useState(false)
-  const [issueLookupResult, setIssueLookupResult] = useState<Record<string, unknown> | null>(null)
+  const [issueLookupResult, setIssueLookupResult] = useState<IssueDetailResult | null>(null)
   const [issueLookupError, setIssueLookupError] = useState('')
-  const [sessionLookupResult, setSessionLookupResult] = useState<any>(null)
+  const [sessionLookupResult, setSessionLookupResult] = useState<SessionDetail | null>(null)
   const [sessionLookupPending, setSessionLookupPending] = useState(false)
   const [sessionLookupError, setSessionLookupError] = useState('')
   const [refreshPending, setRefreshPending] = useState(false)
@@ -196,7 +201,7 @@ export default function App() {
     setInspectDialogOpen(false)
   }
 
-  const handleCloneSession = (session: any) => {
+  const handleCloneSession = (session: SessionSummary) => {
     setSelectedProjectID(session.project_id || null)
     setCreateTaskInitialState('Todo')
     setCreateTaskDialogOpen(true)
@@ -539,7 +544,7 @@ export default function App() {
     setIssueLookupError('')
     try {
       const result = await fetchIssueDetail(config, normalized)
-      setIssueLookupResult(result as unknown as Record<string, unknown>)
+      setIssueLookupResult(result)
       setStatusMessage(`Issue lookup loaded: ${normalized}`)
     } catch (err) {
       const message = toDisplayError(err)
@@ -557,7 +562,7 @@ export default function App() {
     await executeIssueLookup(issueLookupId)
   }
 
-  const handleIssueUpdate = async (identifier: string, updates: Record<string, unknown>) => {
+  const handleIssueUpdate = async (identifier: string, updates: IssueUpdatePayload) => {
     if (!config) return
     try {
       await updateIssue(config, identifier, updates)
@@ -592,16 +597,7 @@ export default function App() {
     setCreateTaskDialogOpen(true)
   }
 
-  const handleTaskSubmit = async (payload: {
-    title: string;
-    description: string;
-    state: string;
-    priority: number;
-    assignee_id: string;
-    project_id: string;
-    provider?: string;
-    disabled_tools?: string[];
-  }) => {
+  const handleTaskSubmit = async (payload: IssueCreatePayload) => {
     if (!config) return
     try {
       await createIssue(config, payload)
