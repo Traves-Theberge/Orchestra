@@ -13,6 +13,7 @@
     "test:smoke-renderer": "vitest run src/App.smoke.test.tsx --reporter=verbose",
     "smoke:ops": "node scripts/smoke-ops-flow.mjs",
     "smoke:ops:go": "node scripts/smoke-ops-flow.mjs --spawn-backend --base-url=http://127.0.0.1:4010",
+    "smoke:ops:go:debug": "node scripts/smoke-ops-flow.mjs --spawn-backend --base-url=http://127.0.0.1:4010 --verbose",
     "smoke:ops:go:auth": "node scripts/smoke-ops-flow.mjs --spawn-backend --require-auth --token=smoke-token --base-url=http://127.0.0.1:4012",
     "parity:verify": "node scripts/parity-report.mjs",
     "parity:verify:twice": "npm run parity:verify && npm run parity:verify",

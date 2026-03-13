@@ -824,7 +824,9 @@ export default function App() {
   }
 
   const handleDeleteProject = async (projectId: string) => {
-    if (!config) return
+    if (!config) {
+      throw new Error('backend configuration unavailable')
+    }
     try {
       await deleteProject(config, projectId)
       setStatusMessage('Project removed.')
@@ -832,6 +834,7 @@ export default function App() {
       setSelectedProjectID(null)
     } catch (err) {
       setErrorMessage(`failed to delete project: ${toDisplayError(err)}`)
+      throw err
     }
   }
 

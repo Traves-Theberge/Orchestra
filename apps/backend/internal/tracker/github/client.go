@@ -1,6 +1,7 @@
 package github
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -197,7 +198,40 @@ func (c *Client) UpdateIssue(ctx context.Context, identifier string, updates map
 }
 
 func (c *Client) DeleteIssue(ctx context.Context, identifier string) error {
-	return fmt.Errorf("GitHub DeleteIssue not implemented yet")
+	issueNumber := identifier
+	if strings.Contains(identifier, "-") {
+		parts := strings.Split(identifier, "-")
+		issueNumber = parts[len(parts)-1]
+	}
+
+	body, err := json.Marshal(map[string]string{"state": "closed"})
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/issues/%s", c.owner, c.repo, issueNumber)
+	req, err := http.NewRequestWithContext(ctx, "PATCH", url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+
+	if c.token != "" {
+		req.Header.Set("Authorization", "token "+c.token)
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("github api returned status %d for close issue %s", resp.StatusCode, identifier)
+	}
+
+	return nil
 }
 
 func (c *Client) FetchIssueByIdentifier(ctx context.Context, id string) (*tracker.Issue, error) {

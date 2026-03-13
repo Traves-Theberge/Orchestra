@@ -208,6 +208,8 @@ export function KanbanBoard({
   const orderedColumns = columnOrder.map((id) => columns.find((column) => column.id === id)!)
   const filteredList = enrichedIssues.filter(filterItem)
 
+  const getActionIssueRef = (item: EnrichedIssue): string => item.issue_identifier || item.issue_id || ''
+
   if (loadingState && enrichedIssues.length === 0) {
     return (
       <div className="flex-1 flex flex-col min-h-0 space-y-6">
@@ -392,9 +394,9 @@ export function KanbanBoard({
                       <Card
                         key={item.issue_id}
                         draggable
-                        onDragStart={(e) => handleDragStart(e, item.issue_identifier || '')}
+                        onDragStart={(e) => handleDragStart(e, getActionIssueRef(item))}
                         className={`group relative cursor-grab border-transparent bg-card p-3.5 shadow-sm transition-all duration-300 ${priorityBorderClass} hover:shadow-xl hover:shadow-primary/5 active:cursor-grabbing active:scale-[0.98] rounded-xl`}
-                        onClick={() => void onInspectIssue(item.issue_identifier || '')}
+                        onClick={() => void onInspectIssue(getActionIssueRef(item))}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-center gap-2">
@@ -427,7 +429,7 @@ export function KanbanBoard({
                                     className="p-1 rounded-md text-emerald-500/60 hover:text-emerald-500 hover:bg-emerald-500/10 transition-all"
                                     onClick={(e) => {
                                       e.stopPropagation()
-                                      void onIssueUpdate(item.issue_identifier || '', { state: 'In Progress' })
+                                      void onIssueUpdate(getActionIssueRef(item), { state: 'In Progress' })
                                     }}
                                   >
                                     <Play className="h-2.5 w-2.5 fill-current" />
@@ -442,7 +444,7 @@ export function KanbanBoard({
                                     className="p-1 rounded-md text-amber-500/60 hover:text-amber-500 hover:bg-amber-500/10 transition-all"
                                     onClick={(e) => {
                                       e.stopPropagation()
-                                      void onStopSession(item.issue_identifier || '')
+                                      void onStopSession(getActionIssueRef(item))
                                     }}
                                   >
                                     <Square className="h-2 w-2 fill-current" />
@@ -458,7 +460,7 @@ export function KanbanBoard({
                                     className="p-1 rounded-md text-muted-foreground/40 hover:text-red-500 hover:bg-red-500/10 transition-all"
                                     onClick={(e) => {
                                       e.stopPropagation()
-                                      setIssueToDelete({ identifier: item.issue_identifier || '', title: item.title })
+                                      setIssueToDelete({ identifier: getActionIssueRef(item), title: item.title })
                                       setDeleteDialogOpen(true)
                                     }}
                                   >
@@ -489,7 +491,7 @@ export function KanbanBoard({
                               agents={availableAgents}
                               onChange={(value) => {
                                 if (onIssueUpdate) {
-                                  void onIssueUpdate(item.issue_identifier || '', { assignee_id: value })
+                                   void onIssueUpdate(getActionIssueRef(item), { assignee_id: value })
                                 }
                               }}
                             />
@@ -535,7 +537,7 @@ export function KanbanBoard({
                     <tr
                       key={item.issue_id}
                       className="group hover:bg-muted/30 transition-colors cursor-pointer"
-                      onClick={() => void onInspectIssue(item.issue_identifier || '')}
+                      onClick={() => void onInspectIssue(getActionIssueRef(item))}
                     >
                       <td className="px-4 py-3 whitespace-nowrap">
                         <span className="font-mono text-xs font-bold text-primary">{item.issue_identifier}</span>
@@ -559,7 +561,7 @@ export function KanbanBoard({
                           agents={availableAgents}
                           onChange={(value) => {
                             if (onIssueUpdate) {
-                              void onIssueUpdate(item.issue_identifier || '', { assignee_id: value })
+                                void onIssueUpdate(getActionIssueRef(item), { assignee_id: value })
                             }
                           }}
                         />
@@ -591,7 +593,7 @@ export function KanbanBoard({
                               className="p-1 rounded-md text-emerald-500/60 hover:text-emerald-500 hover:bg-emerald-500/10 transition-all active:scale-95"
                               onClick={(e) => {
                                 e.stopPropagation()
-                                void onIssueUpdate(item.issue_identifier || '', { state: 'In Progress' })
+                                void onIssueUpdate(getActionIssueRef(item), { state: 'In Progress' })
                               }}
                             >
                               <Play className="h-3.5 w-3.5 fill-current" />
@@ -603,7 +605,7 @@ export function KanbanBoard({
                               className="p-1 rounded-md text-amber-500/60 hover:text-amber-500 hover:bg-amber-500/10 transition-all active:scale-95"
                               onClick={(e) => {
                                 e.stopPropagation()
-                                void onStopSession(item.issue_identifier || '')
+                                void onStopSession(getActionIssueRef(item))
                               }}
                             >
                               <Square className="h-3 w-3 fill-current" />
@@ -616,7 +618,7 @@ export function KanbanBoard({
                               className="p-1 rounded-md text-muted-foreground/60 hover:text-red-500 hover:bg-red-500/10 transition-all cursor-pointer"
                               onClick={(e) => {
                                 e.stopPropagation()
-                                setIssueToDelete({ identifier: item.issue_identifier || '', title: item.title })
+                                setIssueToDelete({ identifier: getActionIssueRef(item), title: item.title })
                                 setDeleteDialogOpen(true)
                               }}
                             >

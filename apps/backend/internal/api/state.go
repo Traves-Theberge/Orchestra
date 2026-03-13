@@ -1,6 +1,7 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -531,7 +532,21 @@ func (s *Server) DeleteIssueSession(w http.ResponseWriter, r *http.Request) {
 
 	runtime, ok := s.orchestrator.LookupIssue(identifier)
 	if !ok {
-		writeJSONError(w, http.StatusNotFound, "issue_not_found", "issue not found")
+		issue, err := s.orchestrator.FetchIssueByIdentifier(r.Context(), identifier)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "issue_lookup_failed", "failed to lookup issue")
+			return
+		}
+		if issue == nil {
+			writeJSONError(w, http.StatusNotFound, "issue_not_found", "issue not found")
+			return
+		}
+
+		if _, err := s.orchestrator.UpdateIssue(r.Context(), identifier, map[string]any{"state": "Todo"}); err != nil {
+			s.logger.Warn().Err(err).Str("issue_identifier", identifier).Msg("failed to set issue to todo when stopping without active runtime")
+		}
+
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
@@ -545,12 +560,21 @@ func (s *Server) DeleteIssueSession(w http.ResponseWriter, r *http.Request) {
 		s.orchestrator.StopAllSessionsForIssue(runtime.IssueID)
 	}
 
+	if _, err := s.orchestrator.UpdateIssue(r.Context(), identifier, map[string]any{"state": "Todo"}); err != nil {
+		s.logger.Warn().Err(err).Str("issue_identifier", identifier).Msg("failed to set issue to todo after stop")
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) DeleteIssue(w http.ResponseWriter, r *http.Request) {
 	identifier := chi.URLParam(r, "issue_identifier")
 	if err := s.orchestrator.DeleteIssue(r.Context(), identifier); err != nil {
+		s.logger.Error().Err(err).Str("issue_identifier", identifier).Msg("failed to delete issue")
+		if err == sql.ErrNoRows {
+			writeJSONError(w, http.StatusNotFound, "issue_not_found", "issue not found")
+			return
+		}
 		writeJSONError(w, http.StatusInternalServerError, "delete_failed", err.Error())
 		return
 	}

@@ -93,6 +93,8 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     const [commitMessage, setCommitMessage] = useState('')
     const [showCommitDialog, setShowCommitDialog] = useState(false)
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+    const [deletePending, setDeletePending] = useState(false)
+    const [deleteError, setDeleteError] = useState('')
     const [selectedDiff, setSelectedDiff] = useState<string | null>(null)
     const [isDiffModalOpen, setIsDiffModalOpen] = useState(false)
     const [diffLoading, setDiffLoading] = useState(false)
@@ -315,8 +317,17 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     }), [])
 
     const handleDelete = async () => {
-        await onDeleteProject(project.id)
-        setIsDeleteDialogOpen(false)
+        setDeletePending(true)
+        setDeleteError('')
+        try {
+            await onDeleteProject(project.id)
+            setIsDeleteDialogOpen(false)
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to remove project'
+            setDeleteError(message)
+        } finally {
+            setDeletePending(false)
+        }
     }
 
     return (
@@ -374,11 +385,17 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                                         </div>
                                     </DialogDescription>
                                 </DialogHeader>
+                                {deleteError ? (
+                                    <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                                        {deleteError}
+                                    </div>
+                                ) : null}
                                 <DialogFooter className="mt-6">
                                     <Button
                                         variant="ghost"
                                         onClick={() => setIsDeleteDialogOpen(false)}
                                         className="text-muted-foreground hover:text-foreground"
+                                        disabled={deletePending}
                                     >
                                         Cancel
                                     </Button>
@@ -386,8 +403,9 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                                         variant="destructive"
                                         onClick={handleDelete}
                                         className="bg-red-600 hover:bg-red-500 text-white font-bold"
+                                        disabled={deletePending}
                                     >
-                                        Remove Project
+                                        {deletePending ? 'Removing...' : 'Remove Project'}
                                     </Button>
                                 </DialogFooter>
                             </DialogContent>

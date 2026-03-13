@@ -249,8 +249,70 @@ func (db *DB) GetProjectStats(ctx context.Context, projectID string) (ProjectSta
 }
 
 func (db *DB) DeleteProject(ctx context.Context, projectID string) error {
-	_, err := db.ExecContext(ctx, "DELETE FROM projects WHERE id = ?", projectID)
-	return err
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM events
+		WHERE session_id IN (
+			SELECT id FROM sessions WHERE project_id = ?
+		)
+	`, projectID); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM runs
+		WHERE session_id IN (
+			SELECT id FROM sessions WHERE project_id = ?
+		)
+	`, projectID); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, "DELETE FROM sessions WHERE project_id = ?", projectID); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM runs
+		WHERE issue_id IN (
+			SELECT id FROM issues WHERE project_id = ?
+		)
+	`, projectID); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM issue_history
+		WHERE issue_id IN (
+			SELECT id FROM issues WHERE project_id = ?
+		)
+	`, projectID); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, "DELETE FROM issues WHERE project_id = ?", projectID); err != nil {
+		return err
+	}
+
+	result, err := tx.ExecContext(ctx, "DELETE FROM projects WHERE id = ?", projectID)
+	if err != nil {
+		return err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+
+	return tx.Commit()
 }
 
 func (db *DB) GetProjectByID(ctx context.Context, id string) (Project, error) {

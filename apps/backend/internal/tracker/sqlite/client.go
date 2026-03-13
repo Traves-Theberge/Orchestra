@@ -194,11 +194,47 @@ func (c *Client) UpdateIssue(ctx context.Context, identifier string, updates map
 }
 
 func (c *Client) DeleteIssue(ctx context.Context, identifier string) error {
-	query := "DELETE FROM issues WHERE id = ? OR identifier = ?;"
-	_, err := c.db.ExecContext(ctx, query, identifier, identifier)
+	tx, err := c.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("delete issue begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM runs
+		WHERE issue_id IN (
+			SELECT id FROM issues WHERE id = ? OR identifier = ?
+		)
+	`, identifier, identifier); err != nil {
+		return fmt.Errorf("delete issue runs: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM issue_history
+		WHERE issue_id IN (
+			SELECT id FROM issues WHERE id = ? OR identifier = ?
+		)
+	`, identifier, identifier); err != nil {
+		return fmt.Errorf("delete issue history: %w", err)
+	}
+
+	result, err := tx.ExecContext(ctx, "DELETE FROM issues WHERE id = ? OR identifier = ?;", identifier, identifier)
 	if err != nil {
 		return fmt.Errorf("delete issue: %w", err)
 	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete issue rows affected: %w", err)
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("delete issue commit: %w", err)
+	}
+
 	return nil
 }
 

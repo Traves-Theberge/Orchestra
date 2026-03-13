@@ -1,6 +1,7 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -310,6 +311,10 @@ func (s *Server) DeleteProject(w http.ResponseWriter, r *http.Request) {
 
 	projectID := chi.URLParam(r, "project_id")
 	if err := s.db.DeleteProject(r.Context(), projectID); err != nil {
+		if err == sql.ErrNoRows {
+			writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
+			return
+		}
 		s.logger.Error().Err(err).Str("project_id", projectID).Msg("failed to delete project")
 		writeJSONError(w, http.StatusInternalServerError, "delete_failed", "failed to delete project")
 		return
