@@ -2,6 +2,12 @@
   "name": "orchestra-desktop",
   "private": true,
   "version": "0.1.0",
+  "description": "Orchestra desktop application",
+  "homepage": "https://github.com/Traves-Theberge/Orchestra",
+  "author": {
+    "name": "Traves Theberge",
+    "email": "Traves.theberge@gmail.com"
+  },
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -113,6 +119,7 @@
         "AppImage",
         "deb"
       ],
+      "maintainer": "Traves Theberge <Traves.theberge@gmail.com>",
       "category": "Utility",
       "artifactName": "orchestra-desktop-${version}-${arch}.${ext}"
     }

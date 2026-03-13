@@ -23,6 +23,7 @@ async function resolveSourceBinary() {
   const override = process.env.ORCHESTRA_BACKEND_BIN
   const candidates = [
     override,
+    path.resolve('resources', 'backend', backendTargetKey(), binaryName),
     path.resolve('..', 'backend', binaryName),
     path.resolve('..', 'backend', 'dist', 'orchestra', binaryName),
   ].filter(Boolean)
@@ -44,7 +45,9 @@ async function main() {
   const targetPath = path.join(targetDir, backendBinaryName())
 
   await mkdir(targetDir, { recursive: true })
-  await copyFile(sourcePath, targetPath)
+  if (path.resolve(sourcePath) !== path.resolve(targetPath)) {
+    await copyFile(sourcePath, targetPath)
+  }
   if (process.platform !== 'win32') {
     await chmod(targetPath, 0o755)
   }
