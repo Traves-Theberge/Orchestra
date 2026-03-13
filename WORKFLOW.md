@@ -2,7 +2,7 @@
 server:
   host: 0.0.0.0
   port: 4010
-  api_token: dev-token
+  api_token: ""
 workspace:
   root: /tmp/orchestra
   project_roots:

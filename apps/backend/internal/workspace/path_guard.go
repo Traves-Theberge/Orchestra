@@ -84,7 +84,7 @@ func ValidateProjectPath(candidate string, allowedRoots []string) error {
 		if err != nil {
 			continue
 		}
-		
+
 		if isWithinRoot(absRoot, absCandidate) || absRoot == absCandidate {
 			return nil
 		}

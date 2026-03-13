@@ -32,7 +32,7 @@ func TrackerToolSpecs() []map[string]any {
 			"name":        "update_issue",
 			"description": "Update an issue's state, priority, or assignee. Use this to transition an issue through the workflow or hand off to another agent.",
 			"inputSchema": map[string]any{
-				"type": "object",
+				"type":     "object",
 				"required": []string{"identifier"},
 				"properties": map[string]any{
 					"identifier":  map[string]any{"type": "string", "description": "The issue identifier (e.g. OPS-123)"},
@@ -46,7 +46,7 @@ func TrackerToolSpecs() []map[string]any {
 			"name":        "request_handoff",
 			"description": "Explicitly request to hand off the current task to another agent provider. Use this if the task requires a model with different capabilities (e.g. larger context, better reasoning).",
 			"inputSchema": map[string]any{
-				"type": "object",
+				"type":     "object",
 				"required": []string{"provider", "reason"},
 				"properties": map[string]any{
 					"provider": map[string]any{"type": "string", "description": "The target agent provider (e.g. claude, gemini, codex, opencode)"},
@@ -103,7 +103,7 @@ func (e *LinearToolExecutor) Execute(tool string, arguments map[string]any) map[
 			return failureResponse(map[string]any{"error": map[string]any{"message": "request_handoff requires `provider` and `reason`."}})
 		}
 
-		// If identifier is not provided, we can't easily find the issue from here 
+		// If identifier is not provided, we can't easily find the issue from here
 		// without knowing the current session context.
 		// However, the agent usually knows its own issue identifier.
 		if identifier == "" {

@@ -92,7 +92,7 @@ func (m *Manager) GetSession(id string) *Session {
 func (s *Session) broadcast(data []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	s.LogBuffer = append(s.LogBuffer, data...)
 	if len(s.LogBuffer) > 1024*100 { // 100KB buffer
 		s.LogBuffer = s.LogBuffer[len(s.LogBuffer)-1024*100:]
@@ -114,7 +114,7 @@ func (s *Session) AddHandler(h func([]byte)) int {
 	id := s.nextHandlerID
 	s.nextHandlerID++
 	s.Handlers[id] = h
-	
+
 	if len(s.LogBuffer) > 0 {
 		h(s.LogBuffer)
 	}

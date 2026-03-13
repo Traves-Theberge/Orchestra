@@ -35,7 +35,7 @@ func (c *Client) FetchCandidateIssues(ctx context.Context, activeStates []string
 	if len(activeStates) == 0 {
 		return []tracker.Issue{}, nil
 	}
-	
+
 	query := "SELECT id, identifier, title, description, state, assignee_id, project_id, priority, branch_name, url, labels, blocked_by, provider, disabled_tools, created_at, updated_at FROM issues WHERE LOWER(TRIM(state)) IN ("
 	args := make([]any, len(activeStates))
 	for i, state := range activeStates {
@@ -74,7 +74,7 @@ func (c *Client) FetchIssueStatesByIDs(ctx context.Context, issueIDs []string) (
 	if err != nil {
 		return nil, err
 	}
-	
+
 	states := make(map[string]string, len(issues))
 	for _, issue := range issues {
 		states[issue.ID] = issue.State
@@ -122,7 +122,7 @@ func (c *Client) SearchIssues(ctx context.Context, query string) ([]tracker.Issu
 	if query == "" {
 		return []tracker.Issue{}, nil
 	}
-	
+
 	sqlQuery := "SELECT id, identifier, title, description, state, assignee_id, project_id, priority, branch_name, url, labels, blocked_by, provider, disabled_tools, created_at, updated_at FROM issues WHERE title LIKE ? OR identifier LIKE ? OR id LIKE ?;"
 	pattern := "%" + query + "%"
 	return c.queryIssues(ctx, sqlQuery, pattern, pattern, pattern)
@@ -130,7 +130,7 @@ func (c *Client) SearchIssues(ctx context.Context, query string) ([]tracker.Issu
 
 func (c *Client) CreateIssue(ctx context.Context, title, description, state string, priority int, assigneeID, projectID string, provider string, disabledTools []string) (*tracker.Issue, error) {
 	id := uuid.New().String()
-	
+
 	// Simple identifier generation: OPS-count+1
 	var count int
 	_ = c.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM issues").Scan(&count)
@@ -157,7 +157,7 @@ func (c *Client) UpdateIssue(ctx context.Context, identifier string, updates map
 
 	query := "UPDATE issues SET "
 	var args []any
-	
+
 	cols := make([]string, 0, len(updates))
 	for col, val := range updates {
 		if col == "disabled_tools" {
@@ -225,14 +225,14 @@ func (c *Client) queryIssues(ctx context.Context, query string, args ...any) ([]
 	for rows.Next() {
 		var issue tracker.Issue
 		var title, description, assigneeID, projectID, branchName, url, labelsRaw, blockedByRaw, provider, disabledToolsRaw, createdAt, updatedAt sql.NullString
-		
+
 		if err := rows.Scan(
 			&issue.ID, &issue.Identifier, &title, &description, &issue.State, &assigneeID, &projectID, &issue.Priority,
 			&branchName, &url, &labelsRaw, &blockedByRaw, &provider, &disabledToolsRaw, &createdAt, &updatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan issue: %w", err)
 		}
-		
+
 		if title.Valid {
 			issue.Title = title.String
 		}
@@ -290,7 +290,7 @@ func (c *Client) queryIssues(ctx context.Context, query string, args ...any) ([]
 
 		issues = append(issues, issue)
 	}
-	
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows error: %w", err)
 	}

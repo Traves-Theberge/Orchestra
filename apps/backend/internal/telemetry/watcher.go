@@ -130,7 +130,7 @@ func StartWatcher(ctx context.Context, database *db.DB, manualRoots []string, lo
 	defer ticker.Stop()
 
 	homeDir, _ := os.UserHomeDir()
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -144,7 +144,7 @@ func StartWatcher(ctx context.Context, database *db.DB, manualRoots []string, lo
 			// 1. Claude Code
 			scanDirectory(ctx, database, manualRoots, filepath.Join(homeDir, ".claude", "projects"), "claude", logger)
 			scanDirectory(ctx, database, manualRoots, filepath.Join(homeDir, ".claude", "logs"), "claude", logger)
-			
+
 			// 2. Codex
 			scanDirectory(ctx, database, manualRoots, filepath.Join(homeDir, ".codex", "sessions"), "codex", logger)
 			scanDirectory(ctx, database, manualRoots, filepath.Join(homeDir, ".codex", "log"), "codex", logger)
@@ -169,7 +169,7 @@ func scanDirectory(ctx context.Context, database *db.DB, manualRoots []string, d
 		if err != nil || info.IsDir() {
 			return nil
 		}
-		
+
 		ext := strings.ToLower(filepath.Ext(path))
 		if ext != ".jsonl" && ext != ".log" {
 			return nil
@@ -289,9 +289,9 @@ func processHistoryFile(ctx context.Context, database *db.DB, path string, provi
 		bytesRead += int64(len(line)) + 1
 
 		var entry struct {
-			SessionID string `json:"sessionId"`  // Claude
+			SessionID  string `json:"sessionId"`  // Claude
 			Session_ID string `json:"session_id"` // Codex
-			Project   string `json:"project"`    // Claude
+			Project    string `json:"project"`    // Claude
 		}
 		if json.Unmarshal([]byte(line), &entry) == nil {
 			sid := entry.SessionID
@@ -333,7 +333,7 @@ func processFile(ctx context.Context, database *db.DB, manualRoots []string, pat
 	}
 
 	projectID, _ := findProjectRoot(ctx, database, path, manualRoots, logger)
-	
+
 	// Default session ID for plain text logs
 	sessionHash := sha256.Sum256([]byte(path))
 	fallbackSessionID := hex.EncodeToString(sessionHash[:16])
@@ -349,7 +349,7 @@ func processFile(ctx context.Context, database *db.DB, manualRoots []string, pat
 		if err := json.Unmarshal([]byte(line), &raw); err == nil {
 			var entry ClaudeLogEntry
 			_ = json.Unmarshal([]byte(line), &entry)
-			
+
 			// Extract actual session ID from tool logs if available
 			sid := fallbackSessionID
 			if s, ok := raw["sessionId"].(string); ok && s != "" {
@@ -359,12 +359,12 @@ func processFile(ctx context.Context, database *db.DB, manualRoots []string, pat
 			}
 
 			_ = database.RecordSession(ctx, sid, projectID, "", sid, provider, "unknown")
-			
+
 			if entry.Timestamp != "" {
 				eventID := uuid.New().String()
 				msg := sanitizePII(entry.Message)
 				kind := stripPreamble(entry.Type)
-				
+
 				input, output := extractTokens(raw)
 				_ = database.RecordEvent(ctx, eventID, sid, kind, msg, []byte(line), input, output, entry.Timestamp)
 			}

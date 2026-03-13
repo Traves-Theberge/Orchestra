@@ -26,10 +26,10 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/tools"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
 	trackergithub "github.com/orchestra/orchestra/apps/backend/internal/tracker/github"
-	trackersqlite "github.com/orchestra/orchestra/apps/backend/internal/tracker/sqlite"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker/memory"
-	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
+	trackersqlite "github.com/orchestra/orchestra/apps/backend/internal/tracker/sqlite"
 	"github.com/orchestra/orchestra/apps/backend/internal/utils/git"
+	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
 	"github.com/rs/zerolog"
 )
 
@@ -60,7 +60,7 @@ func Run(logger zerolog.Logger) error {
 	orchestratorService.SetStateSets(cfg.ActiveStates, cfg.TerminalStates)
 	orchestratorService.SetMaxConcurrent(cfg.MaxConcurrent)
 	orchestratorService.SetMaxConcurrentByState(cfg.MaxConcurrentByState)
-	
+
 	trackerClient := newTrackerClient(cfg, warehouseDB)
 	orchestratorService.SetTrackerClient(trackerClient)
 	pubsub := observability.NewPubSub()
@@ -72,7 +72,7 @@ func Run(logger zerolog.Logger) error {
 		return fmt.Errorf("agent provider %q is not configured", cfg.AgentProvider)
 	}
 	orchestratorService.SetAgentRegistry(agentRegistry, cfg.AgentCommands, cfg.AgentProvider)
-	
+
 	workspaceService := workspace.Service{Root: cfg.WorkspaceRoot}
 	orchestratorService.SetWorkspaceService(workspaceService)
 	orchestratorService.SetWorkspaceRoot(cfg.WorkspaceRoot)
@@ -101,7 +101,7 @@ func Run(logger zerolog.Logger) error {
 	go startGarbageCollector(orchestratorService, warehouseDB, cfg.WorkspaceRoot, logger)
 	go startRefreshWorker(orchestratorService, pubsub, logger)
 	go telemetry.StartWatcher(context.Background(), warehouseDB, cfg.ProjectRoots, logger)
-	
+
 	toolExecutor := tools.NewLinearToolExecutor(trackerClient)
 	go startExecutionWorker(orchestratorService, agentRegistry, provider, cfg.AgentProvider, cfg.WorkspaceRoot, cfg.WorkflowFile, cfg.AgentMaxTurns, toolExecutor.Execute, tools.TrackerToolSpecs(), cfg.WorkspaceHooks, pubsub, warehouseDB, logger)
 
@@ -333,7 +333,7 @@ func processExecutionTick(
 				}
 			}
 		}
-		
+
 		mcpResources, _ := mcpReg.ListResources(runCtx)
 		allResourceSpecs = append(allResourceSpecs, mcpResources...)
 	}

@@ -80,12 +80,12 @@ func (c *Client) FetchIssuesByStates(ctx context.Context, states []string) ([]tr
 	}
 
 	var ghIssues []struct {
-		Number int    `json:"number"`
-		Title  string `json:"title"`
-		Body   string `json:"body"`
-		State  string `json:"state"`
+		Number  int    `json:"number"`
+		Title   string `json:"title"`
+		Body    string `json:"body"`
+		State   string `json:"state"`
 		HTMLURL string `json:"html_url"`
-		Labels []struct {
+		Labels  []struct {
 			Name string `json:"name"`
 		} `json:"labels"`
 		CreatedAt string `json:"created_at"`
@@ -151,7 +151,7 @@ func (c *Client) UpdateIssue(ctx context.Context, identifier string, updates map
 	issueNumber := parts[len(parts)-1]
 
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/issues/%s", c.owner, c.repo, issueNumber)
-	
+
 	ghUpdates := make(map[string]any)
 	for k, v := range updates {
 		if k == "state" {
@@ -223,12 +223,12 @@ func (c *Client) FetchIssueByIdentifier(ctx context.Context, id string) (*tracke
 	}
 
 	var gh struct {
-		Number int    `json:"number"`
-		Title  string `json:"title"`
-		Body   string `json:"body"`
-		State  string `json:"state"`
+		Number  int    `json:"number"`
+		Title   string `json:"title"`
+		Body    string `json:"body"`
+		State   string `json:"state"`
 		HTMLURL string `json:"html_url"`
-		Labels []struct {
+		Labels  []struct {
 			Name string `json:"name"`
 		} `json:"labels"`
 		CreatedAt string `json:"created_at"`

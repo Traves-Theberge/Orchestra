@@ -20,7 +20,7 @@ func ProjectInfo(ctx context.Context, dir string) (rootPath string, remoteURL st
 	var outRoot, errRoot bytes.Buffer
 	cmdRoot.Stdout = &outRoot
 	cmdRoot.Stderr = &errRoot
-	
+
 	if err := cmdRoot.Run(); err != nil {
 		return "", "", fmt.Errorf("git rev-parse failed (not a git repo?): %v - %s", err, errRoot.String())
 	}

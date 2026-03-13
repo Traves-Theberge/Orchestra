@@ -11,7 +11,7 @@ import (
 func TestExecuteTrackerQueryCandidates(t *testing.T) {
 	exec := NewLinearToolExecutor(memory.NewClient([]tracker.Issue{{ID: "1", Identifier: "ORC-1", State: "Todo"}, {ID: "2", Identifier: "ORC-2", State: "Done"}}))
 
-	result := exec.Execute("linear_query", map[string]any{"active_states": []any{"Todo"}})
+	result := exec.Execute("tracker_query", map[string]any{"active_states": []any{"Todo"}})
 	if result["success"] != true {
 		t.Fatalf("expected success true, got %v", result)
 	}

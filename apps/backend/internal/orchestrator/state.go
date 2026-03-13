@@ -30,20 +30,20 @@ type CodexTotals struct {
 }
 
 type RunningEntry struct {
-	IssueID         string `json:"issue_id"`
-	IssueIdentifier string `json:"issue_identifier"`
-	Title           string `json:"title,omitempty"`
-	State           string `json:"state"`
-	AssigneeID      string `json:"assignee_id,omitempty"`
-	SessionID       string `json:"session_id"`
-	Provider        string `json:"provider"`
-	SessionLogPath  string `json:"session_log_path,omitempty"`
+	IssueID         string   `json:"issue_id"`
+	IssueIdentifier string   `json:"issue_identifier"`
+	Title           string   `json:"title,omitempty"`
+	State           string   `json:"state"`
+	AssigneeID      string   `json:"assignee_id,omitempty"`
+	SessionID       string   `json:"session_id"`
+	Provider        string   `json:"provider"`
+	SessionLogPath  string   `json:"session_log_path,omitempty"`
 	DisabledTools   []string `json:"disabled_tools,omitempty"`
-	TurnCount       int64  `json:"turn_count"`
-	LastEvent       string `json:"last_event"`
-	LastMessage     string `json:"last_message"`
-	StartedAt       string `json:"started_at"`
-	LastEventAt     string `json:"last_event_at"`
+	TurnCount       int64    `json:"turn_count"`
+	LastEvent       string   `json:"last_event"`
+	LastMessage     string   `json:"last_message"`
+	StartedAt       string   `json:"started_at"`
+	LastEventAt     string   `json:"last_event_at"`
 	Tokens          struct {
 		InputTokens  int64 `json:"input_tokens"`
 		OutputTokens int64 `json:"output_tokens"`
@@ -52,15 +52,15 @@ type RunningEntry struct {
 }
 
 type RetryEntry struct {
-	IssueID         string `json:"issue_id"`
-	IssueIdentifier string `json:"issue_identifier"`
-	State           string `json:"state,omitempty"`
-	AssigneeID      string `json:"assignee_id,omitempty"`
-	Provider        string `json:"provider,omitempty"`
+	IssueID         string   `json:"issue_id"`
+	IssueIdentifier string   `json:"issue_identifier"`
+	State           string   `json:"state,omitempty"`
+	AssigneeID      string   `json:"assignee_id,omitempty"`
+	Provider        string   `json:"provider,omitempty"`
 	DisabledTools   []string `json:"disabled_tools,omitempty"`
-	Attempt         int64  `json:"attempt"`
-	DueAt           string `json:"due_at"`
-	Error           string `json:"error"`
+	Attempt         int64    `json:"attempt"`
+	DueAt           string   `json:"due_at"`
+	Error           string   `json:"error"`
 }
 
 type Snapshot struct {
@@ -632,7 +632,7 @@ func (s *Service) CreateIssue(ctx context.Context, title, description, state str
 func (s *Service) UpdateIssue(ctx context.Context, identifier string, updates map[string]any) (*tracker.Issue, error) {
 	s.mu.Lock()
 	client := s.trackerClient
-	
+
 	// Handle manual provider override
 	if provider, ok := updates["provider"].(string); ok {
 		// Update in running entries
@@ -697,10 +697,10 @@ func (s *Service) LogIssueEvent(issueID, userID, action, oldVal, newVal string) 
 func (s *Service) DeleteIssue(ctx context.Context, identifier string) error {
 	s.mu.Lock()
 	client := s.trackerClient
-	
+
 	// Find the issue ID and completely remove it from running/retrying
 	var issueID string
-	
+
 	filteredRunning := make([]RunningEntry, 0, len(s.running))
 	for _, entry := range s.running {
 		if entry.IssueIdentifier == identifier {
@@ -726,7 +726,7 @@ func (s *Service) DeleteIssue(ctx context.Context, identifier string) error {
 
 	if issueID != "" {
 		delete(s.claimed, issueID)
-		
+
 		// Stop active sessions using the actual issueID
 		for key, cancel := range s.cancels {
 			if strings.HasPrefix(key, issueID+":") {
@@ -1614,11 +1614,11 @@ func (s *Service) FetchIssueHistory(ctx context.Context, issueID string) ([]map[
 			return nil, err
 		}
 		history = append(history, map[string]any{
-			"user_id":    userID,
-			"action":     action,
-			"old_value":  oldVal,
-			"new_value":  newVal,
-			"timestamp":  timestamp,
+			"user_id":   userID,
+			"action":    action,
+			"old_value": oldVal,
+			"new_value": newVal,
+			"timestamp": timestamp,
 		})
 	}
 	return history, nil
@@ -1627,7 +1627,7 @@ func (s *Service) FetchIssueHistory(ctx context.Context, issueID string) ([]map[
 func (s *Service) GetActiveWorkspaceIdentifiers() []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	ids := make([]string, 0, len(s.running)+len(s.retrying))
 	for _, entry := range s.running {
 		ids = append(ids, entry.IssueIdentifier)

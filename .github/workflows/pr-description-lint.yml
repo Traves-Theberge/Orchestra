@@ -7,27 +7,20 @@ on:
 jobs:
   validate-pr-description:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: elixir
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up mise tools
-        uses: jdx/mise-action@v3
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          install: true
-          cache: true
-          working_directory: elixir
+          go-version-file: apps/backend/go.mod
+          cache-dependency-path: apps/backend/go.sum
 
       - name: Validate PR description format
         env:
           PR_BODY_JSON: ${{ toJson(github.event.pull_request.body) }}
         run: |
-          mix local.hex --force
-          mix local.rebar --force
-          mix deps.get
-          printf '%s' "$PR_BODY_JSON" | jq -r '.' > /tmp/pr_body.md
-          mix pr_body.check --file /tmp/pr_body.md
+          printf '%s' "$PR_BODY_JSON" | jq -r '. // ""' > /tmp/pr_body.md
+          go run ./apps/backend/cmd/orchestra check-pr-body /tmp/pr_body.md

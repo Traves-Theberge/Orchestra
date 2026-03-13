@@ -36,9 +36,13 @@ func (failingTrackerClient) SearchIssues(context.Context, string) ([]tracker.Iss
 	return nil, errors.New("search-issues failure")
 }
 
-func (failingTrackerClient) DeleteIssue(_ context.Context, _ string) error { return errors.New("delete failure") }
+func (failingTrackerClient) DeleteIssue(_ context.Context, _ string) error {
+	return errors.New("delete failure")
+}
 
-func (failingTrackerClient) FetchIssueByIdentifier(_ context.Context, _ string) (*tracker.Issue, error) { return nil, errors.New("fetch-by-identifier failure") }
+func (failingTrackerClient) FetchIssueByIdentifier(_ context.Context, _ string) (*tracker.Issue, error) {
+	return nil, errors.New("fetch-by-identifier failure")
+}
 
 func (failingTrackerClient) CreateIssue(ctx context.Context, title, description, state string, priority int, assigneeID, projectID, branchName string, labels []string) (*tracker.Issue, error) {
 	return nil, errors.New("create-issue failure")

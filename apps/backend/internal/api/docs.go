@@ -62,7 +62,7 @@ func (s *Server) GetDocContent(w http.ResponseWriter, r *http.Request) {
 	if _, err := os.Stat("../../docs"); err != nil {
 		root = "./docs"
 	}
-	
+
 	fullPath := filepath.Join(root, cleanPath)
 	content, err := os.ReadFile(fullPath)
 	if err != nil {

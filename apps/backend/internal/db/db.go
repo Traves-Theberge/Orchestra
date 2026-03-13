@@ -76,35 +76,35 @@ func (db *DB) GetEvents(ctx context.Context, issueID string) ([]map[string]any, 
 		WHERE issue_id = ? 
 		ORDER BY timestamp DESC
 	`
-	
+
 	rows, err := db.QueryContext(ctx, query, issueID)
 	if err != nil {
 		return nil, fmt.Errorf("query issue history: %w", err)
 	}
 	defer rows.Close()
-	
+
 	var events []map[string]any
 	for rows.Next() {
 		var id, issueID, userID, action, oldValue, newValue, timestamp string
 		if err := rows.Scan(&id, &issueID, &userID, &action, &oldValue, &newValue, &timestamp); err != nil {
 			return nil, fmt.Errorf("scan issue history row: %w", err)
 		}
-		
+
 		events = append(events, map[string]any{
-			"id":           id,
-			"issue_id":     issueID,
-			"user_id":      userID,
-			"kind":         action,
-			"old_value":    oldValue,
-			"new_value":    newValue,
-			"timestamp":    timestamp,
-			"message":      fmt.Sprintf("Action: %s", action),
+			"id":        id,
+			"issue_id":  issueID,
+			"user_id":   userID,
+			"kind":      action,
+			"old_value": oldValue,
+			"new_value": newValue,
+			"timestamp": timestamp,
+			"message":   fmt.Sprintf("Action: %s", action),
 		})
 	}
-	
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate issue history rows: %w", err)
 	}
-	
+
 	return events, nil
 }

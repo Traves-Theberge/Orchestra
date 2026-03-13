@@ -258,7 +258,7 @@ async function runFlow(baseUrl, token, requireAuth) {
     throw new Error('state payload missing required fields')
   }
 
-  await expectAPIErrorCode(baseUrl, token, '/api/v1/OPS-SMOKE-MISSING', 404, 'issue_not_found')
+  await expectAPIErrorCode(baseUrl, token, '/api/v1/issues/OPS-SMOKE-MISSING', 404, 'issue_not_found')
   console.log('DEGRADED_ASSERTION:issue_not_found')
   await expectAPIErrorCode(baseUrl, token, '/api/v9/ROUTE-SMOKE-MISSING', 404, 'not_found')
   console.log('DEGRADED_ASSERTION:route_not_found')

@@ -37,7 +37,7 @@ func (r *CommandRunner) WithTerminalManager(tm *terminal.Manager) *CommandRunner
 
 const (
 	MaxOutputSize = 5 * 1024 * 1024 // 5MB cap on raw output
-	MaxEventCount = 2000           // 2000 events max per turn
+	MaxEventCount = 2000            // 2000 events max per turn
 )
 
 func (r *CommandRunner) RunTurn(ctx context.Context, request TurnRequest, onEvent EventHandler) (TurnResult, error) {
@@ -90,7 +90,7 @@ func (r *CommandRunner) RunTurn(ctx context.Context, request TurnRequest, onEven
 	}
 
 	cmd := exec.CommandContext(cmdCtx, "sh", "-lc", resolvedCommand)
-	cmd.Env = append(os.Environ(), "ORCHESTRA_SESSION_ID=" + sessionID)
+	cmd.Env = append(os.Environ(), "ORCHESTRA_SESSION_ID="+sessionID)
 	cmd.Dir = request.Workspace
 
 	stdout, err := cmd.StdoutPipe()
@@ -325,16 +325,16 @@ func (r *CommandRunner) runInPTY(
 	}
 
 	collector := &outputCollector{}
-	
+
 	// We want to capture the output from now on
 	// Note: Existing data in the log buffer will be replayed when we add the handler,
 	// but for an active turn, we only care about the new output triggered by our prompt.
 	// However, parsing logic expects full SSE streams.
-	
+
 	done := make(chan bool)
 	var streamErr error
 	var streamErrMu sync.Mutex
-	
+
 	setStreamErr := func(err error) {
 		if err == nil {
 			return
@@ -359,21 +359,21 @@ func (r *CommandRunner) runInPTY(
 				setStreamErr(fmt.Errorf("agent exceeded maximum output size"))
 				return
 			}
-			
+
 			event := parseLineToEvent(r.provider, "pty", line)
 			event.SessionID = sessionID
-			
+
 			if onEvent != nil {
 				onEvent(event)
 			}
-			
+
 			collector.mergeUsage(event.Usage)
-			
+
 			if _, blocked := detectBlockingEvent(event); blocked {
 				// In PTY mode, we don't necessarily want to kill the process on blocking events
 				// as the user might want to interject.
 			}
-			
+
 			// Detect completion event to stop waiting
 			if event.Kind == "turn.completed" || event.Kind == "result" || strings.Contains(event.Kind, "result/") {
 				select {

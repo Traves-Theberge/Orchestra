@@ -22,7 +22,7 @@ type PRResponse struct {
 
 func CreatePullRequest(ctx context.Context, owner, repo, token string, pr PRRequest) (*PRResponse, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/pulls", owner, repo)
-	
+
 	body, err := json.Marshal(pr)
 	if err != nil {
 		return nil, err

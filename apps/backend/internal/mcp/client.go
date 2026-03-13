@@ -21,7 +21,7 @@ type Client struct {
 	stdin   io.WriteCloser
 	stdout  io.ReadCloser
 	logger  zerolog.Logger
-	
+
 	mu        sync.Mutex
 	pending   map[string]chan json.RawMessage
 	isStarted bool
@@ -44,7 +44,7 @@ func (c *Client) Start(ctx context.Context) error {
 	}
 
 	c.cmd = exec.CommandContext(ctx, "sh", "-c", c.command)
-	
+
 	stdin, err := c.cmd.StdinPipe()
 	if err != nil {
 		return err
@@ -74,7 +74,7 @@ func (c *Client) Start(ctx context.Context) error {
 			"version": "1.0.0",
 		},
 	}, &result)
-	
+
 	if err != nil {
 		return fmt.Errorf("mcp initialize failed: %w", err)
 	}

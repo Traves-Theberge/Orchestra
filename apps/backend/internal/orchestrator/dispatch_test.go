@@ -48,7 +48,9 @@ func (s staticTrackerClient) SearchIssues(_ context.Context, _ string) ([]tracke
 	return []tracker.Issue{}, nil
 }
 
-func (s staticTrackerClient) FetchIssueByIdentifier(_ context.Context, _ string) (*tracker.Issue, error) { return nil, nil }
+func (s staticTrackerClient) FetchIssueByIdentifier(_ context.Context, _ string) (*tracker.Issue, error) {
+	return nil, nil
+}
 
 func (s staticTrackerClient) DeleteIssue(_ context.Context, _ string) error { return nil }
 
@@ -109,7 +111,9 @@ func (s stateMapTrackerClient) SearchIssues(_ context.Context, _ string) ([]trac
 
 func (s stateMapTrackerClient) DeleteIssue(_ context.Context, _ string) error { return nil }
 
-func (s stateMapTrackerClient) FetchIssueByIdentifier(_ context.Context, _ string) (*tracker.Issue, error) { return nil, nil }
+func (s stateMapTrackerClient) FetchIssueByIdentifier(_ context.Context, _ string) (*tracker.Issue, error) {
+	return nil, nil
+}
 
 func (s stateMapTrackerClient) CreateIssue(ctx context.Context, title, description, state string, priority int, assigneeID, projectID, branchName string, labels []string) (*tracker.Issue, error) {
 	return &tracker.Issue{}, nil
@@ -166,7 +170,6 @@ func TestPerformRefreshHonorsPerStateConcurrencyLimit(t *testing.T) {
 		{ID: "5", Identifier: "ORC-5", State: "in progress", AssignedToWorker: true},
 	}))
 
-
 	service.QueueRefresh()
 	if err := service.PerformRefresh(context.Background()); err != nil {
 		t.Fatalf("perform refresh: %v", err)
@@ -176,22 +179,21 @@ func TestPerformRefreshHonorsPerStateConcurrencyLimit(t *testing.T) {
 	if len(snapshot.Running) != 3 {
 		t.Fatalf("expected 3 running from per-state limits, got %d", len(snapshot.Running))
 	}
-todoCount := 0
-inProgressCount := 0
-for _, entry := range snapshot.Running {
-	if entry.State == "todo" {
-		todoCount++
+	todoCount := 0
+	inProgressCount := 0
+	for _, entry := range snapshot.Running {
+		if entry.State == "todo" {
+			todoCount++
+		}
+		if entry.State == "in progress" {
+			inProgressCount++
+		}
 	}
-	if entry.State == "in progress" {
-		inProgressCount++
+
+	if todoCount != 2 || inProgressCount != 1 {
+		t.Fatalf("expected todo=2 and in_progress=1, got todo=%d in_progress=%d", todoCount, inProgressCount)
 	}
 }
-
-if todoCount != 2 || inProgressCount != 1 {
-	t.Fatalf("expected todo=2 and in_progress=1, got todo=%d in_progress=%d", todoCount, inProgressCount)
-}
-}
-
 
 func TestPerformRefreshSkipsIssuesNotAssignedToWorker(t *testing.T) {
 	service := NewService()

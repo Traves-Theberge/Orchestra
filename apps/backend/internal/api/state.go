@@ -9,18 +9,18 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/orchestra/orchestra/apps/backend/internal/mcp"
 	"github.com/orchestra/orchestra/apps/backend/internal/presenter"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
-	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
-	"github.com/orchestra/orchestra/apps/backend/internal/mcp"
-	githubutils "github.com/orchestra/orchestra/apps/backend/internal/utils/github"
 	"github.com/orchestra/orchestra/apps/backend/internal/utils/git"
+	githubutils "github.com/orchestra/orchestra/apps/backend/internal/utils/github"
+	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
 )
 
 func (s *Server) CreateGitHubPR(w http.ResponseWriter, r *http.Request) {
 	identifier := chi.URLParam(r, "issue_identifier")
 	s.logger.Info().Str("issue_identifier", identifier).Msg("received request to create github pull request")
-	
+
 	var body struct {
 		Title string `json:"title"`
 		Body  string `json:"body"`
@@ -52,7 +52,7 @@ func (s *Server) CreateGitHubPR(w http.ResponseWriter, r *http.Request) {
 				if body.Token == "" {
 					body.Token = project.GitHubToken
 				}
-				
+
 				// If still missing owner/repo, try to parse from remote URL
 				if (body.Owner == "" || body.Repo == "") && project.RemoteURL != "" {
 					if o, r, ok := git.ParseGitHubRemote(project.RemoteURL); ok {
@@ -80,7 +80,7 @@ func (s *Server) CreateGitHubPR(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	
+
 	// Fallback to global token
 	if body.Token == "" {
 		body.Token = s.config.TrackerToken
@@ -94,7 +94,7 @@ func (s *Server) CreateGitHubPR(w http.ResponseWriter, r *http.Request) {
 			if token != "" {
 				s.logger.Info().Str("issue_identifier", identifier).Msg("using github cli token for pr creation")
 				body.Token = token
-				
+
 				// Optional: Save this token back to the project for next time
 				if projectID != "" {
 					_ = s.updateProjectGitHubToken(r.Context(), projectID, token)
@@ -102,7 +102,7 @@ func (s *Server) CreateGitHubPR(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	
+
 	if body.Owner == "" || body.Repo == "" || body.Token == "" {
 		writeJSONError(w, http.StatusBadRequest, "missing_params", "owner, repo, and token are required (could not be inferred from project, config, or GitHub CLI)")
 		return
@@ -221,7 +221,7 @@ func (s *Server) GetIssue(w http.ResponseWriter, r *http.Request) {
 	identifier := chi.URLParam(r, "issue_identifier")
 	snapshot := s.orchestrator.Snapshot()
 	presented, ok := presenter.IssuePayload(snapshot, identifier)
-	
+
 	// If not in memory (not running/retrying), try to fetch from tracker
 	if !ok {
 		issues, err := s.orchestrator.SearchIssues(r.Context(), identifier)
@@ -249,13 +249,13 @@ func (s *Server) GetIssue(w http.ResponseWriter, r *http.Request) {
 			"priority":         issue.Priority,
 			"project_id":       issue.ProjectID,
 			"branch_name":      issue.BranchName,
-			"url":               issue.URL,
-			"labels":            issue.Labels,
-			"blocked_by":        issue.BlockedBy,
-			"provider":          issue.Provider,
-			"disabled_tools":    issue.DisabledTools,
-			"created_at":        issue.CreatedAt,
-			"updated_at":        issue.UpdatedAt,
+			"url":              issue.URL,
+			"labels":           issue.Labels,
+			"blocked_by":       issue.BlockedBy,
+			"provider":         issue.Provider,
+			"disabled_tools":   issue.DisabledTools,
+			"created_at":       issue.CreatedAt,
+			"updated_at":       issue.UpdatedAt,
 			"status":           "idle",
 			"history":          history,
 			"attempts": map[string]any{
@@ -304,6 +304,13 @@ func (s *Server) GetIssue(w http.ResponseWriter, r *http.Request) {
 		workspacePath = ""
 	}
 
+	logPath := ""
+	if runtime.Running != nil && runtime.Running.SessionLogPath != "" {
+		logPath = runtime.Running.SessionLogPath
+	} else if workspacePath != "" {
+		logPath = filepath.Join(workspacePath, "_logs", runtime.IssueIdentifier, "latest.log")
+	}
+
 	lastError := ""
 	if runtime.Retry != nil && runtime.Retry.Error != "" {
 		lastError = runtime.Retry.Error
@@ -342,8 +349,17 @@ func (s *Server) GetIssue(w http.ResponseWriter, r *http.Request) {
 		"workspace": map[string]any{
 			"path": workspacePath,
 		},
-		"running":       presented["running"],
-		"retry":         presented["retry"],
+		"running": presented["running"],
+		"retry":   presented["retry"],
+		"logs": map[string]any{
+			"codex_session_logs": []map[string]any{
+				{
+					"label": "latest",
+					"path":  logPath,
+					"url":   nil,
+				},
+			},
+		},
 		"recent_events": recentEvents,
 		"last_error":    lastError,
 		"tracked":       map[string]any{},
@@ -512,7 +528,7 @@ func (s *Server) GetAgentConfig(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) DeleteIssueSession(w http.ResponseWriter, r *http.Request) {
 	identifier := chi.URLParam(r, "issue_identifier")
 	provider := r.URL.Query().Get("provider")
-	
+
 	runtime, ok := s.orchestrator.LookupIssue(identifier)
 	if !ok {
 		writeJSONError(w, http.StatusNotFound, "issue_not_found", "issue not found")
@@ -568,11 +584,11 @@ func (s *Server) GetAgentConfigs(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) PostAgentConfigNew(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Provider string      `json:"provider"`
-		Type     string      `json:"type"` // "core", "skill", "mcp"
-		Name     string      `json:"name"`
-		Scope    string      `json:"scope"`
-		Project  string      `json:"project_id"`
+		Provider string `json:"provider"`
+		Type     string `json:"type"` // "core", "skill", "mcp"
+		Name     string `json:"name"`
+		Scope    string `json:"scope"`
+		Project  string `json:"project_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid_json", "failed to decode request body")
@@ -679,7 +695,7 @@ func (s *Server) PostMCPServer(w http.ResponseWriter, r *http.Request) {
 		allServers = make(map[string]string)
 	}
 	allServers[body.Name] = body.Command
-	
+
 	// Create fresh registry
 	newReg := mcp.NewRegistry(allServers, s.logger)
 	newReg.StartAll(r.Context())

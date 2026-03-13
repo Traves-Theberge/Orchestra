@@ -71,7 +71,7 @@ func resolvePath(p string) string {
 func ListAgentConfigs(workspaceRoot string, projectRoot string) ([]AgentConfig, error) {
 	var configs []AgentConfig
 	home := GetHomeDir()
-	
+
 	// Load pointers from workspace.json
 	workspaceJsonPath := filepath.Join(workspaceRoot, ".orchestra", "agents", "workspace.json")
 	var workspaceConfig struct {
@@ -84,7 +84,7 @@ func ListAgentConfigs(workspaceRoot string, projectRoot string) ([]AgentConfig, 
 	// 1. Internal Orchestra Core Configs
 	orchAgentsDir := filepath.Join(workspaceRoot, ".orchestra", "agents")
 	_ = os.MkdirAll(orchAgentsDir, 0o755)
-	
+
 	orchFiles := []string{".claude", ".gemini", ".opencode", ".codex", "workspace.json"}
 	for _, name := range orchFiles {
 		path := filepath.Join(orchAgentsDir, name)
@@ -213,7 +213,7 @@ func readOrCreate(path string) string {
 		return string(bytes)
 	}
 	_ = os.MkdirAll(filepath.Dir(path), 0o755)
-	
+
 	name := filepath.Base(path)
 	content := ""
 	switch name {
