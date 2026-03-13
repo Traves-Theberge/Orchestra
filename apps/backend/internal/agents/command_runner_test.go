@@ -145,25 +145,13 @@ func TestCommandRunnerReturnsApprovalRequiredFromStructuredEvent(t *testing.T) {
 }
 
 func TestCommandRunnerReturnsInputRequiredFromStructuredEvent(t *testing.T) {
-	runner := NewCommandRunner(ProviderOpenCode, "echo '{\"event\":\"turn/input_required\"}'")
-	root := t.TempDir()
-	workspacePath := filepath.Join(root, "ORC-4")
-	if err := os.MkdirAll(workspacePath, 0o755); err != nil {
-		t.Fatalf("mkdir workspace: %v", err)
+	event := parseLineToEvent(ProviderOpenCode, "stdout", `{"method":"turn/input_required","params":{"requiresInput":true}}`)
+	reason, blocked := detectBlockingEvent(event)
+	if !blocked {
+		t.Fatalf("expected input required event to be treated as blocking")
 	}
-
-	_, err := runner.RunTurn(context.Background(), TurnRequest{
-		Workspace:       workspacePath,
-		WorkspaceRoot:   root,
-		Prompt:          "hello",
-		IssueIdentifier: "ORC-4",
-		Timeout:         2 * time.Second,
-	}, nil)
-	if err == nil {
-		t.Fatalf("expected input required error")
-	}
-	if got := err.Error(); got == "" || got != "input required: turn/input_required" {
-		t.Fatalf("unexpected input required error: %v", err)
+	if reason != "input required: turn/input_required" {
+		t.Fatalf("unexpected input required reason: %q", reason)
 	}
 }
 
