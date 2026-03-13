@@ -249,59 +249,85 @@ func (db *DB) GetProjectStats(ctx context.Context, projectID string) (ProjectSta
 }
 
 func (db *DB) DeleteProject(ctx context.Context, projectID string) error {
+	if projectID == "" {
+		return fmt.Errorf("project_id is required")
+	}
+
+	// Defer FK checks to commit time so intermediate states don't trigger constraint errors.
+	if _, err := db.ExecContext(ctx, "PRAGMA defer_foreign_keys = ON"); err != nil {
+		return fmt.Errorf("set defer_foreign_keys: %w", err)
+	}
+
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
+	// 1. Delete events for sessions owned by this project
 	if _, err := tx.ExecContext(ctx, `
 		DELETE FROM events
 		WHERE session_id IN (
 			SELECT id FROM sessions WHERE project_id = ?
 		)
 	`, projectID); err != nil {
-		return err
+		return fmt.Errorf("delete project events: %w", err)
 	}
 
+	// 2. Delete runs linked via sessions owned by this project
 	if _, err := tx.ExecContext(ctx, `
 		DELETE FROM runs
 		WHERE session_id IN (
 			SELECT id FROM sessions WHERE project_id = ?
 		)
 	`, projectID); err != nil {
-		return err
+		return fmt.Errorf("delete project session runs: %w", err)
 	}
 
+	// 3. Delete sessions owned by this project
 	if _, err := tx.ExecContext(ctx, "DELETE FROM sessions WHERE project_id = ?", projectID); err != nil {
-		return err
+		return fmt.Errorf("delete project sessions: %w", err)
 	}
 
+	// 4. Delete runs linked to issues in this project
 	if _, err := tx.ExecContext(ctx, `
 		DELETE FROM runs
 		WHERE issue_id IN (
 			SELECT id FROM issues WHERE project_id = ?
 		)
 	`, projectID); err != nil {
-		return err
+		return fmt.Errorf("delete project issue runs: %w", err)
 	}
 
+	// 5. Delete issue history for issues in this project
 	if _, err := tx.ExecContext(ctx, `
 		DELETE FROM issue_history
 		WHERE issue_id IN (
 			SELECT id FROM issues WHERE project_id = ?
 		)
 	`, projectID); err != nil {
-		return err
+		return fmt.Errorf("delete project issue history: %w", err)
 	}
 
+	// 6. Clear session.issue_id references to issues we're about to delete
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE sessions SET issue_id = NULL
+		WHERE issue_id IN (
+			SELECT id FROM issues WHERE project_id = ?
+		)
+	`, projectID); err != nil {
+		return fmt.Errorf("clear session issue refs: %w", err)
+	}
+
+	// 7. Delete issues in this project
 	if _, err := tx.ExecContext(ctx, "DELETE FROM issues WHERE project_id = ?", projectID); err != nil {
-		return err
+		return fmt.Errorf("delete project issues: %w", err)
 	}
 
+	// 8. Delete the project itself
 	result, err := tx.ExecContext(ctx, "DELETE FROM projects WHERE id = ?", projectID)
 	if err != nil {
-		return err
+		return fmt.Errorf("delete project: %w", err)
 	}
 
 	affected, err := result.RowsAffected()

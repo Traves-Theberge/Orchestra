@@ -207,38 +207,46 @@ function buildHeaders(config: BackendConfig): HeadersInit {
 }
 
 async function requestJSON<T>(config: BackendConfig, path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(new URL(path, config.baseUrl).toString(), {
-    ...init,
-    headers: {
-      ...buildHeaders(config),
-      ...(init?.headers ?? {}),
-    },
-  })
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 30000)
 
-  if (!response.ok) {
-    let parsed: APIErrorEnvelope | null = null
-    try {
-      parsed = (await response.json()) as APIErrorEnvelope
-    } catch {
-      parsed = null
+  try {
+    const response = await fetch(new URL(path, config.baseUrl).toString(), {
+      ...init,
+      signal: init?.signal ?? controller.signal,
+      headers: {
+        ...buildHeaders(config),
+        ...(init?.headers ?? {}),
+      },
+    })
+
+    if (!response.ok) {
+      let parsed: APIErrorEnvelope | null = null
+      try {
+        parsed = (await response.json()) as APIErrorEnvelope
+      } catch {
+        parsed = null
+      }
+      if (parsed?.error?.code && parsed?.error?.message) {
+        throw new APIError(parsed.error.code, parsed.error.message)
+      }
+      throw new APIError('request_failed', `${response.status} ${response.statusText}`)
     }
-    if (parsed?.error?.code && parsed?.error?.message) {
-      throw new APIError(parsed.error.code, parsed.error.message)
+
+    // Handle cases where response might be empty (204 No Content) or other non-JSON but successful responses
+    if (response.status === 204) {
+      return {} as T
     }
-    throw new APIError('request_failed', `${response.status} ${response.statusText}`)
-  }
 
-  // Handle cases where response might be empty (204 No Content) or other non-JSON but successful responses
-  if (response.status === 204) {
-    return {} as T
-  }
+    const text = await response.text()
+    if (!text) {
+      return {} as T
+    }
 
-  const text = await response.text()
-  if (!text) {
-    return {} as T
+    return JSON.parse(text) as T
+  } finally {
+    clearTimeout(timeout)
   }
-
-  return JSON.parse(text) as T
 }
 
 export async function updateIssue(

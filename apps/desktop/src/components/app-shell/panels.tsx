@@ -676,6 +676,7 @@ export function CreateTaskDialog({
   const [disabledTools, setDisabledTools] = useState<string[]>([])
   const [projectID, setProjectID] = useState(initialProjectID)
   const [pending, setPending] = useState(false)
+  const [submitError, setSubmitError] = useState('')
 
   useEffect(() => {
     if (open) {
@@ -687,6 +688,7 @@ export function CreateTaskDialog({
       setAssignee('Unassigned')
       setProvider(availableAgents.length > 0 ? availableAgents[0] : '')
       setDisabledTools([])
+      setSubmitError('')
     }
   }, [open, initialState, initialProjectID, availableAgents])
 
@@ -702,6 +704,7 @@ export function CreateTaskDialog({
     e.preventDefault()
     if (!title.trim()) return
     setPending(true)
+    setSubmitError('')
     try {
       await onSubmit({
         title,
@@ -715,7 +718,8 @@ export function CreateTaskDialog({
       })
       onOpenChange(false)
     } catch (error) {
-      console.error('Task creation failed', error)
+      const message = error instanceof Error ? error.message : 'Task creation failed'
+      setSubmitError(message)
     } finally {
       setPending(false)
     }
@@ -801,6 +805,11 @@ export function CreateTaskDialog({
                 />
               </div>
 
+              {submitError && (
+                <div className="mx-8 mb-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                  {submitError}
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 <Button
                   type="button"

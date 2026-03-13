@@ -101,6 +101,14 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     const [selectedCommitInfo, setSelectedCommitInfo] = useState<CommitInfo | null>(null)
     const [diffFiles, setDiffFiles] = useState<{path: string, content: string}[]>([])
     const [activeDiffFile, setActiveDiffFile] = useState<string | null>(null)
+    const refreshTimersRef = React.useRef<number[]>([])
+
+    useEffect(() => {
+        return () => {
+            refreshTimersRef.current.forEach(id => window.clearTimeout(id))
+            refreshTimersRef.current = []
+        }
+    }, [])
 
     const parseDiff = (rawDiff: string) => {
         const files: {path: string, content: string}[] = []
@@ -223,7 +231,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
             await handleRefresh()
         } catch (err) {
             console.error(`Git ${action} failed:`, err)
-            alert(`Git ${action} failed: ` + (err instanceof Error ? err.message : String(err)))
+            setTabError(`Git ${action} failed: ${err instanceof Error ? err.message : String(err)}`)
         } finally {
             setGitPending(false)
         }
@@ -241,9 +249,10 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     const scheduleProjectRefreshAfterGitHubAuth = () => {
         const delays = [2000, 4000, 7000, 11000]
         for (const delay of delays) {
-            window.setTimeout(() => {
+            const id = window.setTimeout(() => {
                 void onRefreshProjects()
             }, delay)
+            refreshTimersRef.current.push(id)
         }
     }
 

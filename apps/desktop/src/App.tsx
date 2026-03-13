@@ -377,7 +377,9 @@ export default function App() {
           // Fetch board issues to populate the Kanban board persistence
           fetchIssues(config)
             .then(setBoardIssues)
-            .catch(() => { })
+            .catch((err) => {
+              console.error('Failed to refresh board issues:', err)
+            })
         },
         onTimelineEvent: (eventType, envelope) => {
           setTimeline((previous) => appendTimelineEvent(previous, { type: envelope.type, at: envelope.timestamp, data: envelope.data }))
@@ -572,9 +574,9 @@ export default function App() {
       setBoardIssues(updatedIssues)
 
       // Refetch state immediately to show updates in Kanban/lists
-      void handleRefresh()
+      await handleRefresh()
       // Also refetch the specific issue to update the detail view if it's open
-      void executeIssueLookup(identifier)
+      await executeIssueLookup(identifier)
     } catch (err) {
       setErrorMessage(`update issue failed: ${toDisplayError(err)}`)
     }
@@ -585,8 +587,8 @@ export default function App() {
     try {
       await stopIssueSession(config, identifier, provider)
       setStatusMessage(`Session for ${identifier}${provider ? ` (${provider})` : ''} termination signaled.`)
-      void handleRefresh()
-      void executeIssueLookup(identifier)
+      await handleRefresh()
+      await executeIssueLookup(identifier)
     } catch (err) {
       setErrorMessage(`stop session failed: ${toDisplayError(err)}`)
     }

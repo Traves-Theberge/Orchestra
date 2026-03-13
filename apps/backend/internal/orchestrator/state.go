@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -690,7 +691,7 @@ func (s *Service) LogIssueEvent(issueID, userID, action, oldVal, newVal string) 
 	_, err := s.db.Exec("INSERT INTO issue_history (id, issue_id, user_id, action, old_value, new_value) VALUES (?, ?, ?, ?, ?, ?)",
 		id, issueID, userID, action, oldVal, newVal)
 	if err != nil {
-		fmt.Printf("failed to log issue event: %v\n", err)
+		log.Printf("WARN: failed to log issue event for issue_id=%s: %v", issueID, err)
 	}
 }
 
@@ -698,14 +699,23 @@ func (s *Service) DeleteIssue(ctx context.Context, identifier string) error {
 	s.mu.Lock()
 	client := s.trackerClient
 
-	// Find the issue ID and completely remove it from running/retrying
+	// Save originals for rollback
+	origRunning := make([]RunningEntry, len(s.running))
+	copy(origRunning, s.running)
+	origRetrying := make([]RetryEntry, len(s.retrying))
+	copy(origRetrying, s.retrying)
+	origClaimed := make(map[string]bool, len(s.claimed))
+	for k, v := range s.claimed {
+		origClaimed[k] = v
+	}
+
+	// Find the issue ID and remove from running/retrying
 	var issueID string
 
 	filteredRunning := make([]RunningEntry, 0, len(s.running))
 	for _, entry := range s.running {
 		if entry.IssueIdentifier == identifier {
 			issueID = entry.IssueID
-			// Don't add to filtered -> this removes it from queue
 		} else {
 			filteredRunning = append(filteredRunning, entry)
 		}
@@ -724,27 +734,42 @@ func (s *Service) DeleteIssue(ctx context.Context, identifier string) error {
 	}
 	s.retrying = filteredRetrying
 
+	// Collect cancel keys to clean up
+	var cancelKeys []string
 	if issueID != "" {
 		delete(s.claimed, issueID)
-
-		// Stop active sessions using the actual issueID
 		for key, cancel := range s.cancels {
 			if strings.HasPrefix(key, issueID+":") {
 				if cancel != nil {
 					cancel()
 				}
-				delete(s.cancels, key)
+				cancelKeys = append(cancelKeys, key)
 			}
+		}
+		for _, key := range cancelKeys {
+			delete(s.cancels, key)
 		}
 	}
 	s.mu.Unlock()
 
 	if client == nil {
+		// Rollback in-memory state
+		s.mu.Lock()
+		s.running = origRunning
+		s.retrying = origRetrying
+		s.claimed = origClaimed
+		s.mu.Unlock()
 		return fmt.Errorf("tracker client not available")
 	}
 
 	// Delete the issue from the tracker
 	if err := client.DeleteIssue(ctx, identifier); err != nil {
+		// Rollback in-memory state
+		s.mu.Lock()
+		s.running = origRunning
+		s.retrying = origRetrying
+		s.claimed = origClaimed
+		s.mu.Unlock()
 		return err
 	}
 

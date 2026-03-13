@@ -155,11 +155,21 @@ func (c *Client) UpdateIssue(ctx context.Context, identifier string, updates map
 		return c.FetchIssueByIdentifier(ctx, identifier)
 	}
 
+	// Whitelist of allowed columns to prevent SQL injection via dynamic column names.
+	allowedColumns := map[string]bool{
+		"title": true, "description": true, "state": true, "assignee_id": true,
+		"project_id": true, "priority": true, "branch_name": true, "url": true,
+		"labels": true, "blocked_by": true, "provider": true, "disabled_tools": true,
+	}
+
 	query := "UPDATE issues SET "
 	var args []any
 
 	cols := make([]string, 0, len(updates))
 	for col, val := range updates {
+		if !allowedColumns[col] {
+			continue
+		}
 		if col == "disabled_tools" {
 			if slice, ok := val.([]any); ok {
 				strs := make([]string, 0, len(slice))
@@ -180,6 +190,11 @@ func (c *Client) UpdateIssue(ctx context.Context, identifier string, updates map
 		cols = append(cols, fmt.Sprintf("%s = ?", col))
 		args = append(args, val)
 	}
+
+	if len(cols) == 0 {
+		return c.FetchIssueByIdentifier(ctx, identifier)
+	}
+
 	cols = append(cols, "updated_at = CURRENT_TIMESTAMP")
 	query += strings.Join(cols, ", ")
 	query += " WHERE id = ? OR identifier = ?;"
@@ -200,6 +215,7 @@ func (c *Client) DeleteIssue(ctx context.Context, identifier string) error {
 	}
 	defer tx.Rollback()
 
+	// Delete runs referencing this issue
 	if _, err := tx.ExecContext(ctx, `
 		DELETE FROM runs
 		WHERE issue_id IN (
@@ -209,6 +225,7 @@ func (c *Client) DeleteIssue(ctx context.Context, identifier string) error {
 		return fmt.Errorf("delete issue runs: %w", err)
 	}
 
+	// Delete issue history
 	if _, err := tx.ExecContext(ctx, `
 		DELETE FROM issue_history
 		WHERE issue_id IN (
@@ -218,6 +235,17 @@ func (c *Client) DeleteIssue(ctx context.Context, identifier string) error {
 		return fmt.Errorf("delete issue history: %w", err)
 	}
 
+	// Clear session.issue_id references
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE sessions SET issue_id = NULL
+		WHERE issue_id IN (
+			SELECT id FROM issues WHERE id = ? OR identifier = ?
+		)
+	`, identifier, identifier); err != nil {
+		return fmt.Errorf("clear session issue refs: %w", err)
+	}
+
+	// Delete the issue itself
 	result, err := tx.ExecContext(ctx, "DELETE FROM issues WHERE id = ? OR identifier = ?;", identifier, identifier)
 	if err != nil {
 		return fmt.Errorf("delete issue: %w", err)

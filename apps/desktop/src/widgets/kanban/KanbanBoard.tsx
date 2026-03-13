@@ -80,6 +80,8 @@ export function KanbanBoard({
   const [viewMode, setViewMode] = useState<'board' | 'list'>('board')
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [issueToDelete, setIssueToDelete] = useState<{ identifier: string; title?: string } | null>(null)
+  const [deleteTaskPending, setDeleteTaskPending] = useState(false)
+  const [deleteTaskError, setDeleteTaskError] = useState('')
   const [isDraggingOver, setIsDraggingOver] = useState<string | null>(null)
   const [columnOrder, setColumnOrder] = useState<string[]>(['todo', 'progress', 'done'])
   const [draggingColumnId, setDraggingColumnId] = useState<string | null>(null)
@@ -458,11 +460,12 @@ export function KanbanBoard({
                                     data-no-drag="true"
                                     aria-label={`Delete task ${item.issue_identifier}`}
                                     className="p-1 rounded-md text-muted-foreground/40 hover:text-red-500 hover:bg-red-500/10 transition-all"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      setIssueToDelete({ identifier: getActionIssueRef(item), title: item.title })
-                                      setDeleteDialogOpen(true)
-                                    }}
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setDeleteTaskError('')
+                                        setIssueToDelete({ identifier: getActionIssueRef(item), title: item.title })
+                                        setDeleteDialogOpen(true)
+                                      }}
                                   >
                                     <Trash2 className="h-2.5 w-2.5" />
                                   </button>
@@ -618,6 +621,7 @@ export function KanbanBoard({
                               className="p-1 rounded-md text-muted-foreground/60 hover:text-red-500 hover:bg-red-500/10 transition-all cursor-pointer"
                               onClick={(e) => {
                                 e.stopPropagation()
+                                setDeleteTaskError('')
                                 setIssueToDelete({ identifier: getActionIssueRef(item), title: item.title })
                                 setDeleteDialogOpen(true)
                               }}
@@ -656,6 +660,11 @@ export function KanbanBoard({
                 )}
               </div>
             )}
+            {deleteTaskError ? (
+              <div className="mt-3 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                {deleteTaskError}
+              </div>
+            ) : null}
           </div>
           <DialogFooter className="gap-2">
             <Button
@@ -663,7 +672,9 @@ export function KanbanBoard({
               onClick={() => {
                 setDeleteDialogOpen(false)
                 setIssueToDelete(null)
+                setDeleteTaskError('')
               }}
+              disabled={deleteTaskPending}
             >
               Cancel
             </Button>
@@ -671,21 +682,28 @@ export function KanbanBoard({
               variant="destructive"
               onClick={async () => {
                 if (issueToDelete && onIssueDelete) {
+                  setDeleteTaskPending(true)
+                  setDeleteTaskError('')
                   try {
                     await onIssueDelete(issueToDelete.identifier)
                     setDeleteDialogOpen(false)
                     setIssueToDelete(null)
-                  } catch {
+                  } catch (error) {
+                    const message = error instanceof Error ? error.message : 'Failed to delete task'
+                    setDeleteTaskError(message)
                     // Keep dialog open so the operator can retry after inline error feedback.
+                  } finally {
+                    setDeleteTaskPending(false)
                   }
                   return
                 }
                 setDeleteDialogOpen(false)
                 setIssueToDelete(null)
               }}
+              disabled={deleteTaskPending}
             >
               <Trash2 className="h-4 w-4 mr-2" />
-              Delete
+              {deleteTaskPending ? 'Deleting...' : 'Delete'}
             </Button>
           </DialogFooter>
         </DialogContent>

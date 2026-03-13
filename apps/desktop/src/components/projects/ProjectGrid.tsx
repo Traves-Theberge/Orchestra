@@ -251,24 +251,26 @@ export const ProjectGrid: React.FC<ProjectGridProps> = ({
                     </div>
 
                     <div className="flex items-center bg-muted/30 p-1 rounded-xl border border-border/50 shadow-inner">
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className={`h-8 w-8 p-0 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-primary/20 text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                            onClick={() => setViewMode('grid')}
-                            tooltip="Grid View"
-                        >
-                            <LayoutGrid size={16} />
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className={`h-8 w-8 p-0 rounded-lg transition-all ${viewMode === 'list' ? 'bg-primary/20 text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                            onClick={() => setViewMode('list')}
-                            tooltip="List View"
-                        >
-                            <List size={16} />
-                        </Button>
+                        <AppTooltip content="Grid View">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className={`h-8 w-8 p-0 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-primary/20 text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                                onClick={() => setViewMode('grid')}
+                            >
+                                <LayoutGrid size={16} />
+                            </Button>
+                        </AppTooltip>
+                        <AppTooltip content="List View">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className={`h-8 w-8 p-0 rounded-lg transition-all ${viewMode === 'list' ? 'bg-primary/20 text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                                onClick={() => setViewMode('list')}
+                            >
+                                <List size={16} />
+                            </Button>
+                        </AppTooltip>
                     </div>
                 </div>
 

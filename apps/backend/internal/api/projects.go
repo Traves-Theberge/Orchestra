@@ -310,6 +310,11 @@ func (s *Server) DeleteProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	projectID := chi.URLParam(r, "project_id")
+	if projectID == "" {
+		writeJSONError(w, http.StatusBadRequest, "invalid_request", "project_id is required")
+		return
+	}
+
 	if err := s.db.DeleteProject(r.Context(), projectID); err != nil {
 		if err == sql.ErrNoRows {
 			writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
