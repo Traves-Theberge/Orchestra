@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"sync"
 	"syscall"
+	"time"
 )
 
 type ServiceStatus int
@@ -117,8 +118,13 @@ func (s *Service) Stop() {
 		s.cancel()
 	}
 	if s.cmd != nil && s.cmd.Process != nil {
-		// Kill the entire process group
-		_ = syscall.Kill(-s.cmd.Process.Pid, syscall.SIGKILL)
+		// Send SIGTERM first for graceful shutdown (releases port)
+		_ = syscall.Kill(-s.cmd.Process.Pid, syscall.SIGTERM)
+		// Give process a moment to exit, then force kill
+		go func(pid int) {
+			time.Sleep(2 * time.Second)
+			_ = syscall.Kill(-pid, syscall.SIGKILL)
+		}(s.cmd.Process.Pid)
 	}
 	s.Status = StatusStopped
 	s.Logs = append(s.Logs, fmt.Sprintf(">>> %s stopped", s.Name))

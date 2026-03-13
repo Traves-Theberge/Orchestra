@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -106,8 +109,28 @@ func Run(logger zerolog.Logger) error {
 	go startExecutionWorker(orchestratorService, agentRegistry, provider, cfg.AgentProvider, cfg.WorkspaceRoot, cfg.WorkflowFile, cfg.AgentMaxTurns, toolExecutor.Execute, tools.TrackerToolSpecs(), cfg.WorkspaceHooks, pubsub, warehouseDB, logger)
 
 	logger.Info().Str("addr", addr).Str("service_id", runtime.ServiceOrchestrator).Msg("starting orchestrad")
-	if err := http.ListenAndServe(addr, router); err != nil {
-		return fmt.Errorf("listen and serve: %w", err)
+
+	// Use a custom listener with SO_REUSEADDR so the port is available immediately after restart.
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("listen: %w", err)
+	}
+
+	server := &http.Server{Handler: router}
+
+	// Graceful shutdown on SIGTERM/SIGINT so the TUI can restart cleanly.
+	go func() {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, syscall.SIGTERM, syscall.SIGINT)
+		<-sig
+		logger.Info().Msg("shutting down orchestrad")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = server.Shutdown(ctx)
+	}()
+
+	if err := server.Serve(ln); err != nil && err != http.ErrServerClosed {
+		return fmt.Errorf("serve: %w", err)
 	}
 
 	return nil
