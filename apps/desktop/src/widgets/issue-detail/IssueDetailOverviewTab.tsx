@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import {
@@ -13,7 +14,9 @@ import {
   Play,
   Rows,
   Settings2,
+  Sparkles,
   Square,
+  Target,
   Terminal,
   Users,
   Wrench,
@@ -102,7 +105,38 @@ export function OverviewTab({
   const planItems = extractOperationalPlanItems(timeline, issueId, identifier, description)
   const completedPlanItems = planItems.filter((item) => item.done).length
   const totalPlanItems = planItems.length
+  const remainingPlanItems = totalPlanItems - completedPlanItems
   const planProgress = totalPlanItems === 0 ? 0 : Math.round((completedPlanItems / totalPlanItems) * 100)
+  const [newPlanItemSignatures, setNewPlanItemSignatures] = useState<Set<string>>(new Set())
+  const previousPlanItemSignaturesRef = useRef<Set<string>>(new Set())
+
+  const planItemSignatures = useMemo(() => {
+    const seenByText = new Map<string, number>()
+    return planItems.map((item) => {
+      const keyText = item.text.trim().toLowerCase()
+      const seenCount = seenByText.get(keyText) ?? 0
+      seenByText.set(keyText, seenCount + 1)
+      return `${keyText}::${seenCount}`
+    })
+  }, [planItems])
+
+  useEffect(() => {
+    const previous = previousPlanItemSignaturesRef.current
+    const next = new Set(planItemSignatures)
+    const added = planItemSignatures.filter((signature) => !previous.has(signature))
+
+    if (added.length > 0 && previous.size > 0) {
+      setNewPlanItemSignatures(new Set(added))
+      const timer = window.setTimeout(() => {
+        setNewPlanItemSignatures(new Set())
+      }, 1400)
+      previousPlanItemSignaturesRef.current = next
+      return () => window.clearTimeout(timer)
+    }
+
+    previousPlanItemSignaturesRef.current = next
+    return undefined
+  }, [planItemSignatures])
 
   return (
     <div className="flex-1 min-h-0 overflow-hidden flex flex-col gap-3 pr-1">
@@ -234,40 +268,91 @@ export function OverviewTab({
               </div>
             )}
 
-            <div className="p-3 bg-primary/5 border-b border-border/10">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2 text-[8px] font-black uppercase tracking-widest text-primary/80">
-                  <ListChecks size={10} /> Operational Plan
+            <div className="relative overflow-hidden border-b border-border/20 bg-gradient-to-br from-primary/10 via-primary/5 to-background/90 px-3 py-3">
+              <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-primary/10 blur-2xl" />
+              <div className="pointer-events-none absolute -bottom-10 left-10 h-20 w-20 rounded-full bg-emerald-400/10 blur-2xl" />
+
+              <div className="relative mb-3 flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2 text-[8px] font-black uppercase tracking-[0.18em] text-primary/80">
+                    <ListChecks size={11} /> Operational Plan
+                  </div>
+                  <p className="mt-1 text-[9px] font-medium text-muted-foreground/70">
+                    Live task checklist parsed from agent execution updates.
+                  </p>
                 </div>
                 {totalPlanItems > 0 && (
-                  <Badge variant="outline" className="h-4 px-1.5 text-[8px] font-black border-primary/20 bg-primary/10 text-primary">
-                    {completedPlanItems}/{totalPlanItems}
-                  </Badge>
+                  <div className="flex items-center gap-1.5">
+                    <Badge variant="outline" className="h-4 px-1.5 text-[8px] font-black border-primary/20 bg-primary/10 text-primary">
+                      {completedPlanItems}/{totalPlanItems}
+                    </Badge>
+                    <Badge variant="outline" className="h-4 px-1.5 text-[8px] font-black border-emerald-400/20 bg-emerald-500/10 text-emerald-400">
+                      {planProgress}%
+                    </Badge>
+                    <Badge variant="outline" className="h-4 px-1.5 text-[8px] font-black border-border/50 bg-background/70 text-muted-foreground/80">
+                      <Sparkles size={8} className="mr-1" /> live
+                    </Badge>
+                  </div>
                 )}
               </div>
+
               {totalPlanItems > 0 && (
-                <div className="mb-3 space-y-1.5">
-                  <div className="h-1.5 w-full rounded-full bg-primary/10 border border-primary/15 overflow-hidden">
-                    <div className="h-full rounded-full bg-gradient-to-r from-primary/70 via-primary to-emerald-400 transition-all duration-500" style={{ width: `${planProgress}%` }} />
+                <div className="relative mb-3 rounded-lg border border-primary/20 bg-background/60 p-2 shadow-sm backdrop-blur-sm">
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-primary/10">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-primary via-primary/90 to-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.35)] transition-all duration-700"
+                      style={{ width: `${planProgress}%` }}
+                    />
                   </div>
-                  <div className="text-[8px] font-black uppercase tracking-widest text-primary/60">{planProgress}% complete</div>
+                  <div className="mt-2 flex items-center justify-between">
+                    <div className="text-[8px] font-black uppercase tracking-widest text-primary/60">
+                      {planProgress === 100 ? 'Mission complete' : 'Execution in progress'}
+                    </div>
+                    <div className="flex items-center gap-2 text-[8px] font-bold text-muted-foreground/70">
+                      <span className="inline-flex items-center gap-1 rounded border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-emerald-400">
+                        <Check size={8} /> {completedPlanItems}
+                      </span>
+                      <span className="inline-flex items-center gap-1 rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-amber-400">
+                        <Target size={8} /> {remainingPlanItems}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               )}
-              <div className="space-y-1.5 max-h-40 overflow-auto custom-scrollbar">
+
+              <div className="relative max-h-56 space-y-1.5 overflow-auto custom-scrollbar pr-1">
                 {planItems.length === 0 ? (
-                  <div className="text-[10px] text-muted-foreground/40 italic">Waiting for agent to formulate a plan...</div>
+                  <div className="rounded-lg border border-dashed border-primary/20 bg-background/50 px-2.5 py-2.5">
+                    <div className="mb-2 flex items-center gap-1.5 text-[8px] font-black uppercase tracking-widest text-primary/60">
+                      <Sparkles size={9} className="animate-pulse" /> plan pending
+                    </div>
+                    <div className="space-y-1.5">
+                      <div className="h-2 w-5/6 rounded bg-muted/50 animate-pulse" />
+                      <div className="h-2 w-4/6 rounded bg-muted/40 animate-pulse" />
+                      <div className="h-2 w-3/6 rounded bg-muted/30 animate-pulse" />
+                    </div>
+                    <div className="mt-2 text-[10px] text-muted-foreground/55 italic">Waiting for agent to formulate a plan...</div>
+                  </div>
                 ) : (
-                  planItems.map((item, idx) => (
-                    <div key={idx} className={`flex items-start gap-2 group rounded-md border px-2 py-1.5 transition-colors ${item.done ? 'border-primary/10 bg-primary/5' : 'border-border/50 bg-background/40 hover:bg-background/70'}`}>
-                      <span className={`mt-0.5 text-[8px] font-black tabular-nums ${item.done ? 'text-primary/60' : 'text-muted-foreground/50'}`}>{idx + 1}</span>
-                      <div className={`mt-0.5 grid h-3 w-3 shrink-0 place-items-center rounded-sm border transition-colors ${item.done ? 'bg-primary border-primary text-primary-foreground' : 'border-border bg-card'}`}>
+                  planItems.map((item, idx) => {
+                    const signature = planItemSignatures[idx]
+                    const isNewPlanItem = newPlanItemSignatures.has(signature)
+
+                    return (
+                    <div
+                      key={signature}
+                      className={`group flex items-start gap-2 rounded-lg border px-2.5 py-2 transition-all duration-300 ${item.done ? 'border-primary/20 bg-primary/10 shadow-[inset_0_0_0_1px_rgba(var(--primary),0.12),0_8px_20px_rgba(0,0,0,0.12)]' : 'border-border/60 bg-background/70 hover:border-primary/25 hover:bg-background hover:shadow-[0_6px_18px_rgba(0,0,0,0.12)]'} ${isNewPlanItem ? 'ring-1 ring-primary/35 animate-pulse shadow-[0_0_0_1px_rgba(var(--primary),0.2),0_0_22px_rgba(var(--primary),0.18)]' : ''}`}
+                      style={{ transitionDelay: `${Math.min(idx * 40, 220)}ms` }}
+                    >
+                      <span className={`mt-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full border px-1 text-[8px] font-black tabular-nums ${item.done ? 'border-primary/30 bg-primary/15 text-primary/70' : 'border-border/70 bg-card text-muted-foreground/55'}`}>{idx + 1}</span>
+                      <div className={`mt-0.5 grid h-3.5 w-3.5 shrink-0 place-items-center rounded-sm border transition-colors ${item.done ? 'bg-primary border-primary text-primary-foreground shadow-[0_0_10px_rgba(var(--primary),0.5)]' : 'border-border bg-card group-hover:border-primary/30'}`}>
                         {item.done && <Check size={8} strokeWidth={4} />}
                       </div>
-                      <span className={`text-[10px] font-medium leading-tight transition-colors ${item.done ? 'text-muted-foreground/60 line-through' : 'text-foreground/80'}`}>
+                      <span className={`text-[10px] font-semibold leading-tight transition-colors ${item.done ? 'text-foreground/50 line-through' : 'text-foreground/85'}`}>
                         {item.text}
                       </span>
                     </div>
-                  ))
+                  )})
                 )}
               </div>
             </div>
