@@ -4,6 +4,13 @@ on:
   pull_request:
     types: [opened, edited, reopened, synchronize, ready_for_review]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate-pr-description:
     runs-on: ubuntu-latest

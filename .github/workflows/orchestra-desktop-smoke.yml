@@ -2,12 +2,27 @@ name: orchestra-desktop-smoke
 
 on:
   pull_request:
+    paths:
+      - 'apps/desktop/**'
+      - 'apps/backend/**'
+      - '.github/workflows/orchestra-desktop-smoke.yml'
   push:
     branches:
       - main
+    paths:
+      - 'apps/desktop/**'
+      - 'apps/backend/**'
+      - '.github/workflows/orchestra-desktop-smoke.yml'
   schedule:
     - cron: '0 7 * * *'
   workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   desktop-smoke:
@@ -31,6 +46,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: apps/backend/go.mod
+          cache-dependency-path: apps/backend/go.sum
 
       - name: Install dependencies
         run: npm ci

@@ -2,9 +2,24 @@ name: make-all
 
 on:
   pull_request:
+    paths:
+      - 'apps/tui/**'
+      - 'Makefile'
+      - '.github/workflows/make-all.yml'
   push:
     branches:
       - main
+    paths:
+      - 'apps/tui/**'
+      - 'Makefile'
+      - '.github/workflows/make-all.yml'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   make-all:

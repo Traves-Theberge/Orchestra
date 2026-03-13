@@ -2,9 +2,24 @@ name: orchestra-backend
 
 on:
   pull_request:
+    paths:
+      - 'apps/backend/**'
+      - '.github/workflows/orchestra-backend.yml'
+      - '.github/scripts/check-orchestra-naming.sh'
   push:
     branches:
       - main
+    paths:
+      - 'apps/backend/**'
+      - '.github/workflows/orchestra-backend.yml'
+      - '.github/scripts/check-orchestra-naming.sh'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   backend-tests:
@@ -28,6 +43,25 @@ jobs:
 
       - name: Go vet
         run: go vet ./...
+
+      - name: Run unit/integration tests
+        run: go test ./...
+
+  backend-race-tests:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    defaults:
+      run:
+        working-directory: apps/backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/backend/go.mod
 
       - name: Run race tests
         run: go test -race ./...
