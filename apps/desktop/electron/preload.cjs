@@ -10,5 +10,6 @@ contextBridge.exposeInMainWorld('orchestraDesktop', {
   getAgentTokens: () => ipcRenderer.invoke('orchestra:get-agent-tokens'),
   setAgentToken: (name, value) => ipcRenderer.invoke('orchestra:set-agent-token', { name, value }),
   openExternal: (url) => ipcRenderer.invoke('orchestra:open-external', url),
+  openPath: (targetPath) => ipcRenderer.invoke('orchestra:open-path', targetPath),
   selectFolder: () => ipcRenderer.invoke('orchestra:select-folder'),
 })

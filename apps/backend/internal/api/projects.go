@@ -357,6 +357,10 @@ func (s *Server) GetProjectFileContent(w http.ResponseWriter, r *http.Request) {
 
 	content, err := os.ReadFile(fullPath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			writeJSONError(w, http.StatusNotFound, "file_not_found", "file not found")
+			return
+		}
 		s.logger.Error().Err(err).Str("path", fullPath).Msg("failed to read project file")
 		writeJSONError(w, http.StatusInternalServerError, "read_failed", "failed to read file")
 		return
@@ -390,6 +394,10 @@ func (s *Server) GetProjectFileTree(w http.ResponseWriter, r *http.Request) {
 
 	tree, err := walkTree(project.RootPath, relPath, 1)
 	if err != nil {
+		if os.IsNotExist(err) {
+			writeJSONError(w, http.StatusNotFound, "path_not_found", "project path not found")
+			return
+		}
 		s.logger.Error().
 			Err(err).
 			Str("path", project.RootPath).

@@ -56,6 +56,7 @@ interface ProjectDetailViewProps {
     onIssueUpdate: (id: string, updates: IssueUpdatePayload) => Promise<void>
     onCreateIssue: (state: string) => void
     onDeleteProject: (id: string) => Promise<void>
+    onRefreshProjects: () => Promise<void>
 }
 
 type CommitInfo = GitCommit | { message: string; author: string; date: string; hash?: string }
@@ -76,6 +77,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     onIssueUpdate,
     onCreateIssue,
     onDeleteProject,
+    onRefreshProjects,
 }) => {
     const [activeTab, setActiveTab] = useState<ProjectTab>('overview')
     const [fileTree, setFileTree] = useState<ProjectTreeNode[]>([])
@@ -225,10 +227,33 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         }
     }
 
-    const handleConnectGitHub = () => {
+    const openExternalTarget = async (url: string) => {
+        const desktopBridge = window.orchestraDesktop
+        if (desktopBridge && typeof desktopBridge.openExternal === 'function') {
+            await desktopBridge.openExternal(url)
+            return
+        }
+        window.open(url, '_blank', 'noopener,noreferrer')
+    }
+
+    const scheduleProjectRefreshAfterGitHubAuth = () => {
+        const delays = [2000, 4000, 7000, 11000]
+        for (const delay of delays) {
+            window.setTimeout(() => {
+                void onRefreshProjects()
+            }, delay)
+        }
+    }
+
+    const handleConnectGitHub = async () => {
         if (!config || !project.id) return
         const loginUrl = `${config.baseUrl}/api/v1/github/login?project_id=${project.id}`
-        window.open(loginUrl, 'GitHub Auth', 'width=600,height=800')
+        try {
+            await openExternalTarget(loginUrl)
+            scheduleProjectRefreshAfterGitHubAuth()
+        } catch (err) {
+            console.error('Failed to launch GitHub authentication:', err)
+        }
     }
 
     const handleOpenProjectFolder = async () => {
@@ -236,6 +261,10 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         const fileUrl = `file://${encodeURI(project.root_path)}`
 
         try {
+            if (desktopBridge && typeof desktopBridge.openPath === 'function') {
+                await desktopBridge.openPath(project.root_path)
+                return
+            }
             if (desktopBridge && typeof desktopBridge.openExternal === 'function') {
                 await desktopBridge.openExternal(fileUrl)
                 return
@@ -321,16 +350,14 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
                         <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
                             <DialogTrigger asChild>
-                                <AppTooltip content="Remove project from workspace">
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="gap-2 text-xs text-red-500 hover:text-red-400 hover:bg-red-500/10 border-red-500/20"
-                                    >
-                                        <Trash2 size={14} />
-                                        Remove
-                                    </Button>
-                                </AppTooltip>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="gap-2 text-xs text-red-500 hover:text-red-400 hover:bg-red-500/10 border-red-500/20"
+                                >
+                                    <Trash2 size={14} />
+                                    Remove
+                                </Button>
                             </DialogTrigger>
                             <DialogContent className="sm:max-w-md bg-popover border-border shadow-2xl">
                                 <DialogHeader>
@@ -420,7 +447,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                                     variant="outline"
                                     size="sm"
                                     className="gap-2 h-9 bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20"
-                                    onClick={handleConnectGitHub}
+                                    onClick={() => void handleConnectGitHub()}
                                 >
                                     <Github size={16} />
                                     Connect GitHub
@@ -428,12 +455,15 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                             </AppTooltip>
                         )}
                         {project.remote_url && (
-                            <AppTooltip content="Open origin repository in browser">
-                                <Button variant="outline" size="sm" className="gap-2 h-9 border-border/60" asChild>
-                                    <a href={project.remote_url} target="_blank" rel="noreferrer">
-                                        <Globe size={16} />
-                                        Remote
-                                    </a>
+                            <AppTooltip content="Open git repository in your default browser">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="gap-2 h-9 border-border/60"
+                                    onClick={() => void openExternalTarget(project.remote_url)}
+                                >
+                                    <Globe size={16} />
+                                    Git Repo
                                 </Button>
                             </AppTooltip>
                         )}

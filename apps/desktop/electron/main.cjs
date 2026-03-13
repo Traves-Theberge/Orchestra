@@ -288,6 +288,13 @@ ipcMain.handle('orchestra:open-external', async (_event, url) => {
   if (url) await shell.openExternal(url)
 })
 
+ipcMain.handle('orchestra:open-path', async (_event, targetPath) => {
+  if (!targetPath || typeof targetPath !== 'string') {
+    return
+  }
+  await shell.openPath(targetPath)
+})
+
 ipcMain.handle('orchestra:select-folder', async () => {
   const result = await dialog.showOpenDialog({
     properties: ['openDirectory'],

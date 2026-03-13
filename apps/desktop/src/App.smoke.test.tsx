@@ -84,6 +84,7 @@ function setupDesktopBridge(overrides?: {
     }),
     selectFolder: vi.fn(async () => '/mock/selected/path'),
     openExternal: vi.fn(async () => {}),
+    openPath: vi.fn(async () => {}),
   }
 
   window.orchestraDesktop = bridge

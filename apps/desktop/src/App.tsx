@@ -788,28 +788,36 @@ export default function App() {
     }
   }
 
+  const refreshProjectsAndStats = async () => {
+    if (!config) return
+
+    const projs = await fetchProjects(config)
+    setProjects(projs)
+
+    const statsMap: Record<string, ProjectStats> = { ...projectStats }
+    let statsChanged = false
+    for (const p of projs) {
+      if (statsMap[p.id]) continue
+      try {
+        const s = await fetchProjectStats(config, p.id)
+        statsMap[p.id] = s
+        statsChanged = true
+      } catch (e) {
+        console.error(`failed to fetch stats for project ${p.id}`, e)
+      }
+    }
+    if (statsChanged) {
+      setProjectStats(statsMap)
+    }
+  }
+
   const handleAddProject = async (path: string) => {
     if (!path || !config) return
 
     try {
       await createProject(config, path)
       setStatusMessage(`Project at ${path} added successfully.`)
-
-      // Refresh projects
-      const projs = await fetchProjects(config)
-      setProjects(projs)
-
-      // Refresh stats for the new project
-      for (const p of projs) {
-        if (!projectStats[p.id]) {
-          try {
-            const s = await fetchProjectStats(config, p.id)
-            setProjectStats(prev => ({ ...prev, [p.id]: s }))
-          } catch (e) {
-            console.error('failed to fetch stats for new project', e)
-          }
-        }
-      }
+      await refreshProjectsAndStats()
     } catch (err) {
       setErrorMessage(`failed to add project: ${toDisplayError(err)}`)
     }
@@ -944,6 +952,7 @@ export default function App() {
                       onIssueUpdate={handleIssueUpdate}
                       onCreateIssue={handleCreateIssue}
                       onDeleteProject={handleDeleteProject}
+                      onRefreshProjects={refreshProjectsAndStats}
                     />
                   ) : (
                     <ProjectGrid

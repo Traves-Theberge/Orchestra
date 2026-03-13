@@ -29,6 +29,7 @@ declare global {
       getAgentTokens: () => Promise<Record<string, string>>
       setAgentToken: (name: string, value: string | null) => Promise<void>
       openExternal: (url: string) => Promise<void>
+      openPath: (targetPath: string) => Promise<void>
       selectFolder: () => Promise<string | null>
     }
   }

@@ -108,7 +108,8 @@ export function OverviewTab({
   const remainingPlanItems = totalPlanItems - completedPlanItems
   const planProgress = totalPlanItems === 0 ? 0 : Math.round((completedPlanItems / totalPlanItems) * 100)
   const [newPlanItemSignatures, setNewPlanItemSignatures] = useState<Set<string>>(new Set())
-  const previousPlanItemSignaturesRef = useRef<Set<string>>(new Set())
+  const [lastPlanUpdateLabel, setLastPlanUpdateLabel] = useState<string>('')
+  const previousPlanTextCountsRef = useRef<Map<string, number>>(new Map())
 
   const planItemSignatures = useMemo(() => {
     const seenByText = new Map<string, number>()
@@ -120,23 +121,50 @@ export function OverviewTab({
     })
   }, [planItems])
 
-  useEffect(() => {
-    const previous = previousPlanItemSignaturesRef.current
-    const next = new Set(planItemSignatures)
-    const added = planItemSignatures.filter((signature) => !previous.has(signature))
+  const handleOpenExternal = async (url: string) => {
+    const desktopBridge = window.orchestraDesktop
+    try {
+      if (desktopBridge && typeof desktopBridge.openExternal === 'function') {
+        await desktopBridge.openExternal(url)
+        return
+      }
+      window.open(url, '_blank', 'noopener,noreferrer')
+    } catch (error) {
+      console.error('Failed to open external URL:', error)
+    }
+  }
 
-    if (added.length > 0 && previous.size > 0) {
-      setNewPlanItemSignatures(new Set(added))
+  useEffect(() => {
+    const previousCounts = previousPlanTextCountsRef.current
+    const nextCounts = new Map<string, number>()
+    const seenCurrent = new Map<string, number>()
+    const addedSignatures: string[] = []
+
+    for (const item of planItems) {
+      const textKey = item.text.trim().toLowerCase()
+      const occurrence = seenCurrent.get(textKey) ?? 0
+      seenCurrent.set(textKey, occurrence + 1)
+      nextCounts.set(textKey, occurrence + 1)
+
+      const previousCount = previousCounts.get(textKey) ?? 0
+      if (occurrence >= previousCount) {
+        addedSignatures.push(`${textKey}::${occurrence}`)
+      }
+    }
+
+    if (addedSignatures.length > 0 && previousCounts.size > 0) {
+      setNewPlanItemSignatures(new Set(addedSignatures))
+      setLastPlanUpdateLabel(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
       const timer = window.setTimeout(() => {
         setNewPlanItemSignatures(new Set())
       }, 1400)
-      previousPlanItemSignaturesRef.current = next
+      previousPlanTextCountsRef.current = nextCounts
       return () => window.clearTimeout(timer)
     }
 
-    previousPlanItemSignaturesRef.current = next
+    previousPlanTextCountsRef.current = nextCounts
     return undefined
-  }, [planItemSignatures])
+  }, [planItems])
 
   return (
     <div className="flex-1 min-h-0 overflow-hidden flex flex-col gap-3 pr-1">
@@ -280,6 +308,9 @@ export function OverviewTab({
                   <p className="mt-1 text-[9px] font-medium text-muted-foreground/70">
                     Live task checklist parsed from agent execution updates.
                   </p>
+                  {lastPlanUpdateLabel ? (
+                    <p className="mt-1 text-[8px] font-bold uppercase tracking-widest text-primary/55">Updated {lastPlanUpdateLabel}</p>
+                  ) : null}
                 </div>
                 {totalPlanItems > 0 && (
                   <div className="flex items-center gap-1.5">
@@ -433,10 +464,14 @@ export function OverviewTab({
             <div className="p-2.5 shrink-0">
               <div className="text-[8px] font-black uppercase tracking-widest text-muted-foreground mb-2">Remote System</div>
               {issueUrl ? (
-                <a href={issueUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 p-1.5 rounded bg-primary/5 border border-primary/10 text-primary hover:bg-primary/10 transition-all">
+                <button
+                  type="button"
+                  onClick={() => void handleOpenExternal(issueUrl)}
+                  className="flex w-full items-center gap-2 p-1.5 rounded bg-primary/5 border border-primary/10 text-primary hover:bg-primary/10 transition-all"
+                >
                   <ExternalLink size={10} />
                   <span className="text-[9px] font-bold truncate">Open in Tracker</span>
-                </a>
+                </button>
               ) : (
                 <div className="text-[9px] text-muted-foreground/40 italic">No external link</div>
               )}

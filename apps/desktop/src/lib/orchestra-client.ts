@@ -502,11 +502,11 @@ export async function fetchProjectTree(config: BackendConfig, projectId: string,
 
 export async function fetchProjectFileContent(config: BackendConfig, projectId: string, path: string): Promise<string> {
   const response = await fetch(`${config.baseUrl}/api/v1/projects/${projectId}/file?path=${encodeURIComponent(path)}`, {
-    headers: {
-      'Authorization': `Bearer ${config.apiToken}`,
-    },
+    headers: buildHeaders(config),
   })
-  if (!response.ok) throw new Error('failed to fetch project file content')
+  if (!response.ok) {
+    throw new Error(`failed to fetch project file content (${response.status} ${response.statusText})`)
+  }
   return response.text()
 }
 
