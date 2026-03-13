@@ -488,7 +488,7 @@ func TestCommandRunnerIgnoresSSEDoneSentinel(t *testing.T) {
 }
 
 func TestCommandRunnerMergesPartialUsageAcrossEvents(t *testing.T) {
-	runner := NewCommandRunner(ProviderOpenCode, "printf '{\"event\":\"usage\",\"usage\":{\"inputTokens\":9}}\\n'; printf '{\"event\":\"usage\",\"usage\":{\"outputTokens\":4}}\\n'")
+	runner := NewCommandRunner(ProviderOpenCode, "echo '{\"event\":\"usage\",\"usage\":{\"inputTokens\":9}}'; echo '{\"event\":\"usage\",\"usage\":{\"outputTokens\":4}}'")
 	root := t.TempDir()
 	workspacePath := filepath.Join(root, "ORC-5")
 	if err := os.MkdirAll(workspacePath, 0o755); err != nil {
