@@ -4,6 +4,9 @@ on:
   pull_request:
     types: [opened, edited, reopened, synchronize, ready_for_review]
 
+permissions:
+  contents: read
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -17,17 +20,19 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: ./.github/actions/setup-go-cached
         with:
-          go-version-file: apps/backend/go.mod
-          cache-dependency-path: apps/backend/go.sum
+          go-mod-path: apps/backend/go.mod
+          go-sum-path: apps/backend/go.sum
+
+      - name: Write PR body to file
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        shell: bash
+        run: printf '%s' "${PR_BODY}" > /tmp/pr_body.md
 
       - name: Validate PR description format
-        env:
-          PR_BODY_JSON: ${{ toJson(github.event.pull_request.body) }}
-        run: |
-          printf '%s' "$PR_BODY_JSON" | jq -r '. // ""' > /tmp/pr_body.md
-          go run ./apps/backend/cmd/orchestra check-pr-body /tmp/pr_body.md
+        run: go run ./apps/backend/cmd/orchestra check-pr-body /tmp/pr_body.md

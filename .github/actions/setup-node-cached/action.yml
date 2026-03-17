@@ -1,0 +1,20 @@
+name: Setup Node (cached)
+description: Install Node.js with npm caching
+
+inputs:
+  node-version:
+    description: Node.js version
+    required: false
+    default: '20'
+  cache-dependency-path:
+    description: Path to package-lock.json
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: npm
+        cache-dependency-path: ${{ inputs.cache-dependency-path }}

@@ -14,6 +14,9 @@ on:
       - 'Makefile'
       - '.github/workflows/make-all.yml'
 
+permissions:
+  contents: read
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -27,13 +30,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: ./.github/actions/setup-go-cached
         with:
-          go-version-file: apps/tui/go.mod
-          cache-dependency-path: apps/tui/go.sum
+          go-mod-path: apps/tui/go.mod
+          go-sum-path: apps/tui/go.sum
 
       - name: Run TUI tests
         run: cd apps/tui && go test ./...

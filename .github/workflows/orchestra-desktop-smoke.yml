@@ -17,6 +17,9 @@ on:
     - cron: '0 7 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -33,20 +36,18 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
       - name: Set up Node
-        uses: actions/setup-node@v6
+        uses: ./.github/actions/setup-node-cached
         with:
-          node-version: 20
-          cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: ./.github/actions/setup-go-cached
         with:
-          go-version-file: apps/backend/go.mod
-          cache-dependency-path: apps/backend/go.sum
+          go-mod-path: apps/backend/go.mod
+          go-sum-path: apps/backend/go.sum
 
       - name: Install dependencies
         run: npm ci
@@ -56,7 +57,7 @@ jobs:
 
       - name: Upload parity report artifact
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7
         with:
           name: orchestra-desktop-parity-report
           path: apps/desktop/reports
