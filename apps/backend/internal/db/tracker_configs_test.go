@@ -138,4 +138,41 @@ func TestTrackerConfigGetForProject(t *testing.T) {
 	if cfg != nil {
 		t.Errorf("expected nil after clear, got %+v", cfg)
 	}
+
+	// SetProjectTrackerConfig on a missing project must return sql.ErrNoRows
+	err = d.SetProjectTrackerConfig(ctx, "missing", "tc-proj")
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("set on missing project: got %v, want sql.ErrNoRows", err)
+	}
+}
+
+// TestTrackerConfigNullColumns verifies that NULL values in nullable TEXT columns
+// don't break Scan. Inserts a row via raw SQL bypassing UpsertTrackerConfig.
+func TestTrackerConfigNullColumns(t *testing.T) {
+	d := testTrackerDB(t)
+	ctx := context.Background()
+
+	_, err := d.ExecContext(ctx, `
+		INSERT INTO tracker_configs (id, type, display_name, auth_method, created_at, updated_at)
+		VALUES ('tc-null', 'github', 'GitHub', 'apikey', 100, 100)
+	`)
+	if err != nil {
+		t.Fatalf("raw insert: %v", err)
+	}
+
+	got, err := d.GetTrackerConfig(ctx, "tc-null")
+	if err != nil {
+		t.Fatalf("get with NULLs: %v", err)
+	}
+	if got.Endpoint != "" || got.TokenEnc != "" || got.RefreshEnc != "" || got.Extra != "" {
+		t.Errorf("expected empty strings for NULL columns, got %+v", got)
+	}
+
+	list, err := d.ListTrackerConfigs(ctx)
+	if err != nil {
+		t.Fatalf("list with NULLs: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("list len: got %d, want 1", len(list))
+	}
 }
