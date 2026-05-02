@@ -60,7 +60,6 @@ import { CHAT_PROVIDERS } from '@features/embedded-agent/lib/types'
 import { usePlatform } from '@/hooks/use-platform'
 import { CustomDropdown } from '@layout/shared/controls'
 import { useAppStore } from '@core/store'
-import { RuntimeConnectionsPane } from './RuntimeConnectionsPane'
 import { resolveMode } from '@core/theme/apply'
 import { contrastRatio, formatHslTriplet, hexToHslTriplet, hslTripletToHex, parseHslTriplet, wcagBadge } from '@core/theme/color-utils'
 import { deriveRoles } from '@core/theme/derive-surface'
@@ -408,14 +407,6 @@ export function SettingsPage({
             <div className="mt-4 space-y-6">
               <EmbeddedAgentConfigForm config={config} disabled={savingConfig || loadingConfig} />
               <UnsandboxConfigForm config={config} disabled={savingConfig || loadingConfig} />
-            </div>
-          </section>
-
-          {/* ── Runtime Connections ── */}
-          <section data-settings-section="runtimes" className="rounded-xl transition-colors duration-500 scroll-mt-4">
-            <SectionHeading icon={Globe} title="Runtime Connections" description="Remote execution via Tailscale SSH or Kubernetes" />
-            <div className="mt-4">
-              <RuntimeConnectionsPane config={config} disabled={savingConfig || loadingConfig} />
             </div>
           </section>
 
