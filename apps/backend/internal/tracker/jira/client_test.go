@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker/jira"
 )
 
@@ -70,13 +71,89 @@ func TestFetch_ReturnsWorkItems(t *testing.T) {
 	}
 }
 
-func TestNewClient_DetectsCloud(t *testing.T) {
-	cloud := jira.NewClient("https://acme.atlassian.net", "", "token", nil, nil)
-	if cloud == nil {
-		t.Fatal("nil client")
+func TestNewClient_CloudDetectionAndAuth(t *testing.T) {
+	// Cloud detection: .atlassian.net → IsCloud() returns true.
+	cloud := jira.NewClient("https://acme.atlassian.net", "", "cloud-token", nil, nil)
+	if !cloud.IsCloud() {
+		t.Error("expected cloud=true for .atlassian.net URL")
 	}
-	// Indirectly verify cloud detection by checking the API path used in a fake call.
-	// We can't read the internal flag, so just ensure the constructor doesn't panic.
+
+	// Server: any URL without .atlassian.net → IsCloud() returns false,
+	// uses /rest/api/2 + Basic auth — verified through an httptest server.
+	var serverPath, serverAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serverPath = r.URL.Path
+		serverAuth = r.Header.Get("Authorization")
+		json.NewEncoder(w).Encode(map[string]any{"name": "user1"})
+	}))
+	defer srv.Close()
+
+	server := jira.NewClient(srv.URL, "user1", "pat", srv.Client(), nil)
+	if server.IsCloud() {
+		t.Error("expected cloud=false for non-atlassian.net URL")
+	}
+	if err := server.Ping(context.Background()); err != nil {
+		t.Fatalf("server Ping: %v", err)
+	}
+	if !strings.HasPrefix(serverPath, "/rest/api/2/") {
+		t.Errorf("server path: got %q, want /rest/api/2/...", serverPath)
+	}
+	if !strings.HasPrefix(serverAuth, "Basic ") {
+		t.Errorf("server auth: got %q, want Basic ...", serverAuth)
+	}
+}
+
+func TestCreate_RequiresProjectKey(t *testing.T) {
+	c, _ := newServerClient(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("server should not be called when project key is missing")
+	}, nil)
+	_, err := c.Create(context.Background(), tracker.WorkItem{Title: "no project"})
+	if err == nil {
+		t.Fatal("expected error when no project key, got nil")
+	}
+	if !strings.Contains(err.Error(), "project key") {
+		t.Errorf("error should mention project key: %v", err)
+	}
+}
+
+func TestCreate_UsesProjectKeyFromWorkItem(t *testing.T) {
+	var capturedProject string
+	c, _ := newServerClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/issue"):
+			var body struct {
+				Fields struct {
+					Project struct {
+						Key string `json:"key"`
+					} `json:"project"`
+				} `json:"fields"`
+			}
+			raw, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(raw, &body)
+			capturedProject = body.Fields.Project.Key
+			json.NewEncoder(w).Encode(map[string]any{"id": "20002", "key": "PROJ-2"})
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/issue/PROJ-2"):
+			json.NewEncoder(w).Encode(map[string]any{
+				"id":  "20002",
+				"key": "PROJ-2",
+				"fields": map[string]any{
+					"summary": "new",
+					"status":  map[string]any{"name": "To Do"},
+				},
+			})
+		}
+	}, nil)
+
+	created, err := c.Create(context.Background(), tracker.WorkItem{Title: "new", ProjectID: "PROJ"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if capturedProject != "PROJ" {
+		t.Errorf("project key sent: got %q, want PROJ", capturedProject)
+	}
+	if created.Identifier != "PROJ-2" {
+		t.Errorf("identifier: got %q", created.Identifier)
+	}
 }
 
 func TestPing_Success(t *testing.T) {

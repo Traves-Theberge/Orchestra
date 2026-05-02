@@ -19,14 +19,15 @@ var _ tracker.Adapter = (*Client)(nil)
 
 // Client implements tracker.Adapter against the Jira REST API.
 type Client struct {
-	baseURL    string // e.g. "https://acme.atlassian.net" or "https://jira.internal"
-	apiBase    string // "/rest/api/3" for Cloud, "/rest/api/2" for Server
-	user       string // email (Cloud) or username (Server). Empty for Cloud Bearer auth.
-	token      string // API token (Cloud Bearer) or PAT (Server Basic password)
-	httpClient *http.Client
-	stateMap   map[string]string
-	jql        string
-	cloud      bool
+	baseURL        string // e.g. "https://acme.atlassian.net" or "https://jira.internal"
+	apiBase        string // "/rest/api/3" for Cloud, "/rest/api/2" for Server
+	user           string // email (Cloud) or username (Server). Empty for Cloud Bearer auth.
+	token          string // API token (Cloud Bearer) or PAT (Server Basic password)
+	httpClient     *http.Client
+	stateMap       map[string]string
+	jql            string
+	cloud          bool
+	defaultProject string // default project key used by Create when WorkItem.ProjectID is empty
 }
 
 // NewClient creates a Jira adapter.
@@ -57,6 +58,14 @@ func NewClient(baseURL, user, token string, httpClient *http.Client, stateMap ma
 
 // SetJQL sets the default JQL used by Fetch when no per-call JQL is provided.
 func (c *Client) SetJQL(jql string) { c.jql = jql }
+
+// SetDefaultProject sets the project key used by Create when WorkItem.ProjectID is empty.
+// Jira REST requires fields.project.key on every issueCreate call.
+func (c *Client) SetDefaultProject(projectKey string) { c.defaultProject = projectKey }
+
+// IsCloud reports whether this Client was configured against a Jira Cloud instance
+// (detected by ".atlassian.net" in the base URL).
+func (c *Client) IsCloud() bool { return c.cloud }
 
 // request makes an authenticated REST call. body may be nil. out may be nil.
 // Returns an error on non-2xx status. Always drains the response body.
@@ -152,9 +161,26 @@ func (c *Client) Search(ctx context.Context, query string) ([]tracker.WorkItem, 
 	return c.Fetch(ctx, FilterFromJQL(jql))
 }
 
+// Create creates a new Jira issue. Jira REST requires fields.project.key on
+// every issueCreate call; the project key is taken from item.ProjectID if set,
+// otherwise from c.defaultProject. If neither is set, returns an error rather
+// than silently 400-ing on the server side.
+//
+// NOTE: Cloud (v3) expects description as an Atlassian Document Format (ADF)
+// object. This adapter currently sends a plain string, which Cloud may reject
+// or store empty. Server (v2) accepts the plain string. ADF support is a
+// follow-up.
 func (c *Client) Create(ctx context.Context, item tracker.WorkItem) (*tracker.WorkItem, error) {
+	projectKey := item.ProjectID
+	if projectKey == "" {
+		projectKey = c.defaultProject
+	}
+	if projectKey == "" {
+		return nil, fmt.Errorf("jira: cannot Create without a project key (set WorkItem.ProjectID or call SetDefaultProject)")
+	}
 	body := map[string]any{
 		"fields": map[string]any{
+			"project":     map[string]any{"key": projectKey},
 			"summary":     item.Title,
 			"description": item.Description,
 		},
