@@ -166,7 +166,7 @@ func Run(logger zerolog.Logger) error {
 		usageService = nil
 	}
 
-	router := api.NewRouterWithPubSub(logger, orchestratorService, &cfg, pubsub, warehouseDB, termManager, usageService)
+	router := api.NewRouterWithPubSub(logger, orchestratorService, &cfg, pubsub, warehouseDB, termManager, usageService, trackerRegistry)
 
 	cleanupTerminalWorkspaces(orchestratorService, trackerClient, workspaceService, cfg.WorkspaceHooks, warehouseDB, logger)
 

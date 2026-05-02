@@ -19,6 +19,7 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/orchestrator"
 	"github.com/orchestra/orchestra/apps/backend/internal/staticassets"
 	"github.com/orchestra/orchestra/apps/backend/internal/terminal"
+	trackerregistry "github.com/orchestra/orchestra/apps/backend/internal/tracker/registry"
 	"github.com/orchestra/orchestra/apps/backend/internal/usage"
 	"github.com/rs/zerolog"
 )
@@ -36,6 +37,7 @@ type Server struct {
 	config        *config.Config
 	termManager   *terminal.Manager
 	usageService  *usage.Service
+	registry      *trackerregistry.Registry
 }
 
 // NewRouter creates an http.Handler with the full API route table, using only
@@ -45,7 +47,7 @@ func NewRouter(
 	orchestratorService *orchestrator.Service,
 	cfg *config.Config,
 ) http.Handler {
-	return NewRouterWithPubSub(logger, orchestratorService, cfg, nil, nil, nil, nil)
+	return NewRouterWithPubSub(logger, orchestratorService, cfg, nil, nil, nil, nil, nil)
 }
 
 // NewRouterWithPubSub creates an http.Handler with the full API route table and
@@ -59,6 +61,7 @@ func NewRouterWithPubSub(
 	warehouseDB *db.DB,
 	termManager *terminal.Manager,
 	usageService *usage.Service,
+	registry *trackerregistry.Registry,
 ) http.Handler {
 	if termManager == nil {
 		termManager = terminal.NewManager()
@@ -74,6 +77,7 @@ func NewRouterWithPubSub(
 		config:        cfg,
 		termManager:   termManager,
 		usageService:  usageService,
+		registry:      registry,
 	}
 	r := chi.NewRouter()
 
@@ -109,6 +113,19 @@ func NewRouterWithPubSub(
 	protected.Get("/api/v1/stt/health", server.GetSTTHealth)
 	protected.Post("/api/v1/stt/transcribe", server.PostSTTTranscribe)
 	protected.Get("/api/v1/state", server.GetState)
+
+	// Tracker configs (CRUD + test-connection + browse)
+	protected.Get("/api/v1/tracker/configs", server.GetTrackerConfigs)
+	protected.Post("/api/v1/tracker/configs", server.PostTrackerConfig)
+	protected.Patch("/api/v1/tracker/configs/{config_id}", server.PatchTrackerConfig)
+	protected.Delete("/api/v1/tracker/configs/{config_id}", server.DeleteTrackerConfig)
+	protected.Post("/api/v1/tracker/configs/{config_id}/test", server.PostTrackerConfigTest)
+	protected.Get("/api/v1/tracker/configs/{config_id}/projects", server.GetTrackerProjects)
+	protected.Get("/api/v1/tracker/configs/{config_id}/states", server.GetTrackerStates)
+	protected.Get("/api/v1/tracker/configs/{config_id}/issues", server.GetTrackerConfigIssues)
+	// Per-project tracker assignment
+	protected.Post("/api/v1/projects/{project_id}/tracker", server.PostProjectTrackerConfig)
+
 	protected.Get("/api/v1/issues", server.GetIssues)
 	protected.Post("/api/v1/issues", server.PostIssue)
 	protected.Get("/api/v1/search", server.GetSearch)
@@ -279,6 +296,7 @@ func NewRouterWithPubSub(
 	protected.Delete("/api/v1/config/unsandbox", server.DeleteUnsandboxConfig)
 
 	// Runtime targets (Tailscale and Kubernetes)
+	protected.Get("/api/v1/config/runtimes", server.GetAvailableRuntimes)
 	protected.Get("/api/v1/config/tailscale", server.GetTailscaleConfig)
 	protected.Post("/api/v1/config/tailscale", server.SaveTailscaleConfig)
 	protected.Delete("/api/v1/config/tailscale", server.DeleteTailscaleConfig)

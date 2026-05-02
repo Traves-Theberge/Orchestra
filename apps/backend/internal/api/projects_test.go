@@ -36,7 +36,7 @@ func newTestRouterWithDB(t *testing.T) (http.Handler, *db.DB) {
 		ProjectRoots:  []string{tmpDir, os.TempDir(), "/tmp"},
 	}
 
-	router := NewRouterWithPubSub(zerolog.Nop(), orchestrator.NewService(), cfg, nil, warehouseDB, nil, nil)
+	router := NewRouterWithPubSub(zerolog.Nop(), orchestrator.NewService(), cfg, nil, warehouseDB, nil, nil, nil)
 	return router, warehouseDB
 }
 

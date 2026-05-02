@@ -81,7 +81,7 @@ func newTestRouterWithGitProject(t *testing.T) (http.Handler, string) {
 		t.Fatalf("upsert project: %v", err)
 	}
 
-	router := NewRouterWithPubSub(zerolog.Nop(), orchestrator.NewService(), cfg, nil, warehouseDB, nil, nil)
+	router := NewRouterWithPubSub(zerolog.Nop(), orchestrator.NewService(), cfg, nil, warehouseDB, nil, nil, nil)
 	return router, id
 }
 
