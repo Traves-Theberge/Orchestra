@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
@@ -41,7 +42,9 @@ func NewClient(teamKey, token string, httpClient *http.Client, endpoint string, 
 }
 
 // graphql executes a GraphQL request and decodes the response into out.
-// Returns an error on non-2xx HTTP status.
+// Returns an error on non-2xx HTTP status or when the response carries a
+// GraphQL `errors` array (HTTP 200 with errors). The first error message is
+// surfaced so callers can debug Linear API issues without losing context.
 func (c *Client) graphql(ctx context.Context, query string, variables map[string]any, out any) error {
 	body := map[string]any{"query": query, "variables": variables}
 	b, err := json.Marshal(body)
@@ -59,14 +62,36 @@ func (c *Client) graphql(ctx context.Context, query string, variables map[string
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("linear: status %d", resp.StatusCode)
 	}
+
+	// Decode into a buffer so we can both check `errors` and decode `data`.
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("linear: read body: %w", err)
+	}
+
+	var envelope struct {
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return fmt.Errorf("linear: decode envelope: %w", err)
+	}
+	if len(envelope.Errors) > 0 {
+		return fmt.Errorf("linear: graphql error: %s", envelope.Errors[0].Message)
+	}
+
 	if out == nil {
 		return nil
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	return json.Unmarshal(raw, out)
 }
 
 func (c *Client) Fetch(ctx context.Context, _ tracker.Filter) ([]tracker.WorkItem, error) {
@@ -149,6 +174,12 @@ func (c *Client) Search(ctx context.Context, query string) ([]tracker.WorkItem, 
 	return items, nil
 }
 
+// Create creates a new Linear issue.
+//
+// IMPORTANT: Linear's issueCreate mutation requires the team UUID, not the team
+// key. If teamKey holds a key like "ENG" (rather than a UUID), this call will
+// fail with a Linear GraphQL error. Resolve the UUID via FetchProjects and
+// store it in teamKey before calling Create.
 func (c *Client) Create(ctx context.Context, item tracker.WorkItem) (*tracker.WorkItem, error) {
 	const q = `mutation($title: String!, $description: String, $teamId: String!) {
 		issueCreate(input: { title: $title, description: $description, teamId: $teamId }) {
@@ -178,6 +209,14 @@ func (c *Client) Create(ctx context.Context, item tracker.WorkItem) (*tracker.Wo
 	return &created, nil
 }
 
+// Update applies the given updates to the Linear issue.
+//
+// IMPORTANT: updates["state"] must be a Linear state UUID, not a state name.
+// Resolve names to UUIDs via FetchStates before calling Update. The caller
+// (registry adapterClient or API handler) is responsible for the translation.
+//
+// Recognised update keys: "state" (UUID string), "assignee_id", "priority",
+// "title", "description". Unknown keys are silently ignored.
 func (c *Client) Update(ctx context.Context, id string, updates map[string]any) (*tracker.WorkItem, error) {
 	const q = `mutation($id: String!, $input: IssueUpdateInput!) {
 		issueUpdate(id: $id, input: $input) {

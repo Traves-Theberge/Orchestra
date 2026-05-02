@@ -134,3 +134,21 @@ func TestComment_PostsBody(t *testing.T) {
 		t.Errorf("body did not contain comment: %s", capturedBody)
 	}
 }
+
+func TestGraphQL_ErrorsArrayReturnsError(t *testing.T) {
+	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": nil,
+			"errors": []map[string]any{
+				{"message": "Entity not found"},
+			},
+		})
+	})
+	_, err := c.FetchByID(context.Background(), "missing-id")
+	if err == nil {
+		t.Fatal("expected error from GraphQL errors array, got nil")
+	}
+	if !strings.Contains(err.Error(), "Entity not found") {
+		t.Errorf("error message: got %q, want it to contain 'Entity not found'", err.Error())
+	}
+}
