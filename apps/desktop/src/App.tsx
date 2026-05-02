@@ -43,6 +43,7 @@ const DocsDashboard = lazy(() => import('@features/docs/DocsDashboard').then(m =
 const SettingsPage = lazy(() => import('@layout/panels').then(m => ({ default: m.SettingsPage })))
 const WorkspaceLayout = lazy(() => import('@features/workspace/WorkspaceLayout').then(m => ({ default: m.WorkspaceLayout })))
 const SandboxDashboard = lazy(() => import('@features/sandbox/SandboxDashboard').then(m => ({ default: m.SandboxDashboard })))
+const TrackerViewer = lazy(() => import('@features/tracker').then(m => ({ default: m.TrackerViewer })))
 
 const SectionLoader = () => (
   <div className="flex-1 grid place-items-center text-muted-foreground text-sm">Loading…</div>
@@ -520,6 +521,16 @@ export default function App() {
               <section className="col-span-12 flex flex-col">
                 <Suspense fallback={<SectionLoader />}>
                   <SandboxDashboard config={config} onOpenSettings={() => { setSettingsInitialTab('integrations'); setActiveSection('SETTINGS') }} />
+                </Suspense>
+              </section>
+            </SectionErrorBoundary>
+          ) : null}
+
+          {sectionVisibility.showTracker ? (
+            <SectionErrorBoundary name="Tracker">
+              <section className="col-span-12 flex flex-col">
+                <Suspense fallback={<SectionLoader />}>
+                  <TrackerViewer config={config} />
                 </Suspense>
               </section>
             </SectionErrorBoundary>
