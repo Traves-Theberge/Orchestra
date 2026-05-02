@@ -46,6 +46,7 @@ func Load() (Config, error) {
 	agentCommandOpenCode := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_OPENCODE")
 	agentCommandGemini := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_GEMINI")
 	agentCommand8gent := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_8GENT")
+	agentCommandUnsandbox := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_UNSANDBOX")
 	trackerType := getenvOrEmpty("ORCHESTRA_TRACKER_TYPE")
 	trackerEndpoint := getenvOrEmpty("ORCHESTRA_TRACKER_ENDPOINT")
 	trackerToken := getenvOrEmpty("ORCHESTRA_TRACKER_TOKEN")
@@ -192,6 +193,9 @@ func Load() (Config, error) {
 	}
 	if value := strings.TrimSpace(agentCommand8gent); value != "" {
 		agentCommands["8GENT"] = value
+	}
+	if value := strings.TrimSpace(agentCommandUnsandbox); value != "" {
+		agentCommands["UNSANDBOX"] = value
 	}
 
 	port, err := strconv.Atoi(strings.TrimSpace(portRaw))

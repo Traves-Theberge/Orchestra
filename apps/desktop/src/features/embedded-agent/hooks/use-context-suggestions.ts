@@ -128,6 +128,16 @@ export function useContextSuggestions(
             break
           }
 
+          case 'SANDBOX': {
+            newSuggestions.push({
+              id: mkId(),
+              text: 'Run a quick code snippet?',
+              action: 'send_chat',
+              params: { message: 'Check if the Unsandbox environment is configured and ready' },
+              dismissed: false,
+            })
+            break
+          }
         }
       } catch {
         // Silently fail — suggestions are non-critical

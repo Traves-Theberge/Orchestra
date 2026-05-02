@@ -2038,6 +2038,129 @@ export async function fetchPRComments(config: BackendConfig, projectId: string, 
   return requestJSON(config, `/api/v1/projects/${encodeURIComponent(projectId)}/github/pulls/${prNumber}/comments`)
 }
 
+// --- Unsandbox Configuration ---
+
+/** Configuration state for the Unsandbox remote execution integration. */
+export type UnsandboxConfig = {
+  configured: boolean
+  public_key: string
+  has_secret: boolean
+}
+
+/** Runtime status of the Unsandbox integration (validity, errors). */
+export type UnsandboxStatus = {
+  configured: boolean
+  valid?: boolean
+  error?: string
+  key_info?: Record<string, unknown>
+}
+
+/**
+ * Fetches the current Unsandbox API key configuration.
+ * @param config - Backend connection configuration.
+ * @returns The Unsandbox configuration state.
+ */
+export async function fetchUnsandboxConfig(config: BackendConfig): Promise<UnsandboxConfig> {
+  return requestJSON<UnsandboxConfig>(config, '/api/v1/config/unsandbox')
+}
+
+/**
+ * Saves Unsandbox API keys to the backend configuration.
+ * @param config - Backend connection configuration.
+ * @param publicKey - Unsandbox public API key.
+ * @param secretKey - Unsandbox secret API key.
+ * @returns The updated Unsandbox configuration.
+ */
+export async function saveUnsandboxConfig(config: BackendConfig, publicKey: string, secretKey: string): Promise<UnsandboxConfig> {
+  return requestJSON<UnsandboxConfig>(config, '/api/v1/config/unsandbox', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ public_key: publicKey, secret_key: secretKey }),
+  })
+}
+
+/**
+ * Deletes the stored Unsandbox API keys from the backend.
+ * @param config - Backend connection configuration.
+ */
+export async function deleteUnsandboxConfig(config: BackendConfig): Promise<void> {
+  await requestJSON<void>(config, '/api/v1/config/unsandbox', {
+    method: 'DELETE',
+  })
+}
+
+/**
+ * Fetches the current Unsandbox integration status (whether keys are valid).
+ * @param config - Backend connection configuration.
+ * @returns The Unsandbox runtime status.
+ */
+export async function fetchUnsandboxStatus(config: BackendConfig): Promise<UnsandboxStatus> {
+  return requestJSON<UnsandboxStatus>(config, '/api/v1/unsandbox/status')
+}
+
+/** Result of executing code in the Unsandbox remote environment. */
+export type UnsandboxExecuteResult = {
+  status: string
+  output: string
+  error: string
+  job_id: string
+}
+
+/**
+ * Executes code in the Unsandbox remote sandbox environment.
+ * @param config - Backend connection configuration.
+ * @param language - Programming language (e.g. "python", "bash").
+ * @param code - Source code to execute.
+ * @param network - Network access level (defaults to "semitrusted").
+ * @returns Execution result with output, errors, and job ID.
+ */
+export async function executeUnsandbox(
+  config: BackendConfig,
+  language: string,
+  code: string,
+  network?: string,
+): Promise<UnsandboxExecuteResult> {
+  return requestJSON<UnsandboxExecuteResult>(config, '/api/v1/unsandbox/execute', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ language, code, network: network || 'semitrusted' }),
+  }, 150000)
+}
+
+/** An active or completed Unsandbox execution session. */
+export type UnsandboxSession = {
+  id: string
+  language: string
+  status: string
+  created_at?: string
+  [key: string]: unknown
+}
+
+/**
+ * Fetches all Unsandbox execution sessions.
+ * @param config - Backend connection configuration.
+ * @returns Object containing array of session records.
+ */
+export async function fetchUnsandboxSessions(config: BackendConfig): Promise<{ sessions: UnsandboxSession[] }> {
+  return requestJSON<{ sessions: UnsandboxSession[] }>(config, '/api/v1/unsandbox/sessions')
+}
+
+/** A service running within the Unsandbox environment. */
+export type UnsandboxService = {
+  id: string
+  status: string
+  [key: string]: unknown
+}
+
+/**
+ * Fetches all services running in the Unsandbox environment.
+ * @param config - Backend connection configuration.
+ * @returns Object containing array of service records.
+ */
+export async function fetchUnsandboxServices(config: BackendConfig): Promise<{ services: UnsandboxService[] }> {
+  return requestJSON<{ services: UnsandboxService[] }>(config, '/api/v1/unsandbox/services')
+}
+
 // --- Runtime Connections ---
 
 /** Configuration for a Tailscale SSH remote runtime. */

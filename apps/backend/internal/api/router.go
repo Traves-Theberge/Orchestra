@@ -267,6 +267,17 @@ func NewRouterWithPubSub(
 	protected.Get("/api/v1/config/agent-providers", server.HandleGetAgentProviders)
 	protected.Post("/api/v1/config/agent-providers", server.HandleSaveAgentProvider)
 
+	// Unsandbox remote execution
+	protected.Get("/api/v1/unsandbox/status", server.GetUnsandboxStatus)
+	protected.Post("/api/v1/unsandbox/execute", server.PostUnsandboxExecute)
+	protected.Get("/api/v1/unsandbox/jobs/*", server.GetUnsandboxJob)
+	protected.Get("/api/v1/unsandbox/sessions", server.GetUnsandboxSessions)
+	protected.Get("/api/v1/unsandbox/services", server.GetUnsandboxServices)
+	// Unsandbox configuration (API keys)
+	protected.Get("/api/v1/config/unsandbox", server.GetUnsandboxConfig)
+	protected.Post("/api/v1/config/unsandbox", server.PostUnsandboxConfig)
+	protected.Delete("/api/v1/config/unsandbox", server.DeleteUnsandboxConfig)
+
 	// Runtime targets (Tailscale and Kubernetes)
 	protected.Get("/api/v1/config/tailscale", server.GetTailscaleConfig)
 	protected.Post("/api/v1/config/tailscale", server.SaveTailscaleConfig)

@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/orchestra/orchestra/apps/backend/internal/terminal"
+	"github.com/orchestra/orchestra/apps/backend/internal/unsandbox"
 )
 
 // Registry maps provider names to Runner implementations and dispatches
@@ -93,6 +94,12 @@ func (r *Registry) SetCommand(provider Provider, command string) {
 		r.runners[p] = NewOpenCodeRunner(command)
 	case ProviderGemini:
 		r.runners[p] = NewGeminiRunner(command)
+	case ProviderUnsandbox:
+		client, err := unsandbox.NewClientFromEnv()
+		if err == nil {
+			r.runners[p] = NewUnsandboxRunner(client, command)
+		}
+		return
 	default:
 		runner := NewCommandRunner(p, command)
 		if r.termManager != nil {
