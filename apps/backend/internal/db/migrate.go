@@ -84,6 +84,8 @@ func runMigrations(db *sql.DB) error {
 		{"issues", "pr_url", "TEXT DEFAULT ''"},
 		// Agent plan stored separately from description
 		{"issues", "plan", "TEXT DEFAULT ''"},
+		// Tracker config assignment per project
+		{"projects", "tracker_config_id", "TEXT"},
 	}
 
 	for _, m := range migrations {

@@ -179,4 +179,18 @@ CREATE TABLE IF NOT EXISTS budgets (
 	alert_pct   INTEGER DEFAULT 80,
 	created_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS tracker_configs (
+	id           TEXT PRIMARY KEY,
+	type         TEXT NOT NULL,
+	display_name TEXT NOT NULL,
+	endpoint     TEXT,
+	auth_method  TEXT NOT NULL DEFAULT 'apikey',
+	token_enc    TEXT,
+	refresh_enc  TEXT,
+	token_expiry INTEGER,
+	extra        TEXT,
+	created_at   INTEGER NOT NULL,
+	updated_at   INTEGER NOT NULL
+);
 `
