@@ -13,8 +13,8 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
 	"github.com/orchestra/orchestra/apps/backend/internal/observability"
 	"github.com/orchestra/orchestra/apps/backend/internal/orchestrator"
-	"github.com/orchestra/orchestra/apps/backend/internal/tracker/memory"
 	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
+	"github.com/orchestra/orchestra/apps/backend/internal/tracker/memory"
 	"github.com/rs/zerolog"
 )
 
@@ -51,8 +51,8 @@ func testProjectSetup(t *testing.T) (workspaceRoot string, projectID string, war
 	return workspaceRoot, projectID, warehouseDB
 }
 
-func TestNewTrackerClientUsesMemoryWhenEndpointUnset(t *testing.T) {
-	client := newTrackerClient(config.Config{}, nil)
+func TestLegacyTrackerClientUsesMemoryWhenEndpointUnset(t *testing.T) {
+	client := newLegacyTrackerClient(config.Config{}, nil)
 	if _, ok := client.(*memory.Client); !ok {
 		t.Fatalf("expected memory tracker client when endpoint is unset")
 	}
