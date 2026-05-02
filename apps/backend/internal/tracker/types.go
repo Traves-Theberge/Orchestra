@@ -3,31 +3,9 @@ package tracker
 
 import "context"
 
-// Issue represents a tracked work item with metadata such as state, priority,
-// assignee, and blocking relationships.
-type Issue struct {
-	ID               string    `json:"id"`
-	Identifier       string    `json:"identifier"`
-	Title            string    `json:"title"`
-	Description      string    `json:"description,omitempty"`
-	Priority         int       `json:"priority,omitempty"`
-	State            string    `json:"state"`
-	BranchName       string    `json:"branch_name,omitempty"`
-	URL              string    `json:"url,omitempty"`
-	ProjectID        string    `json:"project_id,omitempty"`
-	AssigneeID       string    `json:"assignee_id,omitempty"`
-	AssignedToWorker bool      `json:"assigned_to_worker"`
-	Labels           []string  `json:"labels,omitempty"`
-	BlockedBy        []Blocker `json:"blocked_by,omitempty"`
-	CreatedAt        string    `json:"created_at,omitempty"`
-	UpdatedAt        string    `json:"updated_at,omitempty"`
-	Provider         string    `json:"provider,omitempty"`
-	DisabledTools    []string  `json:"disabled_tools,omitempty"`
-	BaseSHA          string    `json:"base_sha,omitempty"`
-	Feedback         string    `json:"feedback,omitempty"`
-	PRURL            string    `json:"pr_url,omitempty"`
-	Plan             string    `json:"plan,omitempty"`
-}
+// Issue is a backward-compatible alias for WorkItem.
+// All existing code using tracker.Issue continues to compile unchanged.
+type Issue = WorkItem
 
 // Blocker represents an issue that blocks another issue from progressing.
 type Blocker struct {
