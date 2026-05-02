@@ -14,8 +14,11 @@ type WorkItem struct {
 	BranchName       string         `json:"branch_name,omitempty"`
 	URL              string         `json:"url,omitempty"`
 	ProjectID        string         `json:"project_id,omitempty"`
-	AssigneeID       string         `json:"assignee_id,omitempty"`
-	Assignees        []string       `json:"assignees,omitempty"`
+	// AssigneeID is the single primary assignee — set by all backends.
+	AssigneeID string `json:"assignee_id,omitempty"`
+	// Assignees is the full set of assignees for backends that support multiple
+	// (e.g. Jira, GitHub). Single-assignee backends populate AssigneeID only.
+	Assignees []string `json:"assignees,omitempty"`
 	AssignedToWorker bool           `json:"assigned_to_worker"`
 	Labels           []string       `json:"labels,omitempty"`
 	BlockedBy        []Blocker      `json:"blocked_by,omitempty"`

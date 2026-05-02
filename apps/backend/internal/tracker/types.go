@@ -14,12 +14,8 @@ type Blocker struct {
 	State      string `json:"state,omitempty"`
 }
 
-// IssueFilter specifies criteria for filtering issues by state, project, or assignee.
-type IssueFilter struct {
-	States     []string
-	ProjectID  string
-	AssigneeID string
-}
+// IssueFilter is a backward-compatible alias for Filter.
+type IssueFilter = Filter
 
 // Client defines the interface for issue tracker operations including
 // fetching, creating, updating, and deleting issues.
