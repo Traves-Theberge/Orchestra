@@ -2452,26 +2452,26 @@ export type {
 // ─── Tracker configs ─────────────────────────────────────────────────────────
 
 import type {
-  TrackerConfig as _TrackerConfig,
-  TrackerProject as _TrackerProject,
-  TrackerState as _TrackerState,
-  WorkItem as _WorkItem,
-  CreateTrackerConfigRequest as _CreateTrackerConfigRequest,
-  UpdateTrackerConfigRequest as _UpdateTrackerConfigRequest,
-  TestConnectionResult as _TestConnectionResult,
+  TrackerConfig,
+  TrackerProject,
+  TrackerState,
+  WorkItem,
+  CreateTrackerConfigRequest,
+  UpdateTrackerConfigRequest,
+  TestConnectionResult,
 } from '@/entities/tracker/types'
 
 /** List all configured tracker connections. */
-export async function listTrackerConfigs(config: BackendConfig): Promise<_TrackerConfig[]> {
-  return requestJSON<_TrackerConfig[]>(config, '/api/v1/tracker/configs')
+export async function listTrackerConfigs(config: BackendConfig): Promise<TrackerConfig[]> {
+  return requestJSON<TrackerConfig[]>(config, '/api/v1/tracker/configs')
 }
 
 /** Create a new tracker config. Backend encrypts the token before storage. */
 export async function createTrackerConfig(
   config: BackendConfig,
-  payload: _CreateTrackerConfigRequest,
-): Promise<_TrackerConfig> {
-  return requestJSON<_TrackerConfig>(config, '/api/v1/tracker/configs', {
+  payload: CreateTrackerConfigRequest,
+): Promise<TrackerConfig> {
+  return requestJSON<TrackerConfig>(config, '/api/v1/tracker/configs', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -2482,9 +2482,9 @@ export async function createTrackerConfig(
 export async function updateTrackerConfig(
   config: BackendConfig,
   configId: string,
-  patch: _UpdateTrackerConfigRequest,
-): Promise<_TrackerConfig> {
-  return requestJSON<_TrackerConfig>(
+  patch: UpdateTrackerConfigRequest,
+): Promise<TrackerConfig> {
+  return requestJSON<TrackerConfig>(
     config,
     `/api/v1/tracker/configs/${encodeURIComponent(configId)}`,
     {
@@ -2508,8 +2508,8 @@ export async function deleteTrackerConfig(config: BackendConfig, configId: strin
 export async function testTrackerConfig(
   config: BackendConfig,
   configId: string,
-): Promise<_TestConnectionResult> {
-  return requestJSON<_TestConnectionResult>(
+): Promise<TestConnectionResult> {
+  return requestJSON<TestConnectionResult>(
     config,
     `/api/v1/tracker/configs/${encodeURIComponent(configId)}/test`,
     { method: 'POST' },
@@ -2520,8 +2520,8 @@ export async function testTrackerConfig(
 export async function fetchTrackerProjects(
   config: BackendConfig,
   configId: string,
-): Promise<_TrackerProject[]> {
-  return requestJSON<_TrackerProject[]>(
+): Promise<TrackerProject[]> {
+  return requestJSON<TrackerProject[]>(
     config,
     `/api/v1/tracker/configs/${encodeURIComponent(configId)}/projects`,
   )
@@ -2531,8 +2531,8 @@ export async function fetchTrackerProjects(
 export async function fetchTrackerStates(
   config: BackendConfig,
   configId: string,
-): Promise<_TrackerState[]> {
-  return requestJSON<_TrackerState[]>(
+): Promise<TrackerState[]> {
+  return requestJSON<TrackerState[]>(
     config,
     `/api/v1/tracker/configs/${encodeURIComponent(configId)}/states`,
   )
@@ -2543,14 +2543,14 @@ export async function browseTrackerItems(
   config: BackendConfig,
   configId: string,
   filter?: { states?: string[] },
-): Promise<_WorkItem[]> {
+): Promise<WorkItem[]> {
   const params = new URLSearchParams()
   if (filter?.states?.length) {
     params.set('states', filter.states.join(','))
   }
   const qs = params.toString()
   const path = `/api/v1/tracker/configs/${encodeURIComponent(configId)}/issues${qs ? '?' + qs : ''}`
-  return requestJSON<_WorkItem[]>(config, path)
+  return requestJSON<WorkItem[]>(config, path)
 }
 
 /** Assign a tracker config to a project (or pass empty configId to clear). */
