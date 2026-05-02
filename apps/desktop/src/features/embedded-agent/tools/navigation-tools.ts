@@ -7,7 +7,6 @@ const SECTIONS = [
   'CONSOLE',
   'AGENTS',
   'WAREHOUSE',
-  'SANDBOX',
   'SETTINGS',
   'DOCS',
 ] as const
@@ -32,11 +31,11 @@ export function createNavigationTools(
       description:
         'Navigate the app to a specific section. ' +
         'Section mapping: ISSUES=Tasks/Issues, PROJECTS=Projects, CONSOLE=Live Console/Terminal, ' +
-        'AGENTS=Agent config, WAREHOUSE=Analytics/Token usage, SANDBOX=Code execution, ' +
+        'AGENTS=Agent config, WAREHOUSE=Analytics/Token usage, ' +
         'SETTINGS=Settings, DOCS=Documentation. ' +
         'Use when the user asks to go to, open, or show a section.',
       inputSchema: z.object({
-        section: z.enum(SECTIONS).describe('Section ID: ISSUES, PROJECTS, CONSOLE, AGENTS, WAREHOUSE (analytics), SANDBOX, SETTINGS, DOCS'),
+        section: z.enum(SECTIONS).describe('Section ID: ISSUES, PROJECTS, CONSOLE, AGENTS, WAREHOUSE (analytics), SETTINGS, DOCS'),
       }),
       execute: async (params) => {
         onNavigate(params.section)

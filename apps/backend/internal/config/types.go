@@ -79,6 +79,20 @@ type Config struct {
 	AnalyticsSyncInterval time.Duration
 	// AnalyticsExternalEnabled controls whether external analytics sync is active.
 	AnalyticsExternalEnabled bool
+
+	// Tailscale runtime
+	TailscaleSSHHost      string
+	TailscaleSSHUser      string
+	TailscaleSSHKeyPath   string
+	TailscaleSSHPort      int
+	TailscaleWorktreeRoot string
+
+	// Kubernetes runtime
+	KubeConfigPath       string
+	KubeNamespace        string
+	KubeImage            string
+	KubeGitRepoURL       string
+	KubeServiceAccount   string
 }
 
 // PortString returns the server port as a string.

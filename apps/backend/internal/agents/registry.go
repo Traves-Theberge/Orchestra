@@ -4,15 +4,16 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/orchestra/orchestra/apps/backend/internal/terminal"
-	"github.com/orchestra/orchestra/apps/backend/internal/unsandbox"
 )
 
 // Registry maps provider names to Runner implementations and dispatches
 // turn execution to the appropriate backend. It is the central entry point
 // for the orchestrator to invoke any configured agent.
 type Registry struct {
+	mu          sync.Mutex
 	runners     map[Provider]Runner
 	termManager *terminal.Manager
 }
@@ -61,6 +62,15 @@ func (r *Registry) Providers() []Provider {
 	return providers
 }
 
+// SetRunner registers or replaces the runner for the given provider directly,
+// bypassing the command-based lookup. This is used by callers that construct
+// their own Runner implementations (e.g. TailscaleRunner, KubernetesRunner).
+func (r *Registry) SetRunner(p Provider, runner Runner) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.runners[p] = runner
+}
+
 // SetCommand registers or replaces the runner for the given provider by
 // normalizing the provider name and selecting the appropriate Runner
 // implementation (ClaudeRunner, GeminiRunner, CodexAppServerRunner, etc.)
@@ -83,12 +93,6 @@ func (r *Registry) SetCommand(provider Provider, command string) {
 		r.runners[p] = NewOpenCodeRunner(command)
 	case ProviderGemini:
 		r.runners[p] = NewGeminiRunner(command)
-	case ProviderUnsandbox:
-		client, err := unsandbox.NewClientFromEnv()
-		if err == nil {
-			r.runners[p] = NewUnsandboxRunner(client, command)
-		}
-		return
 	default:
 		runner := NewCommandRunner(p, command)
 		if r.termManager != nil {

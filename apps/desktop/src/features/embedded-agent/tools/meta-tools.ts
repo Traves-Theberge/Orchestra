@@ -4,7 +4,7 @@ import { zodToJsonSchema } from 'zod-to-json-schema'
 
 // ── Tool Registry ──────────────────────────────────────────────
 
-type ToolCategory = 'issues' | 'projects' | 'git' | 'sessions' | 'search' | 'code' | 'scheduling' | 'mcp' | 'navigation' | 'system'
+type ToolCategory = 'issues' | 'projects' | 'git' | 'sessions' | 'search' | 'scheduling' | 'mcp' | 'navigation' | 'system'
 
 type ToolRegistryEntry = {
   name: string
@@ -226,32 +226,6 @@ const TOOL_REGISTRY: ToolRegistryEntry[] = [
     confirm: false,
   },
 
-  // ── Code Execution ───────────────────────────────────────────
-  {
-    name: 'execute_code',
-    category: 'code',
-    summary: 'Run a code snippet in the Unsandbox environment.',
-    when: 'User asks to run, execute, or test code.',
-    mutates: false,
-    confirm: false,
-  },
-  {
-    name: 'check_sandbox_status',
-    category: 'code',
-    summary: 'Check if the Unsandbox environment is configured and available.',
-    when: 'Before first code execution in a session, or user asks if sandbox is ready.',
-    mutates: false,
-    confirm: false,
-  },
-  {
-    name: 'list_sandbox_sessions',
-    category: 'code',
-    summary: 'List recent code execution sessions.',
-    when: 'User asks about previous code runs or sandbox history.',
-    mutates: false,
-    confirm: false,
-  },
-
   // ── Scheduling ───────────────────────────────────────────────
   {
     name: 'schedule_reminder',
@@ -357,7 +331,6 @@ const CATEGORY_DESCRIPTIONS: Record<ToolCategory, string> = {
   git: 'Git operations: status, history, branches, commit, push/pull, stash',
   sessions: 'Session logs, summaries, and details for agent runs',
   search: 'Search issues, sessions, docs, and platform analytics',
-  code: 'Execute code in the Unsandbox sandbox',
   scheduling: 'Reminders and deferred tool executions',
   mcp: 'MCP server discovery and status',
   navigation: 'Navigate the app UI',
@@ -381,7 +354,7 @@ export function createMetaTools(allTools: ToolSet) {
         'Categories: issues, projects, git, sessions, search, code, scheduling, mcp, navigation, system.',
       inputSchema: z.object({
         query: z.string().optional().describe('Keyword to search across tool names and descriptions'),
-        category: z.enum(['issues', 'projects', 'git', 'sessions', 'search', 'code', 'scheduling', 'mcp', 'navigation', 'system']).optional().describe('Filter by tool category'),
+        category: z.enum(['issues', 'projects', 'git', 'sessions', 'search', 'scheduling', 'mcp', 'navigation', 'system']).optional().describe('Filter by tool category'),
         detail: z.enum(['names', 'summary', 'full']).optional().default('summary').describe('Level of detail: names (just names), summary (name + description + when), full (all metadata)'),
       }),
       execute: async (params) => {

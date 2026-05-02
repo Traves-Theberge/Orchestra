@@ -263,21 +263,19 @@ func NewRouterWithPubSub(
 	protected.Post("/api/v1/refresh", server.PostRefresh)
 	protected.Post("/api/v1/workspace/migrate", server.PostWorkspaceMigrate)
 
-	// Unsandbox remote execution
-	protected.Get("/api/v1/unsandbox/status", server.GetUnsandboxStatus)
-	protected.Post("/api/v1/unsandbox/execute", server.PostUnsandboxExecute)
-	protected.Get("/api/v1/unsandbox/jobs/*", server.GetUnsandboxJob)
-	protected.Get("/api/v1/unsandbox/sessions", server.GetUnsandboxSessions)
-	protected.Get("/api/v1/unsandbox/services", server.GetUnsandboxServices)
-
-	// Unsandbox configuration (API keys)
-	protected.Get("/api/v1/config/unsandbox", server.GetUnsandboxConfig)
-	protected.Post("/api/v1/config/unsandbox", server.PostUnsandboxConfig)
-	protected.Delete("/api/v1/config/unsandbox", server.DeleteUnsandboxConfig)
-
 	// Agent provider API keys (embedded agent widget)
 	protected.Get("/api/v1/config/agent-providers", server.HandleGetAgentProviders)
 	protected.Post("/api/v1/config/agent-providers", server.HandleSaveAgentProvider)
+
+	// Runtime targets (Tailscale and Kubernetes)
+	protected.Get("/api/v1/config/tailscale", server.GetTailscaleConfig)
+	protected.Post("/api/v1/config/tailscale", server.SaveTailscaleConfig)
+	protected.Delete("/api/v1/config/tailscale", server.DeleteTailscaleConfig)
+	protected.Get("/api/v1/config/tailscale/test", server.TestTailscaleConfig)
+	protected.Get("/api/v1/config/kubernetes", server.GetKubernetesConfig)
+	protected.Post("/api/v1/config/kubernetes", server.SaveKubernetesConfig)
+	protected.Delete("/api/v1/config/kubernetes", server.DeleteKubernetesConfig)
+	protected.Get("/api/v1/config/kubernetes/test", server.TestKubernetesConfig)
 
 	protected.Get("/api/v1/issues/{issue_identifier}", server.GetIssue)
 	protected.Get("/api/v1/issues/{issue_identifier}/logs", server.GetIssueLogs)

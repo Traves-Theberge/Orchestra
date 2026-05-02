@@ -45,7 +45,6 @@ func Load() (Config, error) {
 	agentCommandClaude := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_CLAUDE")
 	agentCommandOpenCode := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_OPENCODE")
 	agentCommandGemini := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_GEMINI")
-	agentCommandUnsandbox := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_UNSANDBOX")
 	agentCommand8gent := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_8GENT")
 	trackerType := getenvOrEmpty("ORCHESTRA_TRACKER_TYPE")
 	trackerEndpoint := getenvOrEmpty("ORCHESTRA_TRACKER_ENDPOINT")
@@ -191,9 +190,6 @@ func Load() (Config, error) {
 	if value := strings.TrimSpace(agentCommandGemini); value != "" {
 		agentCommands["GEMINI"] = value
 	}
-	if value := strings.TrimSpace(agentCommandUnsandbox); value != "" {
-		agentCommands["UNSANDBOX"] = value
-	}
 	if value := strings.TrimSpace(agentCommand8gent); value != "" {
 		agentCommands["8GENT"] = value
 	}
@@ -276,6 +272,25 @@ func Load() (Config, error) {
 	}
 	analyticsExternalEnabled := parseBoolWithDefault(analyticsExternalEnabledRaw, false)
 
+	// Tailscale runtime
+	tailscaleSSHHost := getenvOrEmpty("ORCHESTRA_TAILSCALE_SSH_HOST")
+	tailscaleSSHUser := getenvOrDefault("ORCHESTRA_TAILSCALE_SSH_USER", "root")
+	tailscaleSSHKeyPath := getenvOrEmpty("ORCHESTRA_TAILSCALE_SSH_KEY")
+	tailscaleWorktreeRoot := getenvOrDefault("ORCHESTRA_TAILSCALE_WORKTREE_ROOT", "/tmp/orchestra-worktrees")
+	tailscaleSSHPort := 22
+	if portStr := getenvOrEmpty("ORCHESTRA_TAILSCALE_SSH_PORT"); portStr != "" {
+		if p, err := strconv.Atoi(portStr); err == nil {
+			tailscaleSSHPort = p
+		}
+	}
+
+	// Kubernetes runtime
+	kubeConfigPath := getenvOrEmpty("ORCHESTRA_KUBE_CONFIG")
+	kubeNamespace := getenvOrDefault("ORCHESTRA_KUBE_NAMESPACE", "orchestra-agents")
+	kubeImage := getenvOrDefault("ORCHESTRA_KUBE_IMAGE", "ghcr.io/orchestra/agent-runner:latest")
+	kubeGitRepoURL := getenvOrEmpty("ORCHESTRA_KUBE_GIT_REPO_URL")
+	kubeServiceAccount := getenvOrEmpty("ORCHESTRA_KUBE_SERVICE_ACCOUNT")
+
 	return Config{
 		Host:                     strings.TrimSpace(host),
 		Port:                     port,
@@ -315,6 +330,16 @@ func Load() (Config, error) {
 		OpenAIAdminKey:           strings.TrimSpace(openaiAdminKey),
 		AnalyticsSyncInterval:    analyticsSyncInterval,
 		AnalyticsExternalEnabled: analyticsExternalEnabled,
+		TailscaleSSHHost:         tailscaleSSHHost,
+		TailscaleSSHUser:         tailscaleSSHUser,
+		TailscaleSSHKeyPath:      tailscaleSSHKeyPath,
+		TailscaleSSHPort:         tailscaleSSHPort,
+		TailscaleWorktreeRoot:    tailscaleWorktreeRoot,
+		KubeConfigPath:           kubeConfigPath,
+		KubeNamespace:            kubeNamespace,
+		KubeImage:                kubeImage,
+		KubeGitRepoURL:           kubeGitRepoURL,
+		KubeServiceAccount:       kubeServiceAccount,
 	}, nil
 }
 

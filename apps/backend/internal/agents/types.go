@@ -1,6 +1,7 @@
 // Package agents provides runner implementations for dispatching work to
 // machine-learning coding agents (Claude, Gemini, OpenCode, Codex via app-server,
-// and Unsandbox) and a registry that maps provider names to their concrete runners.
+// Tailscale SSH, and Kubernetes pods) and a registry that maps provider names to
+// their concrete runners.
 package agents
 
 import (
@@ -23,6 +24,10 @@ const (
 	ProviderGemini Provider = "GEMINI"
 	// Provider8gent identifies the 8gent Code open-source agent.
 	Provider8gent Provider = "8GENT"
+	// ProviderTailscale identifies the Tailscale SSH remote execution backend.
+	ProviderTailscale Provider = "TAILSCALE"
+	// ProviderKubernetes identifies the Kubernetes pod execution backend.
+	ProviderKubernetes Provider = "KUBERNETES"
 )
 
 // NormalizeProvider normalizes a provider string to UPPERCASE for backward compatibility.

@@ -11,7 +11,6 @@ import { createNavigationTools } from './tools/navigation-tools'
 import { createGitTools } from './tools/git-tools'
 import { createSessionTools } from './tools/session-tools'
 import { createSearchTools } from './tools/search-tools'
-import { createCodeExecutionTools } from './tools/code-execution-tools'
 import { createSchedulerTools } from './tools/scheduler-tools'
 import { createMCPBridgeTools } from './tools/mcp-bridge-tools'
 import { createMetaTools } from './tools/meta-tools'
@@ -56,7 +55,6 @@ export function EmbeddedAgentProvider({ config, onNavigate, activeSection, selec
     const gitTools = config ? createGitTools(config) : {}
     const sessionTools = config ? createSessionTools(config) : {}
     const searchTools = config ? createSearchTools(config) : {}
-    const codeExecutionTools = config ? createCodeExecutionTools(config) : {}
     const schedulerTools = createSchedulerTools(scheduler)
     const mcpBridgeTools = config ? createMCPBridgeTools(config) : {}
     const domainTools = {
@@ -65,7 +63,6 @@ export function EmbeddedAgentProvider({ config, onNavigate, activeSection, selec
       ...gitTools,
       ...sessionTools,
       ...searchTools,
-      ...codeExecutionTools,
       ...schedulerTools,
       ...mcpBridgeTools,
     }

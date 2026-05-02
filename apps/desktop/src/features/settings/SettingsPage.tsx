@@ -43,16 +43,10 @@ import {
 import {
   type BackendConfig,
   type WorkspaceMigrationResult,
-  fetchUnsandboxConfig,
-  saveUnsandboxConfig,
-  deleteUnsandboxConfig,
-  fetchUnsandboxStatus,
   fetchAgentProviderKeys,
   saveAgentProviderKey,
   fetchProjects,
   disconnectProjectGitHub,
-  type UnsandboxConfig,
-  type UnsandboxStatus,
 } from '@core/api/client'
 import type { Project } from '@core/api/types'
 import { Github } from 'lucide-react'
@@ -60,6 +54,7 @@ import { CHAT_PROVIDERS } from '@features/embedded-agent/lib/types'
 import { usePlatform } from '@/hooks/use-platform'
 import { CustomDropdown } from '@layout/shared/controls'
 import { useAppStore } from '@core/store'
+import { RuntimeConnectionsPane } from './RuntimeConnectionsPane'
 import { resolveMode } from '@core/theme/apply'
 import { contrastRatio, formatHslTriplet, hexToHslTriplet, hslTripletToHex, parseHslTriplet, wcagBadge } from '@core/theme/color-utils'
 import { deriveRoles } from '@core/theme/derive-surface'
@@ -406,7 +401,14 @@ export function SettingsPage({
             <SectionHeading icon={Cpu} title="Maestro" description="LLM provider and embedded agent configuration" />
             <div className="mt-4 space-y-6">
               <EmbeddedAgentConfigForm config={config} disabled={savingConfig || loadingConfig} />
-              <UnsandboxConfigForm config={config} disabled={savingConfig || loadingConfig} />
+            </div>
+          </section>
+
+          {/* ── Runtime Connections ── */}
+          <section data-settings-section="runtimes" className="rounded-xl transition-colors duration-500 scroll-mt-4">
+            <SectionHeading icon={Globe} title="Runtime Connections" description="Remote execution via Tailscale SSH or Kubernetes" />
+            <div className="mt-4">
+              <RuntimeConnectionsPane config={config} disabled={savingConfig || loadingConfig} />
             </div>
           </section>
 
@@ -3049,232 +3051,3 @@ function EmbeddedAgentConfigForm({ config, disabled }: { config: BackendConfig |
   )
 }
 
-// ---------------------------------------------------------------------------
-// UnsandboxConfigForm (migrated from SettingsCard)
-// ---------------------------------------------------------------------------
-
-function UnsandboxConfigForm({ config, disabled }: { config: BackendConfig | null; disabled: boolean }) {
-  const [publicKey, setPublicKey] = useState('')
-  const [secretKey, setSecretKey] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [showSecret, setShowSecret] = useState(false)
-  const [status, setStatus] = useState<UnsandboxStatus | null>(null)
-  const [unsandboxConfig, setUnsandboxConfig] = useState<UnsandboxConfig | null>(null)
-  const [message, setMessage] = useState('')
-  const [checking, setChecking] = useState(false)
-
-  useEffect(() => {
-    if (!config) return
-    fetchUnsandboxConfig(config)
-      .then((cfg) => {
-        setUnsandboxConfig(cfg)
-        if (cfg.public_key) setPublicKey(cfg.public_key)
-      })
-      .catch(() => {})
-  }, [config])
-
-  const handleSave = async () => {
-    if (!config) return
-    setSaving(true)
-    setMessage('')
-    try {
-      const result = await saveUnsandboxConfig(config, publicKey, secretKey)
-      setUnsandboxConfig(result)
-      setSecretKey('')
-      setMessage('Credentials saved.')
-    } catch (err) {
-      setMessage(`Save failed: ${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleTest = async () => {
-    if (!config) return
-    setChecking(true)
-    setMessage('')
-    try {
-      const s = await fetchUnsandboxStatus(config)
-      setStatus(s)
-      if (s.valid) {
-        setMessage('Connection verified.')
-      } else if (s.error) {
-        setMessage(`Validation failed: ${s.error}`)
-      } else if (!s.configured) {
-        setMessage('No credentials configured.')
-      }
-    } catch (err) {
-      setMessage(`Test failed: ${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      setChecking(false)
-    }
-  }
-
-  const handleRemove = async () => {
-    if (!config) return
-    setSaving(true)
-    setMessage('')
-    try {
-      await deleteUnsandboxConfig(config)
-      setUnsandboxConfig(null)
-      setPublicKey('')
-      setSecretKey('')
-      setStatus(null)
-      setMessage('Credentials removed.')
-    } catch (err) {
-      setMessage(`Remove failed: ${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const isConfigured = unsandboxConfig?.configured ?? false
-
-  return (
-    <div className="space-y-4">
-      <div className="rounded-xl border border-border/20 bg-muted/10 p-4 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <p className="text-sm font-bold">Unsandbox</p>
-              <button
-                type="button"
-                onClick={() => {
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  const bridge = (window as any).orchestraDesktop
-                  if (bridge && typeof bridge.openExternal === 'function') {
-                    void bridge.openExternal('https://unsandbox.com')
-                  } else {
-                    window.open('https://unsandbox.com', '_blank')
-                  }
-                }}
-                className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
-                title="Open unsandbox.com"
-              >
-                unsandbox.com
-                <ExternalLink className="h-2.5 w-2.5" />
-              </button>
-            </div>
-            <p className="text-[10px] text-muted-foreground">Remote code execution across 42+ languages</p>
-          </div>
-          <div className="flex items-center gap-2">
-            {isConfigured ? (
-              <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-emerald-500">
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                Configured
-              </span>
-            ) : (
-              <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                <CircleDashed className="h-3.5 w-3.5" />
-                Not configured
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Public Key</label>
-            <input
-              type="text"
-              value={publicKey}
-              onChange={(e) => setPublicKey(e.target.value)}
-              placeholder="pk_..."
-              disabled={disabled || saving}
-              className="w-full rounded-lg border border-border/40 bg-background px-3 py-2 text-sm font-mono placeholder:text-muted-foreground/40 focus:border-primary focus:outline-none disabled:opacity-50"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-              Secret Key {isConfigured && <span className="text-muted-foreground/60">(leave blank to keep current)</span>}
-            </label>
-            <div className="relative">
-              <input
-                type={showSecret ? 'text' : 'password'}
-                value={secretKey}
-                onChange={(e) => setSecretKey(e.target.value)}
-                placeholder={isConfigured ? '••••••••' : 'sk_...'}
-                disabled={disabled || saving}
-                className="w-full rounded-lg border border-border/40 bg-background px-3 pr-9 py-2 text-sm font-mono placeholder:text-muted-foreground/40 focus:border-primary focus:outline-none disabled:opacity-50"
-              />
-              <button
-                type="button"
-                onClick={() => setShowSecret(!showSecret)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-muted transition-all"
-                title={showSecret ? 'Hide key' : 'Reveal key'}
-              >
-                {showSecret ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleSave}
-            disabled={disabled || saving || !publicKey.trim() || (!secretKey.trim() && !isConfigured)}
-            className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-black hover:bg-white/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {saving ? <Loader2 className="h-3 w-3 animate-spin-smooth" /> : <Check className="h-3 w-3" />}
-            Save Keys
-          </button>
-          <button
-            onClick={handleTest}
-            disabled={disabled || checking || !isConfigured}
-            className="flex items-center gap-1.5 rounded-lg border border-border/40 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground hover:text-foreground hover:border-border disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {checking ? <Loader2 className="h-3 w-3 animate-spin-smooth" /> : <ShieldCheck className="h-3 w-3" />}
-            Test Connection
-          </button>
-          {isConfigured && (
-            <button
-              onClick={handleRemove}
-              disabled={disabled || saving}
-              className="flex items-center gap-1.5 rounded-lg border border-red-500/20 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-red-500 hover:bg-red-500/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              <Trash2 className="h-3 w-3" />
-              Remove
-            </button>
-          )}
-        </div>
-
-        {message && (
-          <p className={`text-[11px] font-medium ${message.includes('failed') || message.includes('Failed') ? 'text-red-500' : 'text-emerald-500'}`}>
-            {message}
-          </p>
-        )}
-
-        {status?.valid && status.key_info && (
-          <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 space-y-1">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-500">API Key Status</p>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
-              {status.key_info.tier ? <><span className="text-muted-foreground">Tier</span><span className="font-mono">{String(status.key_info.tier)}</span></> : null}
-              {status.key_info.rate_per_minute ? <><span className="text-muted-foreground">Rate</span><span className="font-mono">{String(status.key_info.rate_per_minute)}/min</span></> : null}
-              {status.key_info.concurrency ? <><span className="text-muted-foreground">Concurrency</span><span className="font-mono">{String(status.key_info.concurrency)}</span></> : null}
-            </div>
-          </div>
-        )}
-      </div>
-
-      <p className="text-[10px] text-muted-foreground leading-relaxed">
-        Credentials are stored at <code className="text-[10px] font-mono bg-muted/30 px-1 rounded">~/.unsandbox/accounts.csv</code> with restricted permissions (600).
-        You can also set <code className="text-[10px] font-mono bg-muted/30 px-1 rounded">UNSANDBOX_PUBLIC_KEY</code> and <code className="text-[10px] font-mono bg-muted/30 px-1 rounded">UNSANDBOX_SECRET_KEY</code> environment variables.{' '}
-        <button
-          type="button"
-          onClick={() => {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const bridge = (window as any).orchestraDesktop
-            if (bridge && typeof bridge.openExternal === 'function') {
-              void bridge.openExternal('https://unsandbox.com/docs')
-            } else {
-              window.open('https://unsandbox.com/docs', '_blank')
-            }
-          }}
-          className="inline-flex items-center gap-0.5 text-primary hover:underline"
-        >
-          API docs <ExternalLink className="h-2.5 w-2.5" />
-        </button>
-      </p>
-    </div>
-  )
-}

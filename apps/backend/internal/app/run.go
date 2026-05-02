@@ -85,6 +85,37 @@ func Run(logger zerolog.Logger) error {
 	termManager := terminal.NewManager()
 
 	agentRegistry := agents.NewRegistryWithTerminal(cfg.AgentCommands, termManager)
+
+	// Register optional remote execution backends if configured.
+	if cfg.TailscaleSSHHost != "" {
+		tailscaleRunner := agents.NewTailscaleRunner(
+			cfg.AgentCommands[string(agents.ProviderTailscale)],
+			cfg.TailscaleSSHHost,
+			cfg.TailscaleSSHUser,
+			cfg.TailscaleSSHKeyPath,
+			cfg.TailscaleSSHPort,
+			cfg.TailscaleWorktreeRoot,
+		)
+		agentRegistry.SetRunner(agents.ProviderTailscale, tailscaleRunner)
+		logger.Info().Str("host", cfg.TailscaleSSHHost).Msg("Tailscale runner registered")
+	}
+	if cfg.KubeNamespace != "" && cfg.KubeGitRepoURL != "" {
+		if clientset, k8sErr := agents.NewKubernetesClientset(cfg.KubeConfigPath); k8sErr != nil {
+			logger.Warn().Err(k8sErr).Msg("Kubernetes runner unavailable — kubeconfig error")
+		} else {
+			k8sRunner := agents.NewKubernetesRunner(
+				cfg.AgentCommands[string(agents.ProviderKubernetes)],
+				clientset,
+				cfg.KubeNamespace,
+				cfg.KubeImage,
+				cfg.KubeGitRepoURL,
+				cfg.KubeServiceAccount,
+			)
+			agentRegistry.SetRunner(agents.ProviderKubernetes, k8sRunner)
+			logger.Info().Str("namespace", cfg.KubeNamespace).Msg("Kubernetes runner registered")
+		}
+	}
+
 	provider := agents.Provider(cfg.AgentProvider)
 	if !agentRegistry.HasProvider(provider) {
 		return fmt.Errorf("agent provider %q is not configured", cfg.AgentProvider)

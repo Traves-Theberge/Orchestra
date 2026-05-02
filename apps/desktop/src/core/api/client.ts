@@ -2038,127 +2038,74 @@ export async function fetchPRComments(config: BackendConfig, projectId: string, 
   return requestJSON(config, `/api/v1/projects/${encodeURIComponent(projectId)}/github/pulls/${prNumber}/comments`)
 }
 
-// --- Unsandbox Configuration ---
+// --- Runtime Connections ---
 
-/** Configuration state for the Unsandbox remote execution integration. */
-export type UnsandboxConfig = {
+/** Configuration for a Tailscale SSH remote runtime. */
+export type TailscaleConfig = {
   configured: boolean
-  public_key: string
-  has_secret: boolean
+  ssh_host: string
+  ssh_user: string
+  ssh_key_path: string
+  ssh_port: number
+  worktree_root: string
 }
 
-/** Runtime status of the Unsandbox integration (validity, errors). */
-export type UnsandboxStatus = {
+/** Configuration for a Kubernetes remote runtime. */
+export type KubernetesConfig = {
   configured: boolean
-  valid?: boolean
-  error?: string
-  key_info?: Record<string, unknown>
+  kubeconfig_path: string
+  namespace: string
+  image: string
+  git_repo_url: string
+  service_account: string
 }
 
-/**
- * Fetches the current Unsandbox API key configuration.
- * @param config - Backend connection configuration.
- * @returns The Unsandbox configuration state.
- */
-export async function fetchUnsandboxConfig(config: BackendConfig): Promise<UnsandboxConfig> {
-  return requestJSON<UnsandboxConfig>(config, '/api/v1/config/unsandbox')
+/** Fetches the current Tailscale runtime configuration. */
+export async function fetchTailscaleConfig(config: BackendConfig): Promise<TailscaleConfig> {
+  return requestJSON<TailscaleConfig>(config, '/api/v1/config/tailscale')
 }
 
-/**
- * Saves Unsandbox API keys to the backend configuration.
- * @param config - Backend connection configuration.
- * @param publicKey - Unsandbox public API key.
- * @param secretKey - Unsandbox secret API key.
- * @returns The updated Unsandbox configuration.
- */
-export async function saveUnsandboxConfig(config: BackendConfig, publicKey: string, secretKey: string): Promise<UnsandboxConfig> {
-  return requestJSON<UnsandboxConfig>(config, '/api/v1/config/unsandbox', {
+/** Saves Tailscale runtime configuration to the backend. */
+export async function saveTailscaleConfig(config: BackendConfig, data: Partial<TailscaleConfig>): Promise<TailscaleConfig> {
+  return requestJSON<TailscaleConfig>(config, '/api/v1/config/tailscale', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ public_key: publicKey, secret_key: secretKey }),
+    body: JSON.stringify(data),
   })
 }
 
-/**
- * Deletes the stored Unsandbox API keys from the backend.
- * @param config - Backend connection configuration.
- */
-export async function deleteUnsandboxConfig(config: BackendConfig): Promise<void> {
-  await requestJSON<void>(config, '/api/v1/config/unsandbox', {
-    method: 'DELETE',
+/** Deletes the stored Tailscale runtime configuration. */
+export async function deleteTailscaleConfig(config: BackendConfig): Promise<void> {
+  await requestJSON<void>(config, '/api/v1/config/tailscale', { method: 'DELETE' })
+}
+
+/** Tests reachability of the configured Tailscale SSH host. */
+export async function testTailscaleConfig(config: BackendConfig): Promise<{ reachable: boolean; error?: string }> {
+  return requestJSON<{ reachable: boolean; error?: string }>(config, '/api/v1/config/tailscale/test')
+}
+
+/** Fetches the current Kubernetes runtime configuration. */
+export async function fetchKubernetesConfig(config: BackendConfig): Promise<KubernetesConfig> {
+  return requestJSON<KubernetesConfig>(config, '/api/v1/config/kubernetes')
+}
+
+/** Saves Kubernetes runtime configuration to the backend. */
+export async function saveKubernetesConfig(config: BackendConfig, data: Partial<KubernetesConfig>): Promise<KubernetesConfig> {
+  return requestJSON<KubernetesConfig>(config, '/api/v1/config/kubernetes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
   })
 }
 
-/**
- * Fetches the current Unsandbox integration status (whether keys are valid).
- * @param config - Backend connection configuration.
- * @returns The Unsandbox runtime status.
- */
-export async function fetchUnsandboxStatus(config: BackendConfig): Promise<UnsandboxStatus> {
-  return requestJSON<UnsandboxStatus>(config, '/api/v1/unsandbox/status')
+/** Deletes the stored Kubernetes runtime configuration. */
+export async function deleteKubernetesConfig(config: BackendConfig): Promise<void> {
+  await requestJSON<void>(config, '/api/v1/config/kubernetes', { method: 'DELETE' })
 }
 
-/** Result of executing code in the Unsandbox remote environment. */
-export type UnsandboxExecuteResult = {
-  status: string
-  output: string
-  error: string
-  job_id: string
-}
-
-/**
- * Executes code in the Unsandbox remote sandbox environment.
- * @param config - Backend connection configuration.
- * @param language - Programming language (e.g. "python", "bash").
- * @param code - Source code to execute.
- * @param network - Network access level (defaults to "semitrusted").
- * @returns Execution result with output, errors, and job ID.
- */
-export async function executeUnsandbox(
-  config: BackendConfig,
-  language: string,
-  code: string,
-  network?: string,
-): Promise<UnsandboxExecuteResult> {
-  return requestJSON<UnsandboxExecuteResult>(config, '/api/v1/unsandbox/execute', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ language, code, network: network || 'semitrusted' }),
-  }, 150000)
-}
-
-/** An active or completed Unsandbox execution session. */
-export type UnsandboxSession = {
-  id: string
-  language: string
-  status: string
-  created_at?: string
-  [key: string]: unknown
-}
-
-/**
- * Fetches all Unsandbox execution sessions.
- * @param config - Backend connection configuration.
- * @returns Object containing array of session records.
- */
-export async function fetchUnsandboxSessions(config: BackendConfig): Promise<{ sessions: UnsandboxSession[] }> {
-  return requestJSON<{ sessions: UnsandboxSession[] }>(config, '/api/v1/unsandbox/sessions')
-}
-
-/** A service running within the Unsandbox environment. */
-export type UnsandboxService = {
-  id: string
-  status: string
-  [key: string]: unknown
-}
-
-/**
- * Fetches all services running in the Unsandbox environment.
- * @param config - Backend connection configuration.
- * @returns Object containing array of service records.
- */
-export async function fetchUnsandboxServices(config: BackendConfig): Promise<{ services: UnsandboxService[] }> {
-  return requestJSON<{ services: UnsandboxService[] }>(config, '/api/v1/unsandbox/services')
+/** Tests reachability of the configured Kubernetes cluster. */
+export async function testKubernetesConfig(config: BackendConfig): Promise<{ reachable: boolean; server_version?: string; error?: string }> {
+  return requestJSON<{ reachable: boolean; server_version?: string; error?: string }>(config, '/api/v1/config/kubernetes/test')
 }
 
 /**
