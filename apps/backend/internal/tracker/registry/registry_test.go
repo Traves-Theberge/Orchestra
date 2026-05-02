@@ -11,7 +11,6 @@ import (
 
 // stubAdapter is a minimal tracker.Adapter for tests.
 type stubAdapter struct {
-	id    string
 	items []tracker.WorkItem
 }
 
@@ -46,7 +45,7 @@ func (s *stubAdapter) FetchStates(_ context.Context) ([]tracker.TrackerState, er
 func (s *stubAdapter) Ping(_ context.Context) error { return nil }
 
 func TestRegistry_GetAdapter(t *testing.T) {
-	stub := &stubAdapter{id: "cfg-1", items: []tracker.WorkItem{{ID: "linear:abc", Title: "Stub"}}}
+	stub := &stubAdapter{items: []tracker.WorkItem{{ID: "linear:abc", Title: "Stub"}}}
 	reg := registry.NewWithAdapters(map[string]tracker.Adapter{"cfg-1": stub})
 
 	a, err := reg.GetAdapter("cfg-1")

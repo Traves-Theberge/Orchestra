@@ -4,6 +4,8 @@ package registry
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -76,18 +78,22 @@ func (r *Registry) GetAdapter(configID string) (tracker.Adapter, error) {
 
 // Reload re-instantiates the adapter for the given config ID from the database.
 // Called after a Settings save so changes take effect without a daemon restart.
-// If the config no longer exists, the adapter is removed from the registry.
+// If the config no longer exists (sql.ErrNoRows), the adapter is removed.
+// Other DB errors are propagated so callers can distinguish transient failures
+// from a real deletion.
 func (r *Registry) Reload(ctx context.Context, configID string) error {
 	if r.database == nil || r.factory == nil {
 		return nil
 	}
 	cfg, err := r.database.GetTrackerConfig(ctx, configID)
 	if err != nil {
-		// Config deleted — drop the adapter
-		r.mu.Lock()
-		delete(r.adapters, configID)
-		r.mu.Unlock()
-		return nil
+		if errors.Is(err, sql.ErrNoRows) {
+			r.mu.Lock()
+			delete(r.adapters, configID)
+			r.mu.Unlock()
+			return nil
+		}
+		return fmt.Errorf("reload tracker config %q: %w", configID, err)
 	}
 	a, err := r.buildAdapter(cfg)
 	if err != nil {
@@ -143,13 +149,11 @@ func (r *Registry) loadAll(ctx context.Context) error {
 }
 
 // buildAdapter decrypts the config's token and runs it through the factory.
+// Callers must guarantee r.factory is non-nil (Reload and loadAll both check).
 func (r *Registry) buildAdapter(cfg *db.TrackerConfig) (tracker.Adapter, error) {
 	token, err := db.DecryptToken(cfg.TokenEnc)
 	if err != nil {
 		return nil, fmt.Errorf("decrypt token: %w", err)
-	}
-	if r.factory == nil {
-		return nil, fmt.Errorf("no factory installed")
 	}
 	return r.factory(cfg, token)
 }
