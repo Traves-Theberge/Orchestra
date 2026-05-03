@@ -22,6 +22,7 @@ import {
     type IssueUpdatePayload,
     type ProjectTreeNode,
 } from '@core/api/client'
+import type { TrackerConfig } from '@/entities/tracker/types'
 import { EditorContent } from '@features/workspace/editor/EditorContent'
 import { useAppStore } from '@core/store'
 import { AppTooltip } from '@ui/tooltip-wrapper'
