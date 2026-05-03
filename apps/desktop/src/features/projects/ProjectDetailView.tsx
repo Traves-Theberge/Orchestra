@@ -13,12 +13,15 @@ import {
     refreshProject,
     disconnectProjectGitHub,
     fetchProjectGitHubIssues,
+    listTrackerConfigs,
+    setProjectTracker,
     type BackendConfig,
     type GitHubIssue,
     type IssueListItem,
     type IssueUpdatePayload,
     type ProjectTreeNode,
 } from '@core/api/client'
+import type { TrackerConfig } from '@/entities/tracker/types'
 import { EditorContent } from '@features/workspace/editor/EditorContent'
 import { useAppStore } from '@core/store'
 import { AppTooltip } from '@ui/tooltip-wrapper'
@@ -98,6 +101,9 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     const [deletePending, setDeletePending] = useState(false)
     const [deleteError, setDeleteError] = useState('')
     const [githubIssues, setGithubIssues] = useState<GitHubIssue[]>([])
+    const [trackerConfigs, setTrackerConfigs] = useState<TrackerConfig[]>([])
+    const [activeTrackerConfigId, setActiveTrackerConfigId] = useState<string>('')
+    const [trackerSaving, setTrackerSaving] = useState(false)
 
     const pathExists = project.path_exists !== false
     const isGitHub = !!project.github_owner && !!project.github_repo
@@ -137,6 +143,34 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         setSelectedFile(null)
         setGithubError('')
     }, [project.id])
+
+    // Load available tracker configs when the component mounts or config changes
+    useEffect(() => {
+        if (!config) return
+        let cancelled = false
+        const run = async () => {
+            try {
+                const data = await listTrackerConfigs(config)
+                if (cancelled) return
+                setTrackerConfigs(data)
+            } catch {
+                // Non-fatal — leave the list empty so the dropdown shows None only.
+            }
+        }
+        void run()
+        return () => { cancelled = true }
+    }, [config])
+
+    // Best-effort: read tracker_config_id from the project record if the backend
+    // surfaces it. Falls back to empty string (= None).
+    useEffect(() => {
+        const projectAny = project as unknown as { tracker_config_id?: string }
+        if (projectAny.tracker_config_id) {
+            setActiveTrackerConfigId(projectAny.tracker_config_id)
+        } else {
+            setActiveTrackerConfigId('')
+        }
+    }, [project])
 
     // Subscribe to the global editor store so the file shows up in the
     // Development workspace too, and we get save/revert/jump-to-line for free.
@@ -223,6 +257,22 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
             setGithubError(err instanceof Error ? err.message : 'Failed to disconnect GitHub')
         } finally {
             setGithubPending(false)
+        }
+    }
+
+    const handleTrackerChange = async (configId: string) => {
+        if (!config) return
+        setActiveTrackerConfigId(configId)
+        setTrackerSaving(true)
+        try {
+            await setProjectTracker(config, project.id, configId)
+        } catch (err) {
+            setGithubError(err instanceof Error ? err.message : 'Failed to assign tracker')
+            // Roll back so the UI doesn't lie
+            const projectAny = project as unknown as { tracker_config_id?: string }
+            setActiveTrackerConfigId(projectAny.tracker_config_id ?? '')
+        } finally {
+            setTrackerSaving(false)
         }
     }
 
@@ -367,6 +417,21 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                         <GitBranch size={11} /> Git
                     </span>
                 ) : null}
+
+                {trackerConfigs.length > 0 && (
+                    <select
+                        value={activeTrackerConfigId}
+                        onChange={(e) => void handleTrackerChange(e.target.value)}
+                        disabled={trackerSaving}
+                        title="Issue tracker for this project"
+                        className="h-7 px-2 rounded-md text-[11px] font-medium bg-background border border-border/40 text-foreground/80 hover:text-foreground hover:border-border focus:outline-none focus:ring-1 focus:ring-ring transition-colors shrink-0 disabled:opacity-50"
+                    >
+                        <option value="">No tracker</option>
+                        {trackerConfigs.map((cfg) => (
+                            <option key={cfg.id} value={cfg.id}>{cfg.display_name}</option>
+                        ))}
+                    </select>
+                )}
 
                 <div className="flex items-center gap-0.5 shrink-0">
                     <AppTooltip content="Refresh project">
