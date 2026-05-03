@@ -57,10 +57,11 @@ import {
 import type { Project } from '@core/api/types'
 import { Github } from 'lucide-react'
 import { CHAT_PROVIDERS } from '@features/embedded-agent/lib/types'
+import { TrackerConnectionsPane } from './TrackerConnectionsPane'
 import { usePlatform } from '@/hooks/use-platform'
 import { CustomDropdown } from '@layout/shared/controls'
 import { useAppStore } from '@core/store'
-import { resolveMode } from '@core/theme/apply'
+import { applyTheme, resolveMode } from '@core/theme/apply'
 import { contrastRatio, formatHslTriplet, hexToHslTriplet, hslTripletToHex, parseHslTriplet, wcagBadge } from '@core/theme/color-utils'
 import { deriveRoles } from '@core/theme/derive-surface'
 import { normalizeTheme } from '@core/theme/defaults'
@@ -259,6 +260,7 @@ export function SettingsPage({
   const saveCustomTheme = useAppStore(s => s.saveCustomTheme)
   const duplicateTheme = useAppStore(s => s.duplicateTheme)
   const deleteCustomTheme = useAppStore(s => s.deleteCustomTheme)
+  const reapply = useAppStore(s => s.reapply)
   const [homepageDraft, setHomepageDraft] = useState(browserHomepage)
   const [themeStudioOpen, setThemeStudioOpen] = useState(false)
   const [themeStudioDraft, setThemeStudioDraft] = useState<Theme | null>(null)
@@ -272,6 +274,12 @@ export function SettingsPage({
     if (!themeStudioOpen) return
     setThemeStudioPreviewMode(modeOverride === 'auto' ? resolveMode('auto') : modeOverride)
   }, [modeOverride, themeStudioOpen])
+
+  // Live-apply draft to the running app while Theme Studio is open
+  useEffect(() => {
+    if (!themeStudioOpen || !themeStudioDraft) return
+    applyTheme(normalizeTheme(themeStudioDraft), themeStudioPreviewMode)
+  }, [themeStudioDraft, themeStudioPreviewMode, themeStudioOpen])
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const [activeId, setActiveId] = useState<SectionId>('connections')
@@ -381,8 +389,8 @@ export function SettingsPage({
           </header>
           {/* ── Connections ── */}
           <section data-settings-section="connections" className="rounded-xl transition-colors duration-500 scroll-mt-4">
-            <SectionHeading icon={Database} title="Connections" description="Backend profiles and API connection" />
-            <div className="mt-4">
+            <SectionHeading icon={Database} title="Connections" description="Backend profiles, API connection, and trackers" />
+            <div className="mt-4 space-y-4">
               <div className="rounded-2xl border border-border/40 bg-gradient-to-b from-card via-card to-muted/20 p-6 shadow-sm">
                 <BackendConfigForm
                   loadingConfig={loadingConfig}
@@ -397,6 +405,9 @@ export function SettingsPage({
                   onDeleteProfile={onDeleteProfile}
                   disabled={loadingConfig || savingConfig || profilesPending}
                 />
+              </div>
+              <div className="rounded-2xl border border-border/40 bg-gradient-to-b from-card via-card to-muted/20 p-6 shadow-sm">
+                <TrackerConnectionsPane config={config} />
               </div>
             </div>
           </section>
@@ -547,6 +558,7 @@ export function SettingsPage({
           if (!open) {
             setThemeStudioDraft(null)
             setThemeStudioSourceId(activeThemeId)
+            reapply()
           }
         }}
         themes={[...builtinThemes, ...customThemes]}
@@ -948,7 +960,7 @@ function ThemeStudioDialog({
               <div>
                 <DialogTitle className="text-xl font-black tracking-tight">Theme Studio</DialogTitle>
                 <DialogDescription className="mt-1 text-[12px] max-w-2xl">
-                  The shell is live: pick a base theme, rename the draft, and inspect the token groups. Save, export, and fine-grained editors land next.
+                  Pick a base theme, edit colors, typography, density, and motion. Changes apply live. Save to persist.
                 </DialogDescription>
               </div>
               <div className="ml-auto flex items-start gap-2">
@@ -1150,12 +1162,8 @@ function ThemeStudioEditorPane({
               className="mt-2 w-full rounded-xl border border-border/40 bg-background px-3 py-2 text-lg font-black tracking-tight outline-none focus:ring-2 focus:ring-primary/30"
             />
             <p className="mt-2 text-[11px] text-muted-foreground">
-              Based on <span className="font-mono">{sourceThemeId}</span>. Editing is local to this shell for now.
+              Based on <span className="font-mono">{sourceThemeId}</span>. Unsaved changes apply live but reset on close.
             </p>
-          </div>
-          <div className="rounded-xl border border-border/40 bg-muted/20 px-3 py-2 text-right">
-            <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Status</p>
-            <p className="mt-1 text-xs font-bold">Scaffold live</p>
           </div>
         </div>
       </div>
@@ -1659,15 +1667,27 @@ function RoleEditorCard({
         <div className="space-y-2">
           <label className="block">
             <span className="mb-1 block text-[9px] font-black uppercase tracking-[0.16em] text-muted-foreground">Hex</span>
-            <input
-              value={hexValue}
-              disabled={disabled}
-              onChange={(event) => {
-                const next = hexToHslTriplet(event.target.value)
-                if (next) onChange(next)
-              }}
-              className="w-full rounded-lg border border-border/40 bg-card px-2 py-2 text-[11px] font-mono outline-none focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed"
-            />
+            <div className="flex items-center gap-1.5">
+              <input
+                type="color"
+                value={hexValue}
+                disabled={disabled}
+                onChange={(event) => {
+                  const next = hexToHslTriplet(event.target.value)
+                  if (next) onChange(next)
+                }}
+                className="h-8 w-8 shrink-0 cursor-pointer rounded-md border border-border/40 bg-card p-0.5 disabled:cursor-not-allowed"
+              />
+              <input
+                value={hexValue}
+                disabled={disabled}
+                onChange={(event) => {
+                  const next = hexToHslTriplet(event.target.value)
+                  if (next) onChange(next)
+                }}
+                className="w-full rounded-lg border border-border/40 bg-card px-2 py-2 text-[11px] font-mono outline-none focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed"
+              />
+            </div>
           </label>
         </div>
         <div className="space-y-2">
@@ -1761,14 +1781,25 @@ function ChartPaletteEditor({
               </div>
               <span className="text-[10px] font-mono text-muted-foreground">{stop}</span>
             </div>
-            <input
-              value={hslTripletToHex(stop)}
-              onChange={(event) => {
-                const next = hexToHslTriplet(event.target.value)
-                if (next) onChange(index, next)
-              }}
-              className="w-full rounded-lg border border-border/40 bg-card px-2 py-2 text-[11px] font-mono outline-none focus:ring-2 focus:ring-primary/20"
-            />
+            <div className="flex items-center gap-1.5">
+              <input
+                type="color"
+                value={hslTripletToHex(stop)}
+                onChange={(event) => {
+                  const next = hexToHslTriplet(event.target.value)
+                  if (next) onChange(index, next)
+                }}
+                className="h-8 w-8 shrink-0 cursor-pointer rounded-md border border-border/40 bg-card p-0.5"
+              />
+              <input
+                value={hslTripletToHex(stop)}
+                onChange={(event) => {
+                  const next = hexToHslTriplet(event.target.value)
+                  if (next) onChange(index, next)
+                }}
+                className="w-full rounded-lg border border-border/40 bg-card px-2 py-2 text-[11px] font-mono outline-none focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
           </div>
         ))}
       </div>
@@ -1797,7 +1828,7 @@ function RangeField({
     <label className="block">
       <div className="mb-1 flex items-center justify-between gap-3">
         <span className="text-[9px] font-black uppercase tracking-[0.16em] text-muted-foreground">{label}</span>
-        <span className="text-[10px] font-mono text-muted-foreground">{Math.round(value)}</span>
+        <span className="text-[10px] font-mono text-muted-foreground">{Number.isInteger(value) ? value : value.toFixed(step < 0.1 ? 3 : step < 1 ? 2 : 0)}</span>
       </div>
       <input
         type="range"
