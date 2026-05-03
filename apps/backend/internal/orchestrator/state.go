@@ -23,6 +23,7 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
 	"github.com/orchestra/orchestra/apps/backend/internal/mcp"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
+	trackerregistry "github.com/orchestra/orchestra/apps/backend/internal/tracker/registry"
 	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
 )
 
@@ -133,6 +134,7 @@ type Service struct {
 	db               *db.DB
 	mcpRegistry      *mcp.Registry
 	mcpServers       map[string]string
+	trackerReg       *trackerregistry.Registry
 }
 
 // IssueRuntime bundles the running and retry state for a single issue,
@@ -361,6 +363,37 @@ func (s *Service) SetDB(database *db.DB) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.db = database
+}
+
+// SetTrackerRegistry wires the per-project tracker registry into the service so
+// issue operations can resolve a project-specific client instead of the global one.
+func (s *Service) SetTrackerRegistry(reg *trackerregistry.Registry) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.trackerReg = reg
+}
+
+// clientForProject returns a per-project tracker.Client when the registry and DB
+// are wired and the project has an issue source configured. Falls back to the
+// global trackerClient so existing single-tracker setups keep working.
+func (s *Service) clientForProject(ctx context.Context, projectID string) tracker.Client {
+	s.mu.RLock()
+	reg := s.trackerReg
+	global := s.trackerClient
+	s.mu.RUnlock()
+
+	if reg == nil || projectID == "" || s.db == nil {
+		return global
+	}
+	project, err := s.db.GetProjectByID(ctx, projectID)
+	if err != nil {
+		return global
+	}
+	client, err := reg.GetForProjectDirect(project)
+	if err != nil || client == nil {
+		return global
+	}
+	return client
 }
 
 // SetAgentRegistry configures the agent registry, per-provider commands, and
@@ -715,12 +748,20 @@ func (s *Service) ShouldRetryAttempt(attempt int64) bool {
 	return attempt > 0 && attempt <= s.maxRetryAttempts
 }
 
-// PerformRefresh executes a full refresh cycle: reconciles stalled runs, fetches
-// candidate issues from the tracker, filters retries, promotes due retries, and
-// reconciles running states against the tracker's current view.
+// PerformRefresh executes a full refresh cycle using the service's global tracker
+// client. Kept for backward compatibility; prefer PerformRefreshForClient.
 func (s *Service) PerformRefresh(ctx context.Context) error {
 	s.mu.RLock()
 	client := s.trackerClient
+	s.mu.RUnlock()
+	return s.PerformRefreshForClient(ctx, client)
+}
+
+// PerformRefreshForClient executes a full refresh cycle against the given client.
+// Pass nil to run the reconciliation-only path (stalled runs, due retries) without
+// fetching from any external tracker — used when a project has no issue source set.
+func (s *Service) PerformRefreshForClient(ctx context.Context, client tracker.Client) error {
+	s.mu.RLock()
 	activeStates := append([]string(nil), s.activeStates...)
 	terminalStates := append([]string(nil), s.terminalStates...)
 	s.mu.RUnlock()
@@ -767,9 +808,7 @@ func (s *Service) PerformRefresh(ctx context.Context) error {
 
 // ListIssues delegates to the tracker client to fetch issues matching the given filter.
 func (s *Service) ListIssues(ctx context.Context, filter tracker.IssueFilter) ([]tracker.Issue, error) {
-	s.mu.RLock()
-	client := s.trackerClient
-	s.mu.RUnlock()
+	client := s.clientForProject(ctx, filter.ProjectID)
 
 	if client == nil {
 		return []tracker.Issue{}, nil
@@ -806,9 +845,7 @@ func (s *Service) SearchIssues(ctx context.Context, query string) ([]tracker.Iss
 
 // CreateIssue creates a new issue in the configured tracker with the given metadata.
 func (s *Service) CreateIssue(ctx context.Context, title, description, state string, priority int, assigneeID, projectID string, provider string, runtimeTarget string, disabledTools []string) (*tracker.Issue, error) {
-	s.mu.RLock()
-	client := s.trackerClient
-	s.mu.RUnlock()
+	client := s.clientForProject(ctx, projectID)
 
 	if client == nil {
 		return nil, fmt.Errorf("tracker client not available")

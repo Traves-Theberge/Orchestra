@@ -19,6 +19,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
+	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
 	"github.com/orchestra/orchestra/apps/backend/internal/utils/git"
 	ghutil "github.com/orchestra/orchestra/apps/backend/internal/utils/github"
 	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
@@ -281,7 +282,10 @@ func (s *Server) CreateProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		RootPath string `json:"root_path"`
+		RootPath          string `json:"root_path"`
+		IssueSourceType   string `json:"issue_source_type"`
+		IssueSourceEndpoint string `json:"issue_source_endpoint"`
+		IssueSourceToken  string `json:"issue_source_token"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid_json", "invalid request")
@@ -319,6 +323,13 @@ func (s *Server) CreateProject(w http.ResponseWriter, r *http.Request) {
 	if owner, repo, ok := git.ParseGitHubRemote(remoteURL); ok {
 		s.logger.Info().Str("project_id", id).Str("owner", owner).Str("repo", repo).Msg("auto-detected github repo")
 		_ = s.db.UpdateProjectGitHubInfo(r.Context(), id, owner, repo)
+	}
+
+	// Optionally wire up issue source at creation time
+	if req.IssueSourceType != "" {
+		if err := s.db.UpdateProjectIssueSource(r.Context(), id, req.IssueSourceType, req.IssueSourceEndpoint, req.IssueSourceToken); err != nil {
+			s.logger.Warn().Err(err).Str("project_id", id).Msg("failed to set initial issue source")
+		}
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]string{"id": id})
@@ -2021,4 +2032,138 @@ func (s *Server) PostCreateGitHubRepo(w http.ResponseWriter, r *http.Request) {
 		"ssh_url":   repo.SSHURL,
 		"html_url":  repo.HTMLURL,
 	})
+}
+
+// GetProjectTrackerIssues handles GET /api/v1/projects/{project_id}/tracker/issues.
+// Returns live work items from the project's issue source adapter (bypasses the local DB).
+// Optional ?states=todo,in+progress filter mirrors the global browse endpoint.
+func (s *Server) GetProjectTrackerIssues(w http.ResponseWriter, r *http.Request) {
+	if s.db == nil {
+		writeJSONError(w, http.StatusServiceUnavailable, "db_unavailable", "database not available")
+		return
+	}
+	if s.registry == nil {
+		writeJSONError(w, http.StatusServiceUnavailable, "no_registry", "registry not available")
+		return
+	}
+	projectID := chi.URLParam(r, "project_id")
+	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	if err != nil {
+		writeJSONError(w, http.StatusNotFound, "not_found", "project not found")
+		return
+	}
+	adapter, err := s.registry.GetAdapterForProjectDirect(project)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "adapter_error", err.Error())
+		return
+	}
+	if adapter == nil {
+		writeJSONError(w, http.StatusUnprocessableEntity, "no_source", "project has no issue source configured")
+		return
+	}
+	filter := tracker.Filter{}
+	if states := r.URL.Query().Get("states"); states != "" {
+		filter.States = strings.Split(states, ",")
+	}
+	items, err := adapter.Fetch(r.Context(), filter)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "fetch_error", err.Error())
+		return
+	}
+	if items == nil {
+		items = []tracker.WorkItem{}
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+// PatchProjectIssueSource handles PATCH /api/v1/projects/{project_id}/issue-source.
+// Saves the per-project tracker connection (type, endpoint, token).
+// Pass token="" to leave the existing token unchanged; pass type="" to clear the source.
+func (s *Server) PatchProjectIssueSource(w http.ResponseWriter, r *http.Request) {
+	if s.db == nil {
+		writeJSONError(w, http.StatusServiceUnavailable, "db_unavailable", "database not available")
+		return
+	}
+	projectID := chi.URLParam(r, "project_id")
+	var req struct {
+		Type     string `json:"type"`
+		Endpoint string `json:"endpoint"`
+		Token    string `json:"token"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid_json", "invalid request body")
+		return
+	}
+	if err := s.db.UpdateProjectIssueSource(r.Context(), projectID, req.Type, req.Endpoint, req.Token); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeJSONError(w, http.StatusNotFound, "not_found", "project not found")
+			return
+		}
+		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// PostProjectIssueSourceTest handles POST /api/v1/projects/{project_id}/issue-source/test.
+// Builds a temporary adapter from the project's stored (or request-provided) credentials
+// and calls Ping to verify connectivity without persisting anything.
+func (s *Server) PostProjectIssueSourceTest(w http.ResponseWriter, r *http.Request) {
+	if s.db == nil {
+		writeJSONError(w, http.StatusServiceUnavailable, "db_unavailable", "database not available")
+		return
+	}
+	if s.registry == nil {
+		writeJSONError(w, http.StatusServiceUnavailable, "no_registry", "registry not available")
+		return
+	}
+	projectID := chi.URLParam(r, "project_id")
+	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeJSONError(w, http.StatusNotFound, "not_found", "project not found")
+			return
+		}
+		writeJSONError(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+
+	// Allow testing with override values from the request body (not yet saved)
+	var req struct {
+		Type     string `json:"type"`
+		Endpoint string `json:"endpoint"`
+		Token    string `json:"token"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	testProject := project
+	if req.Type != "" {
+		testProject.IssueSourceType = req.Type
+	}
+	if req.Endpoint != "" {
+		testProject.IssueSourceEndpoint = req.Endpoint
+	}
+	if req.Token != "" {
+		testProject.IssueSourceToken = req.Token
+	}
+
+	if testProject.IssueSourceType == "" {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": "no issue source configured"})
+		return
+	}
+
+	adapter, err := s.registry.GetAdapterForProjectDirect(testProject)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	if adapter == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": "no issue source configured"})
+		return
+	}
+	if err := adapter.Ping(r.Context()); err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

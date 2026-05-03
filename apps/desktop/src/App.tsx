@@ -530,7 +530,7 @@ export default function App() {
             <SectionErrorBoundary name="Tracker">
               <section className="col-span-12 flex flex-col">
                 <Suspense fallback={<SectionLoader />}>
-                  <TrackerViewer config={config} />
+                  <TrackerViewer config={config} project={projects.find(p => p.id === selectedProjectID) ?? null} />
                 </Suspense>
               </section>
             </SectionErrorBoundary>

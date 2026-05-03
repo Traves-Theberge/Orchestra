@@ -123,8 +123,13 @@ func NewRouterWithPubSub(
 	protected.Get("/api/v1/tracker/configs/{config_id}/projects", server.GetTrackerProjects)
 	protected.Get("/api/v1/tracker/configs/{config_id}/states", server.GetTrackerStates)
 	protected.Get("/api/v1/tracker/configs/{config_id}/issues", server.GetTrackerConfigIssues)
-	// Per-project tracker assignment
+	// Per-project tracker assignment (legacy global config link)
 	protected.Post("/api/v1/projects/{project_id}/tracker", server.PostProjectTrackerConfig)
+	// Per-project embedded issue source (replaces global tracker config)
+	protected.Patch("/api/v1/projects/{project_id}/issue-source", server.PatchProjectIssueSource)
+	protected.Post("/api/v1/projects/{project_id}/issue-source/test", server.PostProjectIssueSourceTest)
+	// Live browse of a project's issue source (used by TrackerViewer)
+	protected.Get("/api/v1/projects/{project_id}/tracker/issues", server.GetProjectTrackerIssues)
 
 	protected.Get("/api/v1/issues", server.GetIssues)
 	protected.Post("/api/v1/issues", server.PostIssue)

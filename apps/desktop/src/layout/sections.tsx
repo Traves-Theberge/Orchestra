@@ -67,7 +67,7 @@ export const sidebarItems: SidebarItem[] = [
   {
     id: 'TRACKER',
     label: 'Tracker',
-    description: 'Browse Linear, Jira, and GitHub work items',
+    description: "Browse the selected project's issue source",
     icon: Tag,
   },
   {

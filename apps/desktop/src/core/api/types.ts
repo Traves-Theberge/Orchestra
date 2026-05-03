@@ -178,6 +178,9 @@ export type Project = {
   github_token?: string
   tracker_config_id?: string
   path_exists?: boolean
+  issue_source_type?: string
+  issue_source_endpoint?: string
+  issue_source_has_token?: boolean
 }
 
 /** Aggregate statistics for a single project. */

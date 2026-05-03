@@ -65,6 +65,50 @@ func (r *Registry) GetForProject(ctx context.Context, projectID string) (tracker
 	return r.clientForConfig(cfg.ID)
 }
 
+// GetAdapterForProjectDirect is like GetForProjectDirect but returns the raw
+// tracker.Adapter instead of wrapping it as a tracker.Client. Used by the
+// issue-source test endpoint which needs Ping.
+func (r *Registry) GetAdapterForProjectDirect(project db.Project) (tracker.Adapter, error) {
+	if project.IssueSourceType == "" {
+		return nil, nil
+	}
+	if r.factory == nil {
+		return nil, fmt.Errorf("registry has no adapter factory")
+	}
+	cfg := &db.TrackerConfig{
+		ID:         "project:" + project.ID,
+		Type:       project.IssueSourceType,
+		Endpoint:   project.IssueSourceEndpoint,
+		AuthMethod: "apikey",
+	}
+	return r.factory(cfg, project.IssueSourceToken)
+}
+
+// GetForProjectDirect builds a tracker.Client directly from the project's embedded
+// issue_source_* fields, bypassing the global tracker_configs table entirely.
+// Returns (nil, nil) when the project has no issue source configured — callers
+// should treat that as "local/sqlite only" and skip external refreshes.
+// The project's IssueSourceToken must already be decrypted (GetProjectByID does this).
+func (r *Registry) GetForProjectDirect(project db.Project) (tracker.Client, error) {
+	if project.IssueSourceType == "" {
+		return nil, nil
+	}
+	if r.factory == nil {
+		return nil, fmt.Errorf("registry has no adapter factory")
+	}
+	cfg := &db.TrackerConfig{
+		ID:         "project:" + project.ID,
+		Type:       project.IssueSourceType,
+		Endpoint:   project.IssueSourceEndpoint,
+		AuthMethod: "apikey",
+	}
+	adapter, err := r.factory(cfg, project.IssueSourceToken)
+	if err != nil {
+		return nil, fmt.Errorf("build adapter for project %q (%s): %w", project.ID, project.IssueSourceType, err)
+	}
+	return &adapterClient{adapter: adapter}, nil
+}
+
 // GetAdapter returns the raw Adapter for the given config ID (used by browse/viewer endpoints).
 func (r *Registry) GetAdapter(configID string) (tracker.Adapter, error) {
 	r.mu.RLock()

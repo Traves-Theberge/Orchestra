@@ -1,90 +1,75 @@
-import { useEffect, useState } from 'react'
-import { listTrackerConfigs } from '@core/api/client'
+import { useState } from 'react'
 import type { BackendConfig } from '@core/api/client'
-import type { WorkItem, WorkItemFilter, TrackerConfig } from '@/entities/tracker/types'
+import type { WorkItem, WorkItemFilter } from '@/entities/tracker/types'
+import type { Project } from '@core/api/types'
 import { useTrackerWorkItems } from '@/entities/tracker/use-tracker-work-items'
 import { WorkItemBrowser } from './WorkItemBrowser'
 import { WorkItemDetail } from './WorkItemDetail'
-import { TrackerToolbar } from './TrackerToolbar'
+import { Cable } from 'lucide-react'
 
 interface Props {
   config: BackendConfig | null
+  project: Project | null
 }
 
 /**
- * Two-pane tracker viewer: connection picker + Toolbar at top, browser on the
- * left, detail on the right. The shell is tracker-agnostic; tracker-specific
- * filter UI is delegated to TrackerToolbar.
+ * Two-pane issue browser scoped to the selected project's issue source.
+ * Shows an empty-state prompt when no project is selected or the project
+ * has no issue source configured.
  */
-export function TrackerViewer({ config }: Props) {
-  const [configs, setConfigs] = useState<TrackerConfig[]>([])
-  const [activeConfigId, setActiveConfigId] = useState<string | null>(null)
+export function TrackerViewer({ config, project }: Props) {
   const [selectedItem, setSelectedItem] = useState<WorkItem | null>(null)
   const [filter, setFilter] = useState<WorkItemFilter>({})
-  const [configsError, setConfigsError] = useState<string | null>(null)
 
-  // Load the list of configured connections.
-  useEffect(() => {
-    let cancelled = false
-    const run = async () => {
-      if (!config) {
-        if (!cancelled) {
-          setConfigs([])
-          setActiveConfigId(null)
-        }
-        return
-      }
-      try {
-        const data = await listTrackerConfigs(config)
-        if (cancelled) return
-        setConfigs(data)
-        setActiveConfigId((prev) => prev ?? (data[0]?.id ?? null))
-      } catch (err: unknown) {
-        if (cancelled) return
-        setConfigsError(err instanceof Error ? err.message : String(err))
-      }
-    }
-    void run()
-    return () => { cancelled = true }
-  }, [config])
+  const hasSource = !!project?.issue_source_type
 
-  const { items, loading, error } = useTrackerWorkItems(config, activeConfigId, filter)
-  const activeConfig = configs.find((c) => c.id === activeConfigId) ?? null
+  const { items, loading, error, refresh } = useTrackerWorkItems(
+    hasSource ? config : null,
+    null,
+    filter,
+    hasSource ? project!.id : null,
+  )
+
+  if (!project) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground/40">
+        <Cable size={28} strokeWidth={1.5} />
+        <p className="text-[13px] font-medium">No project selected</p>
+        <p className="text-[11px]">Open a project to browse its issues</p>
+      </div>
+    )
+  }
+
+  if (!hasSource) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground/40">
+        <Cable size={28} strokeWidth={1.5} />
+        <p className="text-[13px] font-medium">{project.name} has no issue source</p>
+        <p className="text-[11px] text-center max-w-xs leading-relaxed">
+          Open the project, click <span className="font-mono bg-muted/50 px-1 rounded text-[10px]">Source</span> in the toolbar, and configure a tracker connection.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col h-full">
-      {/* Connection selector */}
-      <div className="flex items-center gap-3 px-4 py-2 border-b border-border bg-background">
-        <span className="text-sm font-medium">Tracker</span>
-        <select
-          value={activeConfigId ?? ''}
-          onChange={(e) => {
-            setActiveConfigId(e.target.value || null)
-            setSelectedItem(null)
-            setFilter({})
-          }}
-          className="text-sm bg-background border border-border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-ring"
+      {/* Header */}
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-background shrink-0">
+        <Cable size={13} className="text-primary shrink-0" />
+        <span className="text-[13px] font-semibold truncate">{project.name}</span>
+        <span className="text-[11px] text-muted-foreground/60 font-mono">{project.issue_source_type}</span>
+        <div className="flex-1" />
+        <button
+          onClick={refresh}
+          className="text-[11px] text-muted-foreground/60 hover:text-foreground transition-colors px-2 py-0.5 rounded hover:bg-muted/40"
         >
-          {configs.length === 0 && <option value="">No connections configured</option>}
-          {configs.map((c) => (
-            <option key={c.id} value={c.id}>{c.display_name}</option>
-          ))}
-        </select>
-        {configs.length === 0 && (
-          <span className="text-xs text-muted-foreground">
-            Add a connection in Settings → Connections
-          </span>
-        )}
-        {configsError && (
-          <span className="text-xs text-destructive">Failed to load connections: {configsError}</span>
-        )}
+          Refresh
+        </button>
         {error && (
-          <span className="text-xs text-destructive">Failed to load items: {error.message}</span>
+          <span className="text-[11px] text-destructive">Failed to load issues</span>
         )}
       </div>
-
-      {/* Tracker-specific toolbar slot */}
-      <TrackerToolbar config={activeConfig} filter={filter} onFilterChange={setFilter} />
 
       {/* Two-pane body */}
       <div className="flex flex-1 min-h-0">

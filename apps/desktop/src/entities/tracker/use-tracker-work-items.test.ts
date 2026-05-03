@@ -17,6 +17,7 @@ vi.mock('@core/api/client', async (importOriginal) => {
   return {
     ...actual,
     browseTrackerItems: vi.fn(),
+    browseProjectTrackerItems: vi.fn(),
   }
 })
 

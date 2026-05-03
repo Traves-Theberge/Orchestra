@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react'
 import {
     ArrowLeft, Globe, ExternalLink,
     GitBranch, RefreshCcw, Trash2, Github,
-    FileText, Layers, ChevronRight, File, Folder as FolderIcon, FolderOpen, AlertCircle, Search, X
+    FileText, Layers, ChevronRight, File, Folder as FolderIcon, FolderOpen, AlertCircle, Search, X,
+    Cable, CheckCircle2, Loader2,
 } from 'lucide-react'
 import type { Project, ProjectStats, SnapshotPayload } from '@core/api/types'
 import { Button } from '@ui/button'
@@ -13,15 +14,14 @@ import {
     refreshProject,
     disconnectProjectGitHub,
     fetchProjectGitHubIssues,
-    listTrackerConfigs,
-    setProjectTracker,
+    updateProjectIssueSource,
+    testProjectIssueSource,
     type BackendConfig,
     type GitHubIssue,
     type IssueListItem,
     type IssueUpdatePayload,
     type ProjectTreeNode,
 } from '@core/api/client'
-import type { TrackerConfig } from '@/entities/tracker/types'
 import { EditorContent } from '@features/workspace/editor/EditorContent'
 import { useAppStore } from '@core/store'
 import { AppTooltip } from '@ui/tooltip-wrapper'
@@ -101,9 +101,14 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     const [deletePending, setDeletePending] = useState(false)
     const [deleteError, setDeleteError] = useState('')
     const [githubIssues, setGithubIssues] = useState<GitHubIssue[]>([])
-    const [trackerConfigs, setTrackerConfigs] = useState<TrackerConfig[]>([])
-    const [activeTrackerConfigId, setActiveTrackerConfigId] = useState<string>('')
-    const [trackerSaving, setTrackerSaving] = useState(false)
+    const [sourceType, setSourceType] = useState(project.issue_source_type ?? '')
+    const [sourceEndpoint, setSourceEndpoint] = useState(project.issue_source_endpoint ?? '')
+    const [sourceToken, setSourceToken] = useState('')
+    const [sourceSaving, setSourceSaving] = useState(false)
+    const [sourceTesting, setSourceTesting] = useState(false)
+    const [sourceTestResult, setSourceTestResult] = useState<{ ok: boolean; error?: string } | null>(null)
+    const [sourceError, setSourceError] = useState('')
+    const [showSourceEditor, setShowSourceEditor] = useState(false)
 
     const pathExists = project.path_exists !== false
     const isGitHub = !!project.github_owner && !!project.github_repo
@@ -144,26 +149,13 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         setGithubError('')
     }, [project.id])
 
-    // Load available tracker configs when the component mounts or config changes
+    // Sync issue source fields when project changes
     useEffect(() => {
-        if (!config) return
-        let cancelled = false
-        const run = async () => {
-            try {
-                const data = await listTrackerConfigs(config)
-                if (cancelled) return
-                setTrackerConfigs(data)
-            } catch {
-                // Non-fatal — leave the list empty so the dropdown shows None only.
-            }
-        }
-        void run()
-        return () => { cancelled = true }
-    }, [config])
-
-    useEffect(() => {
-        setActiveTrackerConfigId(project.tracker_config_id ?? '')
-    }, [project])
+        setSourceType(project.issue_source_type ?? '')
+        setSourceEndpoint(project.issue_source_endpoint ?? '')
+        setSourceToken('')
+        setSourceTestResult(null)
+    }, [project.id])
 
     // Subscribe to the global editor store so the file shows up in the
     // Development workspace too, and we get save/revert/jump-to-line for free.
@@ -253,18 +245,41 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         }
     }
 
-    const handleTrackerChange = async (configId: string) => {
+    const handleSourceSave = async () => {
         if (!config) return
-        setActiveTrackerConfigId(configId)
-        setTrackerSaving(true)
+        setSourceError('')
+        setSourceSaving(true)
         try {
-            await setProjectTracker(config, project.id, configId)
+            await updateProjectIssueSource(config, project.id, {
+                type: sourceType,
+                endpoint: sourceEndpoint,
+                token: sourceToken,
+            })
+            setSourceToken('')
+            setShowSourceEditor(false)
+            await onRefreshProjects()
         } catch (err) {
-            setGithubError(err instanceof Error ? err.message : 'Failed to assign tracker')
-            // Roll back so the UI doesn't lie
-            setActiveTrackerConfigId(project.tracker_config_id ?? '')
+            setSourceError(err instanceof Error ? err.message : 'Failed to save issue source')
         } finally {
-            setTrackerSaving(false)
+            setSourceSaving(false)
+        }
+    }
+
+    const handleSourceTest = async () => {
+        if (!config) return
+        setSourceTesting(true)
+        setSourceTestResult(null)
+        try {
+            const result = await testProjectIssueSource(config, project.id, {
+                type: sourceType || undefined,
+                endpoint: sourceEndpoint || undefined,
+                token: sourceToken || undefined,
+            })
+            setSourceTestResult(result)
+        } catch (err) {
+            setSourceTestResult({ ok: false, error: err instanceof Error ? err.message : 'Connection failed' })
+        } finally {
+            setSourceTesting(false)
         }
     }
 
@@ -410,20 +425,19 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                     </span>
                 ) : null}
 
-                {trackerConfigs.length > 0 && (
-                    <select
-                        value={activeTrackerConfigId}
-                        onChange={(e) => void handleTrackerChange(e.target.value)}
-                        disabled={trackerSaving}
-                        title="Issue tracker for this project"
-                        className="h-7 px-2 rounded-md text-[11px] font-medium bg-background border border-border/40 text-foreground/80 hover:text-foreground hover:border-border focus:outline-none focus:ring-1 focus:ring-ring transition-colors shrink-0 disabled:opacity-50"
+                <AppTooltip content={project.issue_source_type ? `Issue source: ${project.issue_source_type}` : 'Configure issue source'}>
+                    <button
+                        onClick={() => setShowSourceEditor((v) => !v)}
+                        className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] font-medium transition-colors shrink-0 ${
+                            project.issue_source_type
+                                ? 'text-primary hover:bg-primary/10'
+                                : 'text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.04]'
+                        }`}
                     >
-                        <option value="">No tracker</option>
-                        {trackerConfigs.map((cfg) => (
-                            <option key={cfg.id} value={cfg.id}>{cfg.display_name}</option>
-                        ))}
-                    </select>
-                )}
+                        <Cable size={11} />
+                        {project.issue_source_type || 'Source'}
+                    </button>
+                </AppTooltip>
 
                 <div className="flex items-center gap-0.5 shrink-0">
                     <AppTooltip content="Refresh project">
@@ -482,6 +496,70 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                     )
                 })}
             </div>
+
+            {/* Issue source editor panel */}
+            {showSourceEditor && (
+                <div className="shrink-0 border-b border-border/30 bg-muted/20 px-5 py-3 space-y-2.5">
+                    <p className="text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-wider">Issue Source</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <select
+                            value={sourceType}
+                            onChange={(e) => { setSourceType(e.target.value); setSourceTestResult(null) }}
+                            className="h-7 px-2 rounded-md text-[11px] bg-background border border-border/40 text-foreground/80 focus:outline-none focus:ring-1 focus:ring-ring"
+                        >
+                            <option value="">None</option>
+                            <option value="github">GitHub</option>
+                            <option value="linear">Linear</option>
+                            <option value="jira">Jira</option>
+                            <option value="sqlite">SQLite</option>
+                        </select>
+                        {sourceType && sourceType !== 'sqlite' && (
+                            <>
+                                <input
+                                    type="text"
+                                    value={sourceEndpoint}
+                                    onChange={(e) => { setSourceEndpoint(e.target.value); setSourceTestResult(null) }}
+                                    placeholder={sourceType === 'github' ? 'owner/repo' : sourceType === 'linear' ? 'team-key' : 'project-key'}
+                                    className="h-7 px-2 rounded-md text-[11px] bg-background border border-border/40 text-foreground/80 focus:outline-none focus:ring-1 focus:ring-ring w-36 placeholder:text-muted-foreground/40"
+                                />
+                                <input
+                                    type="password"
+                                    value={sourceToken}
+                                    onChange={(e) => { setSourceToken(e.target.value); setSourceTestResult(null) }}
+                                    placeholder={project.issue_source_has_token ? '••••••• (keep)' : 'API token'}
+                                    className="h-7 px-2 rounded-md text-[11px] bg-background border border-border/40 text-foreground/80 focus:outline-none focus:ring-1 focus:ring-ring w-40 placeholder:text-muted-foreground/40"
+                                />
+                            </>
+                        )}
+                        <button
+                            onClick={() => void handleSourceTest()}
+                            disabled={!sourceType || sourceTesting}
+                            className="h-7 px-3 rounded-md text-[11px] font-medium bg-muted hover:bg-muted/80 text-foreground/70 disabled:opacity-40 transition-colors inline-flex items-center gap-1.5"
+                        >
+                            {sourceTesting ? <Loader2 size={10} className="animate-spin" /> : null}
+                            Test
+                        </button>
+                        <button
+                            onClick={() => void handleSourceSave()}
+                            disabled={sourceSaving}
+                            className="h-7 px-3 rounded-md text-[11px] font-semibold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition-colors inline-flex items-center gap-1.5"
+                        >
+                            {sourceSaving ? <Loader2 size={10} className="animate-spin" /> : null}
+                            Save
+                        </button>
+                        <button onClick={() => setShowSourceEditor(false)} className="ml-auto text-muted-foreground/50 hover:text-foreground">
+                            <X size={13} />
+                        </button>
+                    </div>
+                    {sourceTestResult && (
+                        <div className={`flex items-center gap-1.5 text-[11px] ${sourceTestResult.ok ? 'text-green-500' : 'text-destructive'}`}>
+                            <CheckCircle2 size={11} />
+                            {sourceTestResult.ok ? 'Connected' : sourceTestResult.error}
+                        </div>
+                    )}
+                    {sourceError && <p className="text-[11px] text-destructive">{sourceError}</p>}
+                </div>
+            )}
 
             {/* GitHub error banner */}
             {githubError && (

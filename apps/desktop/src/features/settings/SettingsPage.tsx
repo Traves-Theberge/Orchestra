@@ -58,7 +58,6 @@ import {
 import type { Project } from '@core/api/types'
 import { Github } from 'lucide-react'
 import { CHAT_PROVIDERS } from '@features/embedded-agent/lib/types'
-import { TrackerConnectionsPane } from './TrackerConnectionsPane'
 import { usePlatform } from '@/hooks/use-platform'
 import { CustomDropdown } from '@layout/shared/controls'
 import { useAppStore } from '@core/store'
@@ -441,7 +440,15 @@ export function SettingsPage({
             <SectionHeading icon={Cable} title="Integrations" description="GitHub, Linear, Jira, and other service connections" />
             <div className="mt-4 space-y-4">
               <div className="rounded-2xl border border-border/40 bg-gradient-to-b from-card via-card to-muted/20 p-6 shadow-sm">
-                <TrackerConnectionsPane config={config} />
+                <div className="flex items-start gap-3">
+                  <Cable size={16} className="mt-0.5 shrink-0 text-muted-foreground/50" />
+                  <div>
+                    <p className="text-[13px] font-semibold text-foreground/80">Issue source is configured per project</p>
+                    <p className="mt-1 text-[12px] text-muted-foreground/60 leading-relaxed">
+                      Open a project, click the <span className="font-mono bg-muted/60 px-1 rounded text-[11px]">Source</span> button in the toolbar, and enter the tracker type, endpoint, and API token. Each project stores its own credentials independently.
+                    </p>
+                  </div>
+                </div>
               </div>
               <div className="rounded-2xl border border-border/40 bg-gradient-to-b from-card via-card to-muted/20 p-6 shadow-sm">
                 <GitConnectionsPane config={config} />

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { BackendConfig } from '@core/api/client'
-import { browseTrackerItems } from '@core/api/client'
+import { browseTrackerItems, browseProjectTrackerItems } from '@core/api/client'
 import type { WorkItem, WorkItemFilter } from '@/entities/tracker/types'
 
 const CACHE_TTL_MS = 5 * 60 * 1000
@@ -46,19 +46,22 @@ interface UseTrackerWorkItemsResult {
 }
 
 /**
- * Fetches WorkItems from a tracker config with a 5-minute TTL cache.
- * Returns an empty list immediately when configId or config is null.
+ * Fetches WorkItems from a tracker source with a 5-minute TTL cache.
+ * Supply either configId (global tracker config) or projectId (per-project source).
+ * Returns an empty list immediately when both are null.
  */
 export function useTrackerWorkItems(
   config: BackendConfig | null,
   configId: string | null,
   filter?: WorkItemFilter,
+  projectId?: string | null,
 ): UseTrackerWorkItemsResult {
   const [items, setItems] = useState<WorkItem[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<Error | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
+  const sourceKey = projectId ? `project:${projectId}` : configId
   const filterKey = filter
     ? JSON.stringify({
         states: filter.states ? [...filter.states].sort() : undefined,
@@ -69,9 +72,9 @@ export function useTrackerWorkItems(
     : ''
 
   const fetchItems = useCallback(async () => {
-    if (!config || !configId) return
+    if (!config || !sourceKey) return
 
-    const key = trackerCacheKey(configId, filter)
+    const key = trackerCacheKey(sourceKey, filter)
     const cached = readTrackerCache(key)
     if (cached) {
       setItems(cached)
@@ -85,9 +88,12 @@ export function useTrackerWorkItems(
     setLoading(true)
     setError(null)
     try {
-      const data = await browseTrackerItems(config, configId, {
-        states: filter?.states,
-      })
+      let data: WorkItem[]
+      if (projectId) {
+        data = await browseProjectTrackerItems(config, projectId, { states: filter?.states })
+      } else {
+        data = await browseTrackerItems(config, configId!, { states: filter?.states })
+      }
       cache.set(key, { items: data, fetchedAt: Date.now() })
       setItems(data)
     } catch (err) {
@@ -97,23 +103,23 @@ export function useTrackerWorkItems(
     } finally {
       setLoading(false)
     }
-  }, [config, configId, filterKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [config, sourceKey, filterKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!config || !configId) {
+    if (!config || !sourceKey) {
       setItems([])
       setLoading(false)
       return
     }
     fetchItems()
     return () => abortRef.current?.abort()
-  }, [config, configId, filterKey, fetchItems])
+  }, [config, sourceKey, filterKey, fetchItems])
 
   const refresh = useCallback(() => {
-    if (!configId) return
-    cache.delete(trackerCacheKey(configId, filter))
+    if (!sourceKey) return
+    cache.delete(trackerCacheKey(sourceKey, filter))
     fetchItems()
-  }, [configId, filterKey, fetchItems]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sourceKey, filterKey, fetchItems]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return { items, loading, error, refresh }
 }

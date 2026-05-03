@@ -222,6 +222,11 @@ type Project struct {
 	GitHubToken     string `json:"-"`
 	TrackerConfigID string `json:"tracker_config_id"`
 	PathExists      bool   `json:"path_exists"`
+
+	// Per-project issue source (replaces global tracker_configs assignment)
+	IssueSourceType     string `json:"issue_source_type"`
+	IssueSourceEndpoint string `json:"issue_source_endpoint"`
+	IssueSourceToken    string `json:"-"` // never sent to clients; see MarshalJSON
 }
 
 // GitHubTokenRedactedSentinel is what API clients see in place of a configured
@@ -233,20 +238,27 @@ const GitHubTokenRedactedSentinel = "<set>"
 // replacing GitHubToken with a redacted sentinel.
 func (p Project) MarshalJSON() ([]byte, error) {
 	type wire struct {
-		ID              string `json:"id"`
-		Name            string `json:"name"`
-		RootPath        string `json:"root_path"`
-		RemoteURL       string `json:"remote_url"`
-		GitHubOwner     string `json:"github_owner"`
-		GitHubRepo      string `json:"github_repo"`
-		GitHubToken     string `json:"github_token"`
-		TrackerConfigID string `json:"tracker_config_id"`
-		PathExists      bool   `json:"path_exists"`
+		ID                   string `json:"id"`
+		Name                 string `json:"name"`
+		RootPath             string `json:"root_path"`
+		RemoteURL            string `json:"remote_url"`
+		GitHubOwner          string `json:"github_owner"`
+		GitHubRepo           string `json:"github_repo"`
+		GitHubToken          string `json:"github_token"`
+		TrackerConfigID      string `json:"tracker_config_id"`
+		PathExists           bool   `json:"path_exists"`
+		IssueSourceType      string `json:"issue_source_type"`
+		IssueSourceEndpoint  string `json:"issue_source_endpoint"`
+		IssueSourceHasToken  bool   `json:"issue_source_has_token"`
 	}
 	w := wire{
 		ID: p.ID, Name: p.Name, RootPath: p.RootPath, RemoteURL: p.RemoteURL,
 		GitHubOwner: p.GitHubOwner, GitHubRepo: p.GitHubRepo,
-		TrackerConfigID: p.TrackerConfigID, PathExists: p.PathExists,
+		TrackerConfigID:     p.TrackerConfigID,
+		PathExists:          p.PathExists,
+		IssueSourceType:     p.IssueSourceType,
+		IssueSourceEndpoint: p.IssueSourceEndpoint,
+		IssueSourceHasToken: p.IssueSourceToken != "",
 	}
 	if p.GitHubToken != "" {
 		w.GitHubToken = GitHubTokenRedactedSentinel
@@ -266,7 +278,8 @@ type ProjectStats struct {
 func (db *DB) GetProjects(ctx context.Context) ([]Project, error) {
 	rows, err := db.QueryContext(ctx, `SELECT id, name, root_path, remote_url,
 		COALESCE(github_owner, ''), COALESCE(github_repo, ''), COALESCE(github_token, ''),
-		COALESCE(tracker_config_id, '')
+		COALESCE(tracker_config_id, ''),
+		COALESCE(issue_source_type, ''), COALESCE(issue_source_endpoint, ''), COALESCE(issue_source_token, '')
 		FROM projects ORDER BY name ASC`)
 	if err != nil {
 		return nil, err
@@ -277,7 +290,8 @@ func (db *DB) GetProjects(ctx context.Context) ([]Project, error) {
 	for rows.Next() {
 		var p Project
 		if err := rows.Scan(&p.ID, &p.Name, &p.RootPath, &p.RemoteURL,
-			&p.GitHubOwner, &p.GitHubRepo, &p.GitHubToken, &p.TrackerConfigID); err != nil {
+			&p.GitHubOwner, &p.GitHubRepo, &p.GitHubToken, &p.TrackerConfigID,
+			&p.IssueSourceType, &p.IssueSourceEndpoint, &p.IssueSourceToken); err != nil {
 			return nil, err
 		}
 		if p.GitHubToken != "" {
@@ -286,6 +300,14 @@ func (db *DB) GetProjects(ctx context.Context) ([]Project, error) {
 			} else {
 				log.Printf("WARN: failed to decrypt github token for project %s: %v", p.ID, err)
 				p.GitHubToken = ""
+			}
+		}
+		if p.IssueSourceToken != "" {
+			if dec, err := DecryptToken(p.IssueSourceToken); err == nil {
+				p.IssueSourceToken = dec
+			} else {
+				log.Printf("WARN: failed to decrypt issue source token for project %s: %v", p.ID, err)
+				p.IssueSourceToken = ""
 			}
 		}
 		projects = append(projects, p)
@@ -416,17 +438,52 @@ func (db *DB) DeleteProject(ctx context.Context, projectID string) error {
 // GetProjectByID retrieves a single project by its ID, with decrypted GitHub token.
 func (db *DB) GetProjectByID(ctx context.Context, id string) (Project, error) {
 	var p Project
-	err := db.QueryRowContext(ctx, "SELECT id, name, root_path, remote_url, COALESCE(github_owner, ''), COALESCE(github_repo, ''), COALESCE(github_token, ''), COALESCE(tracker_config_id, '') FROM projects WHERE id = ?", id).
-		Scan(&p.ID, &p.Name, &p.RootPath, &p.RemoteURL, &p.GitHubOwner, &p.GitHubRepo, &p.GitHubToken, &p.TrackerConfigID)
-	if err == nil && p.GitHubToken != "" {
-		if dec, decErr := DecryptToken(p.GitHubToken); decErr == nil {
-			p.GitHubToken = dec
-		} else {
-			log.Printf("WARN: failed to decrypt github token for project %s: %v", p.ID, decErr)
-			p.GitHubToken = ""
+	err := db.QueryRowContext(ctx, `SELECT id, name, root_path, remote_url,
+		COALESCE(github_owner, ''), COALESCE(github_repo, ''), COALESCE(github_token, ''),
+		COALESCE(tracker_config_id, ''),
+		COALESCE(issue_source_type, ''), COALESCE(issue_source_endpoint, ''), COALESCE(issue_source_token, '')
+		FROM projects WHERE id = ?`, id).
+		Scan(&p.ID, &p.Name, &p.RootPath, &p.RemoteURL, &p.GitHubOwner, &p.GitHubRepo, &p.GitHubToken, &p.TrackerConfigID,
+			&p.IssueSourceType, &p.IssueSourceEndpoint, &p.IssueSourceToken)
+	if err == nil {
+		if p.GitHubToken != "" {
+			if dec, decErr := DecryptToken(p.GitHubToken); decErr == nil {
+				p.GitHubToken = dec
+			} else {
+				log.Printf("WARN: failed to decrypt github token for project %s: %v", p.ID, decErr)
+				p.GitHubToken = ""
+			}
+		}
+		if p.IssueSourceToken != "" {
+			if dec, decErr := DecryptToken(p.IssueSourceToken); decErr == nil {
+				p.IssueSourceToken = dec
+			} else {
+				log.Printf("WARN: failed to decrypt issue source token for project %s: %v", p.ID, decErr)
+				p.IssueSourceToken = ""
+			}
 		}
 	}
 	return p, err
+}
+
+// UpdateProjectIssueSource sets the per-project issue source fields.
+// tokenPlaintext is encrypted before storage; pass an empty string to leave
+// the existing token unchanged.
+func (db *DB) UpdateProjectIssueSource(ctx context.Context, id, sourceType, endpoint, tokenPlaintext string) error {
+	if tokenPlaintext != "" {
+		enc, err := EncryptToken(tokenPlaintext)
+		if err != nil {
+			return fmt.Errorf("encrypt issue source token: %w", err)
+		}
+		_, err = db.ExecContext(ctx,
+			"UPDATE projects SET issue_source_type = ?, issue_source_endpoint = ?, issue_source_token = ? WHERE id = ?",
+			sourceType, endpoint, enc, id)
+		return err
+	}
+	_, err := db.ExecContext(ctx,
+		"UPDATE projects SET issue_source_type = ?, issue_source_endpoint = ? WHERE id = ?",
+		sourceType, endpoint, id)
+	return err
 }
 
 // UpdateProjectGitHubInfo sets the GitHub owner and repo for an existing project.

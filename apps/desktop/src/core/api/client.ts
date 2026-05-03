@@ -738,6 +738,32 @@ export async function deleteProject(config: BackendConfig, projectId: string): P
   })
 }
 
+/** Save per-project issue source config (type, endpoint, token). Pass token="" to leave unchanged. */
+export async function updateProjectIssueSource(
+  config: BackendConfig,
+  projectId: string,
+  payload: { type: string; endpoint: string; token?: string }
+): Promise<{ ok: boolean }> {
+  return requestJSON<{ ok: boolean }>(
+    config,
+    `/api/v1/projects/${projectId}/issue-source`,
+    { method: 'PATCH', body: JSON.stringify(payload) }
+  )
+}
+
+/** Test connectivity for a project's issue source. Can pass override values before saving. */
+export async function testProjectIssueSource(
+  config: BackendConfig,
+  projectId: string,
+  payload?: { type?: string; endpoint?: string; token?: string }
+): Promise<{ ok: boolean; error?: string }> {
+  return requestJSON<{ ok: boolean; error?: string }>(
+    config,
+    `/api/v1/projects/${projectId}/issue-source/test`,
+    { method: 'POST', body: JSON.stringify(payload ?? {}) }
+  )
+}
+
 /**
  * Triggers a refresh/rescan of a project's workspace.
  * @param config - Backend connection configuration.
@@ -2435,110 +2461,17 @@ export async function refreshRateLimits(config: BackendConfig): Promise<RateLimi
   return requestJSON<RateLimitState>(config, '/api/v1/usage/rate-limits/refresh', { method: 'POST' })
 }
 
-// ─── Tracker types (re-exported from entities layer) ────────────────────────
+// ─── Tracker work item types ─────────────────────────────────────────────────
 
 export type {
   WorkItem,
   WorkItemSource,
-  TrackerConfig,
-  TrackerProject,
-  TrackerState,
   WorkItemFilter,
-  CreateTrackerConfigRequest,
-  UpdateTrackerConfigRequest,
-  TestConnectionResult,
 } from '@/entities/tracker/types'
 
-// ─── Tracker configs ─────────────────────────────────────────────────────────
+import type { WorkItem } from '@/entities/tracker/types'
 
-import type {
-  TrackerConfig,
-  TrackerProject,
-  TrackerState,
-  WorkItem,
-  CreateTrackerConfigRequest,
-  UpdateTrackerConfigRequest,
-  TestConnectionResult,
-} from '@/entities/tracker/types'
-
-/** List all configured tracker connections. */
-export async function listTrackerConfigs(config: BackendConfig): Promise<TrackerConfig[]> {
-  return requestJSON<TrackerConfig[]>(config, '/api/v1/tracker/configs')
-}
-
-/** Create a new tracker config. Backend encrypts the token before storage. */
-export async function createTrackerConfig(
-  config: BackendConfig,
-  payload: CreateTrackerConfigRequest,
-): Promise<TrackerConfig> {
-  return requestJSON<TrackerConfig>(config, '/api/v1/tracker/configs', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-}
-
-/** Patch an existing tracker config. Omit fields to leave them unchanged. */
-export async function updateTrackerConfig(
-  config: BackendConfig,
-  configId: string,
-  patch: UpdateTrackerConfigRequest,
-): Promise<TrackerConfig> {
-  return requestJSON<TrackerConfig>(
-    config,
-    `/api/v1/tracker/configs/${encodeURIComponent(configId)}`,
-    {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patch),
-    },
-  )
-}
-
-/** Delete a tracker config by ID. */
-export async function deleteTrackerConfig(config: BackendConfig, configId: string): Promise<void> {
-  await requestJSON<{ deleted: boolean }>(
-    config,
-    `/api/v1/tracker/configs/${encodeURIComponent(configId)}`,
-    { method: 'DELETE' },
-  )
-}
-
-/** Ping a tracker connection to verify credentials/network. */
-export async function testTrackerConfig(
-  config: BackendConfig,
-  configId: string,
-): Promise<TestConnectionResult> {
-  return requestJSON<TestConnectionResult>(
-    config,
-    `/api/v1/tracker/configs/${encodeURIComponent(configId)}/test`,
-    { method: 'POST' },
-  )
-}
-
-/** Fetch the list of top-level projects/teams/repos in a tracker. */
-export async function fetchTrackerProjects(
-  config: BackendConfig,
-  configId: string,
-): Promise<TrackerProject[]> {
-  return requestJSON<TrackerProject[]>(
-    config,
-    `/api/v1/tracker/configs/${encodeURIComponent(configId)}/projects`,
-  )
-}
-
-/** Fetch the list of workflow states defined in a tracker. */
-export async function fetchTrackerStates(
-  config: BackendConfig,
-  configId: string,
-): Promise<TrackerState[]> {
-  return requestJSON<TrackerState[]>(
-    config,
-    `/api/v1/tracker/configs/${encodeURIComponent(configId)}/states`,
-  )
-}
-
-/** Browse work items from a specific tracker config. */
+/** Browse work items from a global tracker config (used by useTrackerWorkItems configId path). */
 export async function browseTrackerItems(
   config: BackendConfig,
   configId: string,
@@ -2553,19 +2486,17 @@ export async function browseTrackerItems(
   return requestJSON<WorkItem[]>(config, path)
 }
 
-/** Assign a tracker config to a project (or pass empty configId to clear). */
-export async function setProjectTracker(
+/** Browse live work items from a project's per-project issue source. */
+export async function browseProjectTrackerItems(
   config: BackendConfig,
   projectId: string,
-  configId: string,
-): Promise<void> {
-  await requestJSON<{ ok: boolean }>(
-    config,
-    `/api/v1/projects/${encodeURIComponent(projectId)}/tracker`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config_id: configId }),
-    },
-  )
+  filter?: { states?: string[] },
+): Promise<WorkItem[]> {
+  const params = new URLSearchParams()
+  if (filter?.states?.length) {
+    params.set('states', filter.states.join(','))
+  }
+  const qs = params.toString()
+  const path = `/api/v1/projects/${encodeURIComponent(projectId)}/tracker/issues${qs ? '?' + qs : ''}`
+  return requestJSON<WorkItem[]>(config, path)
 }

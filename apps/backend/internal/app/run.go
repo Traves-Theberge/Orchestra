@@ -94,6 +94,7 @@ func Run(logger zerolog.Logger) error {
 		trackerClient = newLegacyTrackerClient(cfg, warehouseDB)
 	}
 	orchestratorService.SetTrackerClient(trackerClient)
+	orchestratorService.SetTrackerRegistry(trackerRegistry)
 	pubsub := observability.NewPubSub()
 	termManager := terminal.NewManager()
 
@@ -172,7 +173,7 @@ func Run(logger zerolog.Logger) error {
 	cleanupTerminalWorkspaces(orchestratorService, trackerClient, workspaceService, cfg.WorkspaceHooks, warehouseDB, logger)
 
 	go startGarbageCollector(orchestratorService, warehouseDB, workspaceService, cfg.TelemetryRetentionDays, logger)
-	go startRefreshWorker(orchestratorService, pubsub, logger)
+	go startRefreshWorker(orchestratorService, trackerRegistry, warehouseDB, pubsub, logger)
 	go startDailyMetricsRollup(warehouseDB, logger)
 	go telemetry.StartWatcher(context.Background(), warehouseDB, cfg.ProjectRoots, telemetry.Options{
 		Providers:       cfg.TelemetryProviders,
@@ -189,7 +190,7 @@ func Run(logger zerolog.Logger) error {
 	}
 
 	toolExecutor := tools.NewLinearToolExecutor(trackerClient)
-	go startExecutionWorker(orchestratorService, agentRegistry, provider, cfg.AgentProvider, cfg.WorkspaceRoot, cfg.WorkflowFile, cfg.AgentMaxTurns, toolExecutor.Execute, tools.TrackerToolSpecs(), cfg.WorkspaceHooks, pubsub, warehouseDB, sessionLog, termManager, &cfg, logger)
+	go startExecutionWorker(orchestratorService, agentRegistry, provider, cfg.AgentProvider, cfg.WorkspaceRoot, cfg.WorkflowFile, cfg.AgentMaxTurns, toolExecutor.Execute, tools.TrackerToolSpecs(), cfg.WorkspaceHooks, pubsub, warehouseDB, sessionLog, termManager, &cfg, trackerRegistry, logger)
 
 	logger.Info().Str("addr", addr).Str("service_id", runtime.ServiceOrchestrator).Msg("starting orchestrad")
 
@@ -350,6 +351,7 @@ func startExecutionWorker(
 	sessionLog *sessionlogger.Logger,
 	termManager *terminal.Manager,
 	cfg *config.Config,
+	trackerReg *trackerregistry.Registry,
 	logger zerolog.Logger,
 ) {
 	workspaceService := workspace.Service{Root: workspaceRoot}
@@ -357,7 +359,7 @@ func startExecutionWorker(
 	defer ticker.Stop()
 
 	for range ticker.C {
-		processExecutionTick(service, workspaceService, registry, provider, providerName, workspaceRoot, workflowFile, agentMaxTurns, toolExecutor, toolSpecs, workspaceHooks, pubsub, warehouseDB, sessionLog, termManager, cfg, logger)
+		processExecutionTick(service, workspaceService, registry, provider, providerName, workspaceRoot, workflowFile, agentMaxTurns, toolExecutor, toolSpecs, workspaceHooks, pubsub, warehouseDB, sessionLog, termManager, cfg, trackerReg, logger)
 	}
 }
 
@@ -381,6 +383,7 @@ func processExecutionTick(
 	sessionLog *sessionlogger.Logger,
 	termManager *terminal.Manager,
 	cfg *config.Config,
+	trackerReg *trackerregistry.Registry,
 	logger zerolog.Logger,
 ) {
 	entry, ok := service.ClaimNextRunnable()
@@ -460,6 +463,14 @@ func processExecutionTick(
 		return
 	}
 	resolvedProject = project
+
+	// Override the global tool executor with one scoped to this project's tracker.
+	// Falls back to the global executor if the project has no issue source configured.
+	if trackerReg != nil {
+		if projectClient, clientErr := trackerReg.GetForProjectDirect(resolvedProject); clientErr == nil && projectClient != nil {
+			toolExecutor = tools.NewLinearToolExecutor(projectClient).Execute
+		}
+	}
 
 	if project.RootPath == "" || !filepath.IsAbs(project.RootPath) {
 		errMsg := fmt.Errorf("project root path is empty or not absolute: %q", project.RootPath)
@@ -1349,11 +1360,17 @@ func pruneAllWorktrees(warehouseDB *db.DB, workspaceService workspace.Service, l
 	}
 }
 
-// startRefreshWorker runs a 5-second polling loop that triggers tracker refresh
-// cycles, publishes updated snapshots, and persists orchestrator state to disk.
-// Snapshots are only broadcast when state actually changed (via content hash),
-// reducing unnecessary SSE traffic during idle periods.
-func startRefreshWorker(service *orchestrator.Service, pubsub *observability.PubSub, logger zerolog.Logger) {
+// startRefreshWorker runs a 5-second polling loop that triggers per-project tracker
+// refresh cycles, publishes updated snapshots, and persists orchestrator state to disk.
+// Each project gets its own tracker client built from its embedded issue_source_* fields.
+// Projects with no issue source configured are skipped (local-only mode).
+func startRefreshWorker(
+	service *orchestrator.Service,
+	registry *trackerregistry.Registry,
+	warehouseDB *db.DB,
+	pubsub *observability.PubSub,
+	logger zerolog.Logger,
+) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
@@ -1367,11 +1384,33 @@ func startRefreshWorker(service *orchestrator.Service, pubsub *observability.Pub
 		}
 		before := service.Snapshot()
 
-		if err := service.PerformRefresh(context.Background()); err != nil {
-			logger.Error().Err(err).Str("service_id", runtime.ServiceOrchestrator).Msg("refresh worker failed")
+		ctx := context.Background()
+		var refreshErr error
+
+		projects, dbErr := warehouseDB.GetProjects(ctx)
+		if dbErr != nil {
+			logger.Warn().Err(dbErr).Msg("refresh worker: failed to load projects")
+			// Fall back to nil-client path so stalled-run reconciliation still runs
+			refreshErr = service.PerformRefreshForClient(ctx, nil)
+		} else {
+			for _, proj := range projects {
+				client, clientErr := registry.GetForProjectDirect(proj)
+				if clientErr != nil {
+					logger.Warn().Err(clientErr).Str("project_id", proj.ID).Msg("refresh worker: failed to build tracker client")
+					continue
+				}
+				if err := service.PerformRefreshForClient(ctx, client); err != nil {
+					logger.Error().Err(err).Str("project_id", proj.ID).Str("service_id", runtime.ServiceOrchestrator).Msg("refresh worker: project refresh failed")
+					refreshErr = err
+				}
+			}
+		}
+
+		if refreshErr != nil {
 			publishSnapshot(pubsub, service)
 			continue
 		}
+
 		after := service.Snapshot()
 		publishRefreshRetryLifecycleEvents(pubsub, before, after)
 
@@ -1379,7 +1418,7 @@ func startRefreshWorker(service *orchestrator.Service, pubsub *observability.Pub
 		if newHash != lastHash {
 			lastHash = newHash
 			publishSnapshot(pubsub, service)
-			if err := service.PersistStateToDB(context.Background()); err != nil {
+			if err := service.PersistStateToDB(ctx); err != nil {
 				logger.Warn().Err(err).Msg("failed to persist orchestrator state to DB")
 			}
 		}
