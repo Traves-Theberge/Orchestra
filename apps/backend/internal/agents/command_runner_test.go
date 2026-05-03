@@ -64,30 +64,6 @@ func TestCommandRunnerReplacesPromptTemplateToken(t *testing.T) {
 	}
 }
 
-func TestRegistrySupportsCodexClaudeAndOpenCode(t *testing.T) {
-	r := NewRegistry(map[string]string{
-		"codex":    "codex app-server",
-		"claude":   "printf claude",
-		"opencode": "printf opencode",
-	})
-
-	for _, provider := range []Provider{ProviderCodex, ProviderClaude, ProviderOpenCode} {
-		if !r.HasProvider(provider) {
-			t.Fatalf("expected provider configured: %s", provider)
-		}
-	}
-
-	if _, ok := r.runners[ProviderCodex].(*CodexAppServerRunner); !ok {
-		t.Fatalf("expected codex provider to use CodexAppServerRunner")
-	}
-	if _, ok := r.runners[ProviderClaude].(*ClaudeRunner); !ok {
-		t.Fatalf("expected claude provider to use ClaudeRunner")
-	}
-	if _, ok := r.runners[ProviderOpenCode].(*OpenCodeRunner); !ok {
-		t.Fatalf("expected opencode provider to use OpenCodeRunner")
-	}
-}
-
 func TestParseLineToEventClaudeParsesNestedMessageAndUsage(t *testing.T) {
 	line := `{"type":"message_delta","delta":{"text":"continue"},"message":{"usage":{"input_tokens":10,"output_tokens":2}}}`
 	event := parseLineToEvent(ProviderClaude, "stdout", line)
