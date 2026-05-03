@@ -42,7 +42,7 @@ curl_json() {
 
 cmd_setup() {
   yellow "==> backend health"
-  if ! curl_json "${BASE}/health" | jq .; then
+  if ! curl_json "${BASE}/healthz" | jq .; then
     red "backend not reachable at ${BASE}; start orchestrad first"
     exit 1
   fi
@@ -50,12 +50,14 @@ cmd_setup() {
   yellow "==> registered projects"
   local projects
   projects=$(curl_json "${BASE}/projects")
-  echo "${projects}" | jq -r '.[] | "  \(.id)  \(.name)  (\(.root_path))  tracker=\(.tracker_config_id // "<none>")"'
+  echo "${projects}" \
+    | jq -r '(if type=="array" then . else (.projects // []) end)
+             | .[] | "  \(.id)  \(.name)  (\(.root_path))  tracker=\(.tracker_config_id // "<none>")"'
 
   yellow "==> agent providers"
-  curl_json "${BASE}/agents" 2>/dev/null \
-    | jq -r '.[] | "  \(.provider)  enabled=\(.enabled)  model=\(.model // "<default>")"' \
-    || dim "  (no /agents endpoint or no providers configured)"
+  curl_json "${BASE}/agents" \
+    | jq -r '.agents // [] | .[] | "  \(.)"' \
+    || dim "  (no providers configured)"
 
   green "setup ok — pick a provider and project_id and run: scripts/e2e-kanban.sh run <provider> <project_id>"
 }
