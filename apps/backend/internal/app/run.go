@@ -84,7 +84,8 @@ func Run(logger zerolog.Logger) error {
 
 	// Build the tracker registry. Existing env-var configs are seeded into
 	// tracker_configs on first run so legacy deployments keep working unchanged.
-	trackerRegistry := trackerregistry.NewWithFactory(warehouseDB, buildTrackerAdapter)
+	factory := buildTrackerAdapterFactory(warehouseDB)
+	trackerRegistry := trackerregistry.NewWithFactory(warehouseDB, factory)
 	if err := seedTrackerConfigFromEnv(context.Background(), warehouseDB, cfg, trackerRegistry); err != nil {
 		logger.Warn().Err(err).Msg("seed tracker config from env failed")
 	}
@@ -237,53 +238,59 @@ func killStaleOrchestrad(port string, logger zerolog.Logger) {
 // newLegacyTrackerClient builds a tracker.Client from legacy env-var config.
 // Used as a fallback when no tracker_configs rows exist (e.g. fresh local dev,
 // or a tracker type the registry can't yet handle like sqlite/memory).
+// GitHub is now handled by the tracker registry via seedTrackerConfigFromEnv.
 func newLegacyTrackerClient(cfg config.Config, localDB *db.DB) tracker.Client {
-	if strings.ToLower(cfg.TrackerType) == "github" {
-		parts := strings.Split(cfg.TrackerEndpoint, "/")
-		if len(parts) == 2 {
-			return trackergithub.NewClient(parts[0], parts[1], cfg.TrackerToken, nil, localDB)
-		}
-	}
 	if localDB == nil {
 		return memory.NewClient(nil)
 	}
 	return trackersqlite.NewClient(localDB, cfg.TrackerWorkerAssigneeIDs)
 }
 
-// buildTrackerAdapter is the AdapterFactory injected into the registry.
+// buildTrackerAdapterFactory returns the AdapterFactory injected into the registry.
+// Implemented as a closure so it can capture localDB for the GitHub adapter's
+// DeleteIssue cleanup path.
 // Lives here in app/run.go to break the import cycle: registry/ cannot import
 // linear/ or jira/ directly.
-func buildTrackerAdapter(cfg *db.TrackerConfig, token string) (tracker.Adapter, error) {
-	switch strings.ToLower(cfg.Type) {
-	case "linear":
-		var extra struct {
-			StateMap map[string]string `json:"state_map"`
+func buildTrackerAdapterFactory(localDB *db.DB) trackerregistry.AdapterFactory {
+	return func(cfg *db.TrackerConfig, token string) (tracker.Adapter, error) {
+		switch strings.ToLower(cfg.Type) {
+		case "linear":
+			var extra struct {
+				StateMap map[string]string `json:"state_map"`
+			}
+			if cfg.Extra != "" {
+				_ = json.Unmarshal([]byte(cfg.Extra), &extra)
+			}
+			return linear.NewClient(cfg.Endpoint, token, nil, "", extra.StateMap), nil
+		case "jira":
+			var extra struct {
+				JQL         string            `json:"jql"`
+				StateMap    map[string]string `json:"state_map"`
+				DefaultProj string            `json:"default_project"`
+			}
+			if cfg.Extra != "" {
+				_ = json.Unmarshal([]byte(cfg.Extra), &extra)
+			}
+			// Jira Server uses Basic auth with user+token; Cloud uses Bearer (user empty).
+			// We don't have a separate "user" column today — encode it in extra if Server.
+			client := jira.NewClient(cfg.Endpoint, "", token, nil, extra.StateMap)
+			if extra.JQL != "" {
+				client.SetJQL(extra.JQL)
+			}
+			if extra.DefaultProj != "" {
+				client.SetDefaultProject(extra.DefaultProj)
+			}
+			return client, nil
+		case "github":
+			parts := strings.Split(cfg.Endpoint, "/")
+			if len(parts) != 2 {
+				return nil, fmt.Errorf("github endpoint must be 'owner/repo', got %q", cfg.Endpoint)
+			}
+			// localDB enables DeleteIssue to clean up warehouse records.
+			return trackergithub.NewClient(parts[0], parts[1], token, nil, localDB), nil
+		default:
+			return nil, fmt.Errorf("unsupported tracker type %q", cfg.Type)
 		}
-		if cfg.Extra != "" {
-			_ = json.Unmarshal([]byte(cfg.Extra), &extra)
-		}
-		return linear.NewClient(cfg.Endpoint, token, nil, "", extra.StateMap), nil
-	case "jira":
-		var extra struct {
-			JQL          string            `json:"jql"`
-			StateMap     map[string]string `json:"state_map"`
-			DefaultProj  string            `json:"default_project"`
-		}
-		if cfg.Extra != "" {
-			_ = json.Unmarshal([]byte(cfg.Extra), &extra)
-		}
-		// Jira Server uses Basic auth with user+token; Cloud uses Bearer (user empty).
-		// We don't have a separate "user" column today — encode it in extra if Server.
-		client := jira.NewClient(cfg.Endpoint, "", token, nil, extra.StateMap)
-		if extra.JQL != "" {
-			client.SetJQL(extra.JQL)
-		}
-		if extra.DefaultProj != "" {
-			client.SetDefaultProject(extra.DefaultProj)
-		}
-		return client, nil
-	default:
-		return nil, fmt.Errorf("unsupported tracker type %q", cfg.Type)
 	}
 }
 
@@ -304,9 +311,7 @@ func seedTrackerConfigFromEnv(ctx context.Context, warehouse *db.DB, cfg config.
 	if t == "" || t == "sqlite" || t == "memory" {
 		return nil
 	}
-	if t != "linear" && t != "jira" {
-		// github is handled by the legacy client for now; only Linear and Jira
-		// have registry adapters.
+	if t != "linear" && t != "jira" && t != "github" {
 		return nil
 	}
 	encToken, err := db.EncryptToken(cfg.TrackerToken)

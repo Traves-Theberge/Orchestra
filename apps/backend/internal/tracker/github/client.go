@@ -7,12 +7,16 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
 )
+
+// Compile-time assertion that Client satisfies tracker.Adapter.
+var _ tracker.Adapter = (*Client)(nil)
 
 // Client is a tracker backed by the GitHub Issues REST API for a single repository.
 type Client struct {
@@ -87,7 +91,7 @@ func (c *Client) FetchIssuesByStates(ctx context.Context, states []string) ([]tr
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _, _ = io.Copy(io.Discard, resp.Body); resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("github api returned status %d", resp.StatusCode)
@@ -206,7 +210,7 @@ func (c *Client) UpdateIssue(ctx context.Context, identifier string, updates map
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _, _ = io.Copy(io.Discard, resp.Body); resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("github api returned status %d for update issue %s", resp.StatusCode, identifier)
@@ -246,7 +250,7 @@ func (c *Client) DeleteIssue(ctx context.Context, identifier string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _, _ = io.Copy(io.Discard, resp.Body); resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("github api returned status %d for close issue %s", resp.StatusCode, identifier)
@@ -339,7 +343,7 @@ func (c *Client) FetchIssueByIdentifier(ctx context.Context, id string) (*tracke
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _, _ = io.Copy(io.Discard, resp.Body); resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("github api returned status %d for issue %s", resp.StatusCode, id)
@@ -378,4 +382,184 @@ func (c *Client) FetchIssueByIdentifier(ctx context.Context, id string) (*tracke
 		CreatedAt:   gh.CreatedAt,
 		UpdatedAt:   gh.UpdatedAt,
 	}, nil
+}
+
+// ---------------------------------------------------------------------------
+// tracker.Adapter implementation
+// ---------------------------------------------------------------------------
+
+// Fetch returns WorkItems matching the filter. When filter.States is empty,
+// returns open issues. State entries map to GitHub's state param: "open" /
+// "closed" / "all". Unknown values default to "open".
+func (c *Client) Fetch(ctx context.Context, filter tracker.Filter) ([]tracker.WorkItem, error) {
+	ghState := "open"
+	for _, s := range filter.States {
+		switch strings.ToLower(s) {
+		case "closed", "done", "completed":
+			ghState = "closed"
+		case "all":
+			ghState = "all"
+		}
+	}
+	issues, err := c.FetchIssuesByStates(ctx, []string{ghState})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]tracker.WorkItem, 0, len(issues))
+	for _, i := range issues {
+		out = append(out, toWorkItem(i, c.repo))
+	}
+	return out, nil
+}
+
+// FetchByID returns a single WorkItem by either internal ID, prefixed ID
+// ("gh:<repo>-N"), or the repo-suffixed identifier ("<repo>-N").
+func (c *Client) FetchByID(ctx context.Context, id string) (*tracker.WorkItem, error) {
+	identifier := strings.TrimPrefix(id, "gh:")
+	issue, err := c.FetchIssueByIdentifier(ctx, identifier)
+	if err != nil {
+		return nil, err
+	}
+	if issue == nil {
+		return nil, fmt.Errorf("github: issue %q not found", id)
+	}
+	w := toWorkItem(*issue, c.repo)
+	return &w, nil
+}
+
+// Search searches GitHub issues by query text.
+func (c *Client) Search(ctx context.Context, query string) ([]tracker.WorkItem, error) {
+	issues, err := c.SearchIssues(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]tracker.WorkItem, 0, len(issues))
+	for _, i := range issues {
+		out = append(out, toWorkItem(i, c.repo))
+	}
+	return out, nil
+}
+
+// Create creates a new GitHub issue via the Adapter interface.
+func (c *Client) Create(ctx context.Context, item tracker.WorkItem) (*tracker.WorkItem, error) {
+	issue, err := c.CreateIssue(ctx, item.Title, item.Description, item.State,
+		item.Priority, item.AssigneeID, item.ProjectID, item.Provider, item.DisabledTools)
+	if err != nil {
+		return nil, err
+	}
+	w := toWorkItem(*issue, c.repo)
+	return &w, nil
+}
+
+// Update patches a GitHub issue via the Adapter interface.
+func (c *Client) Update(ctx context.Context, id string, updates map[string]any) (*tracker.WorkItem, error) {
+	identifier := strings.TrimPrefix(id, "gh:")
+	issue, err := c.UpdateIssue(ctx, identifier, updates)
+	if err != nil {
+		return nil, err
+	}
+	w := toWorkItem(*issue, c.repo)
+	return &w, nil
+}
+
+// Delete closes the GitHub issue and cleans up the local database via the Adapter interface.
+func (c *Client) Delete(ctx context.Context, id string) error {
+	identifier := strings.TrimPrefix(id, "gh:")
+	return c.DeleteIssue(ctx, identifier)
+}
+
+// Comment posts a comment to the GitHub issue. id may be prefixed ("gh:<repo>-N")
+// or unprefixed ("<repo>-N"); only the trailing number is sent to GitHub.
+func (c *Client) Comment(ctx context.Context, id, body string) error {
+	identifier := strings.TrimPrefix(id, "gh:")
+	number := identifier
+	if idx := strings.LastIndex(identifier, "-"); idx >= 0 {
+		number = identifier[idx+1:]
+	}
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/issues/%s/comments", c.owner, c.repo, number)
+	payload := map[string]string{"body": body}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "token "+c.token)
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _, _ = io.Copy(io.Discard, resp.Body); resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("github: comment status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// FetchProjects returns a single TrackerProject representing the configured repo.
+// GitHub connections in Orchestra are single-repo by configuration.
+func (c *Client) FetchProjects(_ context.Context) ([]tracker.TrackerProject, error) {
+	return []tracker.TrackerProject{{
+		ID:   c.owner + "/" + c.repo,
+		Name: c.owner + "/" + c.repo,
+	}}, nil
+}
+
+// FetchStates returns the two static workflow states GitHub Issues supports.
+func (c *Client) FetchStates(_ context.Context) ([]tracker.TrackerState, error) {
+	return []tracker.TrackerState{
+		{ID: "open", Name: "open", Type: "todo"},
+		{ID: "closed", Name: "closed", Type: "done"},
+	}, nil
+}
+
+// Ping verifies credentials by calling /user. Authenticated requests succeed
+// even on private repos; an empty token still lets us hit a public endpoint.
+func (c *Client) Ping(ctx context.Context) error {
+	url := "https://api.github.com/user"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "token "+c.token)
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _, _ = io.Copy(io.Discard, resp.Body); resp.Body.Close() }()
+	if resp.StatusCode == http.StatusUnauthorized {
+		return fmt.Errorf("github: unauthorized — invalid token")
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("github: ping status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// toWorkItem converts a legacy tracker.Issue produced by the GitHub client
+// into the canonical WorkItem shape used by the Adapter interface.
+// Sets Source="github" and prefixes the ID with "gh:".
+func toWorkItem(i tracker.Issue, repo string) tracker.WorkItem {
+	_ = repo // repo is embedded in Identifier already; kept for signature clarity
+	w := tracker.WorkItem(i) // Issue is a type alias for WorkItem
+	w.Source = "github"
+	if !strings.HasPrefix(w.ID, "gh:") {
+		// Legacy IDs are bare numbers; convert to "gh:<repo>-<number>" for adapter use.
+		// Identifier (already "<repo>-<number>") is preserved as-is.
+		if w.Identifier != "" {
+			w.ID = "gh:" + w.Identifier
+		} else {
+			w.ID = "gh:" + w.ID
+		}
+	}
+	return w
 }
