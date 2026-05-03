@@ -58,7 +58,6 @@ import {
 import type { Project } from '@core/api/types'
 import { Github } from 'lucide-react'
 import { CHAT_PROVIDERS } from '@features/embedded-agent/lib/types'
-import { TrackerConnectionsPane } from './TrackerConnectionsPane'
 import { usePlatform } from '@/hooks/use-platform'
 import { CustomDropdown } from '@layout/shared/controls'
 import { useAppStore } from '@core/store'
