@@ -47,6 +47,7 @@ declare global {
       selectFolder: () => Promise<string | null>
       selectFile: (options?: { filters?: Array<{ name: string; extensions: string[] }> }) => Promise<string | null>
       getScaleFactor: () => number
+      openOAuthWindow?: (provider: string) => Promise<string>
       fs: {
         readDir: (dirPath: string) => Promise<Array<{ name: string; isDirectory: boolean }>>
         readFile: (filePath: string) => Promise<{ content: string; isBinary: boolean; tooLarge?: boolean }>

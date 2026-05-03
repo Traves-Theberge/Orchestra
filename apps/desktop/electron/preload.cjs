@@ -40,4 +40,8 @@ contextBridge.exposeInMainWorld('orchestraDesktop', {
   },
   getScaleFactor: () => 1,
   onSwitchTab: (callback) => ipcRenderer.on('orchestra:switch-tab', (_event, tabNum) => callback(tabNum)),
+  openOAuthWindow: (provider) => {
+    if (typeof provider !== 'string') throw new Error('provider must be a string')
+    return ipcRenderer.invoke('orchestra:oauth-window', provider)
+  },
 })

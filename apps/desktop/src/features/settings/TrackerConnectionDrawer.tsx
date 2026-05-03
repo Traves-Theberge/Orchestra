@@ -1,5 +1,5 @@
 // apps/desktop/src/features/settings/TrackerConnectionDrawer.tsx
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 import type { BackendConfig } from '@core/api/client'
 import { createTrackerConfig, updateTrackerConfig } from '@core/api/client'
@@ -46,6 +46,13 @@ export function TrackerConnectionDrawer({ config, existing, onClose, onSaved }: 
   const [error, setError] = useState<string | null>(null)
 
   const isNew = existing == null
+
+  // GitHub does not support OAuth in this flow — force apikey when provider changes
+  useEffect(() => {
+    if (type === 'github' && authMethod === 'oauth') {
+      setAuthMethod('apikey')
+    }
+  }, [type, authMethod])
 
   const handleSave = async () => {
     if (!config) return
@@ -147,21 +154,21 @@ export function TrackerConnectionDrawer({ config, existing, onClose, onSaved }: 
                   />
                   API Key / PAT
                 </label>
-                <label className="flex items-center gap-1.5 cursor-pointer text-muted-foreground/70">
+                <label className="flex items-center gap-1.5 cursor-pointer">
                   <input
                     type="radio"
                     value="oauth"
                     checked={authMethod === 'oauth'}
                     onChange={() => setAuthMethod('oauth')}
-                    disabled
+                    disabled={type === 'github'}
                   />
-                  OAuth (coming soon)
+                  OAuth
                 </label>
               </div>
             </div>
           )}
 
-          {(isNew || authMethod === 'apikey') && (
+          {authMethod === 'apikey' && (
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">
                 {TOKEN_LABEL[type] ?? 'Token'}
@@ -174,6 +181,38 @@ export function TrackerConnectionDrawer({ config, existing, onClose, onSaved }: 
                 placeholder={isNew ? 'Paste token…' : '••••••••'}
                 className="w-full text-sm bg-background border border-border rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-ring font-mono"
               />
+            </div>
+          )}
+
+          {authMethod === 'oauth' && (
+            <div>
+              <button
+                type="button"
+                onClick={() => {
+                  const bridge = (window as unknown as { orchestraDesktop?: { openOAuthWindow?: (p: string) => Promise<string> } }).orchestraDesktop
+                  if (!bridge?.openOAuthWindow) {
+                    setError('OAuth requires the Orchestra desktop app (not browser dev mode)')
+                    return
+                  }
+                  setError(null)
+                  bridge.openOAuthWindow(type)
+                    .then((accessToken) => {
+                      setToken(accessToken)
+                    })
+                    .catch((err: Error) => {
+                      setError(err.message)
+                    })
+                }}
+                className="w-full text-sm px-3 py-2 rounded border border-border hover:bg-muted transition-colors inline-flex items-center justify-center gap-2"
+              >
+                Authorize with {PROVIDERS.find((p) => p.value === type)?.label} →
+              </button>
+              {token && (
+                <p className="text-xs text-emerald-400 mt-2">Token received</p>
+              )}
+              <p className="text-[11px] text-muted-foreground/60 mt-2">
+                Requires {type === 'linear' ? 'LINEAR_CLIENT_ID/LINEAR_CLIENT_SECRET' : 'JIRA_CLIENT_ID/JIRA_CLIENT_SECRET'} env vars on the Orchestra process.
+              </p>
             </div>
           )}
 

@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, safeStorage, shell, dialog, Menu } = require('electron')
+const { openOAuthWindow } = require('./oauth-handler.cjs')
 const path = require('node:path')
 const fs = require('node:fs/promises')
 const fsSync = require('node:fs')
@@ -656,6 +657,13 @@ ipcMain.handle('orchestra:select-file', async (_event, options) => {
   })
   if (result.canceled || result.filePaths.length === 0) return null
   return result.filePaths[0]
+})
+
+ipcMain.handle('orchestra:oauth-window', async (_event, provider) => {
+  if (typeof provider !== 'string') {
+    throw new Error('provider must be a string')
+  }
+  return openOAuthWindow(provider)
 })
 
 app.whenReady().then(async () => {
