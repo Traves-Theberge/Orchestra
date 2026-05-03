@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/orchestra/orchestra/apps/backend/internal/agents"
 )
@@ -157,7 +158,7 @@ func (s *Server) TestTailscaleConfig(w http.ResponseWriter, _ *http.Request) {
 	if port <= 0 {
 		port = 22
 	}
-	addr := fmt.Sprintf("%s:%d", ts.SSHHost, port)
+	addr := net.JoinHostPort(ts.SSHHost, strconv.Itoa(port))
 	conn, dialErr := net.DialTimeout("tcp", addr, 5e9) // 5 seconds
 	if dialErr != nil {
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -217,6 +218,26 @@ func (s *Server) DeleteKubernetesConfig(w http.ResponseWriter, _ *http.Request) 
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// GetAvailableRuntimes handles GET /api/v1/config/runtimes.
+// Returns which runtime targets are configured and available for dispatch.
+func (s *Server) GetAvailableRuntimes(w http.ResponseWriter, _ *http.Request) {
+	cfg, err := s.loadRuntimeConfig()
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "config_read_failed", err.Error())
+		return
+	}
+	type runtimeEntry struct {
+		Target     string `json:"target"`
+		Configured bool   `json:"configured"`
+	}
+	runtimes := []runtimeEntry{
+		{Target: "LOCAL", Configured: true},
+		{Target: "TAILSCALE", Configured: cfg.Tailscale.Configured},
+		{Target: "KUBERNETES", Configured: cfg.Kubernetes.Configured},
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"runtimes": runtimes})
 }
 
 // TestKubernetesConfig handles GET /api/v1/config/kubernetes/test.

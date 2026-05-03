@@ -9,6 +9,7 @@ export function EditorPanel() {
   const setFileContent = useAppStore((s) => s.setFileContent)
   const setFileDirty = useAppStore((s) => s.setFileDirty)
   const theme = useAppStore((s) => s.theme)
+  const editorSettings = useAppStore((s) => s.editorSettings)
 
   const activeFile = openFiles.find((f) => f.id === activeFileId)
   const originalContentRef = useRef<string>('')
@@ -89,13 +90,15 @@ export function EditorPanel() {
               }
             }}
             options={{
-              minimap: { enabled: false },
-              fontSize: 13,
-              lineNumbers: 'on',
-              wordWrap: 'on',
+              minimap: { enabled: editorSettings.minimap },
+              fontSize: editorSettings.fontSize,
+              fontFamily: editorSettings.fontFamily || undefined,
+              lineNumbers: editorSettings.lineNumbers,
+              wordWrap: editorSettings.wordWrap,
               scrollBeyondLastLine: false,
               automaticLayout: true,
-              tabSize: 2,
+              tabSize: editorSettings.tabSize,
+              renderWhitespace: editorSettings.renderWhitespace,
             }}
           />
         </div>

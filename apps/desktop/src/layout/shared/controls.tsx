@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useRef, useState, type MutableRefObject, type ReactElement, type ReactNode, type Ref } from 'react'
-import { AlertCircle, Bot, ChevronDown, CircleDashed, Folder, FolderTree, MoreHorizontal, SignalHigh, SignalLow, SignalMedium, User } from 'lucide-react'
+import { AlertCircle, Bot, ChevronDown, CircleDashed, Folder, FolderTree, MoreHorizontal, Server, SignalHigh, SignalLow, SignalMedium, User } from 'lucide-react'
+import type { RuntimeEntry } from '@core/api/client'
 
 export function getAgentIcon(name: string, size = 12): ReactNode {
   const lower = name.toLowerCase()
@@ -131,6 +132,41 @@ export function AgentSelector({ value, agents, onChange, direction = 'up' }: { v
         <div className="flex items-center gap-2 text-xs font-bold text-muted-foreground/70 uppercase">
           {normalizedValue && normalizedValue !== 'Unassigned' ? getAgentIcon(normalizedValue) : <User size={14} className="opacity-40" />}
           <span className="truncate max-w-[100px]">{normalizedValue || 'Assignee'}</span>
+        </div>
+      }
+    />
+  )
+}
+
+export function RuntimeSelector({
+  value,
+  runtimes,
+  onChange,
+  direction = 'up',
+}: {
+  value: string
+  runtimes: RuntimeEntry[]
+  onChange: (target: string) => void
+  direction?: 'up' | 'down'
+}) {
+  const configured = runtimes.filter((r) => r.configured)
+  const current = configured.find((r) => r.target === value) ?? configured[0]
+
+  return (
+    <CustomDropdown
+      className="bg-transparent border-none hover:bg-muted/20 !h-10 !px-3 rounded-lg transition-colors shadow-none"
+      value={current?.target ?? 'LOCAL'}
+      direction={direction}
+      options={configured.map((r) => ({
+        label: r.target === 'LOCAL' ? 'Local' : r.target.charAt(0) + r.target.slice(1).toLowerCase(),
+        value: r.target,
+        icon: <Server className="h-3.5 w-3.5 opacity-60" />,
+      }))}
+      onChange={onChange}
+      triggerContent={
+        <div className="flex items-center gap-2 text-xs font-bold text-muted-foreground/70 uppercase">
+          <Server size={14} className="opacity-40" />
+          <span className="truncate max-w-[100px]">{current?.target === 'LOCAL' ? 'Local' : (current?.target ?? 'Local')}</span>
         </div>
       }
     />

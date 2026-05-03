@@ -25,6 +25,7 @@ type WorkItem struct {
 	CreatedAt        string         `json:"created_at,omitempty"`
 	UpdatedAt        string         `json:"updated_at,omitempty"`
 	Provider         string         `json:"provider,omitempty"`
+	RuntimeTarget    string         `json:"runtime_target,omitempty"`
 	DisabledTools    []string       `json:"disabled_tools,omitempty"`
 	BaseSHA          string         `json:"base_sha,omitempty"`
 	Feedback         string         `json:"feedback,omitempty"`

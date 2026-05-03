@@ -26,19 +26,20 @@ import (
 //  4. Stream stdout/stderr line-by-line through parseLineToEvent
 //  5. Return on process exit or context cancellation
 type TailscaleRunner struct {
-	provider    Provider
-	command     string
-	host        string
-	user        string
-	keyPath     string
-	port        int
-	remoteRoot  string
+	wrappedProvider Provider
+	command         string
+	host            string
+	user            string
+	keyPath         string
+	port            int
+	remoteRoot      string
 }
 
 // NewTailscaleRunner creates a runner that dispatches via SSH to a Tailscale node.
+// wrappedProvider is the AI provider this transport will execute (e.g. ProviderClaude).
 // host is the Tailscale DNS name or IP. port is typically 22.
 // keyPath may be empty, in which case the SSH agent ($SSH_AUTH_SOCK) is used.
-func NewTailscaleRunner(command, host, user, keyPath string, port int, remoteRoot string) *TailscaleRunner {
+func NewTailscaleRunner(wrappedProvider Provider, command, host, user, keyPath string, port int, remoteRoot string) *TailscaleRunner {
 	if user == "" {
 		user = "root"
 	}
@@ -49,13 +50,27 @@ func NewTailscaleRunner(command, host, user, keyPath string, port int, remoteRoo
 		remoteRoot = "/tmp/orchestra-worktrees"
 	}
 	return &TailscaleRunner{
-		provider:   ProviderTailscale,
-		command:    strings.TrimSpace(command),
-		host:       host,
-		user:       user,
-		keyPath:    keyPath,
-		port:       port,
-		remoteRoot: remoteRoot,
+		wrappedProvider: wrappedProvider,
+		command:         strings.TrimSpace(command),
+		host:            host,
+		user:            user,
+		keyPath:         keyPath,
+		port:            port,
+		remoteRoot:      remoteRoot,
+	}
+}
+
+// WrapCommand implements RuntimeTransport. Returns a new TailscaleRunner
+// configured to run the given provider's command on the remote node.
+func (r *TailscaleRunner) WrapCommand(provider Provider, command string) Runner {
+	return &TailscaleRunner{
+		wrappedProvider: provider,
+		command:         command,
+		host:            r.host,
+		user:            r.user,
+		keyPath:         r.keyPath,
+		port:            r.port,
+		remoteRoot:      r.remoteRoot,
 	}
 }
 
@@ -70,7 +85,7 @@ func (r *TailscaleRunner) RunTurn(ctx context.Context, request TurnRequest, onEv
 	emit := func(kind, message string, raw map[string]any) {
 		if onEvent != nil {
 			onEvent(Event{
-				Provider:  ProviderTailscale,
+				Provider:  r.wrappedProvider,
 				SessionID: sessionID,
 				Kind:      kind,
 				Message:   message,
@@ -84,7 +99,7 @@ func (r *TailscaleRunner) RunTurn(ctx context.Context, request TurnRequest, onEv
 	authMethods, err := r.authMethods()
 	if err != nil {
 		emit("error", fmt.Sprintf("SSH auth setup failed: %s", err), nil)
-		return TurnResult{Provider: ProviderTailscale, SessionID: sessionID, ExitCode: 1, Output: err.Error()}, err
+		return TurnResult{Provider: r.wrappedProvider, SessionID: sessionID, ExitCode: 1, Output: err.Error()}, err
 	}
 
 	sshConfig := &ssh.ClientConfig{
@@ -100,7 +115,7 @@ func (r *TailscaleRunner) RunTurn(ctx context.Context, request TurnRequest, onEv
 	client, err := ssh.Dial("tcp", addr, sshConfig)
 	if err != nil {
 		emit("error", fmt.Sprintf("SSH dial failed: %s", err), nil)
-		return TurnResult{Provider: ProviderTailscale, SessionID: sessionID, ExitCode: 1, Output: err.Error()}, err
+		return TurnResult{Provider: r.wrappedProvider, SessionID: sessionID, ExitCode: 1, Output: err.Error()}, err
 	}
 	defer client.Close()
 
@@ -115,7 +130,7 @@ func (r *TailscaleRunner) RunTurn(ctx context.Context, request TurnRequest, onEv
 
 	// Bootstrap: ensure the worktree exists on the remote.
 	if err := r.bootstrap(ctx, client, request, workDir, emit); err != nil {
-		return TurnResult{Provider: ProviderTailscale, SessionID: sessionID, ExitCode: 1, Output: err.Error()}, err
+		return TurnResult{Provider: r.wrappedProvider, SessionID: sessionID, ExitCode: 1, Output: err.Error()}, err
 	}
 
 	// Build the agent command.
@@ -138,22 +153,22 @@ func (r *TailscaleRunner) RunTurn(ctx context.Context, request TurnRequest, onEv
 	sess, err := client.NewSession()
 	if err != nil {
 		emit("error", fmt.Sprintf("SSH session failed: %s", err), nil)
-		return TurnResult{Provider: ProviderTailscale, SessionID: sessionID, ExitCode: 1, Output: err.Error()}, err
+		return TurnResult{Provider: r.wrappedProvider, SessionID: sessionID, ExitCode: 1, Output: err.Error()}, err
 	}
 	defer sess.Close()
 
 	stdout, err := sess.StdoutPipe()
 	if err != nil {
-		return TurnResult{Provider: ProviderTailscale, SessionID: sessionID, ExitCode: 1}, err
+		return TurnResult{Provider: r.wrappedProvider, SessionID: sessionID, ExitCode: 1}, err
 	}
 	stderr, err := sess.StderrPipe()
 	if err != nil {
-		return TurnResult{Provider: ProviderTailscale, SessionID: sessionID, ExitCode: 1}, err
+		return TurnResult{Provider: r.wrappedProvider, SessionID: sessionID, ExitCode: 1}, err
 	}
 
 	if err := sess.Start(agentCmd); err != nil {
 		emit("error", fmt.Sprintf("agent start failed: %s", err), nil)
-		return TurnResult{Provider: ProviderTailscale, SessionID: sessionID, ExitCode: 1, Output: err.Error()}, err
+		return TurnResult{Provider: r.wrappedProvider, SessionID: sessionID, ExitCode: 1, Output: err.Error()}, err
 	}
 
 	// Cancel the SSH session when the context is done.
@@ -170,7 +185,7 @@ func (r *TailscaleRunner) RunTurn(ctx context.Context, request TurnRequest, onEv
 		for scanner.Scan() {
 			line := scanner.Text()
 			collector.append(line)
-			event := parseLineToEvent(ProviderTailscale, source, line)
+			event := parseLineToEvent(r.wrappedProvider, source, line)
 			event.SessionID = sessionID
 			if onEvent != nil {
 				onEvent(event)
@@ -197,7 +212,7 @@ func (r *TailscaleRunner) RunTurn(ctx context.Context, request TurnRequest, onEv
 	emit("turn.completed", fmt.Sprintf("agent exited with code %d", exitCode), map[string]any{"exit_code": exitCode})
 
 	return TurnResult{
-		Provider:  ProviderTailscale,
+		Provider:  r.wrappedProvider,
 		SessionID: sessionID,
 		ExitCode:  exitCode,
 		Output:    collector.output(),

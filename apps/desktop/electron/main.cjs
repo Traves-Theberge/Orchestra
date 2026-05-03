@@ -217,6 +217,13 @@ async function stopManagedBackend() {
 app.commandLine.appendSwitch('enable-features', 'WebGPU')
 app.commandLine.appendSwitch('enable-unsafe-webgpu')
 app.commandLine.appendSwitch('ozone-platform-hint', 'auto')
+// Disable GBM DMA-BUF scanout path — fails on some Wayland + GPU driver combos
+// when moving/resizing the window across monitors (EINVAL from gbm_wrapper.cc).
+// Disabling these features keeps hardware acceleration while avoiding the BO
+// modifier negotiation that triggers the crash.
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('disable-features', 'UseDMABufVideoDecoder,WaylandWindowDecorations')
+}
 
 function createDefaultProfile() {
   const managed = managedBackendState?.config

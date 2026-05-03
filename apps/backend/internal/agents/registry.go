@@ -16,6 +16,8 @@ import (
 type Registry struct {
 	mu          sync.Mutex
 	runners     map[Provider]Runner
+	commands    map[Provider]string
+	transports  map[RuntimeTarget]RuntimeTransport
 	termManager *terminal.Manager
 }
 
@@ -30,6 +32,8 @@ func NewRegistry(commandByProvider map[string]string) *Registry {
 func NewRegistryWithTerminal(commandByProvider map[string]string, tm *terminal.Manager) *Registry {
 	r := &Registry{
 		runners:     map[Provider]Runner{},
+		commands:    map[Provider]string{},
+		transports:  map[RuntimeTarget]RuntimeTransport{},
 		termManager: tm,
 	}
 	for provider, command := range commandByProvider {
@@ -39,11 +43,23 @@ func NewRegistryWithTerminal(commandByProvider map[string]string, tm *terminal.M
 }
 
 // RunTurn dispatches a single agent turn to the runner registered for the given
-// provider. It returns an error if the provider is not configured.
+// provider. If request.RuntimeTarget is set (and not LOCAL), it routes through
+// the registered RuntimeTransport instead of the default runner.
 func (r *Registry) RunTurn(ctx context.Context, provider Provider, request TurnRequest, onEvent EventHandler) (TurnResult, error) {
+	r.mu.Lock()
 	runner, ok := r.runners[provider]
+	cmd := r.commands[provider]
+	transport := r.transports[request.RuntimeTarget]
+	r.mu.Unlock()
+
 	if !ok {
 		return TurnResult{}, fmt.Errorf("provider not configured: %s", provider)
+	}
+	if request.RuntimeTarget != "" && request.RuntimeTarget != RuntimeLocal {
+		if transport == nil {
+			return TurnResult{}, fmt.Errorf("runtime target not configured: %s", request.RuntimeTarget)
+		}
+		runner = transport.WrapCommand(provider, cmd)
 	}
 	return runner.RunTurn(ctx, request, onEvent)
 }
@@ -72,6 +88,22 @@ func (r *Registry) SetRunner(p Provider, runner Runner) {
 	r.runners[p] = runner
 }
 
+// CommandFor returns the raw command string registered for the given provider,
+// along with a boolean indicating whether one was found.
+func (r *Registry) CommandFor(provider Provider) (string, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cmd, ok := r.commands[provider]
+	return cmd, ok
+}
+
+// SetTransport registers or replaces the RuntimeTransport for the given target.
+func (r *Registry) SetTransport(target RuntimeTarget, transport RuntimeTransport) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.transports[target] = transport
+}
+
 // SetCommand registers or replaces the runner for the given provider by
 // normalizing the provider name and selecting the appropriate Runner
 // implementation (ClaudeRunner, GeminiRunner, CodexAppServerRunner, etc.)
@@ -81,6 +113,7 @@ func (r *Registry) SetCommand(provider Provider, command string) {
 		return
 	}
 	p := NormalizeProvider(string(provider))
+	r.commands[p] = command
 	if p == ProviderCodex && strings.Contains(strings.ToLower(command), "app-server") {
 		r.runners[p] = NewCodexAppServerRunner(command)
 		return

@@ -28,18 +28,19 @@ import (
 // "orchestra-agent-credentials" in the target namespace. The runner injects
 // all keys from that secret as environment variables.
 type KubernetesRunner struct {
-	provider       Provider
-	command        string
-	clientset      kubernetes.Interface
-	namespace      string
-	image          string
-	gitRepoURL     string
-	serviceAccount string
+	wrappedProvider Provider
+	command         string
+	clientset       kubernetes.Interface
+	namespace       string
+	image           string
+	gitRepoURL      string
+	serviceAccount  string
 }
 
 // NewKubernetesRunner builds a runner backed by the given Kubernetes clientset.
+// wrappedProvider is the AI provider this transport will execute (e.g. ProviderClaude).
 // gitRepoURL is the remote repository URL cloned into each pod's workspace.
-func NewKubernetesRunner(command string, clientset kubernetes.Interface, namespace, image, gitRepoURL, serviceAccount string) *KubernetesRunner {
+func NewKubernetesRunner(wrappedProvider Provider, command string, clientset kubernetes.Interface, namespace, image, gitRepoURL, serviceAccount string) *KubernetesRunner {
 	if namespace == "" {
 		namespace = "orchestra-agents"
 	}
@@ -47,13 +48,27 @@ func NewKubernetesRunner(command string, clientset kubernetes.Interface, namespa
 		image = "ghcr.io/orchestra/agent-runner:latest"
 	}
 	return &KubernetesRunner{
-		provider:       ProviderKubernetes,
-		command:        strings.TrimSpace(command),
-		clientset:      clientset,
-		namespace:      namespace,
-		image:          image,
-		gitRepoURL:     gitRepoURL,
-		serviceAccount: serviceAccount,
+		wrappedProvider: wrappedProvider,
+		command:         strings.TrimSpace(command),
+		clientset:       clientset,
+		namespace:       namespace,
+		image:           image,
+		gitRepoURL:      gitRepoURL,
+		serviceAccount:  serviceAccount,
+	}
+}
+
+// WrapCommand implements RuntimeTransport. Returns a new KubernetesRunner
+// configured to run the given provider's command in a Kubernetes pod.
+func (r *KubernetesRunner) WrapCommand(provider Provider, command string) Runner {
+	return &KubernetesRunner{
+		wrappedProvider: provider,
+		command:         command,
+		clientset:       r.clientset,
+		namespace:       r.namespace,
+		image:           r.image,
+		gitRepoURL:      r.gitRepoURL,
+		serviceAccount:  r.serviceAccount,
 	}
 }
 
@@ -83,7 +98,7 @@ func (r *KubernetesRunner) RunTurn(ctx context.Context, request TurnRequest, onE
 	emit := func(kind, message string, raw map[string]any) {
 		if onEvent != nil {
 			onEvent(Event{
-				Provider:  ProviderKubernetes,
+				Provider:  r.wrappedProvider,
 				SessionID: sessionID,
 				Kind:      kind,
 				Message:   message,
@@ -96,7 +111,7 @@ func (r *KubernetesRunner) RunTurn(ctx context.Context, request TurnRequest, onE
 	if r.gitRepoURL == "" {
 		err := fmt.Errorf("ORCHESTRA_KUBE_GIT_REPO_URL is required for Kubernetes dispatch")
 		emit("error", err.Error(), nil)
-		return TurnResult{Provider: ProviderKubernetes, SessionID: sessionID, ExitCode: 1, Output: err.Error()}, err
+		return TurnResult{Provider: r.wrappedProvider, SessionID: sessionID, ExitCode: 1, Output: err.Error()}, err
 	}
 
 	podName := r.podName(request.IssueIdentifier)
@@ -105,7 +120,7 @@ func (r *KubernetesRunner) RunTurn(ctx context.Context, request TurnRequest, onE
 	pod := r.buildPodSpec(podName, request)
 	if _, err := r.clientset.CoreV1().Pods(r.namespace).Create(ctx, pod, metav1.CreateOptions{}); err != nil {
 		emit("error", fmt.Sprintf("pod create failed: %s", err), nil)
-		return TurnResult{Provider: ProviderKubernetes, SessionID: sessionID, ExitCode: 1, Output: err.Error()}, err
+		return TurnResult{Provider: r.wrappedProvider, SessionID: sessionID, ExitCode: 1, Output: err.Error()}, err
 	}
 
 	// Always clean up the pod, even on cancellation.
@@ -120,7 +135,7 @@ func (r *KubernetesRunner) RunTurn(ctx context.Context, request TurnRequest, onE
 	emit("pod_pending", "waiting for pod to reach Running state", nil)
 	if err := r.waitForRunning(ctx, podName, emit); err != nil {
 		emit("error", fmt.Sprintf("pod did not reach Running: %s", err), nil)
-		return TurnResult{Provider: ProviderKubernetes, SessionID: sessionID, ExitCode: 1, Output: err.Error()}, err
+		return TurnResult{Provider: r.wrappedProvider, SessionID: sessionID, ExitCode: 1, Output: err.Error()}, err
 	}
 
 	emit("RUN_STARTED", fmt.Sprintf("agent running in pod %s", podName), map[string]any{"pod": podName, "namespace": r.namespace})
@@ -134,7 +149,7 @@ func (r *KubernetesRunner) RunTurn(ctx context.Context, request TurnRequest, onE
 	emit("turn.completed", fmt.Sprintf("pod exited with code %d", exitCode), map[string]any{"exit_code": exitCode})
 
 	return TurnResult{
-		Provider:  ProviderKubernetes,
+		Provider:  r.wrappedProvider,
 		SessionID: sessionID,
 		ExitCode:  exitCode,
 		Output:    output,
@@ -291,7 +306,7 @@ func (r *KubernetesRunner) streamLogs(ctx context.Context, podName, sessionID st
 	for scanner.Scan() {
 		line := scanner.Text()
 		collector.append(line)
-		event := parseLineToEvent(ProviderKubernetes, "stdout", line)
+		event := parseLineToEvent(r.wrappedProvider, "stdout", line)
 		event.SessionID = sessionID
 		if onEvent != nil {
 			onEvent(event)

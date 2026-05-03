@@ -46,6 +46,7 @@ type RunningEntry struct {
 	ProjectID       string   `json:"project_id,omitempty"`
 	SessionID       string   `json:"session_id"`
 	Provider        string   `json:"provider"`
+	RuntimeTarget   string   `json:"runtime_target,omitempty"`
 	SessionLogPath  string   `json:"session_log_path,omitempty"`
 	WorktreePath    string   `json:"worktree_path,omitempty"`
 	DisabledTools   []string `json:"disabled_tools,omitempty"`
@@ -68,6 +69,7 @@ type RetryEntry struct {
 	State           string   `json:"state,omitempty"`
 	AssigneeID      string   `json:"assignee_id,omitempty"`
 	Provider        string   `json:"provider,omitempty"`
+	RuntimeTarget   string   `json:"runtime_target,omitempty"`
 	DisabledTools   []string `json:"disabled_tools,omitempty"`
 	Attempt         int64    `json:"attempt"`
 	DueAt           string   `json:"due_at"`
@@ -803,7 +805,7 @@ func (s *Service) SearchIssues(ctx context.Context, query string) ([]tracker.Iss
 }
 
 // CreateIssue creates a new issue in the configured tracker with the given metadata.
-func (s *Service) CreateIssue(ctx context.Context, title, description, state string, priority int, assigneeID, projectID string, provider string, disabledTools []string) (*tracker.Issue, error) {
+func (s *Service) CreateIssue(ctx context.Context, title, description, state string, priority int, assigneeID, projectID string, provider string, runtimeTarget string, disabledTools []string) (*tracker.Issue, error) {
 	s.mu.RLock()
 	client := s.trackerClient
 	s.mu.RUnlock()
@@ -812,7 +814,14 @@ func (s *Service) CreateIssue(ctx context.Context, title, description, state str
 		return nil, fmt.Errorf("tracker client not available")
 	}
 
-	return client.CreateIssue(ctx, title, description, state, priority, assigneeID, projectID, provider, disabledTools)
+	issue, err := client.CreateIssue(ctx, title, description, state, priority, assigneeID, projectID, provider, disabledTools)
+	if err != nil {
+		return nil, err
+	}
+	if issue != nil && runtimeTarget != "" {
+		issue.RuntimeTarget = runtimeTarget
+	}
+	return issue, nil
 }
 
 // UpdateIssue applies field updates to an issue, logs audit history for changed
@@ -1039,6 +1048,7 @@ func (s *Service) enqueueCandidates(candidates []tracker.Issue) {
 			AssigneeID:      issue.AssigneeID,
 			ProjectID:       issue.ProjectID,
 			Provider:        targetProvider,
+			RuntimeTarget:   issue.RuntimeTarget,
 			DisabledTools:   append([]string(nil), issue.DisabledTools...),
 			StartedAt:       now,
 			LastEventAt:     now,
@@ -1114,6 +1124,7 @@ func (s *Service) releaseDueRetries() {
 			State:           state,
 			AssigneeID:      retry.AssigneeID,
 			Provider:        retry.Provider,
+			RuntimeTarget:   retry.RuntimeTarget,
 			DisabledTools:   append([]string(nil), retry.DisabledTools...),
 			StartedAt:       now.Format(time.RFC3339),
 			LastEventAt:     now.Format(time.RFC3339),
@@ -1200,6 +1211,7 @@ func (s *Service) RecordRunFailure(issueID string, provider string, issueIdentif
 	issueState := ""
 	issueAssigneeID := ""
 	lastProvider := ""
+	lastRuntimeTarget := ""
 	var disabledTools []string
 	found := false
 	for _, entry := range s.running {
@@ -1210,6 +1222,7 @@ func (s *Service) RecordRunFailure(issueID string, provider string, issueIdentif
 		issueState = entry.State
 		issueAssigneeID = entry.AssigneeID
 		lastProvider = entry.Provider
+		lastRuntimeTarget = entry.RuntimeTarget
 		disabledTools = append([]string(nil), entry.DisabledTools...)
 		s.accumulateEntryTotalsLocked(entry)
 		found = true
@@ -1253,6 +1266,7 @@ func (s *Service) RecordRunFailure(issueID string, provider string, issueIdentif
 		State:           issueState,
 		AssigneeID:      issueAssigneeID,
 		Provider:        nextProvider,
+		RuntimeTarget:   lastRuntimeTarget,
 		DisabledTools:   disabledTools,
 		Attempt:         attempt,
 		DueAt:           dueAt.UTC().Format(time.RFC3339),

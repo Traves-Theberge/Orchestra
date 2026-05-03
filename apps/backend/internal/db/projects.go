@@ -213,14 +213,15 @@ func (db *DB) GetUnifiedHistory(ctx context.Context, issueID string) ([]map[stri
 // "") so callers can still tell whether the project is GitHub-connected
 // without seeing the token value.
 type Project struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	RootPath    string `json:"root_path"`
-	RemoteURL   string `json:"remote_url"`
-	GitHubOwner string `json:"github_owner"`
-	GitHubRepo  string `json:"github_repo"`
-	GitHubToken string `json:"-"`
-	PathExists  bool   `json:"path_exists"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	RootPath        string `json:"root_path"`
+	RemoteURL       string `json:"remote_url"`
+	GitHubOwner     string `json:"github_owner"`
+	GitHubRepo      string `json:"github_repo"`
+	GitHubToken     string `json:"-"`
+	TrackerConfigID string `json:"tracker_config_id"`
+	PathExists      bool   `json:"path_exists"`
 }
 
 // GitHubTokenRedactedSentinel is what API clients see in place of a configured
@@ -232,18 +233,20 @@ const GitHubTokenRedactedSentinel = "<set>"
 // replacing GitHubToken with a redacted sentinel.
 func (p Project) MarshalJSON() ([]byte, error) {
 	type wire struct {
-		ID          string `json:"id"`
-		Name        string `json:"name"`
-		RootPath    string `json:"root_path"`
-		RemoteURL   string `json:"remote_url"`
-		GitHubOwner string `json:"github_owner"`
-		GitHubRepo  string `json:"github_repo"`
-		GitHubToken string `json:"github_token"`
-		PathExists  bool   `json:"path_exists"`
+		ID              string `json:"id"`
+		Name            string `json:"name"`
+		RootPath        string `json:"root_path"`
+		RemoteURL       string `json:"remote_url"`
+		GitHubOwner     string `json:"github_owner"`
+		GitHubRepo      string `json:"github_repo"`
+		GitHubToken     string `json:"github_token"`
+		TrackerConfigID string `json:"tracker_config_id"`
+		PathExists      bool   `json:"path_exists"`
 	}
 	w := wire{
 		ID: p.ID, Name: p.Name, RootPath: p.RootPath, RemoteURL: p.RemoteURL,
-		GitHubOwner: p.GitHubOwner, GitHubRepo: p.GitHubRepo, PathExists: p.PathExists,
+		GitHubOwner: p.GitHubOwner, GitHubRepo: p.GitHubRepo,
+		TrackerConfigID: p.TrackerConfigID, PathExists: p.PathExists,
 	}
 	if p.GitHubToken != "" {
 		w.GitHubToken = GitHubTokenRedactedSentinel
@@ -261,7 +264,10 @@ type ProjectStats struct {
 
 // GetProjects returns all registered projects, ordered by name, with decrypted GitHub tokens.
 func (db *DB) GetProjects(ctx context.Context) ([]Project, error) {
-	rows, err := db.QueryContext(ctx, "SELECT id, name, root_path, remote_url, COALESCE(github_owner, ''), COALESCE(github_repo, ''), COALESCE(github_token, '') FROM projects ORDER BY name ASC")
+	rows, err := db.QueryContext(ctx, `SELECT id, name, root_path, remote_url,
+		COALESCE(github_owner, ''), COALESCE(github_repo, ''), COALESCE(github_token, ''),
+		COALESCE(tracker_config_id, '')
+		FROM projects ORDER BY name ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -270,7 +276,8 @@ func (db *DB) GetProjects(ctx context.Context) ([]Project, error) {
 	var projects []Project
 	for rows.Next() {
 		var p Project
-		if err := rows.Scan(&p.ID, &p.Name, &p.RootPath, &p.RemoteURL, &p.GitHubOwner, &p.GitHubRepo, &p.GitHubToken); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.RootPath, &p.RemoteURL,
+			&p.GitHubOwner, &p.GitHubRepo, &p.GitHubToken, &p.TrackerConfigID); err != nil {
 			return nil, err
 		}
 		if p.GitHubToken != "" {
@@ -409,8 +416,8 @@ func (db *DB) DeleteProject(ctx context.Context, projectID string) error {
 // GetProjectByID retrieves a single project by its ID, with decrypted GitHub token.
 func (db *DB) GetProjectByID(ctx context.Context, id string) (Project, error) {
 	var p Project
-	err := db.QueryRowContext(ctx, "SELECT id, name, root_path, remote_url, COALESCE(github_owner, ''), COALESCE(github_repo, ''), COALESCE(github_token, '') FROM projects WHERE id = ?", id).
-		Scan(&p.ID, &p.Name, &p.RootPath, &p.RemoteURL, &p.GitHubOwner, &p.GitHubRepo, &p.GitHubToken)
+	err := db.QueryRowContext(ctx, "SELECT id, name, root_path, remote_url, COALESCE(github_owner, ''), COALESCE(github_repo, ''), COALESCE(github_token, ''), COALESCE(tracker_config_id, '') FROM projects WHERE id = ?", id).
+		Scan(&p.ID, &p.Name, &p.RootPath, &p.RemoteURL, &p.GitHubOwner, &p.GitHubRepo, &p.GitHubToken, &p.TrackerConfigID)
 	if err == nil && p.GitHubToken != "" {
 		if dec, decErr := DecryptToken(p.GitHubToken); decErr == nil {
 			p.GitHubToken = dec

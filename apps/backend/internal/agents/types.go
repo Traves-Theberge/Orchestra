@@ -24,11 +24,31 @@ const (
 	ProviderGemini Provider = "GEMINI"
 	// Provider8gent identifies the 8gent Code open-source agent.
 	Provider8gent Provider = "8GENT"
-	// ProviderTailscale identifies the Tailscale SSH remote execution backend.
-	ProviderTailscale Provider = "TAILSCALE"
-	// ProviderKubernetes identifies the Kubernetes pod execution backend.
-	ProviderKubernetes Provider = "KUBERNETES"
 )
+
+// RuntimeTarget identifies where an agent turn executes.
+type RuntimeTarget string
+
+const (
+	RuntimeLocal      RuntimeTarget = "LOCAL"
+	RuntimeTailscale  RuntimeTarget = "TAILSCALE"
+	RuntimeKubernetes RuntimeTarget = "KUBERNETES"
+)
+
+// NormalizeRuntimeTarget upper-cases and trims. Empty string returns RuntimeLocal.
+func NormalizeRuntimeTarget(s string) RuntimeTarget {
+	if strings.TrimSpace(s) == "" {
+		return RuntimeLocal
+	}
+	return RuntimeTarget(strings.ToUpper(strings.TrimSpace(s)))
+}
+
+// RuntimeTransport wraps a command string to execute on a remote target.
+// WrapCommand takes the AI provider and its CLI command string, returning
+// a Runner that will invoke the command on the remote infrastructure.
+type RuntimeTransport interface {
+	WrapCommand(provider Provider, command string) Runner
+}
 
 // NormalizeProvider normalizes a provider string to UPPERCASE for backward compatibility.
 func NormalizeProvider(s string) Provider {
@@ -50,6 +70,7 @@ type TurnRequest struct {
 	ToolExecutor    ToolExecutor
 	ToolSpecs       []map[string]any
 	ResourceSpecs   []map[string]any
+	RuntimeTarget   RuntimeTarget
 }
 
 // TokenUsage tracks the token consumption for a single agent turn, including

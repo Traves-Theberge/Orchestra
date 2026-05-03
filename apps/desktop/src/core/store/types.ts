@@ -337,9 +337,32 @@ export type OpenFile = {
   projectId: WorkspaceContextID // GLOBAL_PROJECT_ID if not tied to a project
 }
 
+export type EditorSettings = {
+  fontSize: number
+  fontFamily: string
+  tabSize: number
+  wordWrap: 'on' | 'off' | 'wordWrapColumn' | 'bounded'
+  lineNumbers: 'on' | 'off' | 'relative'
+  minimap: boolean
+  formatOnSave: boolean
+  renderWhitespace: 'none' | 'boundary' | 'selection' | 'all'
+}
+
+export const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
+  fontSize: 13,
+  fontFamily: '',
+  tabSize: 2,
+  wordWrap: 'on',
+  lineNumbers: 'on',
+  minimap: false,
+  formatOnSave: false,
+  renderWhitespace: 'none',
+}
+
 export interface EditorSlice {
   openFiles: OpenFile[]
   activeFileId: string | null
+  editorSettings: EditorSettings
   openFile: (filePath: string, relativePath: string, revealLine?: number, projectId?: WorkspaceContextID) => void
   closeFile: (fileId: string) => void
   setActiveFile: (fileId: string) => void
@@ -347,6 +370,7 @@ export interface EditorSlice {
   setFileContent: (fileId: string, content: string) => void
   loadFileContent: (fileId: string) => Promise<void>
   clearPendingReveal: (fileId: string) => void
+  setEditorSettings: (patch: Partial<EditorSettings>) => void
 }
 
 // ---------------------------------------------------------------------------

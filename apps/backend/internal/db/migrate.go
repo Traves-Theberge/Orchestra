@@ -86,6 +86,9 @@ func runMigrations(db *sql.DB) error {
 		{"issues", "plan", "TEXT DEFAULT ''"},
 		// Tracker config assignment per project
 		{"projects", "tracker_config_id", "TEXT"},
+		// Runtime target for remote execution (TAILSCALE, KUBERNETES)
+		{"runs", "runtime_target", "TEXT"},
+		{"issues", "runtime_target", "TEXT"},
 	}
 
 	for _, m := range migrations {

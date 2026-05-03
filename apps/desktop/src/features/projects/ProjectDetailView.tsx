@@ -161,15 +161,8 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         return () => { cancelled = true }
     }, [config])
 
-    // Best-effort: read tracker_config_id from the project record if the backend
-    // surfaces it. Falls back to empty string (= None).
     useEffect(() => {
-        const projectAny = project as unknown as { tracker_config_id?: string }
-        if (projectAny.tracker_config_id) {
-            setActiveTrackerConfigId(projectAny.tracker_config_id)
-        } else {
-            setActiveTrackerConfigId('')
-        }
+        setActiveTrackerConfigId(project.tracker_config_id ?? '')
     }, [project])
 
     // Subscribe to the global editor store so the file shows up in the
@@ -269,8 +262,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         } catch (err) {
             setGithubError(err instanceof Error ? err.message : 'Failed to assign tracker')
             // Roll back so the UI doesn't lie
-            const projectAny = project as unknown as { tracker_config_id?: string }
-            setActiveTrackerConfigId(projectAny.tracker_config_id ?? '')
+            setActiveTrackerConfigId(project.tracker_config_id ?? '')
         } finally {
             setTrackerSaving(false)
         }

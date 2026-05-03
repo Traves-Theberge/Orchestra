@@ -176,6 +176,7 @@ export type Project = {
   github_owner?: string
   github_repo?: string
   github_token?: string
+  tracker_config_id?: string
   path_exists?: boolean
 }
 

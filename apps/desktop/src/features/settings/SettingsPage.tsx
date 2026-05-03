@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Bell,
+  Cable,
   Check,
   CheckCircle2,
   CircleDashed,
@@ -150,7 +151,7 @@ const CONTRAST_PAIRS: Array<{ label: string; foreground: ThemeRoleKey; backgroun
 const SECTIONS = [
   { id: 'connections', label: 'Connections', icon: Database },
   { id: 'agents', label: 'Maestro', icon: Cpu },
-  { id: 'git', label: 'Git', icon: GitBranch },
+  { id: 'integrations', label: 'Integrations', icon: Cable },
   { id: 'appearance', label: 'Appearance', icon: Paintbrush },
   { id: 'terminal', label: 'Terminal', icon: Terminal },
   { id: 'browser', label: 'Browser', icon: Globe },
@@ -215,7 +216,7 @@ export function SettingsPage({
   onNotifSoundChange,
   onNotifMutedChange,
   onNotifVolumeChange,
-  initialTab: _initialTab,
+  initialTab,
 }: {
   loadingConfig: boolean
   savingConfig: boolean
@@ -286,6 +287,23 @@ export function SettingsPage({
 
   useEffect(() => {
     ensureFlashStyle()
+  }, [])
+
+  // Scroll to the section specified by initialTab on first mount
+  useEffect(() => {
+    if (!initialTab) return
+    const tabToSection: Record<string, SectionId> = {
+      backend: 'connections',
+      agents: 'agents',
+      integrations: 'integrations',
+      shortcuts: 'shortcuts',
+      notifications: 'notifications',
+    }
+    const sectionId = tabToSection[initialTab]
+    if (!sectionId) return
+    const handle = window.setTimeout(() => scrollToSection(sectionId), 120)
+    return () => window.clearTimeout(handle)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Scroll-spy: track which section is at ~40% viewport height
@@ -389,8 +407,8 @@ export function SettingsPage({
           </header>
           {/* ── Connections ── */}
           <section data-settings-section="connections" className="rounded-xl transition-colors duration-500 scroll-mt-4">
-            <SectionHeading icon={Database} title="Connections" description="Backend profiles, API connection, and trackers" />
-            <div className="mt-4 space-y-4">
+            <SectionHeading icon={Database} title="Connections" description="Backend profiles and API connection" />
+            <div className="mt-4">
               <div className="rounded-2xl border border-border/40 bg-gradient-to-b from-card via-card to-muted/20 p-6 shadow-sm">
                 <BackendConfigForm
                   loadingConfig={loadingConfig}
@@ -406,9 +424,6 @@ export function SettingsPage({
                   disabled={loadingConfig || savingConfig || profilesPending}
                 />
               </div>
-              <div className="rounded-2xl border border-border/40 bg-gradient-to-b from-card via-card to-muted/20 p-6 shadow-sm">
-                <TrackerConnectionsPane config={config} />
-              </div>
             </div>
           </section>
 
@@ -421,11 +436,16 @@ export function SettingsPage({
             </div>
           </section>
 
-          {/* ── Git ── */}
-          <section data-settings-section="git" className="rounded-xl transition-colors duration-500 scroll-mt-4">
-            <SectionHeading icon={GitBranch} title="Git" description="Version control and GitHub connections" />
-            <div className="mt-4">
-              <GitConnectionsPane config={config} />
+          {/* ── Integrations ── */}
+          <section data-settings-section="integrations" className="rounded-xl transition-colors duration-500 scroll-mt-4">
+            <SectionHeading icon={Cable} title="Integrations" description="GitHub, Linear, Jira, and other service connections" />
+            <div className="mt-4 space-y-4">
+              <div className="rounded-2xl border border-border/40 bg-gradient-to-b from-card via-card to-muted/20 p-6 shadow-sm">
+                <TrackerConnectionsPane config={config} />
+              </div>
+              <div className="rounded-2xl border border-border/40 bg-gradient-to-b from-card via-card to-muted/20 p-6 shadow-sm">
+                <GitConnectionsPane config={config} />
+              </div>
             </div>
           </section>
 
@@ -514,7 +534,7 @@ export function SettingsPage({
           <section data-settings-section="editor" className="rounded-xl transition-colors duration-500 scroll-mt-4">
             <SectionHeading icon={Type} title="Editor" description="Code editor configuration" />
             <div className="mt-4">
-              <PlaceholderPane text="Editor settings coming soon" />
+              <EditorSettingsPane />
             </div>
           </section>
 
@@ -796,6 +816,111 @@ function PlaceholderPane({ text }: { text: string }) {
   return (
     <div className="p-8 rounded-xl border border-dashed border-border/30 bg-gradient-to-b from-muted/5 to-transparent text-center">
       <p className="text-xs text-muted-foreground/50 font-medium tracking-wide">{text}</p>
+    </div>
+  )
+}
+
+function EditorSettingsPane() {
+  const editorSettings = useAppStore((s) => s.editorSettings)
+  const setEditorSettings = useAppStore((s) => s.setEditorSettings)
+
+  return (
+    <div className="space-y-3">
+      <div className="p-4 rounded-xl border border-border/40 bg-gradient-to-b from-card via-card to-muted/20 grid gap-3 md:grid-cols-2">
+        <div>
+          <p className="text-[9px] font-black uppercase tracking-[0.16em] text-muted-foreground mb-1">Font Size</p>
+          <div className="flex items-center gap-3">
+            <input
+              type="range" min={10} max={20} step={1}
+              value={editorSettings.fontSize}
+              onChange={(e) => setEditorSettings({ fontSize: Number(e.target.value) })}
+              className="flex-1 accent-primary"
+            />
+            <span className="text-[11px] font-mono text-muted-foreground w-6 text-right">{editorSettings.fontSize}</span>
+          </div>
+        </div>
+        <div>
+          <p className="text-[9px] font-black uppercase tracking-[0.16em] text-muted-foreground mb-1">Tab Size</p>
+          <div className="flex items-center gap-3">
+            <input
+              type="range" min={1} max={8} step={1}
+              value={editorSettings.tabSize}
+              onChange={(e) => setEditorSettings({ tabSize: Number(e.target.value) })}
+              className="flex-1 accent-primary"
+            />
+            <span className="text-[11px] font-mono text-muted-foreground w-6 text-right">{editorSettings.tabSize}</span>
+          </div>
+        </div>
+        <div className="md:col-span-2">
+          <p className="text-[9px] font-black uppercase tracking-[0.16em] text-muted-foreground mb-1">Font Family</p>
+          <input
+            value={editorSettings.fontFamily}
+            placeholder="Default (inherit from theme)"
+            onChange={(e) => setEditorSettings({ fontFamily: e.target.value })}
+            className="w-full rounded-lg border border-border/40 bg-card px-3 py-2 text-[11px] font-mono outline-none focus:ring-2 focus:ring-primary/20"
+          />
+        </div>
+      </div>
+
+      <div className="p-4 rounded-xl border border-border/40 bg-gradient-to-b from-card via-card to-muted/20 grid gap-3 md:grid-cols-2">
+        <div>
+          <p className="text-[9px] font-black uppercase tracking-[0.16em] text-muted-foreground mb-1.5">Word Wrap</p>
+          <select
+            value={editorSettings.wordWrap}
+            onChange={(e) => setEditorSettings({ wordWrap: e.target.value as typeof editorSettings.wordWrap })}
+            className="w-full rounded-lg border border-border/40 bg-card px-3 py-2 text-[11px] outline-none focus:ring-2 focus:ring-primary/20"
+          >
+            <option value="on">On</option>
+            <option value="off">Off</option>
+            <option value="wordWrapColumn">At Column</option>
+            <option value="bounded">Bounded</option>
+          </select>
+        </div>
+        <div>
+          <p className="text-[9px] font-black uppercase tracking-[0.16em] text-muted-foreground mb-1.5">Line Numbers</p>
+          <select
+            value={editorSettings.lineNumbers}
+            onChange={(e) => setEditorSettings({ lineNumbers: e.target.value as typeof editorSettings.lineNumbers })}
+            className="w-full rounded-lg border border-border/40 bg-card px-3 py-2 text-[11px] outline-none focus:ring-2 focus:ring-primary/20"
+          >
+            <option value="on">On</option>
+            <option value="off">Off</option>
+            <option value="relative">Relative</option>
+          </select>
+        </div>
+        <div>
+          <p className="text-[9px] font-black uppercase tracking-[0.16em] text-muted-foreground mb-1.5">Render Whitespace</p>
+          <select
+            value={editorSettings.renderWhitespace}
+            onChange={(e) => setEditorSettings({ renderWhitespace: e.target.value as typeof editorSettings.renderWhitespace })}
+            className="w-full rounded-lg border border-border/40 bg-card px-3 py-2 text-[11px] outline-none focus:ring-2 focus:ring-primary/20"
+          >
+            <option value="none">None</option>
+            <option value="boundary">Boundary</option>
+            <option value="selection">Selection</option>
+            <option value="all">All</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="p-4 rounded-xl border border-border/40 bg-gradient-to-b from-card via-card to-muted/20 space-y-2">
+        {([
+          { key: 'minimap', label: 'Show Minimap' },
+          { key: 'formatOnSave', label: 'Format on Save' },
+        ] as const).map(({ key, label }) => (
+          <label key={key} className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 hover:bg-muted/20 cursor-pointer">
+            <span className="text-[12px] font-medium">{label}</span>
+            <button
+              type="button"
+              aria-pressed={editorSettings[key]}
+              onClick={() => setEditorSettings({ [key]: !editorSettings[key] })}
+              className={`relative h-5 w-9 rounded-full transition-colors ${editorSettings[key] ? 'bg-primary' : 'bg-muted'}`}
+            >
+              <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${editorSettings[key] ? 'translate-x-4' : 'translate-x-0.5'}`} />
+            </button>
+          </label>
+        ))}
+      </div>
     </div>
   )
 }
@@ -2162,7 +2287,7 @@ function ThemeSwatchCard({
 }
 
 // ---------------------------------------------------------------------------
-// Git connections pane — central view of GitHub-linked projects
+// Git connections pane — shows which Orchestra projects are linked to GitHub repos
 // ---------------------------------------------------------------------------
 
 function GitConnectionsPane({ config }: { config: BackendConfig | null }) {
@@ -2218,9 +2343,16 @@ function GitConnectionsPane({ config }: { config: BackendConfig | null }) {
   return (
     <div className="space-y-6">
       <div>
+        <div className="flex items-center gap-1.5 mb-1">
+          <GitBranch size={13} className="text-muted-foreground/60" />
+          <span className="text-[12px] font-semibold tracking-tight">GitHub project links</span>
+        </div>
+        <p className="text-[11px] text-muted-foreground/60 mb-4">
+          Projects linked to a GitHub repo — connect from the Git tab inside a project.
+        </p>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/55">GitHub</span>
+            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/55">Linked</span>
             <span className="text-[10px] font-medium tabular-nums text-muted-foreground/40">{linked.length}</span>
           </div>
           <button
@@ -2309,7 +2441,7 @@ function GitConnectionsPane({ config }: { config: BackendConfig | null }) {
             ))}
           </div>
           <p className="text-[11px] text-muted-foreground/60 mt-2.5">
-            Connect a project to GitHub from its <span className="font-medium text-foreground/80">Git → GitHub</span> tab.
+            Connect a project to GitHub from the <span className="font-medium text-foreground/80">Git</span> tab inside the project.
           </p>
         </div>
       )}

@@ -16,6 +16,7 @@ export function EditorContent({ file }: EditorContentProps) {
   const clearPendingReveal = useAppStore((s) => s.clearPendingReveal)
   const theme = useAppStore((s) => s.theme)
   const config = useAppStore((s) => s.config)
+  const editorSettings = useAppStore((s) => s.editorSettings)
 
   const originalContentRef = useRef<string>('')
   const editorRef = useRef<unknown>(null)
@@ -266,13 +267,15 @@ export function EditorContent({ file }: EditorContentProps) {
                 }
               }}
               options={{
-                minimap: { enabled: false },
-                fontSize: 13,
-                lineNumbers: 'on',
-                wordWrap: 'on',
+                minimap: { enabled: editorSettings.minimap },
+                fontSize: editorSettings.fontSize,
+                fontFamily: editorSettings.fontFamily || undefined,
+                lineNumbers: editorSettings.lineNumbers,
+                wordWrap: editorSettings.wordWrap,
                 scrollBeyondLastLine: false,
                 automaticLayout: true,
-                tabSize: 2,
+                tabSize: editorSettings.tabSize,
+                renderWhitespace: editorSettings.renderWhitespace,
               }}
             />
           </div>

@@ -11,9 +11,10 @@ import {
   type BackendConfig,
   type IssueCreatePayload,
   type MCPTool,
+  type RuntimeEntry,
 } from '@core/api/client'
 import type { Project } from '@core/api/types'
-import { AgentSelector, ProjectSelector } from '@layout/shared/controls'
+import { AgentSelector, ProjectSelector, RuntimeSelector } from '@layout/shared/controls'
 
 export function CreateTaskDialog({
   open,
@@ -24,6 +25,7 @@ export function CreateTaskDialog({
   allTools: _allTools = [],
   projects = [],
   initialProjectID = '',
+  availableRuntimes = [],
   onSubmit,
 }: {
   open: boolean
@@ -34,6 +36,7 @@ export function CreateTaskDialog({
   allTools?: MCPTool[]
   projects?: Project[]
   initialProjectID?: string
+  availableRuntimes?: RuntimeEntry[]
   onSubmit: (payload: IssueCreatePayload) => Promise<void>
 }) {
   const [title, setTitle] = useState('')
@@ -41,6 +44,7 @@ export function CreateTaskDialog({
   const state = 'Backlog'
   const [assignee, setAssignee] = useState(availableAgents.length > 0 ? `agent-${availableAgents[0]}` : 'Unassigned')
   const [provider, setProvider] = useState('')
+  const [runtimeTarget, setRuntimeTarget] = useState('LOCAL')
   const [disabledTools, setDisabledTools] = useState<string[]>([])
   const [projectID, setProjectID] = useState(initialProjectID || (projects.length > 0 ? projects[0].id : ''))
   const [pending, setPending] = useState(false)
@@ -63,6 +67,7 @@ export function CreateTaskDialog({
       setDescription('')
       setAssignee(availableAgents.length > 0 ? `agent-${availableAgents[0]}` : 'Unassigned')
       setProvider(availableAgents.length > 0 ? availableAgents[0] : '')
+      setRuntimeTarget('LOCAL')
       setDisabledTools([])
       setSubmitError('')
     }
@@ -108,6 +113,7 @@ export function CreateTaskDialog({
         assignee_id: assignee,
         project_id: projectID,
         provider,
+        runtime_target: runtimeTarget !== 'LOCAL' ? runtimeTarget : undefined,
         disabled_tools: disabledTools
       })
       onOpenChange(false)
@@ -223,6 +229,16 @@ export function CreateTaskDialog({
                   }
                 }}
               />
+              {availableRuntimes.filter((r) => r.configured && r.target !== 'LOCAL').length > 0 && (
+                <>
+                  <div className="w-px h-4 bg-border/40 mx-1" />
+                  <RuntimeSelector
+                    value={runtimeTarget}
+                    runtimes={[{ target: 'LOCAL', configured: true }, ...availableRuntimes.filter((r) => r.configured)]}
+                    onChange={setRuntimeTarget}
+                  />
+                </>
+              )}
             </div>
             <div className="flex items-center gap-1.5">
               <button

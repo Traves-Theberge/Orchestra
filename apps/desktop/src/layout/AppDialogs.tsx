@@ -1,4 +1,6 @@
-import type { IssueUpdatePayload, BackendConfig } from '@core/api/client'
+import { useEffect, useState } from 'react'
+import type { IssueUpdatePayload, BackendConfig, RuntimeEntry } from '@core/api/client'
+import { fetchAvailableRuntimes } from '@core/api/client'
 import type { SessionDetail, SnapshotPayload } from '@core/api/types'
 import type { TimelineItem } from '@layout/types'
 import {
@@ -63,6 +65,12 @@ export function AppDialogs({
   const selectedProjectID = useAppStore(s => s.selectedProjectID)
   const createTaskInitialState = useAppStore(s => s.createTaskInitialState)
   const createTaskInitialStateStr = createTaskInitialState?.state ?? 'Backlog'
+  const [availableRuntimes, setAvailableRuntimes] = useState<RuntimeEntry[]>([])
+
+  useEffect(() => {
+    if (!config) return
+    fetchAvailableRuntimes(config).then(setAvailableRuntimes).catch(() => {})
+  }, [config])
 
   const errClass = 'rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-900 dark:border-red-900/70 dark:bg-red-950/35 dark:text-red-200'
   const skeletonFallback = (
@@ -126,6 +134,7 @@ export function AppDialogs({
         allTools={allTools}
         projects={projects}
         initialProjectID={selectedProjectID || ''}
+        availableRuntimes={availableRuntimes}
         onSubmit={onTaskSubmit}
       />
 

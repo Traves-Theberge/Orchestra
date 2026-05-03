@@ -301,6 +301,7 @@ func (s *Server) PostIssue(w http.ResponseWriter, r *http.Request) {
 		AssigneeID    string   `json:"assignee_id"`
 		ProjectID     string   `json:"project_id"`
 		Provider      string   `json:"provider"`
+		RuntimeTarget string   `json:"runtime_target"`
 		DisabledTools []string `json:"disabled_tools"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -315,7 +316,7 @@ func (s *Server) PostIssue(w http.ResponseWriter, r *http.Request) {
 		Str("project_id", body.ProjectID).
 		Msg("creating new issue")
 
-	issue, err := s.orchestrator.CreateIssue(r.Context(), body.Title, body.Description, body.State, body.Priority, body.AssigneeID, body.ProjectID, body.Provider, body.DisabledTools)
+	issue, err := s.orchestrator.CreateIssue(r.Context(), body.Title, body.Description, body.State, body.Priority, body.AssigneeID, body.ProjectID, body.Provider, body.RuntimeTarget, body.DisabledTools)
 	if err != nil {
 		s.logger.Error().Err(err).Msg("orchestrator failed to create issue")
 		writeJSONError(w, http.StatusInternalServerError, "create_failed", "creation failed")

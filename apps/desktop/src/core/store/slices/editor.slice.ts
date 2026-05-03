@@ -3,8 +3,18 @@
  */
 
 import type { StateCreator } from 'zustand'
-import { GLOBAL_PROJECT_ID } from '../types'
-import type { AppState, EditorSlice, OpenFile, WorkspaceContextID } from '../types'
+import { DEFAULT_EDITOR_SETTINGS, GLOBAL_PROJECT_ID } from '../types'
+import type { AppState, EditorSettings, EditorSlice, OpenFile, WorkspaceContextID } from '../types'
+
+const EDITOR_SETTINGS_KEY = 'orchestra.editor.settings'
+
+function loadEditorSettings(): EditorSettings {
+  try {
+    const stored = localStorage.getItem(EDITOR_SETTINGS_KEY)
+    if (stored) return { ...DEFAULT_EDITOR_SETTINGS, ...JSON.parse(stored) }
+  } catch { /* ignore */ }
+  return { ...DEFAULT_EDITOR_SETTINGS }
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -46,6 +56,7 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
   // ---- State ----------------------------------------------------------------
   openFiles: [],
   activeFileId: null,
+  editorSettings: loadEditorSettings(),
 
   // ---- Actions --------------------------------------------------------------
   openFile: (filePath: string, relativePath: string, revealLine?: number, projectId?: WorkspaceContextID) => {
@@ -205,4 +216,10 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
     set((s) => ({
       openFiles: s.openFiles.map((f) => (f.id === fileId ? { ...f, content } : f)),
     })),
+
+  setEditorSettings: (patch: Partial<EditorSettings>) => {
+    const next = { ...get().editorSettings, ...patch }
+    localStorage.setItem(EDITOR_SETTINGS_KEY, JSON.stringify(next))
+    set({ editorSettings: next })
+  },
 })
