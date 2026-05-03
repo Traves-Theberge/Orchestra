@@ -1390,19 +1390,30 @@ func startRefreshWorker(
 		projects, dbErr := warehouseDB.GetProjects(ctx)
 		if dbErr != nil {
 			logger.Warn().Err(dbErr).Msg("refresh worker: failed to load projects")
-			// Fall back to nil-client path so stalled-run reconciliation still runs
+			// Fall back to stall-reconciliation-only path
 			refreshErr = service.PerformRefreshForClient(ctx, nil)
 		} else {
+			ranAtLeastOne := false
 			for _, proj := range projects {
+				if proj.IssueSourceType == "" {
+					continue // no external source; stall reconciliation runs via nil path below
+				}
 				client, clientErr := registry.GetForProjectDirect(proj)
-				if clientErr != nil {
-					logger.Warn().Err(clientErr).Str("project_id", proj.ID).Msg("refresh worker: failed to build tracker client")
+				if clientErr != nil || client == nil {
+					if clientErr != nil {
+						logger.Warn().Err(clientErr).Str("project_id", proj.ID).Msg("refresh worker: failed to build tracker client")
+					}
 					continue
 				}
+				ranAtLeastOne = true
 				if err := service.PerformRefreshForClient(ctx, client); err != nil {
 					logger.Error().Err(err).Str("project_id", proj.ID).Str("service_id", runtime.ServiceOrchestrator).Msg("refresh worker: project refresh failed")
 					refreshErr = err
 				}
+			}
+			// Ensure stall reconciliation + retry releases run even when no project has an external source
+			if !ranAtLeastOne {
+				refreshErr = service.PerformRefreshForClient(ctx, nil)
 			}
 		}
 

@@ -758,21 +758,22 @@ func (s *Service) PerformRefresh(ctx context.Context) error {
 }
 
 // PerformRefreshForClient executes a full refresh cycle against the given client.
-// Pass nil to run the reconciliation-only path (stalled runs, due retries) without
-// fetching from any external tracker — used when a project has no issue source set.
+// Pass nil to run stall reconciliation and retry releases without fetching from
+// any external tracker — used when a project has no issue source set.
 func (s *Service) PerformRefreshForClient(ctx context.Context, client tracker.Client) error {
 	s.mu.RLock()
 	activeStates := append([]string(nil), s.activeStates...)
 	terminalStates := append([]string(nil), s.terminalStates...)
 	s.mu.RUnlock()
 
-	if client == nil {
-		s.CompleteRefreshCycle()
-		return nil
-	}
 	defer s.CompleteRefreshCycle()
 
 	s.reconcileStalledRunningIssues()
+
+	if client == nil {
+		s.releaseDueRetries()
+		return nil
+	}
 
 	candidates, err := client.FetchCandidateIssues(ctx, activeStates)
 	if err != nil {
