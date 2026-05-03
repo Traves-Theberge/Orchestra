@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react'
 import {
     FileText, ChevronRight, Search,
     RefreshCcw, Folder, FolderOpen,
-    ArrowUp, Code as CodeIcon
+    ArrowUp, Code as CodeIcon, ExternalLink
 } from 'lucide-react'
 import type { DocItem, BackendConfig } from '@core/api/types'
 import { Button } from '@ui/button'
@@ -388,8 +388,23 @@ export const DocsDashboard: React.FC<DocsDashboardProps> = ({ config, theme }) =
             <div className="flex-1 flex overflow-hidden min-h-0 relative">
                 {/* Left Sidebar (Navigation) */}
                 <div className="w-64 border-r border-border/40 flex flex-col min-h-0">
-                    <div className="px-4 pt-7 pb-3">
+                    <div className="px-4 pt-7 pb-3 flex items-center justify-between">
                         <h2 className="text-[15px] font-black tracking-tight leading-none">Documentation</h2>
+                        {config && (
+                            <AppTooltip content="Open interactive API docs">
+                                <button
+                                    onClick={() => {
+                                        const url = `${config.baseUrl}/api/docs`
+                                        const bridge = (window as { orchestraDesktop?: { openExternal?: (u: string) => void } }).orchestraDesktop
+                                        if (bridge?.openExternal) bridge.openExternal(url)
+                                        else window.open(url, '_blank', 'noopener,noreferrer')
+                                    }}
+                                    className="h-7 w-7 grid place-items-center rounded-md text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.03] transition-colors"
+                                >
+                                    <ExternalLink size={13} />
+                                </button>
+                            </AppTooltip>
+                        )}
                     </div>
                     <div className="px-3 pb-3 flex items-center gap-2">
                         <div className="relative flex-1">
