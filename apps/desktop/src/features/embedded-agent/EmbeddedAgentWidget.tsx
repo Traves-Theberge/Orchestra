@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import type { BackendConfig } from '@core/api/client'
 import { EmbeddedAgentProvider, useEmbeddedAgent } from './EmbeddedAgentProvider'
 import { EmbeddedAgentPanel } from './EmbeddedAgentPanel'
@@ -22,8 +22,60 @@ function AgentIcon({ className }: { className?: string }) {
   )
 }
 
+const STORAGE_KEY = 'orchestra-fab-pos'
+const DEFAULT_POS = { right: 24, bottom: 24 }
+
+function loadPos(): { right: number; bottom: number } {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) return JSON.parse(raw) as { right: number; bottom: number }
+  } catch { /* ignore */ }
+  return DEFAULT_POS
+}
+
 function WidgetInner({ onOpenSettings }: { onOpenSettings?: () => void }) {
   const { isPanelOpen, togglePanel, isStreaming, watchMode } = useEmbeddedAgent()
+
+  const [pos, setPos] = useState(loadPos)
+  const dragging = useRef(false)
+  const startMouse = useRef({ x: 0, y: 0 })
+  const startPos = useRef(pos)
+  const moved = useRef(false)
+
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    dragging.current = true
+    moved.current = false
+    startMouse.current = { x: e.clientX, y: e.clientY }
+    startPos.current = pos
+  }, [pos])
+
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (!dragging.current) return
+      const dx = e.clientX - startMouse.current.x
+      const dy = e.clientY - startMouse.current.y
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved.current = true
+      const newRight = Math.max(8, startPos.current.right - dx)
+      const newBottom = Math.max(8, startPos.current.bottom - dy)
+      setPos({ right: newRight, bottom: newBottom })
+    }
+    const onMouseUp = () => {
+      if (dragging.current) {
+        dragging.current = false
+        setPos(p => {
+          try { localStorage.setItem(STORAGE_KEY, JSON.stringify(p)) } catch { /* ignore */ }
+          return p
+        })
+      }
+    }
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+  }, [])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -40,12 +92,13 @@ function WidgetInner({ onOpenSettings }: { onOpenSettings?: () => void }) {
     <>
       {isPanelOpen && <EmbeddedAgentPanel onOpenSettings={onOpenSettings} />}
 
-      {/* Floating action button — hidden when panel is open */}
       {!isPanelOpen && (
         <button
           type="button"
-          onClick={togglePanel}
-          className={`agent-fab-enter fixed bottom-6 right-6 z-50 grid h-14 w-14 place-items-center rounded-full border border-white/30 bg-white text-black shadow-lg shadow-black/25 transition-all duration-300 hover:scale-110 hover:bg-white/90 hover:shadow-xl hover:shadow-black/30 active:scale-95 ${
+          onMouseDown={onMouseDown}
+          onClick={(e) => { if (moved.current) { e.preventDefault(); return } togglePanel() }}
+          style={{ right: pos.right, bottom: pos.bottom }}
+          className={`fixed z-50 grid h-14 w-14 place-items-center rounded-full border border-white/30 bg-white text-black shadow-lg shadow-black/25 transition-shadow duration-300 hover:shadow-xl hover:shadow-black/30 select-none cursor-grab active:cursor-grabbing ${
             isStreaming ? 'agent-fab-streaming' : ''
           }`}
           title="Orchestra Agent (Ctrl+.)"

@@ -212,9 +212,9 @@ export function AppSidebar({
     >
       {/* Header */}
       <div className="shrink-0 border-b border-border/30">
-        <div className="h-16 flex items-center gap-2.5 px-3">
-          <img src="/Orchesta.png" alt="Orchestra" className="h-9 w-9 dark:invert shrink-0" aria-hidden="true" />
-          <span className="text-[14px] font-semibold text-foreground tracking-tight flex-1 truncate">Orchestra</span>
+        <div className="h-20 flex items-center gap-3 px-3">
+          <img src="/Orchesta.png" alt="Orchestra" className="h-16 w-16 dark:invert shrink-0" aria-hidden="true" />
+          <span className="text-[20px] font-bold text-foreground tracking-tight flex-1 truncate">Orchestra</span>
           <button
             type="button"
             onClick={() => setCollapsed(true)}

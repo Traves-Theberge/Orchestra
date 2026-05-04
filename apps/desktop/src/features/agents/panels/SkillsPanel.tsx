@@ -1,5 +1,7 @@
 // apps/desktop/src/widgets/agents/panels/SkillsPanel.tsx
 import { useState, useEffect } from 'react'
+import Editor from '@monaco-editor/react'
+import { useAppStore } from '@core/store'
 import { Save, Loader2, RotateCcw, Trash2, Plus } from 'lucide-react'
 import { Button } from '@ui/button'
 import {
@@ -26,6 +28,8 @@ Skill instructions go here. Describe the task this skill performs.
 `
 
 export function SkillsPanel({ items, saving, onSave, onDelete }: FileListPanelProps) {
+  const theme = useAppStore(s => s.theme)
+  const editorSettings = useAppStore(s => s.editorSettings)
   const [selectedName, setSelectedName] = useState<string | null>(null)
   const [content, setContent] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
@@ -115,24 +119,36 @@ export function SkillsPanel({ items, saving, onSave, onDelete }: FileListPanelPr
                   <Trash2 size={10} />
                 </Button>
                 {isDirty && (
-                  <>
-                    <Button size="sm" variant="ghost" onClick={() => setContent(selected.content)} className="h-7 text-[10px]">
-                      <RotateCcw size={10} className="mr-1" /> Discard
-                    </Button>
-                    <Button size="sm" onClick={() => onSave(selected.name, content)} disabled={!!saving} className="h-7 bg-primary text-primary-foreground font-bold uppercase text-[10px] px-4 rounded-lg">
-                      {saving ? <Loader2 size={12} className="animate-spin mr-1.5" /> : <Save size={12} className="mr-1.5" />} Save
-                    </Button>
-                  </>
+                  <Button size="sm" variant="ghost" onClick={() => setContent(selected.content)} className="h-7 text-[10px]">
+                    <RotateCcw size={10} className="mr-1" /> Discard
+                  </Button>
                 )}
+                <Button size="sm" onClick={() => onSave(selected.name, content)} disabled={!isDirty || !!saving} className="h-7 bg-primary text-primary-foreground font-bold uppercase text-[10px] px-4 rounded-lg disabled:opacity-40">
+                  {saving ? <Loader2 size={12} className="animate-spin mr-1.5" /> : <Save size={12} className="mr-1.5" />} Save
+                </Button>
               </div>
             </div>
-            <textarea
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              placeholder={SKILL_TEMPLATE.replaceAll('{{NAME}}', 'my-skill')}
-              className="flex-1 min-h-0 bg-muted/10 rounded-lg border border-border/30 px-4 py-3 font-mono text-[13px] leading-6 text-foreground focus:outline-none focus:border-primary/30 resize-none transition-colors"
-              spellCheck={false}
-            />
+            <div className="flex-1 min-h-0 rounded-lg border border-border/30 overflow-hidden">
+              <Editor
+                key={selectedName}
+                language="markdown"
+                value={content}
+                theme={theme === 'dark' ? 'vs-dark' : 'vs'}
+                onChange={(v) => { if (v !== undefined) setContent(v) }}
+                options={{
+                  minimap: { enabled: false },
+                  fontSize: editorSettings.fontSize,
+                  fontFamily: editorSettings.fontFamily || undefined,
+                  lineNumbers: 'off',
+                  wordWrap: 'on',
+                  scrollBeyondLastLine: false,
+                  automaticLayout: true,
+                  tabSize: 2,
+                  renderWhitespace: 'none',
+                  padding: { top: 12, bottom: 12 },
+                }}
+              />
+            </div>
           </>
         ) : (
           <div className="flex items-center justify-center h-full text-muted-foreground/20">
