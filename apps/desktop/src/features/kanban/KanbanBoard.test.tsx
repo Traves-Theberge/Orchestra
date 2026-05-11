@@ -60,11 +60,11 @@ describe('KanbanBoard', () => {
     expect(plusButtons.length).toBe(2)
   })
 
-  it('shows "No tasks" for empty non-backlog columns', () => {
+  it('shows empty placeholder for non-backlog columns', () => {
     render(<KanbanBoard {...defaultProps} />)
 
-    const noTaskElements = screen.getAllByText('No tasks here')
-    // To Do, In Progress, Review, Done = 4 columns with "No tasks"
+    const noTaskElements = screen.getAllByText('Empty')
+    // To Do, In Progress, Review, Done = 4 columns with the empty placeholder
     expect(noTaskElements.length).toBe(4)
   })
 })
