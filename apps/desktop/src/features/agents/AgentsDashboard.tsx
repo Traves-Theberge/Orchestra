@@ -7,6 +7,10 @@ import type { ProviderFileEntry } from '@core/api/client'
 import { Skeleton } from '@ui/skeleton'
 import { CustomDropdown } from '@layout/shared/controls'
 import { Folder } from 'lucide-react'
+import { OverviewPanel, type ProviderSummary } from './panels/OverviewPanel'
+import { ProjectSelector } from './components/ProjectSelector'
+import { ScopeToggle } from './components/ScopeToggle'
+import { computeClaudeSummary, computeClaudeProjectSummary } from './hooks/use-overview-summary'
 import { SettingsPanel } from './panels/SettingsPanel'
 import { InstructionsPanel } from './panels/InstructionsPanel'
 import { SkillsPanel } from './panels/SkillsPanel'
@@ -57,6 +61,24 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
   const projectId = useAppStore(s => s.activeAgentProjectId)
   const setScope = (s: Scope, pid = '') => useAppStore.getState().setActiveAgentScope(s, pid)
 
+  // Agent Hub (overview/scope-toggle) state — separate from legacy activeAgentScope/projectId
+  const projects = useAppStore(s => s.projects)
+  const agentHubProjectId = useAppStore(s => s.agentHubProjectId)
+  const setAgentHubProjectId = useAppStore(s => s.setAgentHubProjectId)
+  const agentHubScope = useAppStore(s => s.agentHubScope)
+  const setAgentHubScope = useAppStore(s => s.setAgentHubScope)
+  const selectedProjectID = useAppStore(s => s.selectedProjectID)
+  const selectedProject = agentHubProjectId
+    ? projects.find(p => p.id === agentHubProjectId) ?? null
+    : null
+
+  useEffect(() => {
+    if (agentHubProjectId === null && selectedProjectID) {
+      setAgentHubProjectId(selectedProjectID)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProjectID])
+
   const isClaude = provider === 'claude'
   const is8gent = provider === '8gent'
   const isClaudeOrEightgent = isClaude || is8gent
@@ -66,6 +88,20 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
     isClaudeOrEightgent ? config : null,
     scope,
     projectId || undefined,
+  )
+
+  // For the Overview panel we need both global and project snapshots.
+  // We always fetch the global snapshot, and additionally fetch the project
+  // snapshot when a project is selected in the hub.
+  const claudeGlobal = useClaudeConfig(
+    isClaudeOrEightgent ? config : null,
+    'GLOBAL',
+    undefined,
+  )
+  const claudeProject = useClaudeConfig(
+    isClaudeOrEightgent && agentHubProjectId ? config : null,
+    'PROJECT',
+    agentHubProjectId || undefined,
   )
 
   const codex = useCodexConfig(
@@ -110,9 +146,15 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
 
   useEffect(() => {
     if (!categories.some(item => item.id === category)) {
-      setCategory(categories[0]?.id ?? 'config')
+      setCategory('overview')
     }
   }, [categories, category])
+
+  // Reset to Overview whenever the provider changes
+  useEffect(() => {
+    setCategory('overview')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider])
 
   useEffect(() => {
     setAgentCategories(categories.map(c => ({ id: c.id, label: c.label, icon: c.icon })))
@@ -223,6 +265,65 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
     setCategory(id)
   }
 
+  // Build provider summaries for the Overview panel.
+  // For Claude/8gent we compose from useClaudeConfig data; for other providers
+  // we render an honest null-stub until provider-specific builders land.
+  const emptySummary: ProviderSummary = {
+    model: null,
+    instructionsLines: null,
+    skillsCount: null,
+    mcpCount: null,
+    hooksCount: null,
+    subAgentsCount: null,
+  }
+
+  const overviewSummaryGlobal: ProviderSummary = useMemo(() => {
+    if (isClaudeOrEightgent) {
+      return computeClaudeSummary({
+        settings: { model: (claudeGlobal.settings as { model?: string | null })?.model ?? null },
+        claudeMd: claudeGlobal.instructionsExists ? claudeGlobal.instructions : null,
+        skills: claudeGlobal.skills.map(s => ({ name: s.name })),
+        hooks: claudeGlobal.hooks,
+        mcpServers: Object.fromEntries(
+          [
+            ...claudeGlobal.providerMcpServers.map((s, i) => [s.name ?? `provider-${i}`, s]),
+            ...claudeGlobal.orchestraMcpServers.map((s, i) => [s.name ?? `orchestra-${i}`, s]),
+          ] as Array<[string, unknown]>,
+        ),
+        subAgents: claudeGlobal.subagents.map(a => ({ name: a.name })),
+      })
+    }
+    return emptySummary
+  }, [isClaudeOrEightgent, claudeGlobal])
+
+  const overviewSummaryProject: ProviderSummary | null = useMemo(() => {
+    if (!isClaudeOrEightgent) return null
+    if (!agentHubProjectId) return null
+    return computeClaudeProjectSummary(
+      {
+        settings: { model: (claudeGlobal.settings as { model?: string | null })?.model ?? null },
+        claudeMd: claudeGlobal.instructionsExists ? claudeGlobal.instructions : null,
+        skills: claudeGlobal.skills.map(s => ({ name: s.name })),
+        hooks: claudeGlobal.hooks,
+        mcpServers: {},
+        subAgents: claudeGlobal.subagents.map(a => ({ name: a.name })),
+      },
+      {
+        settings: { model: (claudeProject.settings as { model?: string | null })?.model ?? null },
+        claudeMd: claudeProject.instructionsExists ? claudeProject.instructions : null,
+        skills: claudeProject.skills.map(s => ({ name: s.name })),
+        hooks: claudeProject.hooks,
+        mcpServers: Object.fromEntries(
+          [
+            ...claudeProject.providerMcpServers.map((s, i) => [s.name ?? `provider-${i}`, s]),
+            ...claudeProject.orchestraMcpServers.map((s, i) => [s.name ?? `orchestra-${i}`, s]),
+          ] as Array<[string, unknown]>,
+        ),
+        subAgents: claudeProject.subagents.map(a => ({ name: a.name })),
+      },
+    )
+  }, [isClaudeOrEightgent, agentHubProjectId, claudeGlobal, claudeProject])
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {state.error && (
@@ -233,11 +334,38 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
         </div>
       )}
 
+      {/* Top bar: project selector + scope toggle */}
+      <div className="flex items-center justify-end gap-2 px-3 py-1.5 border-b border-border/20 bg-card/20 shrink-0">
+        {category !== 'overview' && (
+          <ScopeToggle
+            scope={agentHubScope}
+            projectName={selectedProject?.name ?? null}
+            onChange={setAgentHubScope}
+          />
+        )}
+        <ProjectSelector
+          projects={projects}
+          selectedId={agentHubProjectId}
+          onChange={setAgentHubProjectId}
+        />
+      </div>
+
       <div className="flex flex-col flex-1 min-h-0">
         {/* Detail panel */}
         <div className="flex flex-1 min-h-0">
             <div className="flex-1 min-w-0 min-h-0">
-              {state.loading ? (
+              {category === 'overview' ? (
+                <OverviewPanel
+                  provider={provider}
+                  projectName={selectedProject?.name ?? null}
+                  globalSummary={overviewSummaryGlobal}
+                  projectSummary={overviewSummaryProject}
+                  onNavigate={(nextCategory, nextScope) => {
+                    setAgentHubScope(nextScope)
+                    setCategory(nextCategory)
+                  }}
+                />
+              ) : state.loading ? (
                 <div className="p-6 space-y-3"><Skeleton className="h-6 w-48" /><Skeleton className="h-[300px] w-full" /></div>
               ) : isClaudeOrEightgent ? (
                 <>
