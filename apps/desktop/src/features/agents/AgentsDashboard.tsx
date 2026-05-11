@@ -509,6 +509,8 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                     provider === 'gemini' ? (
                       <GeminiSettingsPanel
                         items={providerItems.config}
+                        scope={agentHubScope}
+                        projectName={selectedProject?.name ?? null}
                         saving={domainState.saving}
                         onSave={gemini.saveSettingsFile}
                         onCreate={gemini.createSettingsResource}

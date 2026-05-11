@@ -1,17 +1,23 @@
+// apps/desktop/src/features/agents/panels/GeminiSettingsPanel.tsx
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Loader2, RotateCcw, Save } from 'lucide-react'
-import { Button } from '@ui/button'
+import { PanelHeader } from '../components/PanelHeader'
+import { PanelFooter } from '../components/PanelFooter'
+import { ErrorStrip } from '../components/ErrorStrip'
+import { EmptyStateCard } from '../components/EmptyStateCard'
+import type { Scope } from '../types'
 import type { FileResourceItem } from './FileResourcePanel'
 
 interface GeminiSettingsPanelProps {
   items: FileResourceItem[]
+  scope: Scope
+  projectName: string | null
   saving: string | null
   onSave: (path: string, content: string) => Promise<void>
   onCreate: () => Promise<void>
 }
 
-export function GeminiSettingsPanel({ items, saving, onSave, onCreate }: GeminiSettingsPanelProps) {
+export function GeminiSettingsPanel({ items, scope, projectName, saving, onSave, onCreate }: GeminiSettingsPanelProps) {
   const selected = items[0] ?? null
   const parsed = useMemo(() => safeParse(selected?.content ?? ''), [selected?.content])
 
@@ -31,6 +37,7 @@ export function GeminiSettingsPanel({ items, saving, onSave, onCreate }: GeminiS
   const [telemetryTarget, setTelemetryTarget] = useState(readString(parsed, ['telemetry', 'target']))
   const [telemetryLogPrompts, setTelemetryLogPrompts] = useState(readBooleanString(parsed, ['telemetry', 'logPrompts']))
   const [telemetryOutfile, setTelemetryOutfile] = useState(readString(parsed, ['telemetry', 'outfile']))
+  const [error, setError] = useState('')
 
   useEffect(() => {
     setPreferredEditor(readString(parsed, ['general', 'preferredEditor']))
@@ -49,26 +56,43 @@ export function GeminiSettingsPanel({ items, saving, onSave, onCreate }: GeminiS
     setTelemetryTarget(readString(parsed, ['telemetry', 'target']))
     setTelemetryLogPrompts(readBooleanString(parsed, ['telemetry', 'logPrompts']))
     setTelemetryOutfile(readString(parsed, ['telemetry', 'outfile']))
+    setError('')
   }, [parsed])
+
+  const eyebrow = scope === 'GLOBAL' ? 'Global / Gemini Settings' : `${projectName ?? 'Project'} / Gemini Settings`
 
   if (!selected) {
     return (
-      <div className="flex items-center justify-center h-full text-muted-foreground/20">
-        <div className="text-center space-y-2 max-w-md">
-          <p className="text-sm font-bold uppercase tracking-widest">No settings found</p>
-          <p className="text-[10px]">Gemini stores structured configuration in <code className="font-mono">settings.json</code>. Create that file for the selected scope to manage editor, UI, and telemetry settings here.</p>
-          <Button size="sm" onClick={() => onCreate()} className="h-8 px-4 text-[11px]">Create Settings</Button>
-        </div>
+      <div className="flex flex-col h-full p-[18px]">
+        <PanelHeader
+          eyebrow={eyebrow}
+          title="Gemini settings"
+          sub="Writes to .gemini/settings.json"
+        />
+        <EmptyStateCard
+          title="No settings found"
+          description="Gemini stores structured configuration in settings.json. Create that file for the selected scope to manage editor, UI, and telemetry settings here."
+          ctaLabel="Create Settings"
+          onCreate={() => { void onCreate() }}
+          pending={!!saving}
+        />
       </div>
     )
   }
 
   if (!parsed) {
     return (
-      <div className="flex items-center justify-center h-full text-muted-foreground/20">
-        <div className="text-center space-y-2 max-w-md">
-          <p className="text-sm font-bold uppercase tracking-widest">Structured editing unavailable</p>
-          <p className="text-[10px]">This Gemini settings file could not be parsed cleanly. Repair it in raw JSON before using the structured editor.</p>
+      <div className="flex flex-col h-full p-[18px]">
+        <PanelHeader
+          eyebrow={eyebrow}
+          title="Gemini settings"
+          sub={`Writes to ${selected.path}`}
+        />
+        <div className="flex flex-1 items-center justify-center text-muted-foreground/30">
+          <div className="text-center space-y-2 max-w-md">
+            <p className="text-sm font-bold uppercase tracking-widest">Structured editing unavailable</p>
+            <p className="text-[10px]">This Gemini settings file could not be parsed cleanly. Repair it in raw JSON before using the structured editor.</p>
+          </div>
         </div>
       </div>
     )
@@ -92,106 +116,105 @@ export function GeminiSettingsPanel({ items, saving, onSave, onCreate }: GeminiS
     telemetryLogPrompts !== readBooleanString(parsed, ['telemetry', 'logPrompts']) ||
     telemetryOutfile !== readString(parsed, ['telemetry', 'outfile'])
 
+  const handleDiscard = () => {
+    setPreferredEditor(readString(parsed, ['general', 'preferredEditor']))
+    setVimMode(readBooleanString(parsed, ['general', 'vimMode']))
+    setDisableAutoUpdate(readBooleanString(parsed, ['general', 'disableAutoUpdate']))
+    setDisableUpdateNag(readBooleanString(parsed, ['general', 'disableUpdateNag']))
+    setCheckpointingEnabled(readBooleanString(parsed, ['general', 'checkpointing', 'enabled']))
+    setOutputFormat(readString(parsed, ['output', 'format']))
+    setTheme(readString(parsed, ['ui', 'theme']))
+    setHideBanner(readBooleanString(parsed, ['ui', 'hideBanner']))
+    setHideTips(readBooleanString(parsed, ['ui', 'hideTips']))
+    setHideFooter(readBooleanString(parsed, ['ui', 'hideFooter']))
+    setShowLineNumbers(readBooleanString(parsed, ['ui', 'showLineNumbers']))
+    setShowCitations(readBooleanString(parsed, ['ui', 'showCitations']))
+    setTelemetryEnabled(readBooleanString(parsed, ['telemetry', 'enabled']))
+    setTelemetryTarget(readString(parsed, ['telemetry', 'target']))
+    setTelemetryLogPrompts(readBooleanString(parsed, ['telemetry', 'logPrompts']))
+    setTelemetryOutfile(readString(parsed, ['telemetry', 'outfile']))
+  }
+
+  const handleSave = async () => {
+    setError('')
+    try {
+      await onSave(selected.path, buildSettings(parsed, {
+        preferredEditor,
+        vimMode,
+        disableAutoUpdate,
+        disableUpdateNag,
+        checkpointingEnabled,
+        outputFormat,
+        theme,
+        hideBanner,
+        hideTips,
+        hideFooter,
+        showLineNumbers,
+        showCitations,
+        telemetryEnabled,
+        telemetryTarget,
+        telemetryLogPrompts,
+        telemetryOutfile,
+      }))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save')
+    }
+  }
+
   return (
-    <div className="flex flex-col h-full p-4 overflow-y-auto">
-      <div className="max-w-2xl mx-auto w-full flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-bold">Gemini Settings</h3>
-          <p className="text-[10px] text-muted-foreground/50 mt-0.5">This panel edits documented Gemini <code className="font-mono">settings.json</code> categories like <code className="font-mono">general</code>, <code className="font-mono">output</code>, <code className="font-mono">ui</code>, and <code className="font-mono">telemetry</code>.</p>
-          <p className="text-[10px] text-muted-foreground/35 mt-1 font-mono truncate">{selected.path}</p>
+    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+      <PanelHeader
+        eyebrow={eyebrow}
+        title="Gemini settings"
+        sub={`Writes to ${selected.path}`}
+        dirty={isDirty}
+      />
+
+      <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+        <div className="max-w-2xl mx-auto w-full flex flex-col gap-6">
+          <Section title="General">
+            <TextField label="Preferred Editor" value={preferredEditor} onChange={setPreferredEditor} placeholder="code" />
+            <BooleanField label="Vim Mode" value={vimMode} onChange={setVimMode} />
+            <BooleanField label="Disable Auto Update" value={disableAutoUpdate} onChange={setDisableAutoUpdate} />
+            <BooleanField label="Disable Update Nag" value={disableUpdateNag} onChange={setDisableUpdateNag} />
+            <BooleanField label="Checkpointing Enabled" value={checkpointingEnabled} onChange={setCheckpointingEnabled} />
+          </Section>
+
+          <Section title="Output">
+            <SelectField
+              label="Format"
+              value={outputFormat}
+              onChange={setOutputFormat}
+              options={['text', 'json']}
+            />
+          </Section>
+
+          <Section title="UI">
+            <TextField label="Theme" value={theme} onChange={setTheme} placeholder="GitHub" />
+            <BooleanField label="Hide Banner" value={hideBanner} onChange={setHideBanner} />
+            <BooleanField label="Hide Tips" value={hideTips} onChange={setHideTips} />
+            <BooleanField label="Hide Footer" value={hideFooter} onChange={setHideFooter} />
+            <BooleanField label="Show Line Numbers" value={showLineNumbers} onChange={setShowLineNumbers} />
+            <BooleanField label="Show Citations" value={showCitations} onChange={setShowCitations} />
+          </Section>
+
+          <Section title="Telemetry">
+            <BooleanField label="Enabled" value={telemetryEnabled} onChange={setTelemetryEnabled} />
+            <SelectField label="Target" value={telemetryTarget} onChange={setTelemetryTarget} options={['local', 'gcp']} />
+            <BooleanField label="Log Prompts" value={telemetryLogPrompts} onChange={setTelemetryLogPrompts} />
+            <TextField label="Outfile" value={telemetryOutfile} onChange={setTelemetryOutfile} placeholder="~/.gemini/telemetry.log" />
+          </Section>
         </div>
-        {isDirty ? (
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold text-amber-500 uppercase tracking-widest animate-pulse">Unsaved</span>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setPreferredEditor(readString(parsed, ['general', 'preferredEditor']))
-                setVimMode(readBooleanString(parsed, ['general', 'vimMode']))
-                setDisableAutoUpdate(readBooleanString(parsed, ['general', 'disableAutoUpdate']))
-                setDisableUpdateNag(readBooleanString(parsed, ['general', 'disableUpdateNag']))
-                setCheckpointingEnabled(readBooleanString(parsed, ['general', 'checkpointing', 'enabled']))
-                setOutputFormat(readString(parsed, ['output', 'format']))
-                setTheme(readString(parsed, ['ui', 'theme']))
-                setHideBanner(readBooleanString(parsed, ['ui', 'hideBanner']))
-                setHideTips(readBooleanString(parsed, ['ui', 'hideTips']))
-                setHideFooter(readBooleanString(parsed, ['ui', 'hideFooter']))
-                setShowLineNumbers(readBooleanString(parsed, ['ui', 'showLineNumbers']))
-                setShowCitations(readBooleanString(parsed, ['ui', 'showCitations']))
-                setTelemetryEnabled(readBooleanString(parsed, ['telemetry', 'enabled']))
-                setTelemetryTarget(readString(parsed, ['telemetry', 'target']))
-                setTelemetryLogPrompts(readBooleanString(parsed, ['telemetry', 'logPrompts']))
-                setTelemetryOutfile(readString(parsed, ['telemetry', 'outfile']))
-              }}
-              className="h-7 text-[10px]"
-            >
-              <RotateCcw size={10} className="mr-1" /> Discard
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => onSave(selected.path, buildSettings(parsed, {
-                preferredEditor,
-                vimMode,
-                disableAutoUpdate,
-                disableUpdateNag,
-                checkpointingEnabled,
-                outputFormat,
-                theme,
-                hideBanner,
-                hideTips,
-                hideFooter,
-                showLineNumbers,
-                showCitations,
-                telemetryEnabled,
-                telemetryTarget,
-                telemetryLogPrompts,
-                telemetryOutfile,
-              }))}
-              disabled={saving === selected.path}
-              className="h-7 bg-primary text-primary-foreground font-bold uppercase text-[10px] px-4 rounded-lg"
-            >
-              {saving === selected.path ? <Loader2 size={12} className="animate-spin mr-1.5" /> : <Save size={12} className="mr-1.5" />}
-              Save
-            </Button>
-          </div>
-        ) : null}
       </div>
 
-      <Section title="General">
-        <TextField label="Preferred Editor" value={preferredEditor} onChange={setPreferredEditor} placeholder="code" />
-        <BooleanField label="Vim Mode" value={vimMode} onChange={setVimMode} />
-        <BooleanField label="Disable Auto Update" value={disableAutoUpdate} onChange={setDisableAutoUpdate} />
-        <BooleanField label="Disable Update Nag" value={disableUpdateNag} onChange={setDisableUpdateNag} />
-        <BooleanField label="Checkpointing Enabled" value={checkpointingEnabled} onChange={setCheckpointingEnabled} />
-      </Section>
+      <ErrorStrip message={error} onDismiss={() => setError('')} />
 
-      <Section title="Output">
-        <SelectField
-          label="Format"
-          value={outputFormat}
-          onChange={setOutputFormat}
-          options={['text', 'json']}
-        />
-      </Section>
-
-      <Section title="UI">
-        <TextField label="Theme" value={theme} onChange={setTheme} placeholder="GitHub" />
-        <BooleanField label="Hide Banner" value={hideBanner} onChange={setHideBanner} />
-        <BooleanField label="Hide Tips" value={hideTips} onChange={setHideTips} />
-        <BooleanField label="Hide Footer" value={hideFooter} onChange={setHideFooter} />
-        <BooleanField label="Show Line Numbers" value={showLineNumbers} onChange={setShowLineNumbers} />
-        <BooleanField label="Show Citations" value={showCitations} onChange={setShowCitations} />
-      </Section>
-
-      <Section title="Telemetry">
-        <BooleanField label="Enabled" value={telemetryEnabled} onChange={setTelemetryEnabled} />
-        <SelectField label="Target" value={telemetryTarget} onChange={setTelemetryTarget} options={['local', 'gcp']} />
-        <BooleanField label="Log Prompts" value={telemetryLogPrompts} onChange={setTelemetryLogPrompts} />
-        <TextField label="Outfile" value={telemetryOutfile} onChange={setTelemetryOutfile} placeholder="~/.gemini/telemetry.log" />
-      </Section>
-      </div>
+      <PanelFooter
+        dirty={isDirty}
+        saving={saving === selected.path}
+        onSave={handleSave}
+        onDiscard={handleDiscard}
+      />
     </div>
   )
 }
