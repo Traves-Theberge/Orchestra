@@ -626,6 +626,8 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                   {category === 'rules' && provider === 'codex' && (
                     <CodexRulesPanel
                       items={codex.rules}
+                      scope={agentHubScope}
+                      projectName={selectedProject?.name ?? null}
                       saving={codex.saving}
                       onSave={codex.saveRuleFile}
                       onDelete={codex.deleteRuleFile}
