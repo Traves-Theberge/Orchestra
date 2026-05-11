@@ -1,17 +1,24 @@
+// apps/desktop/src/features/agents/panels/OpenCodeConfigPanel.tsx
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Loader2, RotateCcw, Save } from 'lucide-react'
 import { Button } from '@ui/button'
+import { PanelHeader } from '../components/PanelHeader'
+import { PanelFooter } from '../components/PanelFooter'
+import { EmptyStateCard } from '../components/EmptyStateCard'
+import { ErrorStrip } from '../components/ErrorStrip'
+import type { Scope } from '../types'
 import type { FileResourceItem } from './FileResourcePanel'
 
 interface OpenCodeConfigPanelProps {
   items: FileResourceItem[]
+  scope: Scope
+  projectName: string | null
   saving: string | null
   onSave: (path: string, content: string) => Promise<void>
   onCreate: () => Promise<void>
 }
 
-export function OpenCodeConfigPanel({ items, saving, onSave, onCreate }: OpenCodeConfigPanelProps) {
+export function OpenCodeConfigPanel({ items, scope, projectName, saving, onSave, onCreate }: OpenCodeConfigPanelProps) {
   const selected = items[0] ?? null
   const parsed = useMemo(() => safeParse(selected?.content ?? ''), [selected?.content])
   const [autoupdate, setAutoupdate] = useState(readStringOrBoolean(parsed, 'autoupdate'))
@@ -21,6 +28,7 @@ export function OpenCodeConfigPanel({ items, saving, onSave, onCreate }: OpenCod
   const [providerIds, setProviderIds] = useState(readObjectKeys(parsed, 'provider'))
   const [selectedProviderId, setSelectedProviderId] = useState('')
   const [providerConfigs, setProviderConfigs] = useState<Record<string, string>>({})
+  const [error, setError] = useState('')
 
   useEffect(() => {
     setAutoupdate(readStringOrBoolean(parsed, 'autoupdate'))
@@ -32,26 +40,43 @@ export function OpenCodeConfigPanel({ items, saving, onSave, onCreate }: OpenCod
     const nextConfigs = buildProviderConfigDrafts(parsed)
     setProviderConfigs(nextConfigs)
     setSelectedProviderId((current) => (current && nextProviderIds.includes(current) ? current : (nextProviderIds[0] ?? '')))
+    setError('')
   }, [parsed])
+
+  const eyebrow = scope === 'GLOBAL' ? 'Global / OpenCode Config' : `${projectName ?? 'Project'} / OpenCode Config`
 
   if (!selected) {
     return (
-      <div className="flex items-center justify-center h-full text-muted-foreground/20">
-        <div className="text-center space-y-2 max-w-md">
-          <p className="text-sm font-bold uppercase tracking-widest">No config found</p>
-          <p className="text-[10px]">OpenCode configuration is merged from global and project config files. Create the primary config file for this scope to manage provider settings here.</p>
-          <Button size="sm" onClick={() => onCreate()} className="h-8 px-4 text-[11px]">Create Config</Button>
-        </div>
+      <div className="flex flex-col h-full p-[18px]">
+        <PanelHeader
+          eyebrow={eyebrow}
+          title="OpenCode config"
+          sub="Writes to opencode/config.json"
+        />
+        <EmptyStateCard
+          title="No config at this scope"
+          description="OpenCode configuration is merged from global and project config files. Create the primary config file for this scope to manage provider settings here."
+          ctaLabel="Create Config"
+          onCreate={() => { void onCreate() }}
+          pending={!!saving}
+        />
       </div>
     )
   }
 
   if (!parsed) {
     return (
-      <div className="flex items-center justify-center h-full text-muted-foreground/20">
-        <div className="text-center space-y-2 max-w-md">
-          <p className="text-sm font-bold uppercase tracking-widest">Structured editing unavailable</p>
-          <p className="text-[10px]">This OpenCode config could not be parsed cleanly. Use raw editing in another pass if you need to preserve JSONC comments.</p>
+      <div className="flex flex-col h-full p-[18px]">
+        <PanelHeader
+          eyebrow={eyebrow}
+          title="OpenCode config"
+          sub={`Writes to ${selected.path}`}
+        />
+        <div className="flex flex-1 items-center justify-center text-muted-foreground/30">
+          <div className="text-center space-y-2 max-w-md">
+            <p className="text-sm font-bold uppercase tracking-widest">Structured editing unavailable</p>
+            <p className="text-[10px]">This OpenCode config could not be parsed cleanly. Use raw editing in another pass if you need to preserve JSONC comments.</p>
+          </div>
         </div>
       </div>
     )
@@ -68,152 +93,152 @@ export function OpenCodeConfigPanel({ items, saving, onSave, onCreate }: OpenCod
   const activeProviderDraft = selectedProviderId ? (providerConfigs[selectedProviderId] ?? '{}') : ''
   const activeProviderParseError = selectedProviderId ? readJSONError(activeProviderDraft) : ''
 
+  const handleDiscard = () => {
+    setAutoupdate(readStringOrBoolean(parsed, 'autoupdate'))
+    setDefaultAgent(readString(parsed, 'default_agent'))
+    setShare(readString(parsed, 'share'))
+    setDisabledProviders(readStringList(parsed, 'disabled_providers'))
+    const nextProviderIds = readObjectKeys(parsed, 'provider')
+    setProviderIds(nextProviderIds)
+    const nextConfigs = buildProviderConfigDrafts(parsed)
+    setProviderConfigs(nextConfigs)
+    setSelectedProviderId(nextProviderIds[0] ?? '')
+  }
+
+  const handleSave = async () => {
+    setError('')
+    try {
+      await onSave(selected.path, buildConfig(parsed, autoupdate, defaultAgent, share, disabledProviders, providerIds, providerConfigs))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save')
+    }
+  }
+
   return (
-    <div className="flex flex-col h-full p-4 overflow-y-auto">
-      <div className="max-w-2xl mx-auto w-full flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-bold">OpenCode Config</h3>
-          <p className="text-[10px] text-muted-foreground/50 mt-0.5">This panel edits real OpenCode config keys like <code className="font-mono">default_agent</code>, <code className="font-mono">share</code>, and <code className="font-mono">disabled_providers</code>.</p>
-          <p className="text-[10px] text-muted-foreground/35 mt-1 font-mono truncate">{selected.path}</p>
-        </div>
-        {isDirty ? (
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold text-amber-500 uppercase tracking-widest animate-pulse">Unsaved</span>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setAutoupdate(readStringOrBoolean(parsed, 'autoupdate'))
-                setDefaultAgent(readString(parsed, 'default_agent'))
-                setShare(readString(parsed, 'share'))
-                setDisabledProviders(readStringList(parsed, 'disabled_providers'))
-                const nextProviderIds = readObjectKeys(parsed, 'provider')
-                setProviderIds(nextProviderIds)
-                const nextConfigs = buildProviderConfigDrafts(parsed)
-                setProviderConfigs(nextConfigs)
-                setSelectedProviderId(nextProviderIds[0] ?? '')
-              }}
-              className="h-7 text-[10px]"
-            >
-              <RotateCcw size={10} className="mr-1" /> Discard
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => onSave(selected.path, buildConfig(parsed, autoupdate, defaultAgent, share, disabledProviders, providerIds, providerConfigs))}
-              disabled={saving === selected.path || !!activeProviderParseError}
-              className="h-7 bg-primary text-primary-foreground font-bold uppercase text-[10px] px-4 rounded-lg"
-            >
-              {saving === selected.path ? <Loader2 size={12} className="animate-spin mr-1.5" /> : <Save size={12} className="mr-1.5" />}
-              Save
-            </Button>
-          </div>
-        ) : null}
-      </div>
-
-      <Field label="Autoupdate">
-        <select
-          value={autoupdate}
-          onChange={(event) => setAutoupdate(event.target.value)}
-          className="w-full max-w-sm h-9 rounded-lg border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-        >
-          <option value="">Default</option>
-          <option value="true">true</option>
-          <option value="false">false</option>
-          <option value="notify">notify</option>
-        </select>
-      </Field>
-
-      <Field label="Default Agent">
-        <input
-          value={defaultAgent}
-          onChange={(event) => setDefaultAgent(event.target.value)}
-          placeholder="build"
-          className="w-full max-w-sm h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20"
-        />
-        <p className="text-[10px] text-muted-foreground/50 mt-1">OpenCode expects <code className="font-mono">default_agent</code>, not <code className="font-mono">defaultAgent</code>.</p>
-      </Field>
-
-      <Field label="Share">
-        <select
-          value={share}
-          onChange={(event) => setShare(event.target.value)}
-          className="w-full max-w-sm h-9 rounded-lg border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-        >
-          <option value="">Default</option>
-          <option value="manual">manual</option>
-          <option value="auto">auto</option>
-          <option value="disabled">disabled</option>
-        </select>
-      </Field>
-
-      <ListField
-        label="Disabled Providers"
-        description="Provider IDs to disable even if credentials are available."
-        items={disabledProviders}
-        onChange={setDisabledProviders}
-        placeholder="gemini"
+    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+      <PanelHeader
+        eyebrow={eyebrow}
+        title="OpenCode config"
+        sub={`Writes to ${selected.path}`}
+        dirty={isDirty}
       />
 
-      <ListField
-        label="Configured Providers"
-        description="Provider IDs present in the top-level provider block."
-        items={providerIds}
-        onChange={(nextIds) => {
-          setProviderIds(nextIds)
-          setProviderConfigs((current) => {
-            const nextConfigs: Record<string, string> = {}
-            for (const id of nextIds) {
-              nextConfigs[id] = current[id] ?? '{}'
-            }
-            return nextConfigs
-          })
-          setSelectedProviderId((current) => (current && nextIds.includes(current) ? current : (nextIds[0] ?? '')))
-        }}
-        placeholder="openai"
-      />
+      <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+        <div className="max-w-2xl mx-auto w-full flex flex-col gap-6">
 
-      {providerIds.length > 0 ? (
-        <div className="rounded-lg border border-border/30 bg-muted/10 p-4 space-y-3">
-          <div>
-            <h4 className="text-[11px] font-semibold">Provider Block</h4>
-            <p className="text-[10px] text-muted-foreground/50 mt-1">Edit the nested <code className="font-mono">provider.{selectedProviderId || '<id>'}</code> object directly. This preserves OpenCode provider-native options without hardcoding every provider schema.</p>
-          </div>
-
-          <Field label="Selected Provider">
+          <Field label="Autoupdate">
             <select
-              value={selectedProviderId}
-              onChange={(event) => setSelectedProviderId(event.target.value)}
+              value={autoupdate}
+              onChange={(event) => setAutoupdate(event.target.value)}
               className="w-full max-w-sm h-9 rounded-lg border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
             >
-              {providerIds.map((id) => (
-                <option key={id} value={id}>{id}</option>
-              ))}
+              <option value="">Default</option>
+              <option value="true">true</option>
+              <option value="false">false</option>
+              <option value="notify">notify</option>
             </select>
           </Field>
 
-          {selectedProviderId ? (
-            <section className="space-y-2">
-              <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Provider Config JSON</h4>
-              <textarea
-                value={activeProviderDraft}
-                onChange={(event) => {
-                  const value = event.target.value
-                  setProviderConfigs((current) => ({ ...current, [selectedProviderId]: value }))
-                }}
-                className="min-h-[220px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20"
-                spellCheck={false}
-              />
-              {activeProviderParseError ? (
-                <p className="text-[10px] text-red-400">Provider block must be valid JSON: {activeProviderParseError}</p>
-              ) : (
-                <p className="text-[10px] text-muted-foreground/50">Examples include API base URLs, model aliases, auth env vars, and provider-specific runtime options.</p>
-              )}
-            </section>
+          <Field label="Default Agent">
+            <input
+              value={defaultAgent}
+              onChange={(event) => setDefaultAgent(event.target.value)}
+              placeholder="build"
+              className="w-full max-w-sm h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+            <p className="text-[10px] text-muted-foreground/50 mt-1">OpenCode expects <code className="font-mono">default_agent</code>, not <code className="font-mono">defaultAgent</code>.</p>
+          </Field>
+
+          <Field label="Share">
+            <select
+              value={share}
+              onChange={(event) => setShare(event.target.value)}
+              className="w-full max-w-sm h-9 rounded-lg border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+            >
+              <option value="">Default</option>
+              <option value="manual">manual</option>
+              <option value="auto">auto</option>
+              <option value="disabled">disabled</option>
+            </select>
+          </Field>
+
+          <ListField
+            label="Disabled Providers"
+            description="Provider IDs to disable even if credentials are available."
+            items={disabledProviders}
+            onChange={setDisabledProviders}
+            placeholder="gemini"
+          />
+
+          <ListField
+            label="Configured Providers"
+            description="Provider IDs present in the top-level provider block."
+            items={providerIds}
+            onChange={(nextIds) => {
+              setProviderIds(nextIds)
+              setProviderConfigs((current) => {
+                const nextConfigs: Record<string, string> = {}
+                for (const id of nextIds) {
+                  nextConfigs[id] = current[id] ?? '{}'
+                }
+                return nextConfigs
+              })
+              setSelectedProviderId((current) => (current && nextIds.includes(current) ? current : (nextIds[0] ?? '')))
+            }}
+            placeholder="openai"
+          />
+
+          {providerIds.length > 0 ? (
+            <div className="rounded-lg border border-border/30 bg-muted/10 p-4 space-y-3">
+              <div>
+                <h4 className="text-[11px] font-semibold">Provider Block</h4>
+                <p className="text-[10px] text-muted-foreground/50 mt-1">Edit the nested <code className="font-mono">provider.{selectedProviderId || '<id>'}</code> object directly. This preserves OpenCode provider-native options without hardcoding every provider schema.</p>
+              </div>
+
+              <Field label="Selected Provider">
+                <select
+                  value={selectedProviderId}
+                  onChange={(event) => setSelectedProviderId(event.target.value)}
+                  className="w-full max-w-sm h-9 rounded-lg border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                >
+                  {providerIds.map((id) => (
+                    <option key={id} value={id}>{id}</option>
+                  ))}
+                </select>
+              </Field>
+
+              {selectedProviderId ? (
+                <section className="space-y-2">
+                  <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Provider Config JSON</h4>
+                  <textarea
+                    value={activeProviderDraft}
+                    onChange={(event) => {
+                      const value = event.target.value
+                      setProviderConfigs((current) => ({ ...current, [selectedProviderId]: value }))
+                    }}
+                    className="min-h-[220px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    spellCheck={false}
+                  />
+                  {activeProviderParseError ? (
+                    <p className="text-[10px] text-red-400">Provider block must be valid JSON: {activeProviderParseError}</p>
+                  ) : (
+                    <p className="text-[10px] text-muted-foreground/50">Examples include API base URLs, model aliases, auth env vars, and provider-specific runtime options.</p>
+                  )}
+                </section>
+              ) : null}
+            </div>
           ) : null}
         </div>
-      ) : null}
       </div>
+
+      <ErrorStrip message={error} onDismiss={() => setError('')} />
+
+      <PanelFooter
+        dirty={isDirty}
+        saving={saving === selected.path || !!activeProviderParseError ? !!saving : !!saving}
+        onSave={handleSave}
+        onDiscard={handleDiscard}
+      />
     </div>
   )
 }
@@ -320,7 +345,7 @@ function readJSONError(content: string): string {
 function Field({ label, children }: { label: string, children: ReactNode }) {
   return (
     <section className="space-y-2">
-      <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{label}</h4>
+      <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">{label}</h4>
       {children}
     </section>
   )
@@ -333,7 +358,7 @@ function ListField({
   return (
     <section className="space-y-2">
       <div>
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{label}</h4>
+        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">{label}</h4>
         <p className="text-[10px] text-muted-foreground/50 mt-1">{description}</p>
       </div>
       <div className="flex flex-wrap gap-1.5">

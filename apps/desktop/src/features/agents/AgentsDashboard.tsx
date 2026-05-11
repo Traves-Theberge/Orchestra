@@ -452,6 +452,8 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                   {category === 'config' && provider === 'opencode' && (
                     <OpenCodeConfigPanel
                       items={providerItems.config}
+                      scope={agentHubScope}
+                      projectName={selectedProject?.name ?? null}
                       saving={domainState.saving}
                       onSave={opencode.saveConfigResource}
                       onCreate={opencode.createConfigResource}

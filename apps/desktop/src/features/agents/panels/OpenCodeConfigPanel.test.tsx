@@ -17,6 +17,8 @@ describe('OpenCodeConfigPanel', () => {
     render(
       <OpenCodeConfigPanel
         items={[configItem]}
+        scope="GLOBAL"
+        projectName={null}
         saving={null}
         onSave={onSave}
         onCreate={vi.fn()}
