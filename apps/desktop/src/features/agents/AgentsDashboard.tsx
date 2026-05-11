@@ -533,6 +533,8 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                     <OpenCodeModelPanel
                       modelConfig={opencode.modelConfig}
                       configContent={opencode.config[0]?.content ?? ''}
+                      scope={agentHubScope}
+                      projectName={selectedProject?.name ?? null}
                       saving={opencode.saving}
                       onSave={opencode.saveModel}
                     />
