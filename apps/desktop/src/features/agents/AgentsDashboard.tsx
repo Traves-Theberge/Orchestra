@@ -412,6 +412,9 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                   {category === 'skills' && (
                     <SkillsPanel
                       items={claude.skills}
+                      globalItems={claudeGlobal.skills}
+                      scope={agentHubScope}
+                      projectName={selectedProject?.name ?? null}
                       saving={claude.saving}
                       onSave={claude.saveSkill}
                       onDelete={claude.removeSkill}
