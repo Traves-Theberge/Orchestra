@@ -17,6 +17,8 @@ describe('GeminiCommandsPanel', () => {
     render(
       <GeminiCommandsPanel
         items={[baseItem]}
+        scope="GLOBAL"
+        projectName={null}
         saving={null}
         onSave={onSave}
         onDelete={vi.fn()}
@@ -47,6 +49,8 @@ describe('GeminiCommandsPanel', () => {
           path: '/tmp/legacy.md',
           content: '# Legacy command\n\nRun the old workflow.\n',
         }]}
+        scope="GLOBAL"
+        projectName={null}
         saving={null}
         onSave={onSave}
         onDelete={vi.fn()}

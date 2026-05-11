@@ -599,6 +599,8 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                   {category === 'commands' && provider === 'gemini' && (
                     <GeminiCommandsPanel
                       items={providerItems.commands}
+                      scope={agentHubScope}
+                      projectName={selectedProject?.name ?? null}
                       saving={domainState.saving}
                       onSave={gemini.saveCommandFile}
                       onDelete={gemini.deleteCommandFile}
