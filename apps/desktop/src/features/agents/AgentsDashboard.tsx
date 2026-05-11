@@ -363,6 +363,9 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                   {category === 'settings' && (
                     <SettingsPanel
                       settings={claude.settings}
+                      globalSettings={claudeGlobal.settings}
+                      scope={agentHubScope}
+                      projectName={selectedProject?.name ?? null}
                       settingsPath={claude.settingsPath}
                       settingsExists={claude.settingsExists}
                       saving={claude.saving}
