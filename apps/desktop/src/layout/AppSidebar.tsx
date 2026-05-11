@@ -653,6 +653,7 @@ function AgentsSubNav({ onBack }: { onBack: () => void }) {
   const setActiveProvider = useAppStore(s => s.setActiveAgentProvider)
   const activeCategory = useAppStore(s => s.activeAgentCategory)
   const setActiveCategory = useAppStore(s => s.setActiveAgentCategory)
+  const requestAgentHubNav = useAppStore(s => s.requestAgentHubNav)
   const agentCategories = useAppStore(s => s.agentCategories)
   const agentCategoryCounts = useAppStore(s => s.agentCategoryCounts)
   const scope = useAppStore(s => s.activeAgentScope)
@@ -723,7 +724,7 @@ function AgentsSubNav({ onBack }: { onBack: () => void }) {
             <button
               key={cat.id}
               type="button"
-              onClick={() => setActiveCategory(cat.id)}
+              onClick={() => requestAgentHubNav(() => setActiveCategory(cat.id))}
               className={`w-full flex items-center gap-2.5 h-9 px-2.5 rounded-lg text-left transition-colors relative ${
                 active
                   ? 'bg-foreground/[0.08] text-foreground'

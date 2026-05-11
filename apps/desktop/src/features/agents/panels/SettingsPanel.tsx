@@ -9,6 +9,7 @@ import { PanelFooter } from '../components/PanelFooter'
 import { ErrorStrip } from '../components/ErrorStrip'
 import { InheritedField } from '../components/InheritedField'
 import type { Scope } from '../types'
+import { usePublishDirty } from '../hooks/use-publish-dirty'
 
 interface SettingsPanelProps {
   settings: Record<string, unknown>
@@ -81,6 +82,7 @@ export function SettingsPanel({
   const isDirty = JSON.stringify(local) !== JSON.stringify(settings)
   const isRawDirty = mode === 'raw' && rawJson !== JSON.stringify(settings, null, 2)
   const showDirty = mode === 'structured' ? isDirty : isRawDirty
+  usePublishDirty(showDirty)
 
   const handleDiscard = useCallback(() => {
     setLocal(settings)

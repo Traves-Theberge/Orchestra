@@ -132,6 +132,8 @@ export interface UISlice {
   expandedDocFolders: Set<string>
   agentHubProjectId: string | null
   agentHubScope: 'GLOBAL' | 'PROJECT'
+  agentHubDirty: boolean
+  agentHubPendingNav: (() => void) | null
 
   // Actions
   setActiveSection: (section: SectionID) => void
@@ -162,6 +164,10 @@ export interface UISlice {
   toggleDocFolder: (path: string) => void
   setAgentHubProjectId: (id: string | null) => void
   setAgentHubScope: (scope: 'GLOBAL' | 'PROJECT') => void
+  setAgentHubDirty: (dirty: boolean) => void
+  /** Request a navigation that may need a discard-confirm. If the agent hub is dirty, the action is stashed in agentHubPendingNav for the dashboard to confirm; otherwise it is applied immediately. */
+  requestAgentHubNav: (apply: () => void) => void
+  setAgentHubPendingNav: (apply: (() => void) | null) => void
 }
 
 // ---------------------------------------------------------------------------

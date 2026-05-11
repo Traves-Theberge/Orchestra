@@ -5,6 +5,10 @@ import { AlertCircle } from 'lucide-react'
 import type { BackendConfig, Project } from '@core/api/types'
 import type { ProviderFileEntry } from '@core/api/client'
 import { Skeleton } from '@ui/skeleton'
+import { Button } from '@ui/button'
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@ui/dialog'
 import { OverviewPanel, type ProviderSummary } from './panels/OverviewPanel'
 import { ProjectSelector } from './components/ProjectSelector'
 import { ScopeToggle } from './components/ScopeToggle'
@@ -63,6 +67,10 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
   const setAgentHubProjectId = useAppStore(s => s.setAgentHubProjectId)
   const agentHubScope = useAppStore(s => s.agentHubScope)
   const setAgentHubScope = useAppStore(s => s.setAgentHubScope)
+  const requestAgentHubNav = useAppStore(s => s.requestAgentHubNav)
+  const agentHubPendingNav = useAppStore(s => s.agentHubPendingNav)
+  const setAgentHubPendingNav = useAppStore(s => s.setAgentHubPendingNav)
+  const setAgentHubDirty = useAppStore(s => s.setAgentHubDirty)
   const selectedProjectID = useAppStore(s => s.selectedProjectID)
   const selectedProject = agentHubProjectId
     ? projects.find(p => p.id === agentHubProjectId) ?? null
@@ -331,13 +339,13 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
           <ScopeToggle
             scope={agentHubScope}
             projectName={selectedProject?.name ?? null}
-            onChange={setAgentHubScope}
+            onChange={(s) => requestAgentHubNav(() => setAgentHubScope(s))}
           />
         )}
         <ProjectSelector
           projects={projects}
           selectedId={agentHubProjectId}
-          onChange={setAgentHubProjectId}
+          onChange={(id) => requestAgentHubNav(() => setAgentHubProjectId(id))}
         />
       </div>
 
@@ -351,10 +359,10 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                   projectName={selectedProject?.name ?? null}
                   globalSummary={overviewSummaryGlobal}
                   projectSummary={overviewSummaryProject}
-                  onNavigate={(nextCategory, nextScope) => {
+                  onNavigate={(nextCategory, nextScope) => requestAgentHubNav(() => {
                     setAgentHubScope(nextScope)
                     setCategory(nextCategory)
-                  }}
+                  })}
                 />
               ) : state.loading ? (
                 <div className="p-6 space-y-3"><Skeleton className="h-6 w-48" /><Skeleton className="h-[300px] w-full" /></div>
@@ -709,6 +717,36 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
             </div>
           </div>
         </div>
+
+        <Dialog
+          open={!!agentHubPendingNav}
+          onOpenChange={(o) => { if (!o) setAgentHubPendingNav(null) }}
+        >
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Discard unsaved changes?</DialogTitle>
+              <DialogDescription>
+                You have unsaved edits in this panel. Switching will discard them.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setAgentHubPendingNav(null)}>
+                Keep editing
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  const apply = agentHubPendingNav
+                  setAgentHubPendingNav(null)
+                  setAgentHubDirty(false)
+                  apply?.()
+                }}
+              >
+                Discard
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
   )
 }

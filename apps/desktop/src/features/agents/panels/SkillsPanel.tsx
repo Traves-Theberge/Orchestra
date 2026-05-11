@@ -14,6 +14,7 @@ import { ErrorStrip } from '../components/ErrorStrip'
 import { TOKENS } from '../tokens'
 import type { ClaudeFileEntry } from '@core/api/client'
 import type { Scope } from '../types'
+import { usePublishDirty } from '../hooks/use-publish-dirty'
 
 const SKILL_TEMPLATE = `---
 name: {{NAME}}
@@ -72,6 +73,7 @@ export function SkillsPanel({
   useEffect(() => { setContent(selected?.content ?? ''); setError('') }, [selected])
 
   const dirty = selected && !selected.isInherited ? content !== selected.content : false
+  usePublishDirty(!!dirty)
   const projectCount = items.length
   const inheritedCount = inheritedItems.length
 

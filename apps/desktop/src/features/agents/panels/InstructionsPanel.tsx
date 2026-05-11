@@ -7,6 +7,7 @@ import { PanelFooter } from '../components/PanelFooter'
 import { EmptyStateCard } from '../components/EmptyStateCard'
 import { ErrorStrip } from '../components/ErrorStrip'
 import type { Scope } from '../types'
+import { usePublishDirty } from '../hooks/use-publish-dirty'
 
 interface InstructionsPanelProps {
   content: string
@@ -27,6 +28,7 @@ export function InstructionsPanel({
   const [content, setContent] = useState(propsContent)
   const [error, setError] = useState('')
   const dirty = content !== propsContent
+  usePublishDirty(dirty)
 
   useEffect(() => { setContent(propsContent); setError('') }, [propsContent])
 

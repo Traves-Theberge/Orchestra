@@ -88,6 +88,8 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   expandedDocFolders: new Set(['plans', 'specs']),
   agentHubProjectId: null,
   agentHubScope: 'GLOBAL',
+  agentHubDirty: false,
+  agentHubPendingNav: null,
 
   // ---- Actions --------------------------------------------------------------
   setActiveSection: (section) => set({ activeSection: section }),
@@ -165,4 +167,16 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   setAgentHubProjectId: (id) => set({ agentHubProjectId: id }),
 
   setAgentHubScope: (scope) => set({ agentHubScope: scope }),
+
+  setAgentHubDirty: (dirty) => set({ agentHubDirty: dirty }),
+
+  setAgentHubPendingNav: (apply) => set({ agentHubPendingNav: apply }),
+
+  requestAgentHubNav: (apply) => {
+    if (get().agentHubDirty) {
+      set({ agentHubPendingNav: apply })
+    } else {
+      apply()
+    }
+  },
 })
