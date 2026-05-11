@@ -416,6 +416,9 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                   {category === 'rules' && (
                     <RulesPanel
                       items={claude.rules}
+                      globalItems={claudeGlobal.rules}
+                      scope={agentHubScope}
+                      projectName={selectedProject?.name ?? null}
                       saving={claude.saving}
                       onSave={claude.saveRule}
                       onDelete={claude.removeRule}
