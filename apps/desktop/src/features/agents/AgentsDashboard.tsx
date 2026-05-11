@@ -438,6 +438,9 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                   {category === 'agents' && (
                     <SubAgentsPanel
                       items={claude.subagents}
+                      globalItems={claudeGlobal.subagents}
+                      scope={agentHubScope}
+                      projectName={selectedProject?.name ?? null}
                       saving={claude.saving}
                       onSave={claude.saveSubAgent}
                       onDelete={claude.removeSubAgent}

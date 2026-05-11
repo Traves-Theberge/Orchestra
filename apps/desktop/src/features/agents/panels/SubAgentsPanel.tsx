@@ -1,18 +1,19 @@
-// apps/desktop/src/widgets/agents/panels/SubAgentsPanel.tsx
+// apps/desktop/src/features/agents/panels/SubAgentsPanel.tsx
 import { useState, useEffect } from 'react'
-import { Save, Loader2, RotateCcw, Trash2, Plus } from 'lucide-react'
+import Editor from '@monaco-editor/react'
+import { useAppStore } from '@core/store'
+import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@ui/button'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@ui/dialog'
+import { PanelHeader } from '../components/PanelHeader'
+import { PanelFooter } from '../components/PanelFooter'
+import { EmptyStateCard } from '../components/EmptyStateCard'
+import { ErrorStrip } from '../components/ErrorStrip'
+import { TOKENS } from '../tokens'
 import type { ClaudeFileEntry } from '@core/api/client'
-
-interface FileListPanelProps {
-  items: ClaudeFileEntry[]
-  saving: string | null
-  onSave: (name: string, content: string) => Promise<void>
-  onDelete: (name: string) => Promise<void>
-}
+import type { Scope } from '../types'
 
 const AGENT_TEMPLATE = `---
 name: {{NAME}}
@@ -26,37 +27,64 @@ maxTurns: 50
 You are a specialized agent. Describe your role and instructions here.
 `
 
-export function SubAgentsPanel({ items, saving, onSave, onDelete }: FileListPanelProps) {
+interface SubAgentsPanelProps {
+  items: ClaudeFileEntry[]
+  globalItems?: ClaudeFileEntry[]
+  scope?: Scope
+  projectName?: string | null
+  saving: string | null
+  onSave: (name: string, content: string) => Promise<void>
+  onDelete: (name: string) => Promise<void>
+}
+
+type DisplayItem = ClaudeFileEntry & { isInherited: boolean }
+
+export function SubAgentsPanel({
+  items, globalItems = [], scope = 'GLOBAL', projectName = null,
+  saving, onSave, onDelete,
+}: SubAgentsPanelProps) {
+  const theme = useAppStore(s => s.theme)
+  const editorSettings = useAppStore(s => s.editorSettings)
   const [selectedName, setSelectedName] = useState<string | null>(null)
   const [content, setContent] = useState('')
+  const [error, setError] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   const [deletePending, setDeletePending] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [createName, setCreateName] = useState('')
   const [createPending, setCreatePending] = useState(false)
 
-  useEffect(() => {
-    if (!selectedName && items.length > 0) setSelectedName(items[0].name)
-  }, [selectedName, items])
+  const inheritedItems: ClaudeFileEntry[] = scope === 'PROJECT'
+    ? globalItems.filter(g => !items.some(p => p.name === g.name))
+    : []
+  const displayItems: DisplayItem[] = [
+    ...items.map(i => ({ ...i, isInherited: false as boolean })),
+    ...inheritedItems.map(i => ({ ...i, isInherited: true as boolean })),
+  ]
 
   useEffect(() => {
-    if (selectedName && !items.find(i => i.name === selectedName))
-      setSelectedName(items.length > 0 ? items[0].name : null)
-  }, [selectedName, items])
+    if (!selectedName && displayItems.length > 0) setSelectedName(displayItems[0].name)
+  }, [selectedName, displayItems])
 
-  const selected = items.find(i => i.name === selectedName) ?? null
+  useEffect(() => {
+    if (selectedName && !displayItems.find(i => i.name === selectedName)) {
+      setSelectedName(displayItems.length > 0 ? displayItems[0].name : null)
+    }
+  }, [selectedName, displayItems])
 
-  useEffect(() => { setContent(selected?.content ?? '') }, [selected])
+  const selected = displayItems.find(i => i.name === selectedName) ?? null
+  useEffect(() => { setContent(selected?.content ?? ''); setError('') }, [selected])
 
-  const isDirty = selected ? content !== selected.content : false
+  const dirty = selected && !selected.isInherited ? content !== selected.content : false
+  const projectCount = items.length
+  const inheritedCount = inheritedItems.length
 
   const handleCreate = async () => {
     const name = createName.trim()
     if (!name) return
     setCreatePending(true)
     try {
-      const template = AGENT_TEMPLATE.replace('{{NAME}}', name)
-      await onSave(name, template)
+      await onSave(name, AGENT_TEMPLATE.replaceAll('{{NAME}}', name))
       setSelectedName(name)
       setCreateOpen(false)
       setCreateName('')
@@ -76,136 +104,191 @@ export function SubAgentsPanel({ items, saving, onSave, onDelete }: FileListPane
     }
   }
 
+  const eyebrow = scope === 'GLOBAL' ? 'Global / Sub-agents' : `${projectName ?? 'Project'} / Sub-agents`
+
+  if (displayItems.length === 0 && scope === 'PROJECT' && projectName) {
+    return (
+      <div className="flex flex-col h-full p-[18px]">
+        <PanelHeader
+          eyebrow={eyebrow}
+          title="Sub-agents"
+          sub="No project sub-agents · inherits 0 from global"
+        />
+        <EmptyStateCard
+          title="No sub-agents at this scope"
+          description="Add a sub-agent to make it available to this project."
+          ctaLabel="New sub-agent"
+          onCreate={() => setCreateOpen(true)}
+        />
+        <CreateDialog open={createOpen} name={createName} setName={setCreateName} pending={createPending}
+          onCancel={() => { setCreateOpen(false); setCreateName('') }}
+          onCreate={handleCreate}
+        />
+      </div>
+    )
+  }
+
+  const handleSave = async () => {
+    if (!selected || selected.isInherited) return
+    setError('')
+    try { await onSave(selected.name, content) } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save')
+    }
+  }
+
   return (
-    <div className="flex h-full">
-      {/* Left side: file list */}
-      <div className="w-[200px] flex flex-col border-r border-border/30 shrink-0">
-        <div className="px-3 pt-3 pb-2 shrink-0">
-          <h3 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/60">Sub-agents</h3>
-          <p className="text-[10px] text-muted-foreground/40 mt-0.5">.claude/agents/</p>
-        </div>
-        <div className="flex-1 overflow-y-auto px-2">
-          {items.map(item => (
-            <button
-              key={item.name}
-              onClick={() => setSelectedName(item.name)}
-              className={`w-full text-left px-2.5 py-1.5 rounded-md text-[11px] truncate transition-colors ${
-                item.name === selectedName
-                  ? 'bg-primary/8 text-primary border border-primary/20'
-                  : 'text-muted-foreground hover:bg-muted/10 border border-transparent'
-              }`}
-            >
-              {item.name}
-            </button>
-          ))}
-        </div>
-        <div className="p-2 shrink-0">
-          <Button size="sm" variant="ghost" onClick={() => setCreateOpen(true)} className="w-full h-7 text-[10px] text-muted-foreground/50 hover:text-foreground">
-            <Plus size={10} className="mr-1" /> Add Agent
-          </Button>
-        </div>
-      </div>
+    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+      <PanelHeader
+        eyebrow={eyebrow}
+        title="Sub-agents"
+        sub={`.claude/agents/ · ${displayItems.length} sub-agent${displayItems.length === 1 ? '' : 's'} · ${projectCount} project, ${inheritedCount} inherited`}
+        dirty={!!dirty}
+      />
 
-      {/* Right side: editor */}
-      <div className="flex-1 min-w-0 flex flex-col p-4 gap-3">
-        {selected ? (
-          <div className="flex flex-col flex-1 min-h-0 gap-3">
-            <div className="flex items-center justify-between shrink-0">
-              <h3 className="text-sm font-bold truncate">{selected.name}</h3>
-              <div className="flex items-center gap-2">
-                {isDirty && <span className="text-[10px] font-bold text-amber-500 uppercase tracking-widest animate-pulse">Unsaved</span>}
-                <Button size="sm" variant="ghost" onClick={() => setDeleteTarget(selected.name)} className="h-7 text-[10px] text-muted-foreground/50 hover:text-red-400">
-                  <Trash2 size={10} />
-                </Button>
-                {isDirty && (
-                  <>
-                    <Button size="sm" variant="ghost" onClick={() => setContent(selected.content)} className="h-7 text-[10px]">
-                      <RotateCcw size={10} className="mr-1" /> Discard
-                    </Button>
-                    <Button size="sm" onClick={() => onSave(selected.name, content)} disabled={!!saving} className="h-7 bg-primary text-primary-foreground font-bold uppercase text-[10px] px-4 rounded-lg">
-                      {saving ? <Loader2 size={12} className="animate-spin mr-1.5" /> : <Save size={12} className="mr-1.5" />} Save
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-            <textarea
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              placeholder={AGENT_TEMPLATE.replace('{{NAME}}', 'my-agent')}
-              className="flex-1 min-h-0 bg-muted/10 rounded-lg border border-border/30 px-4 py-3 font-mono text-[13px] leading-6 text-foreground focus:outline-none focus:border-primary/30 resize-none transition-colors"
-              spellCheck={false}
-            />
-          </div>
-        ) : (
-          <div className="flex items-center justify-center h-full text-muted-foreground/20">
-            <div className="text-center space-y-2">
-              <p className="text-sm font-bold uppercase tracking-widest">No sub-agent selected</p>
-              <p className="text-[10px]">Sub-agents run in isolated contexts with their own tools and model</p>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Create dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>New Sub-agent</DialogTitle>
-            <DialogDescription>
-              Creates a new agent directory in .claude/agents/ with an AGENT.md template including frontmatter for model, tools, and permissions.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-2">
-            <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Agent Name</label>
-            <input
-              autoFocus
-              value={createName}
-              onChange={(e) => setCreateName(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ''))}
-              onKeyDown={(e) => e.key === 'Enter' && createName.trim() && handleCreate()}
-              placeholder="e.g. code-reviewer"
-              className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20"
-            />
-            <p className="text-[10px] text-muted-foreground/50 mt-1.5">Lowercase letters, numbers, hyphens, underscores only</p>
-          </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => { setCreateOpen(false); setCreateName('') }}>Cancel</Button>
-            <Button onClick={handleCreate} disabled={!createName.trim() || createPending}>
-              <Plus className="h-4 w-4 mr-2" />
-              {createPending ? 'Creating...' : 'Create Agent'}
+      <div className="flex flex-1 min-h-0 gap-3">
+        <aside className={`w-[200px] flex flex-col shrink-0 ${TOKENS.surfaceCard}`}>
+          <div className="p-2 border-b border-border/30">
+            <Button size="sm" variant="ghost" onClick={() => setCreateOpen(true)} className="w-full h-7 text-[10px]">
+              <Plus size={10} className="mr-1" /> New sub-agent
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+          <div className="flex-1 overflow-y-auto p-1.5">
+            {displayItems.map(item => (
+              <button
+                key={item.name}
+                type="button"
+                onClick={() => setSelectedName(item.name)}
+                className={`w-full text-left px-2 py-1.5 rounded text-[11px] flex items-center gap-1.5 ${
+                  item.name === selectedName ? 'bg-foreground/[0.06] text-foreground' : 'text-foreground/65 hover:bg-foreground/[0.03]'
+                }`}
+              >
+                <span className="truncate flex-1">{item.name}</span>
+                {item.isInherited && (
+                  <span className="text-[8.5px] font-mono uppercase text-foreground/30">(G)</span>
+                )}
+              </button>
+            ))}
+          </div>
+        </aside>
 
-      {/* Delete dialog */}
-      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-500">
-              <Trash2 className="h-5 w-5" />
-              Delete Sub-agent
-            </DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete this sub-agent? This will remove the file from disk and cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          {deleteTarget && (
-            <div className="py-4">
-              <div className="rounded-lg border bg-muted/30 p-3">
-                <p className="text-sm font-mono text-primary">{deleteTarget}</p>
+        <div className="flex-1 min-w-0 flex flex-col gap-2">
+          {selected ? (
+            <>
+              <div className="text-[10px] text-foreground/45 font-mono">
+                {selected.name}
+                {selected.isInherited && ' · inherited from global (read-only at this scope)'}
               </div>
+              <div className="flex-1 min-h-0 rounded-md border border-border/30 overflow-hidden">
+                <Editor
+                  language="markdown"
+                  value={content}
+                  theme={theme === 'dark' ? 'vs-dark' : 'vs'}
+                  onChange={(v) => { if (v !== undefined && !selected.isInherited) setContent(v) }}
+                  options={{
+                    readOnly: selected.isInherited,
+                    minimap: { enabled: false },
+                    fontSize: editorSettings.fontSize,
+                    fontFamily: editorSettings.fontFamily || undefined,
+                    lineNumbers: 'off',
+                    wordWrap: 'on',
+                    scrollBeyondLastLine: false,
+                    automaticLayout: true,
+                    tabSize: 2,
+                    padding: { top: 10, bottom: 10 },
+                  }}
+                />
+              </div>
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-[11px] text-foreground/30">
+              Select a sub-agent or create one
             </div>
           )}
+        </div>
+      </div>
+
+      <ErrorStrip message={error} onDismiss={() => setError('')} />
+
+      <PanelFooter
+        dirty={!!dirty}
+        saving={!!saving}
+        onSave={handleSave}
+        onDiscard={() => setContent(selected?.content ?? '')}
+        extraLeft={
+          selected && !selected.isInherited ? (
+            <button
+              type="button"
+              onClick={() => setDeleteTarget(selected.name)}
+              className="text-[10px] text-foreground/40 hover:text-red-400 inline-flex items-center gap-1"
+            >
+              <Trash2 size={11} /> Delete
+            </button>
+          ) : undefined
+        }
+      />
+
+      <CreateDialog open={createOpen} name={createName} setName={setCreateName} pending={createPending}
+        onCancel={() => { setCreateOpen(false); setCreateName('') }}
+        onCreate={handleCreate}
+      />
+
+      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-red-400">Delete sub-agent</DialogTitle>
+            <DialogDescription>This removes the file from disk. Cannot be undone.</DialogDescription>
+          </DialogHeader>
+          <div className="py-4 rounded-md border bg-muted/30 p-3">
+            <p className="text-sm font-mono text-primary">{deleteTarget}</p>
+          </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deletePending}>Cancel</Button>
             <Button variant="destructive" onClick={handleConfirmDelete} disabled={deletePending}>
-              <Trash2 className="h-4 w-4 mr-2" />
-              {deletePending ? 'Deleting...' : 'Delete'}
+              <Trash2 size={14} className="mr-2" /> {deletePending ? 'Deleting…' : 'Delete'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+function CreateDialog({
+  open, name, setName, pending, onCancel, onCreate,
+}: {
+  open: boolean
+  name: string
+  setName: (s: string) => void
+  pending: boolean
+  onCancel: () => void
+  onCreate: () => void
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>New sub-agent</DialogTitle>
+          <DialogDescription>Creates a markdown file in .claude/agents/ with frontmatter for model, tools, and permissions.</DialogDescription>
+        </DialogHeader>
+        <div className="py-2">
+          <label className="text-xs font-semibold text-foreground/60 mb-1.5 block">Agent name</label>
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ''))}
+            onKeyDown={(e) => e.key === 'Enter' && name.trim() && onCreate()}
+            className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm font-mono"
+            placeholder="e.g. code-reviewer"
+          />
+          <p className="text-[10px] text-muted-foreground/50 mt-1.5">Letters, numbers, hyphens, underscores only</p>
+        </div>
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={onCancel}>Cancel</Button>
+          <Button onClick={onCreate} disabled={!name.trim() || pending}>
+            <Plus size={12} className="mr-2" /> {pending ? 'Creating…' : 'Create'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
