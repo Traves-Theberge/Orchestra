@@ -1,127 +1,117 @@
-// apps/desktop/src/widgets/agents/panels/InstructionsPanel.tsx
-import { useState, useEffect } from 'react'
-import { Save, Loader2, RotateCcw, FilePlus, Trash2 } from 'lucide-react'
-import { Button } from '@ui/button'
-import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from '@ui/dialog'
+// apps/desktop/src/features/agents/panels/InstructionsPanel.tsx
+import { useEffect, useState } from 'react'
+import Editor from '@monaco-editor/react'
+import { useAppStore } from '@core/store'
+import { PanelHeader } from '../components/PanelHeader'
+import { PanelFooter } from '../components/PanelFooter'
+import { EmptyStateCard } from '../components/EmptyStateCard'
+import { ErrorStrip } from '../components/ErrorStrip'
+import type { Scope } from '../types'
 
 interface InstructionsPanelProps {
   content: string
   path: string
   exists: boolean
   saving: string | null
+  scope: Scope
+  projectName: string | null
   onSave: (content: string) => Promise<void>
   onDelete?: () => Promise<void>
 }
 
-export function InstructionsPanel({ content: propsContent, path, exists, saving, onSave, onDelete }: InstructionsPanelProps) {
+export function InstructionsPanel({
+  content: propsContent, path, exists, saving, scope, projectName, onSave, onDelete,
+}: InstructionsPanelProps) {
+  const theme = useAppStore(s => s.theme)
+  const editorSettings = useAppStore(s => s.editorSettings)
   const [content, setContent] = useState(propsContent)
-  const [deleteOpen, setDeleteOpen] = useState(false)
-  const [deletePending, setDeletePending] = useState(false)
-  const isDirty = content !== propsContent
+  const [error, setError] = useState('')
+  const dirty = content !== propsContent
 
-  useEffect(() => {
-    setContent(propsContent)
-  }, [propsContent])
+  useEffect(() => { setContent(propsContent); setError('') }, [propsContent])
 
-  const handleDelete = async () => {
-    if (!onDelete) return
-    setDeletePending(true)
-    try {
-      await onDelete()
-      setDeleteOpen(false)
-    } finally {
-      setDeletePending(false)
-    }
-  }
+  const eyebrow = scope === 'GLOBAL' ? 'Global / Instructions' : `${projectName ?? 'Project'} / Instructions`
+  const sub = scope === 'GLOBAL'
+    ? `Global instructions · ${path}`
+    : `Project instructions for ${projectName ?? 'this workspace'} · appends to global · ${path}`
 
   if (!exists) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-4 text-muted-foreground">
-        <p className="text-sm font-medium">No CLAUDE.md found</p>
-        <p className="text-[10px] font-mono text-muted-foreground/50">{path}</p>
-        <Button
-          size="sm"
-          onClick={() => onSave('')}
-          disabled={!!saving}
-          className="h-7 bg-primary text-primary-foreground font-bold uppercase text-[10px] px-4 rounded-lg"
-        >
-          {saving ? <Loader2 size={12} className="animate-spin mr-1.5" /> : <FilePlus size={12} className="mr-1.5" />}
-          Create
-        </Button>
+      <div className="flex flex-col h-full p-[18px]">
+        <PanelHeader
+          eyebrow={eyebrow}
+          title="CLAUDE.md"
+          sub={`No instructions file at this scope · ${path}`}
+        />
+        <EmptyStateCard
+          title="No CLAUDE.md at this scope"
+          description={scope === 'GLOBAL'
+            ? 'Global instructions apply to every project unless overridden.'
+            : 'Project instructions append to global. Optional.'}
+          ctaLabel="Create CLAUDE.md"
+          onCreate={() => { void onSave('') }}
+          pending={!!saving}
+        />
       </div>
     )
   }
 
+  const handleSave = async () => {
+    setError('')
+    try { await onSave(content) } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save')
+    }
+  }
+
   return (
-    <div className="flex flex-col h-full p-4 gap-3">
-      <div className="flex flex-col flex-1 min-h-0 gap-3">
-      <div className="flex items-center justify-between shrink-0">
-        <div>
-          <h3 className="text-sm font-bold">CLAUDE.md</h3>
-          <p className="text-[10px] text-muted-foreground/50 mt-0.5 font-mono">{path}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {isDirty && <span className="text-[10px] font-bold text-amber-500 uppercase tracking-widest animate-pulse">Unsaved</span>}
-          {onDelete && (
-            <Button size="sm" variant="ghost" onClick={() => setDeleteOpen(true)} className="h-7 text-[10px] text-muted-foreground/50 hover:text-red-400">
-              <Trash2 size={10} />
-            </Button>
-          )}
-          {isDirty && (
-            <>
-              <Button size="sm" variant="ghost" onClick={() => setContent(propsContent)} className="h-7 text-[10px]">
-                <RotateCcw size={10} className="mr-1" /> Discard
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => onSave(content)}
-                disabled={!!saving}
-                className="h-7 bg-primary text-primary-foreground font-bold uppercase text-[10px] px-4 rounded-lg"
-              >
-                {saving ? <Loader2 size={12} className="animate-spin mr-1.5" /> : <Save size={12} className="mr-1.5" />}
-                Save
-              </Button>
-            </>
-          )}
-        </div>
-      </div>
-      <textarea
-        value={content}
-        onChange={(e) => setContent(e.target.value)}
-        placeholder="# CLAUDE.md&#10;&#10;Describe how Claude should work on your codebase..."
-        className="flex-1 min-h-0 bg-muted/10 rounded-lg border border-border/30 px-4 py-3 font-mono text-[13px] leading-6 text-foreground focus:outline-none focus:border-primary/30 resize-none transition-colors"
-        spellCheck={false}
+    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+      <PanelHeader
+        eyebrow={eyebrow}
+        title="CLAUDE.md"
+        sub={sub}
+        dirty={dirty}
       />
+
+      <div className="flex-1 min-h-0 rounded-lg border border-border/30 overflow-hidden">
+        <Editor
+          language="markdown"
+          value={content}
+          theme={theme === 'dark' ? 'vs-dark' : 'vs'}
+          onChange={(v) => { if (v !== undefined) setContent(v) }}
+          options={{
+            minimap: { enabled: false },
+            fontSize: editorSettings.fontSize,
+            fontFamily: editorSettings.fontFamily || undefined,
+            lineNumbers: 'off',
+            wordWrap: 'on',
+            scrollBeyondLastLine: false,
+            automaticLayout: true,
+            tabSize: 2,
+            renderWhitespace: 'none',
+            padding: { top: 12, bottom: 12 },
+          }}
+        />
       </div>
 
-      {/* Delete dialog */}
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-500">
-              <Trash2 className="h-5 w-5" />
-              Delete CLAUDE.md
-            </DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete this instructions file? This will remove it from disk and cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <div className="rounded-lg border bg-muted/30 p-3">
-              <p className="text-sm font-mono text-primary">{path}</p>
-            </div>
-          </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={deletePending}>Cancel</Button>
-            <Button variant="destructive" onClick={handleDelete} disabled={deletePending}>
-              <Trash2 className="h-4 w-4 mr-2" />
-              {deletePending ? 'Deleting...' : 'Delete'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ErrorStrip message={error} onDismiss={() => setError('')} />
+
+      <PanelFooter
+        dirty={dirty}
+        saving={!!saving}
+        onSave={handleSave}
+        onDiscard={() => setContent(propsContent)}
+        extraLeft={
+          onDelete && (
+            <button
+              type="button"
+              onClick={() => { void onDelete() }}
+              className="text-[10px] text-foreground/40 hover:text-red-400 transition-colors"
+            >
+              Delete file
+            </button>
+          )
+        }
+      />
     </div>
   )
 }

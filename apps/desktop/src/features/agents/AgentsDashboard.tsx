@@ -375,6 +375,8 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                       path={claude.instructionsPath}
                       exists={claude.instructionsExists}
                       saving={claude.saving}
+                      scope={agentHubScope}
+                      projectName={selectedProject?.name ?? null}
                       onSave={claude.saveInstructions}
                       onDelete={claude.deleteInstructions}
                     />
