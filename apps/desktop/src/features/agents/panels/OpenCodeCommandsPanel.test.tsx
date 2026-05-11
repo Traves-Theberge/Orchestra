@@ -17,6 +17,8 @@ describe('OpenCodeCommandsPanel', () => {
     render(
       <OpenCodeCommandsPanel
         items={[commandItem]}
+        scope="GLOBAL"
+        projectName={null}
         saving={null}
         onSave={onSave}
         onDelete={vi.fn()}
