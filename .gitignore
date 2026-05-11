@@ -81,6 +81,9 @@ settings.local.*
 **/*credential*
 **/*password*
 **/*token*
+# Exception: design-system token modules (not secrets)
+!apps/desktop/src/features/agents/tokens.ts
+!apps/desktop/src/features/agents/tokens.test.ts
 **/.claude/settings.json
 **/.claude/config.json
 
