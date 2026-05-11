@@ -17,6 +17,8 @@ describe('OpenCodeInstructionsPanel', () => {
     render(
       <OpenCodeInstructionsPanel
         items={[instructionsItem]}
+        scope="GLOBAL"
+        projectName={null}
         saving={null}
         onSave={onSave}
         onCreate={vi.fn()}
