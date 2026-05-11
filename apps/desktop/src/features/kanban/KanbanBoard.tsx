@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState, useRef } from 'react'
 import {
+  AlertCircle,
   ChevronDown,
   CircleDashed,
   Folder,
@@ -114,6 +115,9 @@ export function KanbanBoard({
   const [isDraggingOver, setIsDraggingOver] = useState<string | null>(null)
   const [dragValidationMsg, setDragValidationMsg] = useState<string | null>(null)
   const [columnOrder, setColumnOrder] = useState<string[]>(['backlog', 'todo', 'progress', 'review', 'done'])
+  const [feedbackDialogTarget, setFeedbackDialogTarget] = useState<{ identifier: string; targetState: string } | null>(null)
+  const [feedbackText, setFeedbackText] = useState('')
+  const [feedbackPending, setFeedbackPending] = useState(false)
   const [draggingColumnId, setDraggingColumnId] = useState<string | null>(null)
 
 
@@ -174,7 +178,7 @@ export function KanbanBoard({
       backlog: ['todo'],
       todo: ['progress'],
       progress: [],      // Auto-moves to review on completion
-      review: ['done'],
+      review: ['todo', 'done'],
       done: [],           // Terminal
     }
 
@@ -191,23 +195,31 @@ export function KanbanBoard({
     const allowed = allowedDragTransitions[currentColumnId]
     if (!allowed || !allowed.includes(targetColumnId)) return
 
-    // For Backlog -> Todo: require description, assignee, and project
+    // Backlog → Todo: validate required fields first
     if (currentColumnId === 'backlog' && targetColumnId === 'todo') {
       const missing: string[] = []
-      if (!issue.description) missing.push('description')
-      if (!issue.assignee_id || issue.assignee_id === 'Unassigned') missing.push('an assigned agent')
-      if (!issue.project_id) missing.push('a project')
+      if (!issue.title?.trim()) missing.push('title')
+      if (!issue.description?.trim()) missing.push('description')
+      if (!issue.assignee_id || issue.assignee_id === 'Unassigned') missing.push('assignee')
+      if (!issue.project_id) missing.push('project')
       if (missing.length > 0) {
-        setDragValidationMsg(`Cannot move to Todo — needs ${missing.join(', ')}`)
-        setTimeout(() => setDragValidationMsg(null), 4000)
+        setDragValidationMsg(`Cannot move to Todo — missing: ${missing.join(', ')}. Open the task to fill in required fields.`)
+        setTimeout(() => setDragValidationMsg(null), 5000)
         return
       }
     }
 
     const nextState = COLUMN_TO_STATE[targetColumnId]
-    if (nextState) {
-      await onIssueUpdate(issueIdentifier, { state: nextState })
+    if (!nextState) return
+
+    // Review → Todo/In Progress: requires feedback via dialog
+    if (currentColumnId === 'review' && (targetColumnId === 'todo' || targetColumnId === 'progress')) {
+      setFeedbackText('')
+      setFeedbackDialogTarget({ identifier: issueIdentifier, targetState: nextState })
+      return
     }
+
+    await onIssueUpdate(issueIdentifier, { state: nextState })
   }
 
   const enrichedIssues = boardIssues.map((issue) => {
@@ -298,6 +310,15 @@ export function KanbanBoard({
   const filteredList = enrichedIssues.filter(filterItem)
 
   const getActionIssueRef = (item: EnrichedIssue): string => item.issue_identifier || item.issue_id || ''
+
+  const getBacklogMissingFields = (item: EnrichedIssue): string[] => {
+    const missing: string[] = []
+    if (!item.title?.trim()) missing.push('title')
+    if (!item.description?.trim()) missing.push('description')
+    if (!item.assignee_id || item.assignee_id === 'Unassigned') missing.push('assignee')
+    if (!item.project_id) missing.push('project')
+    return missing
+  }
 
   if (loadingState && enrichedIssues.length === 0) {
     return (
@@ -541,11 +562,27 @@ export function KanbanBoard({
                         key={item.issue_id}
                         draggable
                         onDragStart={(e) => handleDragStart(e, getActionIssueRef(item))}
-                        className="group relative cursor-grab rounded-lg border border-border/30 bg-card hover:border-border/60 hover:shadow-sm active:cursor-grabbing transition-all overflow-hidden"
+                        className={`group relative cursor-grab rounded-lg border active:cursor-grabbing transition-all overflow-hidden ${
+                          item.lane === 'running'
+                            ? 'border-emerald-500/40 bg-emerald-500/[0.03] shadow-[0_0_12px_0_rgba(16,185,129,0.12)] hover:shadow-[0_0_16px_0_rgba(16,185,129,0.2)]'
+                            : item.lane === 'retrying'
+                            ? 'border-amber-500/40 bg-amber-500/[0.03] shadow-[0_0_10px_0_rgba(245,158,11,0.1)]'
+                            : item.state === 'In Progress'
+                            ? 'border-blue-500/20 bg-blue-500/[0.02]'
+                            : 'border-border/30 bg-card hover:border-border/60 hover:shadow-sm'
+                        }`}
                         onClick={() => void onInspectIssue(getActionIssueRef(item))}
                       >
                         {/* Left accent */}
-                        <div className={`absolute left-0 top-0 bottom-0 w-[2px] ${column.dot} opacity-60`} />
+                        <div className={`absolute left-0 top-0 bottom-0 w-[2px] ${
+                          item.lane === 'running'
+                            ? 'bg-emerald-500 animate-pulse'
+                            : item.lane === 'retrying'
+                            ? 'bg-amber-500 animate-pulse'
+                            : item.state === 'In Progress'
+                            ? 'bg-blue-400 opacity-40'
+                            : `${column.dot} opacity-60`
+                        }`} />
 
                         <div className="pl-3 pr-2.5 pt-2.5 pb-2">
                           {/* Top row: ID + actions */}
@@ -586,14 +623,43 @@ export function KanbanBoard({
                             {item.title || item.description || item.last_message || item.error || 'Untitled'}
                           </p>
 
+                          {/* Status ticker */}
+                          {item.lane === 'running' && (
+                            <div className="flex items-center gap-1.5 mb-2 overflow-hidden">
+                              <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                              <p className="text-[9px] text-emerald-600 dark:text-emerald-400 truncate font-medium">{item.detail}</p>
+                            </div>
+                          )}
+                          {item.lane === 'retrying' && (
+                            <div className="flex items-center gap-1.5 mb-2 overflow-hidden">
+                              <div className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
+                              <p className="text-[9px] text-amber-600 dark:text-amber-400 truncate font-medium">{item.detail}</p>
+                            </div>
+                          )}
+                          {item.state === 'In Progress' && !item.lane && (
+                            <div className="flex items-center gap-1.5 mb-2">
+                              <div className="h-1.5 w-1.5 rounded-full bg-blue-400 shrink-0" />
+                              <p className="text-[9px] text-blue-400/60 font-medium">Queued</p>
+                            </div>
+                          )}
+
+                          {/* Backlog readiness indicator */}
+                          {item.state === 'Backlog' && (() => {
+                            const missing = getBacklogMissingFields(item)
+                            if (missing.length === 0) return null
+                            return (
+                              <AppTooltip content={`Needs before queuing: ${missing.join(', ')}`}>
+                                <div className="flex items-center gap-1 mb-2 cursor-default" data-no-drag="true">
+                                  <AlertCircle className="h-2.5 w-2.5 text-amber-500/60 shrink-0" />
+                                  <span className="text-[8.5px] text-amber-500/60 font-medium truncate">Needs {missing.join(', ')}</span>
+                                </div>
+                              </AppTooltip>
+                            )
+                          })()}
+
                           {/* Footer */}
                           <div className="flex items-center justify-between gap-1">
                             <div className="flex items-center gap-1.5 min-w-0">
-                              {item.session_id && (
-                                <AppTooltip content="Live session">
-                                  <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                                </AppTooltip>
-                              )}
                               {projects.length > 1 && item.project_id && (
                                 <span className="text-[9px] text-muted-foreground/30 truncate">
                                   {projects.find(p => p.id === item.project_id)?.name}
@@ -732,6 +798,51 @@ export function KanbanBoard({
           )}
         </div>
       )}
+
+      {/* Feedback dialog: Review → Todo / In Progress */}
+      <Dialog open={!!feedbackDialogTarget} onOpenChange={(open) => { if (!open) { setFeedbackDialogTarget(null); setFeedbackText('') } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Provide Feedback</DialogTitle>
+            <DialogDescription>
+              Moving from Review back to {feedbackDialogTarget?.targetState === 'Todo' ? 'To Do' : 'In Progress'} requires feedback explaining what needs to change.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Feedback</label>
+            <textarea
+              autoFocus
+              value={feedbackText}
+              onChange={(e) => setFeedbackText(e.target.value)}
+              placeholder="Describe what needs to be fixed or changed…"
+              rows={4}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setFeedbackDialogTarget(null); setFeedbackText('') }} disabled={feedbackPending}>Cancel</Button>
+            <Button
+              disabled={!feedbackText.trim() || feedbackPending}
+              onClick={async () => {
+                if (!feedbackDialogTarget || !onIssueUpdate) return
+                setFeedbackPending(true)
+                try {
+                  await onIssueUpdate(feedbackDialogTarget.identifier, {
+                    state: feedbackDialogTarget.targetState,
+                    feedback: feedbackText.trim(),
+                  })
+                  setFeedbackDialogTarget(null)
+                  setFeedbackText('')
+                } finally {
+                  setFeedbackPending(false)
+                }
+              }}
+            >
+              {feedbackPending ? 'Moving…' : `Move to ${feedbackDialogTarget?.targetState === 'Todo' ? 'To Do' : 'In Progress'}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent className="max-w-md">
