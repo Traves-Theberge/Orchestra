@@ -573,6 +573,8 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                   {category === 'skills' && provider === 'opencode' && (
                     <OpenCodeSkillsPanel
                       items={providerItems.skills}
+                      scope={agentHubScope}
+                      projectName={selectedProject?.name ?? null}
                       saving={domainState.saving}
                       onSave={opencode.saveSkillFile}
                       onDelete={opencode.deleteSkillResource}

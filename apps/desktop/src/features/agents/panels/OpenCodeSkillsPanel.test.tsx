@@ -17,6 +17,8 @@ describe('OpenCodeSkillsPanel', () => {
     render(
       <OpenCodeSkillsPanel
         items={[skillItem]}
+        scope="GLOBAL"
+        projectName={null}
         saving={null}
         onSave={onSave}
         onDelete={vi.fn()}
