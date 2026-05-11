@@ -1,4 +1,4 @@
-import { Settings2, FileText, Zap, Plug, Scale, Sparkles, Bot, ScrollText, TerminalSquare, Shield, Cpu, FolderTree } from 'lucide-react'
+import { Settings2, FileText, Zap, Plug, Scale, Sparkles, Bot, ScrollText, TerminalSquare, Shield, Cpu, FolderTree, LayoutDashboard } from 'lucide-react'
 import type { Provider, CategoryDef } from './types'
 
 export const PROVIDERS: { id: Provider; label: string; description: string }[] = [
@@ -10,6 +10,7 @@ export const PROVIDERS: { id: Provider; label: string; description: string }[] =
 ]
 
 export const CLAUDE_CATEGORIES: CategoryDef[] = [
+  { id: 'overview', label: 'Overview', icon: LayoutDashboard, pinned: true },
   { id: 'settings', label: 'Settings', icon: Settings2, pinned: true },
   { id: 'instructions', label: 'Instructions', icon: FileText, pinned: true },
   { id: 'agents', label: 'Sub-agents', icon: Bot },
@@ -20,6 +21,7 @@ export const CLAUDE_CATEGORIES: CategoryDef[] = [
 ]
 
 export const CODEX_CATEGORIES: CategoryDef[] = [
+  { id: 'overview', label: 'Overview', icon: LayoutDashboard, pinned: true },
   { id: 'config', label: 'Config', icon: Settings2, pinned: true },
   { id: 'approvals', label: 'Approvals & Sandbox', icon: Shield, pinned: true },
   { id: 'models', label: 'Models & Providers', icon: Cpu, pinned: true },
@@ -34,6 +36,7 @@ export const CODEX_CATEGORIES: CategoryDef[] = [
 ]
 
 export const GEMINI_CATEGORIES: CategoryDef[] = [
+  { id: 'overview', label: 'Overview', icon: LayoutDashboard, pinned: true },
   { id: 'settings', label: 'Settings', icon: Settings2, pinned: true },
   { id: 'models', label: 'Models', icon: Cpu, pinned: true },
   { id: 'permissions', label: 'Permissions', icon: Shield, pinned: true },
@@ -43,6 +46,7 @@ export const GEMINI_CATEGORIES: CategoryDef[] = [
 ]
 
 export const OPENCODE_CATEGORIES: CategoryDef[] = [
+  { id: 'overview', label: 'Overview', icon: LayoutDashboard, pinned: true },
   { id: 'config', label: 'Config', icon: Settings2, pinned: true },
   { id: 'models', label: 'Models', icon: Cpu, pinned: true },
   { id: 'instructions', label: 'Instructions', icon: FileText, pinned: true },
@@ -54,6 +58,7 @@ export const OPENCODE_CATEGORIES: CategoryDef[] = [
 ]
 
 export const EIGHTGENT_CATEGORIES: CategoryDef[] = [
+  { id: 'overview', label: 'Overview', icon: LayoutDashboard, pinned: true },
   { id: 'settings', label: 'Settings', icon: Settings2, pinned: true },
   { id: 'instructions', label: 'Instructions', icon: FileText, pinned: true },
   { id: 'skills', label: 'Skills', icon: Sparkles },

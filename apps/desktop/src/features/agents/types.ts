@@ -4,6 +4,7 @@ import type { ProviderPermissions, ProviderModelConfig, ProviderHook } from '@co
 
 export type Provider = 'claude' | 'codex' | 'gemini' | 'opencode' | '8gent'
 export type CategoryId =
+  | 'overview'
   | 'settings'
   | 'config'
   | 'approvals'
