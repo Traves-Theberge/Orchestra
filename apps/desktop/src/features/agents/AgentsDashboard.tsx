@@ -533,6 +533,8 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                     provider === 'codex' ? (
                       <CodexInstructionsPanel
                         items={providerItems.instructions}
+                        scope={agentHubScope}
+                        projectName={selectedProject?.name ?? null}
                         saving={domainState.saving}
                         onSave={codex.saveInstructionFile}
                         onCreate={codex.createInstructionFile}
