@@ -400,6 +400,9 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                     <MCPPanel
                       providerServers={claude.providerMcpServers}
                       orchestraServers={claude.orchestraMcpServers}
+                      globalProviderServers={claudeGlobal.providerMcpServers}
+                      scope={agentHubScope}
+                      projectName={selectedProject?.name ?? null}
                       onAddProvider={claude.addMCPServer}
                       onUpdateProvider={claude.updateMCPServer}
                       onToggleProvider={claude.toggleMCPServer}
@@ -606,7 +609,22 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                       onDelete={codex.deleteRuleFile}
                     />
                   )}
-                  {category === 'mcp' && <MCPPanel providerServers={domainState.providerMcpServers} orchestraServers={domainState.orchestraMcpServers} onAddProvider={domainState.addMCPServer} onUpdateProvider={domainState.updateMCPServer} onToggleProvider={domainState.toggleMCPServer} onDeleteProvider={domainState.deleteMCPServer} onDeleteOrchestra={domainState.deleteOrchestraMCPServer} loading={domainState.loading} saving={domainState.saving} provider={provider} />}
+                  {category === 'mcp' && (
+                    <MCPPanel
+                      providerServers={domainState.providerMcpServers}
+                      orchestraServers={domainState.orchestraMcpServers}
+                      scope={agentHubScope}
+                      projectName={selectedProject?.name ?? null}
+                      onAddProvider={domainState.addMCPServer}
+                      onUpdateProvider={domainState.updateMCPServer}
+                      onToggleProvider={domainState.toggleMCPServer}
+                      onDeleteProvider={domainState.deleteMCPServer}
+                      onDeleteOrchestra={domainState.deleteOrchestraMCPServer}
+                      loading={domainState.loading}
+                      saving={domainState.saving}
+                      provider={provider}
+                    />
+                  )}
                   {category === 'permissions' && provider === 'gemini' && (
                     <GeminiPermissionsPanel
                       settingsPath={gemini.settings[0]?.path ?? ''}
