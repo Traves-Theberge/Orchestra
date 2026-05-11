@@ -557,6 +557,8 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                   {category === 'context' && (
                     <GeminiContextPanel
                       items={providerItems.context}
+                      scope={agentHubScope}
+                      projectName={selectedProject?.name ?? null}
                       saving={domainState.saving}
                       onSave={gemini.saveContextFile}
                       onCreate={gemini.createContextResource}
