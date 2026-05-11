@@ -572,6 +572,8 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                       items={codex.skills}
                       configContent={codex.config[0]?.content ?? ''}
                       configPath={codex.config[0]?.path ?? ''}
+                      scope={agentHubScope}
+                      projectName={selectedProject?.name ?? null}
                       saving={domainState.saving}
                       onSave={codex.saveSkillFile}
                       onDelete={codex.deleteSkillFile}
