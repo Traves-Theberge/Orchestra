@@ -1,5 +1,6 @@
+// apps/desktop/src/features/agents/panels/CodexProfilesPanel.tsx
 import { useEffect, useMemo, useState } from 'react'
-import { Loader2, Plus, RotateCcw, Save, Trash2 } from 'lucide-react'
+import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@ui/button'
 import {
   Dialog,
@@ -9,10 +10,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@ui/dialog'
+import { PanelHeader } from '../components/PanelHeader'
+import { PanelFooter } from '../components/PanelFooter'
+import { EmptyStateCard } from '../components/EmptyStateCard'
+import { ErrorStrip } from '../components/ErrorStrip'
+import { TOKENS } from '../tokens'
+import type { Scope } from '../types'
 import type { ProviderFileEntry } from '@core/api/client'
 
 interface CodexProfilesPanelProps {
   items: ProviderFileEntry[]
+  scope: Scope
+  projectName: string | null
   saving: string | null
   onSave: (path: string, content: string) => Promise<void>
 }
@@ -24,13 +33,15 @@ type ProfileSummary = {
   sandboxMode: string
 }
 
-export function CodexProfilesPanel({ items, saving, onSave }: CodexProfilesPanelProps) {
+export function CodexProfilesPanel({ items, scope, projectName, saving, onSave }: CodexProfilesPanelProps) {
   const config = items[0] ?? null
   const profiles = useMemo(() => extractProfiles(config?.content ?? ''), [config?.content])
   const [selectedName, setSelectedName] = useState<string | null>(profiles[0]?.name ?? null)
   const [draft, setDraft] = useState<ProfileSummary | null>(profiles[0] ?? null)
   const [createOpen, setCreateOpen] = useState(false)
   const [createName, setCreateName] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     if (!selectedName && profiles.length > 0) setSelectedName(profiles[0].name)
@@ -47,12 +58,21 @@ export function CodexProfilesPanel({ items, saving, onSave }: CodexProfilesPanel
   const selected = profiles.find(profile => profile.name === selectedName) ?? null
   const isDirty = JSON.stringify(draft) !== JSON.stringify(selected)
 
+  const eyebrow = scope === 'GLOBAL' ? 'Global / Profiles' : `${projectName ?? 'Project'} / Profiles`
+
   if (!config) {
     return (
-      <div className="flex items-center justify-center h-full text-muted-foreground/20">
-        <div className="text-center space-y-2">
-          <p className="text-sm font-bold uppercase tracking-widest">No config found</p>
-          <p className="text-[10px]">Create a Codex config file before editing profiles.</p>
+      <div className="flex flex-col h-full p-[18px]">
+        <PanelHeader
+          eyebrow={eyebrow}
+          title="Codex profiles"
+          sub="Named TOML configurations"
+        />
+        <div className="flex-1 flex items-center justify-center text-foreground/30">
+          <div className="text-center space-y-2">
+            <p className="text-sm font-bold uppercase tracking-widest">No config found</p>
+            <p className="text-[10px]">Create a Codex config file before editing profiles.</p>
+          </div>
         </div>
       </div>
     )
@@ -60,122 +80,153 @@ export function CodexProfilesPanel({ items, saving, onSave }: CodexProfilesPanel
 
   const saveDraft = async () => {
     if (!draft) return
-    await onSave(config.path, upsertProfile(config.content, draft))
+    setError('')
+    try { await onSave(config.path, upsertProfile(config.content, draft)) } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save')
+    }
   }
 
   const deleteSelected = async () => {
-    if (!selected) return
-    await onSave(config.path, removeProfile(config.content, selected.name))
+    if (!deleteTarget) return
+    setError('')
+    try {
+      await onSave(config.path, removeProfile(config.content, deleteTarget))
+      setDeleteTarget(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to delete')
+    }
   }
 
   const createProfile = async () => {
     const name = createName.trim()
     if (!name || !config) return
     const profile: ProfileSummary = { name, model: '', approvalPolicy: '', sandboxMode: '' }
-    await onSave(config.path, upsertProfile(config.content, profile))
+    try { await onSave(config.path, upsertProfile(config.content, profile)) } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to create')
+      return
+    }
     setCreateOpen(false)
     setCreateName('')
     setSelectedName(name)
   }
 
+  if (profiles.length === 0) {
+    return (
+      <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+        <PanelHeader
+          eyebrow={eyebrow}
+          title="Codex profiles"
+          sub={`Named TOML configurations · 0 profiles`}
+        />
+        <EmptyStateCard
+          title="No profiles at this scope"
+          description="Add a profile to create a [profiles.*] block in the Codex config."
+          ctaLabel="New profile"
+          onCreate={() => setCreateOpen(true)}
+        />
+        <CreateDialog
+          open={createOpen}
+          name={createName}
+          setName={setCreateName}
+          onCancel={() => { setCreateOpen(false); setCreateName('') }}
+          onCreate={createProfile}
+        />
+      </div>
+    )
+  }
+
   return (
-    <div className="flex h-full">
-      <div className="w-[220px] flex flex-col border-r border-border/30 shrink-0">
-        <div className="px-3 pt-3 pb-2 shrink-0">
-          <h3 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/60">Profiles</h3>
-          <p className="text-[10px] text-muted-foreground/40 mt-0.5">[profiles.*]</p>
-        </div>
-        <div className="flex-1 overflow-y-auto px-2">
-          {profiles.map(profile => (
-            <button
-              key={profile.name}
-              type="button"
-              onClick={() => setSelectedName(profile.name)}
-              className={`w-full text-left px-2.5 py-2 rounded-md transition-colors border ${
-                profile.name === selectedName
-                  ? 'bg-primary/8 text-primary border-primary/20'
-                  : 'text-muted-foreground hover:bg-muted/10 border-transparent'
-              }`}
-            >
-              <div className="text-[11px] font-semibold truncate">{profile.name}</div>
-              {profile.model ? <p className="text-[9px] mt-1 font-mono text-muted-foreground/40 truncate">{profile.model}</p> : null}
-            </button>
-          ))}
-        </div>
-        <div className="p-2 shrink-0">
-          <Button size="sm" variant="ghost" onClick={() => setCreateOpen(true)} className="w-full h-7 text-[10px] text-muted-foreground/50 hover:text-foreground">
-            <Plus size={10} className="mr-1" /> Add Profile
-          </Button>
-        </div>
-      </div>
+    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+      <PanelHeader
+        eyebrow={eyebrow}
+        title="Codex profiles"
+        sub={`Named TOML configurations · ${profiles.length} profile${profiles.length === 1 ? '' : 's'}`}
+        dirty={isDirty}
+      />
 
-      <div className="flex-1 min-w-0 flex flex-col p-4 gap-4">
-        {draft ? (
-          <>
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-bold">{draft.name}</h3>
-                <p className="text-[10px] text-muted-foreground/50 mt-0.5">Profiles are written directly into the current Codex config file.</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button size="sm" variant="ghost" onClick={deleteSelected} className="h-7 text-[10px] text-muted-foreground/50 hover:text-red-400">
-                  <Trash2 size={10} />
-                </Button>
-                {isDirty ? (
-                  <>
-                    <Button size="sm" variant="ghost" onClick={() => setDraft(selected)} className="h-7 text-[10px]">
-                      <RotateCcw size={10} className="mr-1" /> Discard
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={saveDraft}
-                      disabled={saving === config.path}
-                      className="h-7 bg-primary text-primary-foreground font-bold uppercase text-[10px] px-4 rounded-lg"
-                    >
-                      {saving === config.path ? <Loader2 size={12} className="animate-spin mr-1.5" /> : <Save size={12} className="mr-1.5" />}
-                      Save
-                    </Button>
-                  </>
-                ) : null}
-              </div>
-            </div>
-
-            <ProfileField label="Model" value={draft.model} onChange={(value) => setDraft(current => current ? { ...current, model: value } : current)} />
-            <ProfileField label="Approval Policy" value={draft.approvalPolicy} onChange={(value) => setDraft(current => current ? { ...current, approvalPolicy: value } : current)} />
-            <ProfileField label="Sandbox Mode" value={draft.sandboxMode} onChange={(value) => setDraft(current => current ? { ...current, sandboxMode: value } : current)} />
-          </>
-        ) : (
-          <div className="flex items-center justify-center h-full text-muted-foreground/20">
-            <div className="text-center space-y-2">
-              <p className="text-sm font-bold uppercase tracking-widest">No profiles found</p>
-              <p className="text-[10px]">Add a profile to create a <code className="font-mono">[profiles.*]</code> block in the Codex config.</p>
-            </div>
+      <div className="flex flex-1 min-h-0 gap-3">
+        <aside className={`w-[200px] flex flex-col shrink-0 ${TOKENS.surfaceCard}`}>
+          <div className="p-2 border-b border-border/30">
+            <Button size="sm" variant="ghost" onClick={() => setCreateOpen(true)} className="w-full h-7 text-[10px]">
+              <Plus size={10} className="mr-1" /> New profile
+            </Button>
           </div>
-        )}
+          <div className="flex-1 overflow-y-auto p-1.5">
+            {profiles.map(profile => (
+              <button
+                key={profile.name}
+                type="button"
+                onClick={() => setSelectedName(profile.name)}
+                className={`w-full text-left px-2 py-1.5 rounded text-[11px] ${
+                  profile.name === selectedName ? 'bg-foreground/[0.06] text-foreground' : 'text-foreground/65 hover:bg-foreground/[0.03]'
+                }`}
+              >
+                <div className="truncate font-semibold">{profile.name}</div>
+                {profile.model ? <p className="text-[9px] mt-0.5 font-mono text-foreground/35 truncate">{profile.model}</p> : null}
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        <div className="flex-1 min-w-0 flex flex-col gap-3">
+          {draft ? (
+            <div className="overflow-y-auto pr-1 max-w-2xl mx-auto w-full flex flex-col gap-4">
+              <div className="text-[10px] text-foreground/45 font-mono">
+                {draft.name} · [profiles.{draft.name}]
+              </div>
+              <ProfileField label="Model" value={draft.model} onChange={(value) => setDraft(current => current ? { ...current, model: value } : current)} />
+              <ProfileField label="Approval Policy" value={draft.approvalPolicy} onChange={(value) => setDraft(current => current ? { ...current, approvalPolicy: value } : current)} />
+              <ProfileField label="Sandbox Mode" value={draft.sandboxMode} onChange={(value) => setDraft(current => current ? { ...current, sandboxMode: value } : current)} />
+            </div>
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-[11px] text-foreground/30">
+              Select a profile or create one
+            </div>
+          )}
+        </div>
       </div>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <ErrorStrip message={error} onDismiss={() => setError('')} />
+
+      <PanelFooter
+        dirty={!!isDirty}
+        saving={saving === config.path}
+        onSave={saveDraft}
+        onDiscard={() => setDraft(selected)}
+        extraLeft={
+          selected ? (
+            <button
+              type="button"
+              onClick={() => setDeleteTarget(selected.name)}
+              className="text-[10px] text-foreground/40 hover:text-red-400 inline-flex items-center gap-1"
+            >
+              <Trash2 size={11} /> Delete
+            </button>
+          ) : undefined
+        }
+      />
+
+      <CreateDialog
+        open={createOpen}
+        name={createName}
+        setName={setCreateName}
+        onCancel={() => { setCreateOpen(false); setCreateName('') }}
+        onCreate={createProfile}
+      />
+
+      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>New Profile</DialogTitle>
-            <DialogDescription>Create a new <code className="font-mono">[profiles.*]</code> block in the current Codex config.</DialogDescription>
+            <DialogTitle className="text-red-400">Delete profile</DialogTitle>
+            <DialogDescription>This removes the [profiles.*] block from the Codex config.</DialogDescription>
           </DialogHeader>
-          <div className="py-2">
-            <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Profile Name</label>
-            <input
-              autoFocus
-              value={createName}
-              onChange={(event) => setCreateName(event.target.value.replace(/[^a-zA-Z0-9._-]/g, ''))}
-              onKeyDown={(event) => event.key === 'Enter' && createName.trim() && createProfile()}
-              placeholder="e.g. review"
-              className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20"
-            />
+          <div className="py-4 rounded-md border bg-muted/30 p-3">
+            <p className="text-sm font-mono text-primary">{deleteTarget}</p>
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => { setCreateOpen(false); setCreateName('') }}>Cancel</Button>
-            <Button onClick={createProfile} disabled={!createName.trim()}>
-              <Plus className="h-4 w-4 mr-2" />
-              Create Profile
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={deleteSelected}>
+              <Trash2 size={14} className="mr-2" /> Delete
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -187,13 +238,51 @@ export function CodexProfilesPanel({ items, saving, onSave }: CodexProfilesPanel
 function ProfileField({ label, value, onChange }: { label: string, value: string, onChange: (value: string) => void }) {
   return (
     <section className="space-y-2">
-      <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{label}</h4>
+      <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">{label}</h4>
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="w-full max-w-sm h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20"
       />
     </section>
+  )
+}
+
+function CreateDialog({
+  open, name, setName, onCancel, onCreate,
+}: {
+  open: boolean
+  name: string
+  setName: (s: string) => void
+  onCancel: () => void
+  onCreate: () => void
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>New profile</DialogTitle>
+          <DialogDescription>Creates a new [profiles.*] block in the current Codex config.</DialogDescription>
+        </DialogHeader>
+        <div className="py-2">
+          <label className="text-xs font-semibold text-foreground/60 mb-1.5 block">Profile name</label>
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value.replace(/[^a-zA-Z0-9._-]/g, ''))}
+            onKeyDown={(e) => e.key === 'Enter' && name.trim() && onCreate()}
+            placeholder="e.g. review"
+            className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm font-mono"
+          />
+        </div>
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={onCancel}>Cancel</Button>
+          <Button onClick={onCreate} disabled={!name.trim()}>
+            <Plus size={12} className="mr-2" /> Create
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
