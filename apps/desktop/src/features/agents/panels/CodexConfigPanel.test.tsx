@@ -17,6 +17,8 @@ describe('CodexConfigPanel', () => {
     render(
       <CodexConfigPanel
         items={[configItem]}
+        scope="GLOBAL"
+        projectName={null}
         saving={null}
         onSave={onSave}
         onCreate={vi.fn()}
