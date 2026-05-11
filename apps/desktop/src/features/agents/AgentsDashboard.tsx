@@ -478,6 +478,8 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                     <CodexModelPanel
                       modelConfig={codex.modelConfig}
                       configContent={codex.config[0]?.content ?? ''}
+                      scope={agentHubScope}
+                      projectName={selectedProject?.name ?? null}
                       saving={codex.saving}
                       onSave={codex.saveModel}
                       onSaveConfig={(content) => codex.saveConfigFile(codex.config[0]?.path ?? '', content)}

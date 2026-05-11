@@ -1,12 +1,17 @@
+// apps/desktop/src/features/agents/panels/CodexModelPanel.tsx
 import { useEffect, useMemo, useState } from 'react'
-import { Loader2, RotateCcw, Save } from 'lucide-react'
-import { Button } from '@ui/button'
+import { PanelHeader } from '../components/PanelHeader'
+import { PanelFooter } from '../components/PanelFooter'
+import { ErrorStrip } from '../components/ErrorStrip'
+import type { Scope } from '../types'
 import type { ProviderModelConfig } from '@core/api/client'
 import { EFFORT_LEVELS, MODELS_BY_PROVIDER } from '../constants'
 
 interface CodexModelPanelProps {
   modelConfig: ProviderModelConfig
   configContent: string
+  scope: Scope
+  projectName: string | null
   saving: string | null
   onSave: (model: ProviderModelConfig) => Promise<void>
   onSaveConfig: (content: string) => Promise<void>
@@ -22,7 +27,7 @@ type ProviderBlock = {
   supportsWebsockets: string
 }
 
-export function CodexModelPanel({ modelConfig, configContent, saving, onSave, onSaveConfig }: CodexModelPanelProps) {
+export function CodexModelPanel({ modelConfig, configContent, scope, projectName, saving, onSave, onSaveConfig }: CodexModelPanelProps) {
   const [model, setModel] = useState(modelConfig.model)
   const [effort, setEffort] = useState(modelConfig.effort)
   const [provider, setProvider] = useState(readTomlScalar(configContent, 'model_provider'))
@@ -34,6 +39,7 @@ export function CodexModelPanel({ modelConfig, configContent, saving, onSave, on
   const [envKeyInstructions, setEnvKeyInstructions] = useState(activeBlock.envKeyInstructions)
   const [streamIdleTimeoutMs, setStreamIdleTimeoutMs] = useState(activeBlock.streamIdleTimeoutMs)
   const [supportsWebsockets, setSupportsWebsockets] = useState(activeBlock.supportsWebsockets)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     setModel(modelConfig.model)
@@ -61,118 +67,119 @@ export function CodexModelPanel({ modelConfig, configContent, saving, onSave, on
     streamIdleTimeoutMs !== activeBlock.streamIdleTimeoutMs ||
     supportsWebsockets !== activeBlock.supportsWebsockets
 
+  const eyebrow = scope === 'GLOBAL' ? 'Global / Model' : `${projectName ?? 'Project'} / Model`
+
+  const handleDiscard = () => {
+    setModel(modelConfig.model)
+    setEffort(modelConfig.effort)
+    setProvider(readTomlScalar(configContent, 'model_provider'))
+    setBaseUrl(activeBlock.baseUrl)
+    setWireApi(activeBlock.wireApi)
+    setEnvKey(activeBlock.envKey)
+    setEnvKeyInstructions(activeBlock.envKeyInstructions)
+    setStreamIdleTimeoutMs(activeBlock.streamIdleTimeoutMs)
+    setSupportsWebsockets(activeBlock.supportsWebsockets)
+  }
+
+  const handleSave = async () => {
+    setError('')
+    try {
+      await onSave({ ...modelConfig, model, effort })
+      let nextConfig = writeTomlScalar(configContent, 'model_provider', provider)
+      if (provider.trim()) {
+        nextConfig = upsertProviderBlock(nextConfig, {
+          name: provider.trim(),
+          baseUrl,
+          wireApi,
+          envKey,
+          envKeyInstructions,
+          streamIdleTimeoutMs,
+          supportsWebsockets,
+        })
+      }
+      if (nextConfig !== configContent) {
+        await onSaveConfig(nextConfig)
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save')
+    }
+  }
+
   return (
-    <div className="flex flex-col h-full p-4 overflow-y-auto">
-      <div className="max-w-2xl mx-auto w-full flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-bold">Models & Providers</h3>
-          <p className="text-[10px] text-muted-foreground/50 mt-0.5">Codex uses top-level model settings plus optional <code className="font-mono">[model_providers.*]</code> blocks.</p>
+    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+      <PanelHeader
+        eyebrow={eyebrow}
+        title="Model"
+        sub="Codex model + reasoning effort"
+        dirty={isDirty}
+      />
+
+      <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+        <div className="max-w-2xl mx-auto w-full flex flex-col gap-6">
+
+          <section className="space-y-2">
+            <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Model</h4>
+            <select
+              value={model}
+              onChange={(event) => setModel(event.target.value)}
+              className="w-full max-w-md px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+            >
+              <option value="">Default</option>
+              {MODELS_BY_PROVIDER.codex.map(option => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </section>
+
+          <section className="space-y-2">
+            <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Reasoning Effort</h4>
+            <select
+              value={effort}
+              onChange={(event) => setEffort(event.target.value)}
+              className="w-full max-w-xs px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+            >
+              <option value="">Default</option>
+              {EFFORT_LEVELS.codex.map(option => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+          </section>
+
+          <section className="space-y-2">
+            <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Model Provider</h4>
+            <input
+              value={provider}
+              onChange={(event) => setProvider(event.target.value)}
+              placeholder="openai"
+              className="w-full max-w-sm h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+          </section>
+
+          {provider.trim() ? (
+            <div className="rounded-lg border border-border/30 bg-background px-3 py-3 space-y-3">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Provider Block</p>
+                <p className="text-[10px] text-foreground/50 mt-1">Edits <code className="font-mono">[model_providers.{provider.trim()}]</code> in the current Codex config.</p>
+              </div>
+              <ProviderField label="Base URL" value={baseUrl} onChange={setBaseUrl} placeholder="https://api.openai.com/v1" />
+              <ProviderField label="Wire API" value={wireApi} onChange={setWireApi} placeholder="responses" />
+              <ProviderField label="Env Key" value={envKey} onChange={setEnvKey} placeholder="OPENAI_API_KEY" />
+              <ProviderField label="Env Key Instructions" value={envKeyInstructions} onChange={setEnvKeyInstructions} placeholder="Set OPENAI_API_KEY before launching Codex." />
+              <ProviderField label="Stream Idle Timeout Ms" value={streamIdleTimeoutMs} onChange={setStreamIdleTimeoutMs} placeholder="300000" />
+              <BooleanField label="Supports WebSockets" value={supportsWebsockets} onChange={setSupportsWebsockets} />
+            </div>
+          ) : null}
         </div>
-        {isDirty ? (
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold text-amber-500 uppercase tracking-widest animate-pulse">Unsaved</span>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setModel(modelConfig.model)
-                setEffort(modelConfig.effort)
-                setProvider(readTomlScalar(configContent, 'model_provider'))
-                setBaseUrl(activeBlock.baseUrl)
-                setWireApi(activeBlock.wireApi)
-                setEnvKey(activeBlock.envKey)
-                setEnvKeyInstructions(activeBlock.envKeyInstructions)
-                setStreamIdleTimeoutMs(activeBlock.streamIdleTimeoutMs)
-                setSupportsWebsockets(activeBlock.supportsWebsockets)
-              }}
-              className="h-7 text-[10px]"
-            >
-              <RotateCcw size={10} className="mr-1" /> Discard
-            </Button>
-            <Button
-              size="sm"
-              onClick={async () => {
-                await onSave({ ...modelConfig, model, effort })
-                let nextConfig = writeTomlScalar(configContent, 'model_provider', provider)
-                if (provider.trim()) {
-                  nextConfig = upsertProviderBlock(nextConfig, {
-                    name: provider.trim(),
-                    baseUrl,
-                    wireApi,
-                    envKey,
-                    envKeyInstructions,
-                    streamIdleTimeoutMs,
-                    supportsWebsockets,
-                  })
-                }
-                if (nextConfig !== configContent) {
-                  await onSaveConfig(nextConfig)
-                }
-              }}
-              disabled={!!saving}
-              className="h-7 bg-primary text-primary-foreground font-bold uppercase text-[10px] px-4 rounded-lg"
-            >
-              {saving ? <Loader2 size={12} className="animate-spin mr-1.5" /> : <Save size={12} className="mr-1.5" />}
-              Save
-            </Button>
-          </div>
-        ) : null}
       </div>
 
-      <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Model</h4>
-        <select
-          value={model}
-          onChange={(event) => setModel(event.target.value)}
-          className="w-full max-w-md px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-        >
-          <option value="">Default</option>
-          {MODELS_BY_PROVIDER.codex.map(option => (
-            <option key={option.value} value={option.value}>{option.label}</option>
-          ))}
-        </select>
-      </section>
+      <ErrorStrip message={error} onDismiss={() => setError('')} />
 
-      <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Reasoning Effort</h4>
-        <select
-          value={effort}
-          onChange={(event) => setEffort(event.target.value)}
-          className="w-full max-w-xs px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-        >
-          <option value="">Default</option>
-          {EFFORT_LEVELS.codex.map(option => (
-            <option key={option} value={option}>{option}</option>
-          ))}
-        </select>
-      </section>
-
-      <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Model Provider</h4>
-        <input
-          value={provider}
-          onChange={(event) => setProvider(event.target.value)}
-          placeholder="openai"
-          className="w-full max-w-sm h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20"
-        />
-      </section>
-
-      {provider.trim() ? (
-        <div className="rounded-lg border border-border/30 bg-background px-3 py-3 space-y-3">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Provider Block</p>
-            <p className="text-[10px] text-muted-foreground/50 mt-1">Edits <code className="font-mono">[model_providers.{provider.trim()}]</code> in the current Codex config.</p>
-          </div>
-          <ProviderField label="Base URL" value={baseUrl} onChange={setBaseUrl} placeholder="https://api.openai.com/v1" />
-          <ProviderField label="Wire API" value={wireApi} onChange={setWireApi} placeholder="responses" />
-          <ProviderField label="Env Key" value={envKey} onChange={setEnvKey} placeholder="OPENAI_API_KEY" />
-          <ProviderField label="Env Key Instructions" value={envKeyInstructions} onChange={setEnvKeyInstructions} placeholder="Set OPENAI_API_KEY before launching Codex." />
-          <ProviderField label="Stream Idle Timeout Ms" value={streamIdleTimeoutMs} onChange={setStreamIdleTimeoutMs} placeholder="300000" />
-          <BooleanField label="Supports WebSockets" value={supportsWebsockets} onChange={setSupportsWebsockets} />
-        </div>
-      ) : null}
-      </div>
+      <PanelFooter
+        dirty={isDirty}
+        saving={!!saving}
+        onSave={handleSave}
+        onDiscard={handleDiscard}
+      />
     </div>
   )
 }
@@ -180,13 +187,30 @@ export function CodexModelPanel({ modelConfig, configContent, saving, onSave, on
 function ProviderField({ label, value, onChange, placeholder }: { label: string, value: string, onChange: (value: string) => void, placeholder?: string }) {
   return (
     <section className="space-y-2">
-      <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{label}</h4>
+      <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">{label}</h4>
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20"
       />
+    </section>
+  )
+}
+
+function BooleanField({ label, value, onChange }: { label: string, value: string, onChange: (value: string) => void }) {
+  return (
+    <section className="space-y-2">
+      <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">{label}</h4>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full max-w-sm h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20"
+      >
+        <option value="">Default</option>
+        <option value="true">true</option>
+        <option value="false">false</option>
+      </select>
     </section>
   )
 }
@@ -258,23 +282,6 @@ function buildProviderSection(block: ProviderBlock): string {
   if (block.streamIdleTimeoutMs.trim()) lines.push(`stream_idle_timeout_ms = ${block.streamIdleTimeoutMs.trim()}`)
   if (block.supportsWebsockets.trim()) lines.push(`supports_websockets = ${block.supportsWebsockets.trim()}`)
   return lines.join('\n')
-}
-
-function BooleanField({ label, value, onChange }: { label: string, value: string, onChange: (value: string) => void }) {
-  return (
-    <section className="space-y-2">
-      <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{label}</h4>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="w-full max-w-sm h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20"
-      >
-        <option value="">Default</option>
-        <option value="true">true</option>
-        <option value="false">false</option>
-      </select>
-    </section>
-  )
 }
 
 function escapeRegExp(value: string): string {

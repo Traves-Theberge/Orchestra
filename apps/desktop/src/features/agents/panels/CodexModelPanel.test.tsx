@@ -18,6 +18,8 @@ describe('CodexModelPanel', () => {
       <CodexModelPanel
         modelConfig={modelConfig}
         configContent={'model = "gpt-5.3-codex"\n'}
+        scope="GLOBAL"
+        projectName={null}
         saving={null}
         onSave={onSave}
         onSaveConfig={onSaveConfig}
