@@ -470,6 +470,8 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                   {category === 'approvals' && provider === 'codex' && (
                     <CodexApprovalsPanel
                       permissions={codex.permissions}
+                      scope={agentHubScope}
+                      projectName={selectedProject?.name ?? null}
                       saving={codex.saving}
                       onSave={codex.savePermissions}
                     />

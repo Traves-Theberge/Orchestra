@@ -18,6 +18,8 @@ describe('CodexApprovalsPanel', () => {
     render(
       <CodexApprovalsPanel
         permissions={permissions}
+        scope="GLOBAL"
+        projectName={null}
         saving={null}
         onSave={onSave}
       />,
