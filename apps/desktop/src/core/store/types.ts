@@ -130,6 +130,8 @@ export interface UISlice {
   activeDocPath: string | null
   docTree: DocItem[]
   expandedDocFolders: Set<string>
+  agentHubProjectId: string | null
+  agentHubScope: 'GLOBAL' | 'PROJECT'
 
   // Actions
   setActiveSection: (section: SectionID) => void
@@ -158,6 +160,8 @@ export interface UISlice {
   setActiveDocPath: (path: string | null) => void
   setDocTree: (tree: DocItem[]) => void
   toggleDocFolder: (path: string) => void
+  setAgentHubProjectId: (id: string | null) => void
+  setAgentHubScope: (scope: 'GLOBAL' | 'PROJECT') => void
 }
 
 // ---------------------------------------------------------------------------
