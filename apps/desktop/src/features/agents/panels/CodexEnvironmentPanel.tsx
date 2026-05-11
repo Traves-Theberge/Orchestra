@@ -1,17 +1,23 @@
+// apps/desktop/src/features/agents/panels/CodexEnvironmentPanel.tsx
 import { useEffect, useMemo, useState } from 'react'
-import { Loader2, RotateCcw, Save } from 'lucide-react'
-import { Button } from '@ui/button'
+import { PanelHeader } from '../components/PanelHeader'
+import { PanelFooter } from '../components/PanelFooter'
+import { ErrorStrip } from '../components/ErrorStrip'
+import type { Scope } from '../types'
 import type { ProviderFileEntry } from '@core/api/client'
 
 interface CodexEnvironmentPanelProps {
   items: ProviderFileEntry[]
+  scope: Scope
+  projectName: string | null
   saving: string | null
   onSave: (path: string, content: string) => Promise<void>
 }
 
-export function CodexEnvironmentPanel({ items, saving, onSave }: CodexEnvironmentPanelProps) {
+export function CodexEnvironmentPanel({ items, scope, projectName, saving, onSave }: CodexEnvironmentPanelProps) {
   const config = items[0] ?? null
   const [content, setContent] = useState(config?.content ?? '')
+  const [error, setError] = useState('')
 
   useEffect(() => {
     setContent(config?.content ?? '')
@@ -44,45 +50,47 @@ export function CodexEnvironmentPanel({ items, saving, onSave }: CodexEnvironmen
   const setBooleanField = (field: string, value: string) => setContent(prev => writeTomlBoolean(prev, field, value))
   const setNotify = (value: string) => setContent(prev => writeTomlArray(prev, 'notify', value))
 
+  const eyebrow = scope === 'GLOBAL' ? 'Global / Environment' : `${projectName ?? 'Project'} / Environment`
+
   if (!config) {
     return (
-      <div className="flex items-center justify-center h-full text-muted-foreground/20">
-        <div className="text-center space-y-2">
-          <p className="text-sm font-bold uppercase tracking-widest">No config found</p>
-          <p className="text-[10px]">Create a Codex config file before editing environment settings.</p>
+      <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+        <PanelHeader
+          eyebrow={eyebrow}
+          title="Environment"
+          sub="env vars passed to codex"
+        />
+        <div className="flex-1 flex items-center justify-center text-foreground/30">
+          <div className="text-center space-y-2">
+            <p className="text-sm font-bold uppercase tracking-widest">No config found</p>
+            <p className="text-[10px]">Create a Codex config file before editing environment settings.</p>
+          </div>
         </div>
       </div>
     )
   }
 
+  const handleSave = async () => {
+    setError('')
+    try { await onSave(config.path, content) } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save')
+    }
+  }
+
   return (
-    <div className="flex flex-col h-full p-4 gap-6 overflow-y-auto">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-bold">Environment</h3>
-          <p className="text-[10px] text-muted-foreground/50 mt-0.5 font-mono truncate">{config.path}</p>
-        </div>
-        {isDirty ? (
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold text-amber-500 uppercase tracking-widest animate-pulse">Unsaved</span>
-            <Button size="sm" variant="ghost" onClick={() => setContent(config.content)} className="h-7 text-[10px]">
-              <RotateCcw size={10} className="mr-1" /> Discard
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => onSave(config.path, content)}
-              disabled={saving === config.path}
-              className="h-7 bg-primary text-primary-foreground font-bold uppercase text-[10px] px-4 rounded-lg"
-            >
-              {saving === config.path ? <Loader2 size={12} className="animate-spin mr-1.5" /> : <Save size={12} className="mr-1.5" />}
-              Save
-            </Button>
-          </div>
-        ) : null}
-      </div>
+    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+      <PanelHeader
+        eyebrow={eyebrow}
+        title="Environment"
+        sub={`env vars passed to codex · ${config.path}`}
+        dirty={isDirty}
+      />
+
+      <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+        <div className="max-w-2xl mx-auto w-full flex flex-col gap-6">
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">History Persistence</h4>
+        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">History Persistence</h4>
         <input
           value={fields.history}
           onChange={(event) => setField('history.persistence', event.target.value)}
@@ -92,7 +100,7 @@ export function CodexEnvironmentPanel({ items, saving, onSave }: CodexEnvironmen
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">History Max Bytes</h4>
+        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">History Max Bytes</h4>
         <input
           value={fields.historyMaxBytes}
           onChange={(event) => setField('history.max_bytes', event.target.value)}
@@ -102,7 +110,7 @@ export function CodexEnvironmentPanel({ items, saving, onSave }: CodexEnvironmen
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Shell Environment Inherit</h4>
+        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Shell Environment Inherit</h4>
         <input
           value={fields.inheritEnv}
           onChange={(event) => setField('shell_environment_policy.inherit', event.target.value)}
@@ -112,7 +120,7 @@ export function CodexEnvironmentPanel({ items, saving, onSave }: CodexEnvironmen
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Shell Include Only</h4>
+        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Shell Include Only</h4>
         <input
           value={fields.includeOnly}
           onChange={(event) => setArrayField('shell_environment_policy.include_only', event.target.value)}
@@ -122,7 +130,7 @@ export function CodexEnvironmentPanel({ items, saving, onSave }: CodexEnvironmen
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Shell Exclude</h4>
+        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Shell Exclude</h4>
         <input
           value={fields.exclude}
           onChange={(event) => setArrayField('shell_environment_policy.exclude', event.target.value)}
@@ -132,7 +140,7 @@ export function CodexEnvironmentPanel({ items, saving, onSave }: CodexEnvironmen
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Workspace Write Network Access</h4>
+        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Workspace Write Network Access</h4>
         <select
           value={fields.workspaceWriteNetwork}
           onChange={(event) => setBooleanField('sandbox_workspace_write.network_access', event.target.value)}
@@ -145,7 +153,7 @@ export function CodexEnvironmentPanel({ items, saving, onSave }: CodexEnvironmen
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Workspace Write Writable Roots</h4>
+        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Workspace Write Writable Roots</h4>
         <input
           value={fields.writableRoots}
           onChange={(event) => setArrayField('sandbox_workspace_write.writable_roots', event.target.value)}
@@ -155,7 +163,7 @@ export function CodexEnvironmentPanel({ items, saving, onSave }: CodexEnvironmen
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">File Opener</h4>
+        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">File Opener</h4>
         <input
           value={fields.fileOpener}
           onChange={(event) => setField('file_opener', event.target.value)}
@@ -165,7 +173,7 @@ export function CodexEnvironmentPanel({ items, saving, onSave }: CodexEnvironmen
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Log Directory</h4>
+        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Log Directory</h4>
         <input
           value={fields.logDir}
           onChange={(event) => setField('log_dir', event.target.value)}
@@ -175,7 +183,7 @@ export function CodexEnvironmentPanel({ items, saving, onSave }: CodexEnvironmen
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">SQLite Home</h4>
+        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">SQLite Home</h4>
         <input
           value={fields.sqliteHome}
           onChange={(event) => setField('sqlite_home', event.target.value)}
@@ -185,7 +193,7 @@ export function CodexEnvironmentPanel({ items, saving, onSave }: CodexEnvironmen
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Service Tier</h4>
+        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Service Tier</h4>
         <select
           value={fields.serviceTier}
           onChange={(event) => setField('service_tier', event.target.value)}
@@ -198,7 +206,7 @@ export function CodexEnvironmentPanel({ items, saving, onSave }: CodexEnvironmen
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Show Raw Agent Reasoning</h4>
+        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Show Raw Agent Reasoning</h4>
         <select
           value={fields.showRawReasoning}
           onChange={(event) => setBooleanField('show_raw_agent_reasoning', event.target.value)}
@@ -211,7 +219,7 @@ export function CodexEnvironmentPanel({ items, saving, onSave }: CodexEnvironmen
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Hide Rate Limit Model Nudge</h4>
+        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Hide Rate Limit Model Nudge</h4>
         <select
           value={fields.hideRateLimitNudge}
           onChange={(event) => setBooleanField('notice.hide_rate_limit_model_nudge', event.target.value)}
@@ -224,7 +232,7 @@ export function CodexEnvironmentPanel({ items, saving, onSave }: CodexEnvironmen
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Hide World Writable Warning</h4>
+        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Hide World Writable Warning</h4>
         <select
           value={fields.hideWorldWritableWarning}
           onChange={(event) => setBooleanField('notice.hide_world_writable_warning', event.target.value)}
@@ -237,7 +245,7 @@ export function CodexEnvironmentPanel({ items, saving, onSave }: CodexEnvironmen
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Use Shell Profile</h4>
+        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Use Shell Profile</h4>
         <select
           value={fields.experimentalUseProfile}
           onChange={(event) => setBooleanField('shell_environment_policy.experimental_use_profile', event.target.value)}
@@ -250,7 +258,7 @@ export function CodexEnvironmentPanel({ items, saving, onSave }: CodexEnvironmen
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Ignore Default Excludes</h4>
+        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Ignore Default Excludes</h4>
         <select
           value={fields.ignoreDefaultExcludes}
           onChange={(event) => setBooleanField('shell_environment_policy.ignore_default_excludes', event.target.value)}
@@ -263,7 +271,7 @@ export function CodexEnvironmentPanel({ items, saving, onSave }: CodexEnvironmen
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Notify Command</h4>
+        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Notify Command</h4>
         <input
           value={fields.notify}
           onChange={(event) => setNotify(event.target.value)}
@@ -274,8 +282,19 @@ export function CodexEnvironmentPanel({ items, saving, onSave }: CodexEnvironmen
 
       <div className="rounded-lg border border-border/30 bg-muted/10 p-3 space-y-1">
         <p className="text-[11px] font-semibold">Partial structured coverage</p>
-        <p className="text-[10px] text-muted-foreground/50">This panel covers a few common environment keys. Advanced nested blocks still belong in the raw Codex config editor.</p>
+        <p className="text-[10px] text-foreground/50">This panel covers a few common environment keys. Advanced nested blocks still belong in the raw Codex config editor.</p>
       </div>
+        </div>
+      </div>
+
+      <ErrorStrip message={error} onDismiss={() => setError('')} />
+
+      <PanelFooter
+        dirty={isDirty}
+        saving={saving === config.path}
+        onSave={handleSave}
+        onDiscard={() => setContent(config.content)}
+      />
     </div>
   )
 }
