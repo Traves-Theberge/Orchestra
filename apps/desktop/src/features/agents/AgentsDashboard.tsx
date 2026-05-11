@@ -521,6 +521,8 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                     <GeminiModelPanel
                       modelConfig={gemini.modelConfig}
                       settingsContent={gemini.settings[0]?.content ?? ''}
+                      scope={agentHubScope}
+                      projectName={selectedProject?.name ?? null}
                       saving={gemini.saving}
                       onSave={gemini.saveModel}
                     />
