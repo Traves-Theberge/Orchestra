@@ -38,7 +38,8 @@ export function OpenCodeModelPanel({ modelConfig, configContent, saving, onSave 
   const isDirty = model !== modelConfig.model || smallModel !== modelConfig.effort
 
   return (
-    <div className="flex flex-col h-full p-4 gap-6 overflow-y-auto">
+    <div className="flex flex-col h-full p-4 overflow-y-auto">
+      <div className="max-w-2xl mx-auto w-full flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-sm font-bold">Models</h3>
@@ -92,6 +93,7 @@ export function OpenCodeModelPanel({ modelConfig, configContent, saving, onSave 
         <p className="text-[10px] text-muted-foreground/50">Current provider setting: <span className="font-mono">{providerInfo.provider || 'default'}</span></p>
         <p className="text-[10px] text-muted-foreground/50">Current small model in config: <span className="font-mono">{providerInfo.small || 'default'}</span></p>
         <p className="text-[10px] text-muted-foreground/50">Use the Config panel for advanced provider blocks, reasoning options, instructions, permissions, and merged OpenCode config layers.</p>
+      </div>
       </div>
     </div>
   )

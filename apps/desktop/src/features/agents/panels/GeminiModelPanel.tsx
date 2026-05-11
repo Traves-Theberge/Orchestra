@@ -33,7 +33,8 @@ export function GeminiModelPanel({ modelConfig, settingsContent, saving, onSave 
   const isDirty = model !== modelConfig.model || effort !== modelConfig.effort
 
   return (
-    <div className="flex flex-col h-full p-4 gap-6 overflow-y-auto">
+    <div className="flex flex-col h-full p-4 overflow-y-auto">
+      <div className="max-w-2xl mx-auto w-full flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-sm font-bold">Models</h3>
@@ -90,6 +91,7 @@ export function GeminiModelPanel({ modelConfig, settingsContent, saving, onSave 
         <p className="text-[11px] font-semibold">Settings Context</p>
         <p className="text-[10px] text-muted-foreground/50">Sandbox mode in current settings: <span className="font-mono">{sandboxMode || 'default'}</span></p>
         <p className="text-[10px] text-muted-foreground/50">Use the Settings panel for other Gemini <code className="font-mono">settings.json</code> keys like theme, checkpointing, editor, telemetry, and advanced tool config.</p>
+      </div>
       </div>
     </div>
   )

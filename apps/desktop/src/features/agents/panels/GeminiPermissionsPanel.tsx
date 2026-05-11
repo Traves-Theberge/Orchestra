@@ -39,7 +39,8 @@ export function GeminiPermissionsPanel({ settingsPath, settingsContent, saving, 
   }
 
   return (
-    <div className="flex flex-col h-full p-4 gap-6 overflow-y-auto">
+    <div className="flex flex-col h-full p-4 overflow-y-auto">
+      <div className="max-w-2xl mx-auto w-full flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-sm font-bold">Permissions</h3>
@@ -92,6 +93,7 @@ export function GeminiPermissionsPanel({ settingsPath, settingsContent, saving, 
       <ListField label="Allowed Tools" description="Explicit allowlist for tool discovery and execution." items={allowed} onChange={setAllowed} placeholder="run_shell_command" />
       <ListField label="Core Tools" description="Restrict the built-in core tool set." items={core} onChange={setCore} placeholder="read_file" />
       <ListField label="Excluded Tools" description="Hide tools from discovery entirely." items={excluded} onChange={setExcluded} placeholder="web_fetch" />
+      </div>
     </div>
   )
 }

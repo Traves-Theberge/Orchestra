@@ -109,7 +109,7 @@ export function SubAgentsPanel({ items, saving, onSave, onDelete }: FileListPane
       {/* Right side: editor */}
       <div className="flex-1 min-w-0 flex flex-col p-4 gap-3">
         {selected ? (
-          <>
+          <div className="flex flex-col flex-1 min-h-0 gap-3">
             <div className="flex items-center justify-between shrink-0">
               <h3 className="text-sm font-bold truncate">{selected.name}</h3>
               <div className="flex items-center gap-2">
@@ -136,7 +136,7 @@ export function SubAgentsPanel({ items, saving, onSave, onDelete }: FileListPane
               className="flex-1 min-h-0 bg-muted/10 rounded-lg border border-border/30 px-4 py-3 font-mono text-[13px] leading-6 text-foreground focus:outline-none focus:border-primary/30 resize-none transition-colors"
               spellCheck={false}
             />
-          </>
+          </div>
         ) : (
           <div className="flex items-center justify-center h-full text-muted-foreground/20">
             <div className="text-center space-y-2">

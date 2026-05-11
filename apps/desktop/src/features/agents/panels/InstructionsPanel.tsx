@@ -56,6 +56,7 @@ export function InstructionsPanel({ content: propsContent, path, exists, saving,
 
   return (
     <div className="flex flex-col h-full p-4 gap-3">
+      <div className="flex flex-col flex-1 min-h-0 gap-3">
       <div className="flex items-center justify-between shrink-0">
         <div>
           <h3 className="text-sm font-bold">CLAUDE.md</h3>
@@ -93,6 +94,7 @@ export function InstructionsPanel({ content: propsContent, path, exists, saving,
         className="flex-1 min-h-0 bg-muted/10 rounded-lg border border-border/30 px-4 py-3 font-mono text-[13px] leading-6 text-foreground focus:outline-none focus:border-primary/30 resize-none transition-colors"
         spellCheck={false}
       />
+      </div>
 
       {/* Delete dialog */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>

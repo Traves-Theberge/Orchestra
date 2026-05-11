@@ -115,7 +115,8 @@ export function CodexConfigPanel({ items, saving, onSave, onCreate }: CodexConfi
             </div>
 
             {editorMode === 'structured' ? (
-              <div className="flex-1 min-h-0 overflow-y-auto space-y-6 pr-1">
+              <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+              <div className="max-w-2xl mx-auto space-y-6">
                 <StructuredField label="Model" value={tomlFields?.model ?? ''} onChange={(value) => setTomlField('model', value)} />
                 <StructuredField label="Approval Policy" value={tomlFields?.approvalPolicy ?? ''} onChange={(value) => setTomlField('approval_policy', value)} />
                 <StructuredField label="Sandbox Mode" value={tomlFields?.sandboxMode ?? ''} onChange={(value) => setTomlField('sandbox_mode', value)} />
@@ -124,6 +125,7 @@ export function CodexConfigPanel({ items, saving, onSave, onCreate }: CodexConfi
                   <p className="text-[11px] font-semibold">TOML Config</p>
                   <p className="text-[10px] text-muted-foreground/50 mt-1">This structured view only manages common top-level Codex keys. Switch to raw mode for nested or advanced settings.</p>
                 </div>
+              </div>
               </div>
             ) : (
               <textarea

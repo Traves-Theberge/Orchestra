@@ -93,7 +93,8 @@ export function GeminiSettingsPanel({ items, saving, onSave, onCreate }: GeminiS
     telemetryOutfile !== readString(parsed, ['telemetry', 'outfile'])
 
   return (
-    <div className="flex flex-col h-full p-4 gap-6 overflow-y-auto">
+    <div className="flex flex-col h-full p-4 overflow-y-auto">
+      <div className="max-w-2xl mx-auto w-full flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-sm font-bold">Gemini Settings</h3>
@@ -190,6 +191,7 @@ export function GeminiSettingsPanel({ items, saving, onSave, onCreate }: GeminiS
         <BooleanField label="Log Prompts" value={telemetryLogPrompts} onChange={setTelemetryLogPrompts} />
         <TextField label="Outfile" value={telemetryOutfile} onChange={setTelemetryOutfile} placeholder="~/.gemini/telemetry.log" />
       </Section>
+      </div>
     </div>
   )
 }

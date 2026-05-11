@@ -62,7 +62,8 @@ export function CodexModelPanel({ modelConfig, configContent, saving, onSave, on
     supportsWebsockets !== activeBlock.supportsWebsockets
 
   return (
-    <div className="flex flex-col h-full p-4 gap-6 overflow-y-auto">
+    <div className="flex flex-col h-full p-4 overflow-y-auto">
+      <div className="max-w-2xl mx-auto w-full flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-sm font-bold">Models & Providers</h3>
@@ -171,6 +172,7 @@ export function CodexModelPanel({ modelConfig, configContent, saving, onSave, on
           <BooleanField label="Supports WebSockets" value={supportsWebsockets} onChange={setSupportsWebsockets} />
         </div>
       ) : null}
+      </div>
     </div>
   )
 }

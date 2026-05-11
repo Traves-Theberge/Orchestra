@@ -211,7 +211,8 @@ export function SettingsPanel({ settings, settingsPath, settingsExists, saving, 
           {rawError && <p className="text-[10px] text-red-400 font-mono">{rawError}</p>}
         </div>
       ) : (
-        <div className="flex-1 min-h-0 overflow-y-auto space-y-6 pr-1">
+        <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+        <div className="max-w-2xl mx-auto space-y-6">
           {/* Model & Behavior */}
           <section className="space-y-3">
             <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Model & Behavior</h4>
@@ -350,6 +351,7 @@ export function SettingsPanel({ settings, settingsPath, settingsExists, saving, 
               </Button>
             </div>
           </section>
+        </div>
         </div>
       )}
     </div>

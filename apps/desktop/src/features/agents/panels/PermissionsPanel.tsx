@@ -96,6 +96,7 @@ export function PermissionsPanel({ permissions, saving, onSave, provider }: Perm
 
   return (
     <div className="flex flex-col h-full p-4 gap-4 overflow-y-auto">
+      <div className="max-w-2xl mx-auto w-full flex flex-col gap-4">
       <div className="flex items-center justify-between shrink-0">
         <div>
           <h3 className="text-sm font-bold">Permissions</h3>
@@ -132,6 +133,7 @@ export function PermissionsPanel({ permissions, saving, onSave, provider }: Perm
         {renderList('Allow', 'Tools that are auto-approved without prompting', allow, setAllow, newAllow, setNewAllow)}
         {renderList('Deny', 'Tools that are always blocked (takes precedence over allow)', deny, setDeny, newDeny, setNewDeny)}
         {renderList('Ask', 'Tools that always prompt for confirmation', ask, setAsk, newAsk, setNewAsk)}
+      </div>
       </div>
     </div>
   )

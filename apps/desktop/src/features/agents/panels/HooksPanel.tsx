@@ -49,6 +49,7 @@ export function HooksPanel({ hooks, onSave, loading, saving, provider }: HooksPa
 
   return (
     <div className="flex flex-col h-full p-4 gap-4">
+      <div className="max-w-2xl mx-auto w-full flex flex-col flex-1 min-h-0 gap-4">
       <div className="flex items-center justify-between shrink-0">
         <div>
           <h3 className="text-sm font-bold">Lifecycle Hooks</h3>
@@ -96,6 +97,7 @@ export function HooksPanel({ hooks, onSave, loading, saving, provider }: HooksPa
         <Button size="sm" variant="outline" className="h-8 text-[9px] font-bold uppercase" disabled={!newEvent || !newCommand.trim()} onClick={handleAdd}>
           <Plus size={10} className="mr-1" /> Add
         </Button>
+      </div>
       </div>
     </div>
   )
