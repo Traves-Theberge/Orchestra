@@ -657,6 +657,8 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                     <GeminiPermissionsPanel
                       settingsPath={gemini.settings[0]?.path ?? ''}
                       settingsContent={gemini.settings[0]?.content ?? ''}
+                      scope={agentHubScope}
+                      projectName={selectedProject?.name ?? null}
                       saving={gemini.saving}
                       onSave={gemini.saveSettingsFile}
                     />

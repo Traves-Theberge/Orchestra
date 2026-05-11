@@ -1,28 +1,74 @@
+// apps/desktop/src/features/agents/panels/GeminiPermissionsPanel.tsx
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Loader2, RotateCcw, Save } from 'lucide-react'
 import { Button } from '@ui/button'
+import { PanelHeader } from '../components/PanelHeader'
+import { PanelFooter } from '../components/PanelFooter'
+import { ErrorStrip } from '../components/ErrorStrip'
+import type { Scope } from '../types'
 
 interface GeminiPermissionsPanelProps {
   settingsPath: string
   settingsContent: string
+  scope: Scope
+  projectName: string | null
   saving: string | null
   onSave: (path: string, content: string) => Promise<void>
 }
 
-export function GeminiPermissionsPanel({ settingsPath, settingsContent, saving, onSave }: GeminiPermissionsPanelProps) {
+export function GeminiPermissionsPanel({ settingsPath, settingsContent, scope, projectName, saving, onSave }: GeminiPermissionsPanelProps) {
   const parsed = useMemo(() => safeParse(settingsContent), [settingsContent])
   const [sandbox, setSandbox] = useState(readSandbox(parsed))
   const [allowed, setAllowed] = useState(readStringList(parsed, ['tools', 'allowed']))
   const [core, setCore] = useState(readStringList(parsed, ['tools', 'core']))
   const [excluded, setExcluded] = useState(readStringList(parsed, ['tools', 'exclude']))
+  const [error, setError] = useState('')
 
   useEffect(() => {
     setSandbox(readSandbox(parsed))
     setAllowed(readStringList(parsed, ['tools', 'allowed']))
     setCore(readStringList(parsed, ['tools', 'core']))
     setExcluded(readStringList(parsed, ['tools', 'exclude']))
+    setError('')
   }, [parsed])
+
+  const eyebrow = scope === 'GLOBAL' ? 'Global / Permissions' : `${projectName ?? 'Project'} / Permissions`
+
+  if (!settingsPath) {
+    return (
+      <div className="flex flex-col h-full p-[18px]">
+        <PanelHeader
+          eyebrow={eyebrow}
+          title="Permissions"
+          sub="Writes to .gemini/settings.json"
+        />
+        <div className="flex flex-1 items-center justify-center text-muted-foreground/30">
+          <div className="text-center space-y-2 max-w-md">
+            <p className="text-sm font-bold uppercase tracking-widest">No settings found</p>
+            <p className="text-[10px]">Create Gemini settings.json first, then configure tool permissions and sandbox settings here.</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (!parsed) {
+    return (
+      <div className="flex flex-col h-full p-[18px]">
+        <PanelHeader
+          eyebrow={eyebrow}
+          title="Permissions"
+          sub={`Writes to ${settingsPath}`}
+        />
+        <div className="flex flex-1 items-center justify-center text-muted-foreground/30">
+          <div className="text-center space-y-2 max-w-md">
+            <p className="text-sm font-bold uppercase tracking-widest">Structured editing unavailable</p>
+            <p className="text-[10px]">This settings.json file could not be parsed cleanly. Use the Settings panel raw editor to repair it first.</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   const isDirty =
     sandbox !== readSandbox(parsed) ||
@@ -30,70 +76,62 @@ export function GeminiPermissionsPanel({ settingsPath, settingsContent, saving, 
     JSON.stringify(core) !== JSON.stringify(readStringList(parsed, ['tools', 'core'])) ||
     JSON.stringify(excluded) !== JSON.stringify(readStringList(parsed, ['tools', 'exclude']))
 
-  if (!settingsPath) {
-    return <EmptyPanel title="No settings found" description="Create Gemini settings.json first, then configure tool permissions and sandbox settings here." />
+  const handleDiscard = () => {
+    setSandbox(readSandbox(parsed))
+    setAllowed(readStringList(parsed, ['tools', 'allowed']))
+    setCore(readStringList(parsed, ['tools', 'core']))
+    setExcluded(readStringList(parsed, ['tools', 'exclude']))
   }
 
-  if (!parsed) {
-    return <EmptyPanel title="Structured editing unavailable" description="This settings.json file could not be parsed cleanly. Use the Settings panel raw editor to repair it first." />
+  const handleSave = async () => {
+    setError('')
+    try {
+      await onSave(settingsPath, buildGeminiSettings(parsed, sandbox, allowed, core, excluded))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save')
+    }
   }
 
   return (
-    <div className="flex flex-col h-full p-4 overflow-y-auto">
-      <div className="max-w-2xl mx-auto w-full flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-bold">Permissions</h3>
-          <p className="text-[10px] text-muted-foreground/50 mt-0.5">Gemini permissions live in <code className="font-mono">settings.json</code> under <code className="font-mono">tools</code>.</p>
+    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+      <PanelHeader
+        eyebrow={eyebrow}
+        title="Permissions"
+        sub={`Writes to ${settingsPath}`}
+        dirty={isDirty}
+      />
+
+      <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+        <div className="max-w-2xl mx-auto w-full flex flex-col gap-6">
+          <Field label="Sandbox">
+            <select
+              value={sandbox}
+              onChange={(event) => setSandbox(event.target.value)}
+              className="w-full max-w-sm h-9 rounded-lg border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+            >
+              <option value="">Default</option>
+              <option value="true">true</option>
+              <option value="false">false</option>
+              <option value="docker">docker</option>
+              <option value="podman">podman</option>
+              <option value="sandbox-exec">sandbox-exec</option>
+            </select>
+          </Field>
+
+          <ListField label="Allowed Tools" description="Explicit allowlist for tool discovery and execution." items={allowed} onChange={setAllowed} placeholder="run_shell_command" />
+          <ListField label="Core Tools" description="Restrict the built-in core tool set." items={core} onChange={setCore} placeholder="read_file" />
+          <ListField label="Excluded Tools" description="Hide tools from discovery entirely." items={excluded} onChange={setExcluded} placeholder="web_fetch" />
         </div>
-        {isDirty ? (
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold text-amber-500 uppercase tracking-widest animate-pulse">Unsaved</span>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setSandbox(readSandbox(parsed))
-                setAllowed(readStringList(parsed, ['tools', 'allowed']))
-                setCore(readStringList(parsed, ['tools', 'core']))
-                setExcluded(readStringList(parsed, ['tools', 'exclude']))
-              }}
-              className="h-7 text-[10px]"
-            >
-              <RotateCcw size={10} className="mr-1" /> Discard
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => onSave(settingsPath, buildGeminiSettings(parsed, sandbox, allowed, core, excluded))}
-              disabled={saving === settingsPath}
-              className="h-7 bg-primary text-primary-foreground font-bold uppercase text-[10px] px-4 rounded-lg"
-            >
-              {saving === settingsPath ? <Loader2 size={12} className="animate-spin mr-1.5" /> : <Save size={12} className="mr-1.5" />}
-              Save
-            </Button>
-          </div>
-        ) : null}
       </div>
 
-      <Field label="Sandbox">
-        <select
-          value={sandbox}
-          onChange={(event) => setSandbox(event.target.value)}
-          className="w-full max-w-sm h-9 rounded-lg border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-        >
-          <option value="">Default</option>
-          <option value="true">true</option>
-          <option value="false">false</option>
-          <option value="docker">docker</option>
-          <option value="podman">podman</option>
-          <option value="sandbox-exec">sandbox-exec</option>
-        </select>
-      </Field>
+      <ErrorStrip message={error} onDismiss={() => setError('')} />
 
-      <ListField label="Allowed Tools" description="Explicit allowlist for tool discovery and execution." items={allowed} onChange={setAllowed} placeholder="run_shell_command" />
-      <ListField label="Core Tools" description="Restrict the built-in core tool set." items={core} onChange={setCore} placeholder="read_file" />
-      <ListField label="Excluded Tools" description="Hide tools from discovery entirely." items={excluded} onChange={setExcluded} placeholder="web_fetch" />
-      </div>
+      <PanelFooter
+        dirty={isDirty}
+        saving={saving === settingsPath}
+        onSave={handleSave}
+        onDiscard={handleDiscard}
+      />
     </div>
   )
 }
@@ -152,7 +190,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 function Field({ label, children }: { label: string, children: ReactNode }) {
   return (
     <section className="space-y-2">
-      <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{label}</h4>
+      <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">{label}</h4>
       {children}
     </section>
   )
@@ -165,8 +203,8 @@ function ListField({
   return (
     <section className="space-y-2">
       <div>
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{label}</h4>
-        <p className="text-[10px] text-muted-foreground/50 mt-1">{description}</p>
+        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">{label}</h4>
+        <p className="text-[10px] text-foreground/50 mt-1">{description}</p>
       </div>
       <div className="flex flex-wrap gap-1.5">
         {items.length > 0 ? items.map((item) => (
@@ -178,7 +216,7 @@ function ListField({
           >
             {item}
           </button>
-        )) : <span className="text-[10px] italic text-muted-foreground/35">None</span>}
+        )) : <span className="text-[10px] italic text-foreground/35">None</span>}
       </div>
       <div className="flex gap-2">
         <input
@@ -213,16 +251,5 @@ function ListField({
         </Button>
       </div>
     </section>
-  )
-}
-
-function EmptyPanel({ title, description }: { title: string, description: string }) {
-  return (
-    <div className="flex items-center justify-center h-full text-muted-foreground/20">
-      <div className="text-center space-y-2 max-w-md">
-        <p className="text-sm font-bold uppercase tracking-widest">{title}</p>
-        <p className="text-[10px]">{description}</p>
-      </div>
-    </div>
   )
 }
