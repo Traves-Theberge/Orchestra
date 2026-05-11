@@ -624,7 +624,14 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                     />
                   )}
                   {category === 'permissions' && provider !== 'gemini' && provider !== 'opencode' && (
-                    <PermissionsPanel permissions={domainState.permissions} saving={domainState.saving} onSave={domainState.savePermissions} provider={provider} />
+                    <PermissionsPanel
+                      permissions={domainState.permissions}
+                      scope={agentHubScope}
+                      projectName={selectedProject?.name ?? null}
+                      saving={domainState.saving}
+                      onSave={domainState.savePermissions}
+                      provider={provider}
+                    />
                   )}
                   {!category && (
                     <div className="flex items-center justify-center h-full text-muted-foreground/20">
