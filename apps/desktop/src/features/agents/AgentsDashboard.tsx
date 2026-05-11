@@ -385,7 +385,16 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                     />
                   )}
                   {category === 'hooks' && (
-                    <HooksPanel hooks={claude.hooks} onSave={claude.saveHooks} loading={claude.loading} saving={claude.saving} provider="claude" />
+                    <HooksPanel
+                      hooks={claude.hooks}
+                      globalHooks={claudeGlobal.hooks}
+                      scope={agentHubScope}
+                      projectName={selectedProject?.name ?? null}
+                      onSave={claude.saveHooks}
+                      loading={claude.loading}
+                      saving={claude.saving}
+                      provider="claude"
+                    />
                   )}
                   {category === 'mcp' && (
                     <MCPPanel
