@@ -5,8 +5,6 @@ import { AlertCircle } from 'lucide-react'
 import type { BackendConfig, Project } from '@core/api/types'
 import type { ProviderFileEntry } from '@core/api/client'
 import { Skeleton } from '@ui/skeleton'
-import { CustomDropdown } from '@layout/shared/controls'
-import { Folder } from 'lucide-react'
 import { OverviewPanel, type ProviderSummary } from './panels/OverviewPanel'
 import { ProjectSelector } from './components/ProjectSelector'
 import { ScopeToggle } from './components/ScopeToggle'
@@ -59,8 +57,6 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
   const setAgentCategoryCounts = useAppStore(s => s.setAgentCategoryCounts)
   const scope = useAppStore(s => s.activeAgentScope)
   const projectId = useAppStore(s => s.activeAgentProjectId)
-  const setScope = (s: Scope, pid = '') => useAppStore.getState().setActiveAgentScope(s, pid)
-
   // Agent Hub (overview/scope-toggle) state — separate from legacy activeAgentScope/projectId
   const projects = useAppStore(s => s.projects)
   const agentHubProjectId = useAppStore(s => s.agentHubProjectId)
@@ -277,37 +273,32 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
     subAgentsCount: null,
   }
 
+  const claudeGlobalBundle = useMemo(() => ({
+    settings: { model: (claudeGlobal.settings as { model?: string | null })?.model ?? null },
+    claudeMd: claudeGlobal.instructionsExists ? claudeGlobal.instructions : null,
+    skills: claudeGlobal.skills.map(s => ({ name: s.name })),
+    hooks: claudeGlobal.hooks,
+    mcpServers: Object.fromEntries(
+      [
+        ...claudeGlobal.providerMcpServers.map((s, i) => [s.name ?? `provider-${i}`, s]),
+        ...claudeGlobal.orchestraMcpServers.map((s, i) => [s.name ?? `orchestra-${i}`, s]),
+      ] as Array<[string, unknown]>,
+    ),
+    subAgents: claudeGlobal.subagents.map(a => ({ name: a.name })),
+  }), [claudeGlobal])
+
   const overviewSummaryGlobal: ProviderSummary = useMemo(() => {
     if (isClaudeOrEightgent) {
-      return computeClaudeSummary({
-        settings: { model: (claudeGlobal.settings as { model?: string | null })?.model ?? null },
-        claudeMd: claudeGlobal.instructionsExists ? claudeGlobal.instructions : null,
-        skills: claudeGlobal.skills.map(s => ({ name: s.name })),
-        hooks: claudeGlobal.hooks,
-        mcpServers: Object.fromEntries(
-          [
-            ...claudeGlobal.providerMcpServers.map((s, i) => [s.name ?? `provider-${i}`, s]),
-            ...claudeGlobal.orchestraMcpServers.map((s, i) => [s.name ?? `orchestra-${i}`, s]),
-          ] as Array<[string, unknown]>,
-        ),
-        subAgents: claudeGlobal.subagents.map(a => ({ name: a.name })),
-      })
+      return computeClaudeSummary(claudeGlobalBundle)
     }
     return emptySummary
-  }, [isClaudeOrEightgent, claudeGlobal])
+  }, [isClaudeOrEightgent, claudeGlobalBundle])
 
   const overviewSummaryProject: ProviderSummary | null = useMemo(() => {
     if (!isClaudeOrEightgent) return null
     if (!agentHubProjectId) return null
     return computeClaudeProjectSummary(
-      {
-        settings: { model: (claudeGlobal.settings as { model?: string | null })?.model ?? null },
-        claudeMd: claudeGlobal.instructionsExists ? claudeGlobal.instructions : null,
-        skills: claudeGlobal.skills.map(s => ({ name: s.name })),
-        hooks: claudeGlobal.hooks,
-        mcpServers: {},
-        subAgents: claudeGlobal.subagents.map(a => ({ name: a.name })),
-      },
+      claudeGlobalBundle,
       {
         settings: { model: (claudeProject.settings as { model?: string | null })?.model ?? null },
         claudeMd: claudeProject.instructionsExists ? claudeProject.instructions : null,
@@ -322,7 +313,7 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
         subAgents: claudeProject.subagents.map(a => ({ name: a.name })),
       },
     )
-  }, [isClaudeOrEightgent, agentHubProjectId, claudeGlobal, claudeProject])
+  }, [isClaudeOrEightgent, agentHubProjectId, claudeGlobalBundle, claudeProject])
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -662,32 +653,6 @@ function buildResourceName(provider: Provider, entry: ProviderFileEntry): string
   }
 
   return base
-}
-
-function ScopeBar({ scope, projectId, projects, onScopeChange }: {
-  scope: Scope
-  projectId: string
-  projects: Project[]
-  onScopeChange: (scope: Scope, projectId: string) => void
-}) {
-  const options = [
-    { label: 'Global', value: 'GLOBAL', icon: <Folder size={10} className="text-muted-foreground/50" /> },
-    ...projects.map(p => ({ label: p.name, value: p.id, icon: <Folder size={10} className="text-primary/60" /> })),
-  ]
-  return (
-    <div className="flex items-center justify-end px-3 py-1.5 border-b border-border/20 bg-card/20 shrink-0">
-      <CustomDropdown
-        className="min-w-[130px]"
-        value={scope === 'GLOBAL' ? 'GLOBAL' : projectId}
-        options={options}
-        onChange={(val) => {
-          if (val === 'GLOBAL') onScopeChange('GLOBAL', '')
-          else onScopeChange('PROJECT', val)
-        }}
-        placeholder="Scope"
-      />
-    </div>
-  )
 }
 
 function compareStackItems(a: FileResourceItem, b: FileResourceItem): number {
