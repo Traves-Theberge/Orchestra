@@ -675,6 +675,8 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                     <OpenCodePermissionsPanel
                       configPath={opencode.config[0]?.path ?? ''}
                       configContent={opencode.config[0]?.content ?? ''}
+                      scope={agentHubScope}
+                      projectName={selectedProject?.name ?? null}
                       saving={opencode.saving}
                       onSave={opencode.saveConfigResource}
                     />
