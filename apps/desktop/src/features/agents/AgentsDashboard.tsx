@@ -616,6 +616,8 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                   {category === 'agents' && provider === 'opencode' && (
                     <OpenCodeAgentsPanel
                       items={providerItems.agents}
+                      scope={agentHubScope}
+                      projectName={selectedProject?.name ?? null}
                       saving={domainState.saving}
                       onSave={opencode.saveAgentFile}
                       onDelete={opencode.deleteAgentFile}
