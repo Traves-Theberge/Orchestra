@@ -234,8 +234,8 @@ export function OpenCodeConfigPanel({ items, scope, projectName, saving, onSave,
       <ErrorStrip message={error} onDismiss={() => setError('')} />
 
       <PanelFooter
-        dirty={isDirty}
-        saving={saving === selected.path || !!activeProviderParseError ? !!saving : !!saving}
+        dirty={isDirty && !activeProviderParseError}
+        saving={!!saving}
         onSave={handleSave}
         onDiscard={handleDiscard}
       />
