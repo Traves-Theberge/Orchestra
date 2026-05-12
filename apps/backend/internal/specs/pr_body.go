@@ -55,7 +55,7 @@ func readPRTemplate() (string, string, error) {
 }
 
 func extractHeadings(template string) []string {
-	re := regexp.MustCompile(`(?m)^#{4,6}\s+.+$`)
+	re := regexp.MustCompile(`(?m)^#{2,6}\s+.+$`)
 	matches := re.FindAllString(template, -1)
 	out := make([]string, 0, len(matches))
 	for _, match := range matches {
