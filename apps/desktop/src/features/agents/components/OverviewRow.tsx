@@ -16,28 +16,28 @@ export function OverviewRow({ name, value, status, pillText, hint, onClick }: Ov
   const valueClass =
     status === 'override' ? TOKENS.textOverride
     : status === 'inherited' ? TOKENS.textInherit
-    : status === 'empty' ? `${TOKENS.textInherit} text-foreground/30`
+    : status === 'empty' ? 'text-sm italic text-muted-foreground/40'
     : TOKENS.textValue
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className="group w-full text-left flex items-start gap-3 py-3 border-b border-border/[0.04] last:border-b-0 hover:bg-foreground/[0.015] -mx-3 px-3 rounded-md transition-colors"
+      className="group w-full text-left flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-accent/40 transition-colors"
     >
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 space-y-0.5">
         <div className="flex items-center gap-2">
-          <span className="text-[11px] text-foreground/60">{name}</span>
+          <span className={TOKENS.textLabel}>{name}</span>
           {pillText && (
             <span className={`${TOKENS.pillBase} ${status === 'override' ? TOKENS.pillOverride : TOKENS.pillInherit}`}>
               {pillText}
             </span>
           )}
         </div>
-        <div className={`${valueClass} mt-1 truncate`}>{value}</div>
-        {hint && <div className={`${TOKENS.textMeta} mt-1`}>{hint}</div>}
+        <div className={`${valueClass} truncate`}>{value}</div>
+        {hint && <div className={TOKENS.textMeta}>{hint}</div>}
       </div>
-      <ChevronRight size={13} className="text-foreground/30 group-hover:text-foreground/60 shrink-0 mt-1" />
+      <ChevronRight size={14} className="text-muted-foreground/40 group-hover:text-foreground shrink-0" />
     </button>
   )
 }

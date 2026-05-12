@@ -32,7 +32,7 @@ const providerLabel: Record<Provider, string> = {
 export function OverviewPanel({ provider, projectName, globalSummary, projectSummary, onNavigate }: OverviewPanelProps) {
   const label = providerLabel[provider]
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-6 space-y-6">
       <PanelHeader
         eyebrow={`${label} / Configuration`}
         title="Global & project overrides"
@@ -44,8 +44,10 @@ export function OverviewPanel({ provider, projectName, globalSummary, projectSum
       <div className={`grid ${projectName ? 'grid-cols-2' : 'grid-cols-1'} gap-3 flex-1 min-h-0 overflow-auto`}>
 
         {/* Global column */}
-        <section className={`${TOKENS.surfaceGlobal} p-3`}>
-          <header className={`${TOKENS.textEyebrow} pb-2 mb-1 border-b border-border/30`}>Global</header>
+        <section className={TOKENS.surfaceGlobal}>
+          <header className="px-3 pt-3 pb-2">
+            <h3 className={TOKENS.textTitle}>Global</h3>
+          </header>
           <OverviewRow
             name="Model"
             value={globalSummary.model ?? '—'}
@@ -87,8 +89,10 @@ export function OverviewPanel({ provider, projectName, globalSummary, projectSum
 
         {/* Project column */}
         {projectName && projectSummary && (
-          <section className={`${TOKENS.surfaceProject} p-3`}>
-            <header className={`${TOKENS.textEyebrow} pb-2 mb-1 border-b border-accent/20 !text-accent`}>{projectName}</header>
+          <section className={TOKENS.surfaceProject}>
+            <header className="px-3 pt-3 pb-2">
+              <h3 className={`${TOKENS.textTitle} text-accent`}>{projectName}</h3>
+            </header>
 
             <OverviewRow
               name="Model"

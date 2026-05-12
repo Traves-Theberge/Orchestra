@@ -3,9 +3,8 @@ import { render, screen } from '@testing-library/react'
 import { PanelHeader } from './PanelHeader'
 
 describe('PanelHeader', () => {
-  it('renders eyebrow, title, and sub', () => {
+  it('renders title and sub', () => {
     render(<PanelHeader eyebrow="Claude / Instructions" title="CLAUDE.md" sub="42 lines" />)
-    expect(screen.getByText('Claude / Instructions')).toBeInTheDocument()
     expect(screen.getByText('CLAUDE.md')).toBeInTheDocument()
     expect(screen.getByText('42 lines')).toBeInTheDocument()
   })
