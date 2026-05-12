@@ -282,10 +282,10 @@ func (s *Server) CreateProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		RootPath          string `json:"root_path"`
-		IssueSourceType   string `json:"issue_source_type"`
+		RootPath            string `json:"root_path"`
+		IssueSourceType     string `json:"issue_source_type"`
 		IssueSourceEndpoint string `json:"issue_source_endpoint"`
-		IssueSourceToken  string `json:"issue_source_token"`
+		IssueSourceToken    string `json:"issue_source_token"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid_json", "invalid request")

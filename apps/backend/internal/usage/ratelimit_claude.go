@@ -17,9 +17,9 @@ import (
 // Anthropic OAuth usage endpoint — same one Claude Code's `/usage` reads.
 // Returns five_hour and seven_day windows for Max/Pro subscription users.
 const (
-	claudeOAuthUsageURL    = "https://api.anthropic.com/api/oauth/usage"
-	claudeOAuthBeta        = "oauth-2025-04-20"
-	claudeFetchTimeout     = 10 * time.Second
+	claudeOAuthUsageURL     = "https://api.anthropic.com/api/oauth/usage"
+	claudeOAuthBeta         = "oauth-2025-04-20"
+	claudeFetchTimeout      = 10 * time.Second
 	claudeDefault429Backoff = 10 * time.Minute
 	claudeMax429Backoff     = 60 * time.Minute
 )

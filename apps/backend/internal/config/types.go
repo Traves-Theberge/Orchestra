@@ -88,11 +88,11 @@ type Config struct {
 	TailscaleWorktreeRoot string
 
 	// Kubernetes runtime
-	KubeConfigPath       string
-	KubeNamespace        string
-	KubeImage            string
-	KubeGitRepoURL       string
-	KubeServiceAccount   string
+	KubeConfigPath     string
+	KubeNamespace      string
+	KubeImage          string
+	KubeGitRepoURL     string
+	KubeServiceAccount string
 }
 
 // PortString returns the server port as a string.

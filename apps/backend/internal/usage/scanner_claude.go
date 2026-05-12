@@ -212,5 +212,5 @@ func scanClaude(
 // signature stability — Claude scanner currently re-parses on every refresh
 // rather than reusing per-file caches, since session JSONLs are small.
 // Codex's scanner uses real incremental reuse via mtime+size matches.
-func groupSessionsByFile(_ []Session, _ string) map[string][]Session   { return nil }
+func groupSessionsByFile(_ []Session, _ string) map[string][]Session            { return nil }
 func groupDailyByFile(_ []DailyAggregate, _ string) map[string][]DailyAggregate { return nil }

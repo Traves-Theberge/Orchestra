@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	trackergithub "github.com/orchestra/orchestra/apps/backend/internal/tracker/github"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
+	trackergithub "github.com/orchestra/orchestra/apps/backend/internal/tracker/github"
 )
 
 // newTestClient points the GitHub client at an httptest server by overriding

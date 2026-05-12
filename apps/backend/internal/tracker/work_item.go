@@ -4,21 +4,21 @@ import "context"
 
 // WorkItem is the canonical domain type for a tracked work item across all backends.
 type WorkItem struct {
-	ID               string         `json:"id"`
-	Identifier       string         `json:"identifier"`
-	Source           string         `json:"source,omitempty"` // "github"|"linear"|"jira"|"sqlite"|"memory"
-	Title            string         `json:"title"`
-	Description      string         `json:"description,omitempty"`
-	Priority         int            `json:"priority,omitempty"`
-	State            string         `json:"state"`
-	BranchName       string         `json:"branch_name,omitempty"`
-	URL              string         `json:"url,omitempty"`
-	ProjectID        string         `json:"project_id,omitempty"`
+	ID          string `json:"id"`
+	Identifier  string `json:"identifier"`
+	Source      string `json:"source,omitempty"` // "github"|"linear"|"jira"|"sqlite"|"memory"
+	Title       string `json:"title"`
+	Description string `json:"description,omitempty"`
+	Priority    int    `json:"priority,omitempty"`
+	State       string `json:"state"`
+	BranchName  string `json:"branch_name,omitempty"`
+	URL         string `json:"url,omitempty"`
+	ProjectID   string `json:"project_id,omitempty"`
 	// AssigneeID is the single primary assignee — set by all backends.
 	AssigneeID string `json:"assignee_id,omitempty"`
 	// Assignees is the full set of assignees for backends that support multiple
 	// (e.g. Jira, GitHub). Single-assignee backends populate AssigneeID only.
-	Assignees []string `json:"assignees,omitempty"`
+	Assignees        []string       `json:"assignees,omitempty"`
 	AssignedToWorker bool           `json:"assigned_to_worker"`
 	Labels           []string       `json:"labels,omitempty"`
 	BlockedBy        []Blocker      `json:"blocked_by,omitempty"`

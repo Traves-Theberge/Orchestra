@@ -20,19 +20,19 @@ func GeminiSourceDir() string {
 }
 
 type geminiChatFile struct {
-	SessionID    string          `json:"sessionId"`
-	StartTime    string          `json:"startTime"`
-	LastUpdated  string          `json:"lastUpdated"`
-	ProjectHash  string          `json:"projectHash"`
-	ProjectPath  string          `json:"projectPath"`
-	Messages     []geminiMessage `json:"messages"`
+	SessionID   string          `json:"sessionId"`
+	StartTime   string          `json:"startTime"`
+	LastUpdated string          `json:"lastUpdated"`
+	ProjectHash string          `json:"projectHash"`
+	ProjectPath string          `json:"projectPath"`
+	Messages    []geminiMessage `json:"messages"`
 }
 
 type geminiMessage struct {
-	Type      string         `json:"type"` // "user" | "gemini"
-	Model     string         `json:"model"`
-	Timestamp string         `json:"timestamp"`
-	Tokens    *geminiTokens  `json:"tokens,omitempty"`
+	Type      string        `json:"type"` // "user" | "gemini"
+	Model     string        `json:"model"`
+	Timestamp string        `json:"timestamp"`
+	Tokens    *geminiTokens `json:"tokens,omitempty"`
 }
 
 type geminiTokens struct {

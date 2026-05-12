@@ -19,8 +19,8 @@ type modelPricing struct {
 // providerPricing holds a provider's model→price map plus a default fallback
 // price (zero if cost should be reported as nil/unknown).
 type providerPricing struct {
-	models           map[string]modelPricing
-	hasInferredFlag  bool // true means models not in `models` produce hasInferredPricing=true
+	models          map[string]modelPricing
+	hasInferredFlag bool // true means models not in `models` produce hasInferredPricing=true
 }
 
 var pricingByProvider = map[Provider]providerPricing{

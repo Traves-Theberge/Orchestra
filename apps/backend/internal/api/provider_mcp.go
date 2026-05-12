@@ -974,10 +974,10 @@ func toggleClaudeMCP(home, name string, enabled bool) error {
 type MCPType int
 
 const (
-	MCPTypeUnknown MCPType = iota
-	MCPTypePlugin      // Managed via settings.json enabledPlugins
-	MCPTypeConfigured  // Managed via .claude.json mcpServers
-	MCPTypeSystem      // Built-in, always available, immutable
+	MCPTypeUnknown    MCPType = iota
+	MCPTypePlugin             // Managed via settings.json enabledPlugins
+	MCPTypeConfigured         // Managed via .claude.json mcpServers
+	MCPTypeSystem             // Built-in, always available, immutable
 )
 
 // detectMCPType dynamically determines MCP type by checking configuration sources

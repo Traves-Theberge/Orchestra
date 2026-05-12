@@ -52,9 +52,9 @@ type Service struct {
 	// Rate-limit cache: probes are slow (HTTP / subprocess) and the windows
 	// move on the order of minutes, so we cache for rateLimitTTL and only
 	// refresh on demand or when force=true.
-	rateLimitMu      sync.Mutex
-	rateLimitCache   *RateLimitState
-	rateLimitFetched time.Time
+	rateLimitMu       sync.Mutex
+	rateLimitCache    *RateLimitState
+	rateLimitFetched  time.Time
 	rateLimitInflight chan struct{}
 }
 

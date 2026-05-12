@@ -549,7 +549,7 @@ func (c *Client) Ping(ctx context.Context) error {
 // into the canonical WorkItem shape used by the Adapter interface.
 // Sets Source="github" and prefixes the ID with "gh:".
 func toWorkItem(i tracker.Issue, repo string) tracker.WorkItem {
-	_ = repo // repo is embedded in Identifier already; kept for signature clarity
+	_ = repo                 // repo is embedded in Identifier already; kept for signature clarity
 	w := tracker.WorkItem(i) // Issue is a type alias for WorkItem
 	w.Source = "github"
 	if !strings.HasPrefix(w.ID, "gh:") {

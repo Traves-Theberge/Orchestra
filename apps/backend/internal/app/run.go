@@ -29,10 +29,10 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/orchestrator"
 	"github.com/orchestra/orchestra/apps/backend/internal/prompt"
 	"github.com/orchestra/orchestra/apps/backend/internal/runtime"
+	"github.com/orchestra/orchestra/apps/backend/internal/sessionlogger"
 	"github.com/orchestra/orchestra/apps/backend/internal/telemetry"
 	"github.com/orchestra/orchestra/apps/backend/internal/terminal"
 	"github.com/orchestra/orchestra/apps/backend/internal/tools"
-	"github.com/orchestra/orchestra/apps/backend/internal/usage"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
 	trackergithub "github.com/orchestra/orchestra/apps/backend/internal/tracker/github"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker/jira"
@@ -40,7 +40,7 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker/memory"
 	trackerregistry "github.com/orchestra/orchestra/apps/backend/internal/tracker/registry"
 	trackersqlite "github.com/orchestra/orchestra/apps/backend/internal/tracker/sqlite"
-	"github.com/orchestra/orchestra/apps/backend/internal/sessionlogger"
+	"github.com/orchestra/orchestra/apps/backend/internal/usage"
 	gitutil "github.com/orchestra/orchestra/apps/backend/internal/utils/git"
 	ghutil "github.com/orchestra/orchestra/apps/backend/internal/utils/github"
 	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
@@ -1457,11 +1457,11 @@ func publishSnapshot(pubsub *observability.PubSub, service *orchestrator.Service
 func snapshotContentHash(snap orchestrator.Snapshot) uint32 {
 	type hashable struct {
 		Counts      orchestrator.SnapshotCount  `json:"counts"`
-		Running     []orchestrator.RunningEntry  `json:"running"`
-		Retrying    []orchestrator.RetryEntry    `json:"retrying"`
-		CodexTotals orchestrator.CodexTotals     `json:"codex_totals"`
-		RateLimits  any                          `json:"rate_limits"`
-		MCPServers  map[string]string            `json:"mcp_servers,omitempty"`
+		Running     []orchestrator.RunningEntry `json:"running"`
+		Retrying    []orchestrator.RetryEntry   `json:"retrying"`
+		CodexTotals orchestrator.CodexTotals    `json:"codex_totals"`
+		RateLimits  any                         `json:"rate_limits"`
+		MCPServers  map[string]string           `json:"mcp_servers,omitempty"`
 	}
 	b, _ := json.Marshal(hashable{
 		Counts:      snap.Counts,

@@ -62,7 +62,7 @@ type OutputTokenDetail struct {
 
 // --- Content Block Builders ---
 
-func TextBlock(t string) ContentBlock      { return ContentBlock{Type: "text", Text: t} }
+func TextBlock(t string) ContentBlock { return ContentBlock{Type: "text", Text: t} }
 
 func ToolCallBlock(toolName string, input any, toolCallID string) ContentBlock {
 	if toolCallID == "" {
@@ -74,7 +74,6 @@ func ToolCallBlock(toolName string, input any, toolCallID string) ContentBlock {
 func ToolResultBlock(toolCallID, toolName string, output any, isError bool) ContentBlock {
 	return ContentBlock{Type: "tool-result", ToolCallID: toolCallID, ToolName: toolName, Output: output, IsError: isError}
 }
-
 
 // --- Logger ---
 

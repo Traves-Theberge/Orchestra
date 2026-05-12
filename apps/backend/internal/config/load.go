@@ -365,8 +365,8 @@ func parseMCPServers(raw string) map[string]string {
 // claudeCodeSettings represents the Claude Code settings.json structure
 type claudeCodeSettings struct {
 	MCPServers map[string]struct {
-		Command string   `json:"command"`
-		Args    []string `json:"args,omitempty"`
+		Command string            `json:"command"`
+		Args    []string          `json:"args,omitempty"`
 		Env     map[string]string `json:"env,omitempty"`
 	} `json:"mcpServers,omitempty"`
 	EnabledPlugins map[string]bool `json:"enabledPlugins,omitempty"`
@@ -383,7 +383,7 @@ func readClaudeCodeMCPServers() map[string]string {
 	}
 
 	configPaths := []string{
-		filepath.Join(home, ".claude", "settings.json"),     // Claude Code CLI
+		filepath.Join(home, ".claude", "settings.json"), // Claude Code CLI
 	}
 
 	var configData []byte

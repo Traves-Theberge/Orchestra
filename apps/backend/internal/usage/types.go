@@ -82,79 +82,79 @@ func (k BreakdownKind) Valid() bool {
 
 // ScanState reports the live state of a provider scanner.
 type ScanState struct {
-	Provider             Provider `json:"provider"`
-	Enabled              bool     `json:"enabled"`
-	IsScanning           bool     `json:"is_scanning"`
-	LastScanStartedAt    *int64   `json:"last_scan_started_at,omitempty"`
-	LastScanCompletedAt  *int64   `json:"last_scan_completed_at,omitempty"`
-	LastScanError        string   `json:"last_scan_error,omitempty"`
-	HasAnyData           bool     `json:"has_any_data"`
-	SourcePathExists     bool     `json:"source_path_exists"`
-	SourcePath           string   `json:"source_path,omitempty"`
+	Provider            Provider `json:"provider"`
+	Enabled             bool     `json:"enabled"`
+	IsScanning          bool     `json:"is_scanning"`
+	LastScanStartedAt   *int64   `json:"last_scan_started_at,omitempty"`
+	LastScanCompletedAt *int64   `json:"last_scan_completed_at,omitempty"`
+	LastScanError       string   `json:"last_scan_error,omitempty"`
+	HasAnyData          bool     `json:"has_any_data"`
+	SourcePathExists    bool     `json:"source_path_exists"`
+	SourcePath          string   `json:"source_path,omitempty"`
 }
 
 // Session is the canonical per-session record produced by a scanner. Token
 // fields use a unified shape; providers that don't track a particular bucket
 // (e.g. cache writes for Codex) leave it zero.
 type Session struct {
-	Provider             Provider  `json:"provider"`
-	SessionID            string    `json:"session_id"`
-	FirstTimestamp       time.Time `json:"first_timestamp"`
-	LastTimestamp        time.Time `json:"last_timestamp"`
-	PrimaryModel         string    `json:"primary_model"`     // "" if unknown
-	HasMixedModels       bool      `json:"has_mixed_models"`
-	ProjectKey           string    `json:"project_key"`       // canonical project id
-	ProjectLabel         string    `json:"project_label"`     // human-friendly
-	WorktreeID           string    `json:"worktree_id,omitempty"`
-	RepoID               string    `json:"repo_id,omitempty"`
-	Branch               string    `json:"branch,omitempty"`
-	TurnCount            int       `json:"turn_count"`        // turns or events depending on provider
-	InputTokens          int64     `json:"input_tokens"`
-	CachedInputTokens    int64     `json:"cached_input_tokens"`
-	OutputTokens         int64     `json:"output_tokens"`
-	CacheReadTokens      int64     `json:"cache_read_tokens"`
-	CacheWriteTokens     int64     `json:"cache_write_tokens"`
-	ReasoningTokens      int64     `json:"reasoning_tokens"`
-	HasInferredPricing   bool      `json:"has_inferred_pricing"`
+	Provider           Provider  `json:"provider"`
+	SessionID          string    `json:"session_id"`
+	FirstTimestamp     time.Time `json:"first_timestamp"`
+	LastTimestamp      time.Time `json:"last_timestamp"`
+	PrimaryModel       string    `json:"primary_model"` // "" if unknown
+	HasMixedModels     bool      `json:"has_mixed_models"`
+	ProjectKey         string    `json:"project_key"`   // canonical project id
+	ProjectLabel       string    `json:"project_label"` // human-friendly
+	WorktreeID         string    `json:"worktree_id,omitempty"`
+	RepoID             string    `json:"repo_id,omitempty"`
+	Branch             string    `json:"branch,omitempty"`
+	TurnCount          int       `json:"turn_count"` // turns or events depending on provider
+	InputTokens        int64     `json:"input_tokens"`
+	CachedInputTokens  int64     `json:"cached_input_tokens"`
+	OutputTokens       int64     `json:"output_tokens"`
+	CacheReadTokens    int64     `json:"cache_read_tokens"`
+	CacheWriteTokens   int64     `json:"cache_write_tokens"`
+	ReasoningTokens    int64     `json:"reasoning_tokens"`
+	HasInferredPricing bool      `json:"has_inferred_pricing"`
 }
 
 // DailyAggregate is a per-(day,model,project) rollup used to drive both the
 // daily stacked chart and the breakdown tables.
 type DailyAggregate struct {
-	Provider             Provider `json:"provider"`
-	Day                  string   `json:"day"`           // YYYY-MM-DD
-	Model                string   `json:"model"`
-	ProjectKey           string   `json:"project_key"`
-	ProjectLabel         string   `json:"project_label"`
-	WorktreeID           string   `json:"worktree_id,omitempty"`
-	RepoID               string   `json:"repo_id,omitempty"`
-	TurnCount            int      `json:"turn_count"`
-	ZeroCacheReadTurns   int      `json:"zero_cache_read_turns"`
-	InputTokens          int64    `json:"input_tokens"`
-	CachedInputTokens    int64    `json:"cached_input_tokens"`
-	OutputTokens         int64    `json:"output_tokens"`
-	CacheReadTokens      int64    `json:"cache_read_tokens"`
-	CacheWriteTokens     int64    `json:"cache_write_tokens"`
-	ReasoningTokens      int64    `json:"reasoning_tokens"`
-	HasInferredPricing   bool     `json:"has_inferred_pricing"`
+	Provider           Provider `json:"provider"`
+	Day                string   `json:"day"` // YYYY-MM-DD
+	Model              string   `json:"model"`
+	ProjectKey         string   `json:"project_key"`
+	ProjectLabel       string   `json:"project_label"`
+	WorktreeID         string   `json:"worktree_id,omitempty"`
+	RepoID             string   `json:"repo_id,omitempty"`
+	TurnCount          int      `json:"turn_count"`
+	ZeroCacheReadTurns int      `json:"zero_cache_read_turns"`
+	InputTokens        int64    `json:"input_tokens"`
+	CachedInputTokens  int64    `json:"cached_input_tokens"`
+	OutputTokens       int64    `json:"output_tokens"`
+	CacheReadTokens    int64    `json:"cache_read_tokens"`
+	CacheWriteTokens   int64    `json:"cache_write_tokens"`
+	ReasoningTokens    int64    `json:"reasoning_tokens"`
+	HasInferredPricing bool     `json:"has_inferred_pricing"`
 }
 
 // ProcessedFile tracks scanner incremental state — files we've already parsed.
 type ProcessedFile struct {
-	Path       string `json:"path"`
-	MtimeMs    int64  `json:"mtime_ms"`
-	Size       int64  `json:"size"`
+	Path    string `json:"path"`
+	MtimeMs int64  `json:"mtime_ms"`
+	Size    int64  `json:"size"`
 }
 
 // PersistedState is what we serialize per provider to
 // {workspace}/.orchestra/usage-{provider}.json.
 type PersistedState struct {
-	SchemaVersion       int              `json:"schema_version"`
-	Provider            Provider         `json:"provider"`
-	WorktreeFingerprint string           `json:"worktree_fingerprint,omitempty"`
-	ProcessedFiles      []ProcessedFile  `json:"processed_files"`
-	Sessions            []Session        `json:"sessions"`
-	DailyAggregates     []DailyAggregate `json:"daily_aggregates"`
+	SchemaVersion       int                `json:"schema_version"`
+	Provider            Provider           `json:"provider"`
+	WorktreeFingerprint string             `json:"worktree_fingerprint,omitempty"`
+	ProcessedFiles      []ProcessedFile    `json:"processed_files"`
+	Sessions            []Session          `json:"sessions"`
+	DailyAggregates     []DailyAggregate   `json:"daily_aggregates"`
 	ScanState           PersistedScanState `json:"scan_state"`
 }
 
@@ -167,25 +167,25 @@ type PersistedScanState struct {
 
 // Summary is the headline KPI block for a provider.
 type Summary struct {
-	Provider              Provider `json:"provider"`
-	Scope                 Scope    `json:"scope"`
-	Range                 Range    `json:"range"`
-	Sessions              int      `json:"sessions"`
-	Turns                 int      `json:"turns"`
-	ZeroCacheReadTurns    int      `json:"zero_cache_read_turns"`
-	InputTokens           int64    `json:"input_tokens"`
-	CachedInputTokens     int64    `json:"cached_input_tokens"`
-	OutputTokens          int64    `json:"output_tokens"`
-	CacheReadTokens       int64    `json:"cache_read_tokens"`
-	CacheWriteTokens      int64    `json:"cache_write_tokens"`
-	ReasoningTokens       int64    `json:"reasoning_tokens"`
-	TotalTokens           int64    `json:"total_tokens"`
-	CacheReuseRate        *float64 `json:"cache_reuse_rate,omitempty"` // nil if N/A
-	EstimatedCostUSD      *float64 `json:"estimated_cost_usd,omitempty"`
-	TopModel              string   `json:"top_model,omitempty"`
-	TopProject            string   `json:"top_project,omitempty"`
-	HasAnyData            bool     `json:"has_any_data"`
-	HasInferredPricing    bool     `json:"has_inferred_pricing"`
+	Provider           Provider `json:"provider"`
+	Scope              Scope    `json:"scope"`
+	Range              Range    `json:"range"`
+	Sessions           int      `json:"sessions"`
+	Turns              int      `json:"turns"`
+	ZeroCacheReadTurns int      `json:"zero_cache_read_turns"`
+	InputTokens        int64    `json:"input_tokens"`
+	CachedInputTokens  int64    `json:"cached_input_tokens"`
+	OutputTokens       int64    `json:"output_tokens"`
+	CacheReadTokens    int64    `json:"cache_read_tokens"`
+	CacheWriteTokens   int64    `json:"cache_write_tokens"`
+	ReasoningTokens    int64    `json:"reasoning_tokens"`
+	TotalTokens        int64    `json:"total_tokens"`
+	CacheReuseRate     *float64 `json:"cache_reuse_rate,omitempty"` // nil if N/A
+	EstimatedCostUSD   *float64 `json:"estimated_cost_usd,omitempty"`
+	TopModel           string   `json:"top_model,omitempty"`
+	TopProject         string   `json:"top_project,omitempty"`
+	HasAnyData         bool     `json:"has_any_data"`
+	HasInferredPricing bool     `json:"has_inferred_pricing"`
 }
 
 // DailyPoint is a single time-series datum for the stacked chart.
@@ -238,20 +238,20 @@ type SessionRow struct {
 
 // RateLimitWindow describes one quota window (session/weekly).
 type RateLimitWindow struct {
-	UsedPercent       float64 `json:"used_percent"`
-	WindowMinutes     int     `json:"window_minutes"`
-	ResetsAt          *int64  `json:"resets_at,omitempty"`
-	ResetDescription  string  `json:"reset_description,omitempty"`
+	UsedPercent      float64 `json:"used_percent"`
+	WindowMinutes    int     `json:"window_minutes"`
+	ResetsAt         *int64  `json:"resets_at,omitempty"`
+	ResetDescription string  `json:"reset_description,omitempty"`
 }
 
 // ProviderRateLimits captures a provider's quota state.
 type ProviderRateLimits struct {
-	Provider  Provider          `json:"provider"`
-	Session   *RateLimitWindow  `json:"session,omitempty"`
-	Weekly    *RateLimitWindow  `json:"weekly,omitempty"`
-	UpdatedAt int64             `json:"updated_at"`
-	Status    RateLimitStatus   `json:"status"`
-	Error     string            `json:"error,omitempty"`
+	Provider  Provider         `json:"provider"`
+	Session   *RateLimitWindow `json:"session,omitempty"`
+	Weekly    *RateLimitWindow `json:"weekly,omitempty"`
+	UpdatedAt int64            `json:"updated_at"`
+	Status    RateLimitStatus  `json:"status"`
+	Error     string           `json:"error,omitempty"`
 }
 
 type RateLimitStatus string

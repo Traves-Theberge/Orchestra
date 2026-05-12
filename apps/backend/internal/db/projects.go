@@ -238,18 +238,18 @@ const GitHubTokenRedactedSentinel = "<set>"
 // replacing GitHubToken with a redacted sentinel.
 func (p Project) MarshalJSON() ([]byte, error) {
 	type wire struct {
-		ID                   string `json:"id"`
-		Name                 string `json:"name"`
-		RootPath             string `json:"root_path"`
-		RemoteURL            string `json:"remote_url"`
-		GitHubOwner          string `json:"github_owner"`
-		GitHubRepo           string `json:"github_repo"`
-		GitHubToken          string `json:"github_token"`
-		TrackerConfigID      string `json:"tracker_config_id"`
-		PathExists           bool   `json:"path_exists"`
-		IssueSourceType      string `json:"issue_source_type"`
-		IssueSourceEndpoint  string `json:"issue_source_endpoint"`
-		IssueSourceHasToken  bool   `json:"issue_source_has_token"`
+		ID                  string `json:"id"`
+		Name                string `json:"name"`
+		RootPath            string `json:"root_path"`
+		RemoteURL           string `json:"remote_url"`
+		GitHubOwner         string `json:"github_owner"`
+		GitHubRepo          string `json:"github_repo"`
+		GitHubToken         string `json:"github_token"`
+		TrackerConfigID     string `json:"tracker_config_id"`
+		PathExists          bool   `json:"path_exists"`
+		IssueSourceType     string `json:"issue_source_type"`
+		IssueSourceEndpoint string `json:"issue_source_endpoint"`
+		IssueSourceHasToken bool   `json:"issue_source_has_token"`
 	}
 	w := wire{
 		ID: p.ID, Name: p.Name, RootPath: p.RootPath, RemoteURL: p.RemoteURL,
@@ -659,17 +659,17 @@ type ProviderSessionStats struct {
 // GlobalStats holds platform-wide aggregate metrics including total tokens,
 // per-provider and per-model breakdowns, and recent sessions.
 type GlobalStats struct {
-	TotalTokens      int64                              `json:"total_tokens"`
-	TotalInput       int64                              `json:"total_input"`
-	TotalOutput      int64                              `json:"total_output"`
-	TotalCacheRead   int64                              `json:"total_cache_read"`
-	TotalCacheWrite  int64                              `json:"total_cache_write"`
-	TotalThinking    int64                              `json:"total_thinking"`
-	ProviderUsage    map[string]int64                   `json:"provider_usage"`
-	ProviderTokens   map[string]ProviderTokens          `json:"provider_tokens"`
-	ModelUsage       map[string]int64                   `json:"model_usage"`
-	ProviderSessions map[string]ProviderSessionStats    `json:"provider_sessions"`
-	RecentSessions   []Session                          `json:"recent_sessions"`
+	TotalTokens      int64                           `json:"total_tokens"`
+	TotalInput       int64                           `json:"total_input"`
+	TotalOutput      int64                           `json:"total_output"`
+	TotalCacheRead   int64                           `json:"total_cache_read"`
+	TotalCacheWrite  int64                           `json:"total_cache_write"`
+	TotalThinking    int64                           `json:"total_thinking"`
+	ProviderUsage    map[string]int64                `json:"provider_usage"`
+	ProviderTokens   map[string]ProviderTokens       `json:"provider_tokens"`
+	ModelUsage       map[string]int64                `json:"model_usage"`
+	ProviderSessions map[string]ProviderSessionStats `json:"provider_sessions"`
+	RecentSessions   []Session                       `json:"recent_sessions"`
 }
 
 // StatsOption configures optional filters for GetGlobalStats.

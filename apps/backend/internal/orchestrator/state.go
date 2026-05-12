@@ -132,10 +132,10 @@ type Service struct {
 	retryMaxDelay    time.Duration
 	stallTimeout     time.Duration
 	db               *db.DB
-	mcpRegistry        *mcp.Registry
-	mcpServers         map[string]string
-	trackerReg         *trackerregistry.Registry
-	onRetryExhausted   func(issueID, issueIdentifier, issueState string)
+	mcpRegistry      *mcp.Registry
+	mcpServers       map[string]string
+	trackerReg       *trackerregistry.Registry
+	onRetryExhausted func(issueID, issueIdentifier, issueState string)
 }
 
 // IssueRuntime bundles the running and retry state for a single issue,

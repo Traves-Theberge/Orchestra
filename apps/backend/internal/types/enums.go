@@ -51,4 +51,3 @@ const (
 	// SSEHookFailed signals that a lifecycle hook ended with a failure.
 	SSEHookFailed SSEEventType = "HOOK_FAILED"
 )
-

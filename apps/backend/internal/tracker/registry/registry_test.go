@@ -34,8 +34,8 @@ func (s *stubAdapter) Create(_ context.Context, item tracker.WorkItem) (*tracker
 func (s *stubAdapter) Update(_ context.Context, id string, _ map[string]any) (*tracker.WorkItem, error) {
 	return s.FetchByID(context.Background(), id)
 }
-func (s *stubAdapter) Delete(_ context.Context, _ string) error              { return nil }
-func (s *stubAdapter) Comment(_ context.Context, _, _ string) error          { return nil }
+func (s *stubAdapter) Delete(_ context.Context, _ string) error     { return nil }
+func (s *stubAdapter) Comment(_ context.Context, _, _ string) error { return nil }
 func (s *stubAdapter) FetchProjects(_ context.Context) ([]tracker.TrackerProject, error) {
 	return []tracker.TrackerProject{{ID: "p1", Name: "Test"}}, nil
 }

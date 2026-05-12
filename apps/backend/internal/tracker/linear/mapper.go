@@ -29,7 +29,9 @@ type linearIssueNode struct {
 			Name string `json:"name"`
 		} `json:"nodes"`
 	} `json:"labels"`
-	Assignee  *struct{ ID string `json:"id"` } `json:"assignee"`
+	Assignee *struct {
+		ID string `json:"id"`
+	} `json:"assignee"`
 	CreatedAt string `json:"createdAt"`
 	UpdatedAt string `json:"updatedAt"`
 }

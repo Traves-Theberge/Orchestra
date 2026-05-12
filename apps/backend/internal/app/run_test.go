@@ -13,8 +13,8 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
 	"github.com/orchestra/orchestra/apps/backend/internal/observability"
 	"github.com/orchestra/orchestra/apps/backend/internal/orchestrator"
-	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker/memory"
+	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
 	"github.com/rs/zerolog"
 )
 

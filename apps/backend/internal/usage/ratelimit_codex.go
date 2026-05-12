@@ -13,10 +13,10 @@ import (
 )
 
 const (
-	codexRPCTimeout      = 12 * time.Second
-	codexRPCInitMethod   = "initialize"
+	codexRPCTimeout          = 12 * time.Second
+	codexRPCInitMethod       = "initialize"
 	codexRPCRateLimitsMethod = "account/rateLimits/read"
-	codexInitializedNote = "initialized"
+	codexInitializedNote     = "initialized"
 )
 
 type codexRPCRequest struct {

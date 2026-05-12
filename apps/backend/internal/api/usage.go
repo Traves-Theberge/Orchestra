@@ -217,4 +217,3 @@ func (h *UsageHandlers) refreshRateLimits(w http.ResponseWriter, r *http.Request
 	state := h.svc.RateLimits(r.Context(), true)
 	writeJSON(w, http.StatusOK, state)
 }
-
