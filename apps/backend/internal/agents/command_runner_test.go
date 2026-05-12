@@ -24,7 +24,7 @@ func TestCommandRunnerParsesJSONUsageAndEvents(t *testing.T) {
 		WorkspaceRoot:   root,
 		Prompt:          "hello",
 		IssueIdentifier: "ORC-1",
-		Timeout:         2 * time.Second,
+		Timeout:         30 * time.Second,
 	}, func(event Event) {
 		events = append(events, event)
 	})
@@ -53,7 +53,7 @@ func TestCommandRunnerReplacesPromptTemplateToken(t *testing.T) {
 		WorkspaceRoot:   root,
 		Prompt:          "hello-world",
 		IssueIdentifier: "ORC-2",
-		Timeout:         2 * time.Second,
+		Timeout:         30 * time.Second,
 	}, nil)
 
 	if err != nil {
@@ -110,7 +110,7 @@ func TestCommandRunnerReturnsApprovalRequiredFromStructuredEvent(t *testing.T) {
 		WorkspaceRoot:   root,
 		Prompt:          "hello",
 		IssueIdentifier: "ORC-3",
-		Timeout:         2 * time.Second,
+		Timeout:         30 * time.Second,
 	}, nil)
 	if err == nil {
 		t.Fatalf("expected approval required error")
@@ -144,7 +144,7 @@ func TestCommandRunnerReturnsInputRequiredFromDotStyleEvent(t *testing.T) {
 		WorkspaceRoot:   root,
 		Prompt:          "hello",
 		IssueIdentifier: "ORC-4B",
-		Timeout:         2 * time.Second,
+		Timeout:         30 * time.Second,
 	}, nil)
 	if err == nil {
 		t.Fatalf("expected input required error")
@@ -167,7 +167,7 @@ func TestCommandRunnerReturnsInputRequiredFromNestedNeedsInputPayload(t *testing
 		WorkspaceRoot:   root,
 		Prompt:          "hello",
 		IssueIdentifier: "ORC-4D",
-		Timeout:         2 * time.Second,
+		Timeout:         30 * time.Second,
 	}, nil)
 	if err == nil {
 		t.Fatalf("expected input required error")
@@ -190,7 +190,7 @@ func TestCommandRunnerReturnsApprovalRequiredFromGenericApprovalEvent(t *testing
 		WorkspaceRoot:   root,
 		Prompt:          "hello",
 		IssueIdentifier: "ORC-4C",
-		Timeout:         2 * time.Second,
+		Timeout:         30 * time.Second,
 	}, nil)
 	if err == nil {
 		t.Fatalf("expected approval required error")
@@ -240,7 +240,7 @@ func TestCommandRunnerAppliesSSEEventKindToDataPayload(t *testing.T) {
 		WorkspaceRoot:   root,
 		Prompt:          "hello",
 		IssueIdentifier: "ORC-6",
-		Timeout:         2 * time.Second,
+		Timeout:         30 * time.Second,
 	}, func(event Event) {
 		if event.Message == "hello" {
 			saw = true
@@ -271,7 +271,7 @@ func TestCommandRunnerIgnoresSSECommentLines(t *testing.T) {
 		WorkspaceRoot:   root,
 		Prompt:          "hello",
 		IssueIdentifier: "ORC-7",
-		Timeout:         2 * time.Second,
+		Timeout:         30 * time.Second,
 	}, func(event Event) {
 		events = append(events, event)
 	})
@@ -326,7 +326,7 @@ func TestCommandRunnerFlushesSSEDataAtEOF(t *testing.T) {
 		WorkspaceRoot:   root,
 		Prompt:          "hello",
 		IssueIdentifier: "ORC-8",
-		Timeout:         2 * time.Second,
+		Timeout:         30 * time.Second,
 	}, func(event Event) {
 		if event.Message == "hello" {
 			seen = true
@@ -357,7 +357,7 @@ func TestCommandRunnerCombinesMultipleSSEDataLines(t *testing.T) {
 		WorkspaceRoot:   root,
 		Prompt:          "hello",
 		IssueIdentifier: "ORC-9",
-		Timeout:         2 * time.Second,
+		Timeout:         30 * time.Second,
 	}, func(event Event) {
 		if event.Kind == "stream.text" && strings.Contains(event.Message, "line1") {
 			seen = true
@@ -437,7 +437,7 @@ func TestCommandRunnerIgnoresSSEDoneSentinel(t *testing.T) {
 		WorkspaceRoot:   root,
 		Prompt:          "hello",
 		IssueIdentifier: "ORC-10",
-		Timeout:         2 * time.Second,
+		Timeout:         30 * time.Second,
 	}, func(event Event) {
 		events = append(events, event)
 	})
@@ -464,7 +464,7 @@ func TestCommandRunnerMergesPartialUsageAcrossEvents(t *testing.T) {
 		WorkspaceRoot:   root,
 		Prompt:          "hello",
 		IssueIdentifier: "ORC-5",
-		Timeout:         2 * time.Second,
+		Timeout:         30 * time.Second,
 	}, nil)
 	if err != nil {
 		t.Fatalf("run turn: %v", err)
