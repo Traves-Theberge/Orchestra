@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/MCPPanel.tsx
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useId, useMemo } from 'react'
 import Editor from '@monaco-editor/react'
 import { useAppStore } from '@core/store'
 import { Plus, Trash2, Power, PowerOff } from 'lucide-react'
@@ -348,6 +348,7 @@ function CreateDialog({
   onCancel: () => void
   onCreate: () => void
 }) {
+  const nameId = useId()
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
       <DialogContent className="max-w-md">
@@ -356,9 +357,9 @@ function CreateDialog({
           <DialogDescription>Adds a server entry to .mcp.json. Edit the config in the JSON editor after creation.</DialogDescription>
         </DialogHeader>
         <div className="py-2">
-          <label className="text-xs font-semibold text-foreground/60 mb-1.5 block">Server name</label>
+          <label htmlFor={nameId} className="text-xs font-semibold text-foreground/60 mb-1.5 block">Server name</label>
           <input
-            autoFocus
+            id={nameId}
             value={name}
             onChange={(e) => setName(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ''))}
             onKeyDown={(e) => e.key === 'Enter' && name.trim() && onCreate()}

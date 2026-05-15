@@ -299,7 +299,6 @@ export function BranchManagerView({ config, projectId }: BranchManagerViewProps)
                     if (e.key === 'Escape') { setCreateOpen(false); setNewBranchName('') }
                   }}
                   placeholder="branch-name"
-                  autoFocus
                   className="flex-1 min-w-[160px] h-8 px-3 rounded-md bg-background font-mono text-[12.5px] placeholder:text-muted-foreground/50 outline-none ring-1 ring-border/60 focus:ring-primary/50 transition-all"
                 />
                 <span className="text-[11.5px] text-muted-foreground/60">from</span>
@@ -455,7 +454,15 @@ function BranchRow({
 
   return (
     <div
+      role="button"
+      tabIndex={0}
       onDoubleClick={() => !branch.is_current && onCheckout(branch.name)}
+      onKeyDown={(e) => {
+        if ((e.key === 'Enter' || e.key === ' ') && !branch.is_current) {
+          e.preventDefault()
+          onCheckout(branch.name)
+        }
+      }}
       className="group flex items-center gap-3 w-full px-2 py-2.5 rounded-md hover:bg-accent/50 transition-colors text-left cursor-pointer"
     >
       <span className={`shrink-0 transition-colors ${

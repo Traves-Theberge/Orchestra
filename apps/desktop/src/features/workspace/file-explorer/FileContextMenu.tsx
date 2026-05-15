@@ -62,6 +62,7 @@ export function FileContextMenu({
   return createPortal(
     <div
       ref={ref}
+      role="menu"
       data-portal-menu="open"
       className="fixed z-[9999] bg-popover border border-border/60 rounded-lg shadow-xl py-1 backdrop-blur-sm text-foreground"
       style={{ left, top, minWidth: MENU_W }}

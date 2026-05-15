@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/SettingsPanel.tsx
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useId } from 'react'
 import { Code, Settings2, Plus, X } from 'lucide-react'
 import { Button } from '@ui/button'
 import { Skeleton } from '@ui/skeleton'
@@ -65,6 +65,12 @@ export function SettingsPanel({
   const [error, setError] = useState('')
   const [newEnvKey, setNewEnvKey] = useState('')
   const [newEnvValue, setNewEnvValue] = useState('')
+  const modelLabelId = useId()
+  const permissionModeLabelId = useId()
+  const alwaysThinkingLabelId = useId()
+  const voiceEnabledLabelId = useId()
+  const envKeyId = useId()
+  const envValueId = useId()
 
   useEffect(() => {
     setLocal(settings)
@@ -244,43 +250,47 @@ export function SettingsPanel({
 
               {/* Model */}
               <div className="space-y-1.5">
-                <label className="text-[10px] uppercase tracking-wider text-foreground/45">Model</label>
+                <span id={modelLabelId} className="text-[10px] uppercase tracking-wider text-foreground/45">Model</span>
                 <InheritedField
                   inherited={fieldInherited('model')}
                   inheritedValue={inheritedValueString('model')}
                   onSetHere={() => setFromGlobal('model')}
                 >
-                  <CustomDropdown
-                    className="w-full"
-                    value={(local.model as string) ?? ''}
-                    options={[{ label: 'Default', value: '' }, ...MODEL_OPTIONS]}
-                    onChange={(val) => updateField('model', val || undefined)}
-                    placeholder="Select model"
-                  />
+                  <div aria-labelledby={modelLabelId}>
+                    <CustomDropdown
+                      className="w-full"
+                      value={(local.model as string) ?? ''}
+                      options={[{ label: 'Default', value: '' }, ...MODEL_OPTIONS]}
+                      onChange={(val) => updateField('model', val || undefined)}
+                      placeholder="Select model"
+                    />
+                  </div>
                 </InheritedField>
               </div>
 
               {/* Permission Mode */}
               <div className="space-y-1.5">
-                <label className="text-[10px] uppercase tracking-wider text-foreground/45">Permission Mode</label>
+                <span id={permissionModeLabelId} className="text-[10px] uppercase tracking-wider text-foreground/45">Permission Mode</span>
                 <InheritedField
                   inherited={fieldInherited('permissionMode')}
                   inheritedValue={inheritedValueString('permissionMode')}
                   onSetHere={() => setFromGlobal('permissionMode')}
                 >
-                  <CustomDropdown
-                    className="w-full"
-                    value={(local.permissionMode as string) ?? 'default'}
-                    options={PERMISSION_MODE_OPTIONS}
-                    onChange={(val) => updateField('permissionMode', val === 'default' ? undefined : val)}
-                    placeholder="Permission mode"
-                  />
+                  <div aria-labelledby={permissionModeLabelId}>
+                    <CustomDropdown
+                      className="w-full"
+                      value={(local.permissionMode as string) ?? 'default'}
+                      options={PERMISSION_MODE_OPTIONS}
+                      onChange={(val) => updateField('permissionMode', val === 'default' ? undefined : val)}
+                      placeholder="Permission mode"
+                    />
+                  </div>
                 </InheritedField>
               </div>
 
               {/* Always Thinking */}
               <div className="space-y-1.5">
-                <label className="text-[10px] uppercase tracking-wider text-foreground/45">Always Thinking</label>
+                <span id={alwaysThinkingLabelId} className="text-[10px] uppercase tracking-wider text-foreground/45">Always Thinking</span>
                 <InheritedField
                   inherited={fieldInherited('alwaysThinkingEnabled')}
                   inheritedValue={inheritedValueString('alwaysThinkingEnabled')}
@@ -289,6 +299,7 @@ export function SettingsPanel({
                   <div className="flex items-center h-9 px-3 rounded-md border border-border/40 bg-background">
                     <button
                       type="button"
+                      aria-labelledby={alwaysThinkingLabelId}
                       onClick={() => updateField('alwaysThinkingEnabled', !local.alwaysThinkingEnabled)}
                       className={toggleTrackClasses(!!local.alwaysThinkingEnabled)}
                     >
@@ -303,7 +314,7 @@ export function SettingsPanel({
 
               {/* Voice Enabled */}
               <div className="space-y-1.5">
-                <label className="text-[10px] uppercase tracking-wider text-foreground/45">Voice Input</label>
+                <span id={voiceEnabledLabelId} className="text-[10px] uppercase tracking-wider text-foreground/45">Voice Input</span>
                 <InheritedField
                   inherited={fieldInherited('voiceEnabled')}
                   inheritedValue={inheritedValueString('voiceEnabled')}
@@ -312,6 +323,7 @@ export function SettingsPanel({
                   <div className="flex items-center h-9 px-3 rounded-md border border-border/40 bg-background">
                     <button
                       type="button"
+                      aria-labelledby={voiceEnabledLabelId}
                       onClick={() => updateField('voiceEnabled', !local.voiceEnabled)}
                       className={toggleTrackClasses(!!local.voiceEnabled)}
                     >

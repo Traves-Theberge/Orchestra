@@ -51,9 +51,17 @@ export function FileTreeRow({
   return (
     <div
       role="treeitem"
+      tabIndex={0}
       className="flex items-center cursor-pointer select-none hover:bg-accent/50"
       style={{ ...style, height: 26, paddingLeft }}
       onClick={isDir ? onToggle : onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          if (isDir) onToggle()
+          else onClick()
+        }
+      }}
       onContextMenu={(e) => {
         if (!onContextMenu) return
         e.preventDefault()

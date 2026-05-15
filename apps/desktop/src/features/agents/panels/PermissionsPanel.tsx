@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/PermissionsPanel.tsx
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useId } from 'react'
 import { Plus, X } from 'lucide-react'
 import { Button } from '@ui/button'
 import { CustomDropdown } from '@layout/shared/controls'
@@ -35,6 +35,10 @@ export function PermissionsPanel({
   const [newDeny, setNewDeny] = useState('')
   const [newAsk, setNewAsk] = useState('')
   const [error, setError] = useState('')
+  const modeLabelId = useId()
+  const allowInputId = useId()
+  const denyInputId = useId()
+  const askInputId = useId()
 
   useEffect(() => {
     setMode(permissions.approval_mode)
@@ -107,9 +111,10 @@ export function PermissionsPanel({
     setItems: (v: string[]) => void,
     newValue: string,
     setNewValue: (v: string) => void,
+    inputId: string,
   ) => (
     <div className="space-y-1.5">
-      <label className="text-[10px] uppercase tracking-wider text-foreground/45">{label}</label>
+      <label htmlFor={inputId} className="text-[10px] uppercase tracking-wider text-foreground/45">{label}</label>
       <p className="text-[10px] text-muted-foreground/50">{description}</p>
       <InheritedField
         inherited={fieldInheritedArray(field)}
@@ -130,6 +135,7 @@ export function PermissionsPanel({
           </div>
           <div className="flex gap-1.5">
             <input
+              id={inputId}
               value={newValue}
               onChange={e => setNewValue(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && addToList(items, setItems, newValue, setNewValue)}
@@ -160,25 +166,27 @@ export function PermissionsPanel({
         <div className="max-w-2xl mx-auto space-y-6">
           {/* Permission mode */}
           <div className="space-y-1.5">
-            <label className="text-[10px] uppercase tracking-wider text-foreground/45">Permission mode</label>
+            <span id={modeLabelId} className="text-[10px] uppercase tracking-wider text-foreground/45">Permission mode</span>
             <InheritedField
               inherited={fieldInheritedMode}
               inheritedValue={inheritedPerms.approval_mode || '—'}
               onSetHere={setModeFromGlobal}
             >
-              <CustomDropdown
-                className="w-full"
-                value={mode}
-                options={modeOptions}
-                onChange={setMode}
-                placeholder="Permission mode"
-              />
+              <div aria-labelledby={modeLabelId}>
+                <CustomDropdown
+                  className="w-full"
+                  value={mode}
+                  options={modeOptions}
+                  onChange={setMode}
+                  placeholder="Permission mode"
+                />
+              </div>
             </InheritedField>
           </div>
 
-          {renderList('Allow', 'Tools that are auto-approved without prompting', 'allow', allow, setAllow, newAllow, setNewAllow)}
-          {renderList('Deny', 'Tools that are always blocked (takes precedence over allow)', 'deny', deny, setDeny, newDeny, setNewDeny)}
-          {renderList('Ask', 'Tools that always prompt for confirmation', 'ask', ask, setAsk, newAsk, setNewAsk)}
+          {renderList('Allow', 'Tools that are auto-approved without prompting', 'allow', allow, setAllow, newAllow, setNewAllow, allowInputId)}
+          {renderList('Deny', 'Tools that are always blocked (takes precedence over allow)', 'deny', deny, setDeny, newDeny, setNewDeny, denyInputId)}
+          {renderList('Ask', 'Tools that always prompt for confirmation', 'ask', ask, setAsk, newAsk, setNewAsk, askInputId)}
         </div>
       </div>
 

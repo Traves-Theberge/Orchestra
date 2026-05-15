@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 
 import type { BackendConfig } from '@core/api/client'
@@ -41,6 +41,11 @@ export function PRCreateDialog({
   const [draft, setDraft] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const titleId = useId()
+  const bodyId = useId()
+  const baseId = useId()
+  const headId = useId()
+  const draftId = useId()
 
   // Fetch default branch on mount
   useEffect(() => {
@@ -81,19 +86,20 @@ export function PRCreateDialog({
 
         <div className="space-y-3">
           <div>
-            <label className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50 mb-1 block">Title</label>
+            <label htmlFor={titleId} className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50 mb-1 block">Title</label>
             <input
+              id={titleId}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               className="w-full bg-muted/10 border border-border/40 rounded-lg px-3 py-2 text-[11px] text-foreground placeholder:text-muted-foreground/40 outline-none focus:border-primary/60"
               placeholder="PR title..."
-              autoFocus
             />
           </div>
 
           <div>
-            <label className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50 mb-1 block">Description</label>
+            <label htmlFor={bodyId} className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50 mb-1 block">Description</label>
             <textarea
+              id={bodyId}
               value={body}
               onChange={(e) => setBody(e.target.value)}
               rows={5}
@@ -104,23 +110,25 @@ export function PRCreateDialog({
 
           <div className="flex gap-3">
             <div className="flex-1">
-              <label className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50 mb-1 block">Base branch</label>
+              <label htmlFor={baseId} className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50 mb-1 block">Base branch</label>
               <input
+                id={baseId}
                 value={base}
                 onChange={(e) => setBase(e.target.value)}
                 className="w-full bg-muted/10 border border-border/40 rounded-lg px-3 py-2 text-[11px] text-foreground font-mono outline-none focus:border-primary/60"
               />
             </div>
             <div className="flex-1">
-              <label className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50 mb-1 block">Head branch</label>
-              <div className="px-3 py-2 text-[11px] font-mono text-muted-foreground/60 bg-muted/5 border border-border/20 rounded-lg">
+              <label htmlFor={headId} className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50 mb-1 block">Head branch</label>
+              <div id={headId} className="px-3 py-2 text-[11px] font-mono text-muted-foreground/60 bg-muted/5 border border-border/20 rounded-lg">
                 {branchName || 'N/A'}
               </div>
             </div>
           </div>
 
-          <label className="flex items-center gap-2 cursor-pointer">
+          <label htmlFor={draftId} className="flex items-center gap-2 cursor-pointer">
             <input
+              id={draftId}
               type="checkbox"
               checked={draft}
               onChange={(e) => setDraft(e.target.checked)}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import {
   Bell,
   Cable,
@@ -882,17 +882,18 @@ function EditorSettingsPane() {
           { key: 'minimap', label: 'Show Minimap' },
           { key: 'formatOnSave', label: 'Format on Save' },
         ] as const).map(({ key, label }) => (
-          <label key={key} className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 hover:bg-muted/20 cursor-pointer">
+          <div key={key} className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 hover:bg-muted/20">
             <span className="text-[12px] font-medium">{label}</span>
             <button
               type="button"
+              aria-label={label}
               aria-pressed={editorSettings[key]}
               onClick={() => setEditorSettings({ [key]: !editorSettings[key] })}
               className={`relative h-5 w-9 rounded-full transition-colors ${editorSettings[key] ? 'bg-primary' : 'bg-muted'}`}
             >
               <span className={`absolute top-0.5 size-4 rounded-full bg-white transition-transform ${editorSettings[key] ? 'translate-x-4' : 'translate-x-0.5'}`} />
             </button>
-          </label>
+          </div>
         ))}
       </div>
     </div>
@@ -2001,10 +2002,11 @@ function ToggleField({
   onChange: (checked: boolean) => void
 }) {
   return (
-    <label className="flex items-center justify-between gap-3 rounded-xl border border-border/30 bg-background/70 px-3 py-2">
+    <div className="flex items-center justify-between gap-3 rounded-xl border border-border/30 bg-background/70 px-3 py-2">
       <span className="text-[11px] font-bold">{label}</span>
       <button
         type="button"
+        aria-label={label}
         aria-pressed={checked}
         onClick={() => onChange(!checked)}
         className={`relative h-6 w-11 rounded-full transition-colors ${
@@ -2017,7 +2019,7 @@ function ToggleField({
           }`}
         />
       </button>
-    </label>
+    </div>
   )
 }
 
@@ -2304,6 +2306,37 @@ const PROVIDER_META: Record<string, { label: string; color: string; authFields: 
 
 type TestResult = { ok: boolean; latency_ms?: number; error?: string }
 
+function TrackerAuthField({
+  field,
+  value,
+  isEdit,
+  hasToken,
+  onChange,
+}: {
+  field: AuthField
+  value: string
+  isEdit: boolean
+  hasToken: boolean
+  onChange: (value: string) => void
+}) {
+  const fieldId = useId()
+  return (
+    <div className="space-y-1">
+      <label htmlFor={fieldId} className="text-[11px] font-medium text-muted-foreground/70">
+        {field.label}{field.required && <span className="text-destructive ml-0.5">*</span>}
+      </label>
+      <input
+        id={fieldId}
+        type={field.type}
+        className="w-full h-8 rounded-md border border-border/50 bg-background px-3 text-[12px] text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring/50 transition-colors"
+        placeholder={field.key === 'token' && isEdit && hasToken ? '••••••••' : field.placeholder}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+      />
+    </div>
+  )
+}
+
 function IntegrationsPane({ config }: { config: BackendConfig | null }) {
   const [configs, setConfigs] = useState<TrackerConfig[]>([])
   const [loading, setLoading] = useState(false)
@@ -2456,18 +2489,14 @@ function IntegrationsPane({ config }: { config: BackendConfig | null }) {
     return (
       <div className="mt-2 rounded-xl border border-border/50 bg-muted/20 p-4 space-y-3">
         {meta.authFields.map(f => (
-          <div key={f.key} className="space-y-1">
-            <label className="text-[11px] font-medium text-muted-foreground/70">
-              {f.label}{f.required && <span className="text-destructive ml-0.5">*</span>}
-            </label>
-            <input
-              type={f.type}
-              className="w-full h-8 rounded-md border border-border/50 bg-background px-3 text-[12px] text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring/50 transition-colors"
-              placeholder={f.key === 'token' && isEdit && tc?.has_token ? '••••••••' : f.placeholder}
-              value={formValues[f.key] ?? ''}
-              onChange={e => setFormValues(prev => ({ ...prev, [f.key]: e.target.value }))}
-            />
-          </div>
+          <TrackerAuthField
+            key={f.key}
+            field={f}
+            value={formValues[f.key] ?? ''}
+            isEdit={isEdit}
+            hasToken={!!tc?.has_token}
+            onChange={(value) => setFormValues(prev => ({ ...prev, [f.key]: value }))}
+          />
         ))}
         <div className="flex items-center gap-2 pt-1">
           <button
@@ -2998,6 +3027,183 @@ function ShortcutsPane({ isMac }: { isMac: boolean }) {
 // BackendConfigForm (migrated from SettingsCard)
 // ---------------------------------------------------------------------------
 
+function ActiveProfileField({
+  activeProfileId,
+  backendProfiles,
+  disabled,
+  profilesPending,
+  onSetActiveProfile,
+  onDeleteProfile,
+}: {
+  activeProfileId: string
+  backendProfiles: BackendProfile[]
+  disabled?: boolean
+  profilesPending: boolean
+  onSetActiveProfile: (profileId: string) => Promise<void>
+  onDeleteProfile: (profileId: string) => Promise<void>
+}) {
+  const labelId = useId()
+  return (
+    <div className="space-y-1.5 block" aria-labelledby={labelId}>
+      <span id={labelId} className="block text-[9px] font-black uppercase tracking-wider text-muted-foreground px-1">Active Profile</span>
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <CustomDropdown
+            className="w-full"
+            value={activeProfileId}
+            options={backendProfiles.map((p) => ({ label: p.name, value: p.id, icon: <ShieldCheck className="size-3" /> }))}
+            onChange={(val) => void onSetActiveProfile(val)}
+            disabled={disabled || backendProfiles.length === 0}
+          />
+          {profilesPending && (
+            <div className="absolute right-8 top-1/2 -translate-y-1/2">
+              <Loader2 className="size-3 animate-spin-smooth text-primary" />
+            </div>
+          )}
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          aria-label="Delete"
+          className="h-9 px-3 rounded-lg border-destructive/20 bg-destructive/5 text-destructive hover:bg-destructive hover:text-destructive-foreground transition-all"
+          disabled={disabled || backendProfiles.length <= 1 || activeProfileId === ''}
+          onClick={(e) => {
+            e.preventDefault()
+            if (activeProfileId === '') return
+            const name = backendProfiles.find((p) => p.id === activeProfileId)?.name ?? activeProfileId
+            if (window.confirm(`Delete backend profile "${name}"? This cannot be undone.`)) {
+              void onDeleteProfile(activeProfileId)
+            }
+          }}
+        >
+          <Trash2 className="size-3.5" />
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function NewProfileField({
+  newProfileName,
+  setNewProfileName,
+  disabled,
+  onCreateProfile,
+}: {
+  newProfileName: string
+  setNewProfileName: (value: string) => void
+  disabled?: boolean
+  onCreateProfile: (name: string) => Promise<void>
+}) {
+  const inputId = useId()
+  return (
+    <div className="space-y-1.5 block pt-2 border-t border-border/20">
+      <label htmlFor={inputId} className="block text-[9px] font-black uppercase tracking-wider text-muted-foreground px-1">New Profile</label>
+      <div className="flex gap-2">
+        <input
+          id={inputId}
+          className="h-9 flex-1 rounded-lg border border-border bg-background px-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-sm"
+          value={newProfileName}
+          onChange={(event) => setNewProfileName(event.target.value)}
+          placeholder="Production, Staging, Local..."
+          disabled={disabled}
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          aria-label="Create"
+          className="h-9 px-3 rounded-lg bg-white/5 border-white/20 text-foreground hover:bg-white hover:text-black"
+          disabled={disabled || newProfileName.trim() === ''}
+          onClick={() => {
+            void onCreateProfile(newProfileName.trim())
+            setNewProfileName('')
+          }}
+        >
+          <Plus className="size-3.5" />
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function EndpointUrlField({
+  baseUrl,
+  setBaseUrl,
+  baseUrlInvalid,
+  disabled,
+}: {
+  baseUrl: string
+  setBaseUrl: (value: string) => void
+  baseUrlInvalid: boolean
+  disabled?: boolean
+}) {
+  const inputId = useId()
+  return (
+    <div className="space-y-1.5 block">
+      <label htmlFor={inputId} className="block text-[9px] font-black uppercase tracking-wider text-muted-foreground px-1">Endpoint URL</label>
+      <div className="relative">
+        <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/40">
+          <Globe className="size-3" />
+        </div>
+        <input
+          id={inputId}
+          className={`h-9 w-full rounded-lg border bg-background pl-8 pr-3 text-xs font-mono focus:ring-2 transition-all shadow-sm ${baseUrlInvalid ? 'border-destructive/60 focus:ring-destructive/20 focus:border-destructive' : 'border-border focus:ring-primary/20 focus:border-primary'}`}
+          value={baseUrl}
+          onChange={(event) => setBaseUrl(event.target.value)}
+          placeholder="http://127.0.0.1:4010"
+          disabled={disabled}
+          aria-invalid={baseUrlInvalid || undefined}
+        />
+      </div>
+      {baseUrlInvalid && (
+        <span className="block text-[10px] text-destructive px-1">Must be a valid absolute URL (http:// or https://)</span>
+      )}
+    </div>
+  )
+}
+
+function AccessTokenField({
+  apiToken,
+  setApiToken,
+  showToken,
+  setShowToken,
+  disabled,
+}: {
+  apiToken: string
+  setApiToken: (value: string) => void
+  showToken: boolean
+  setShowToken: (value: boolean) => void
+  disabled?: boolean
+}) {
+  const inputId = useId()
+  return (
+    <div className="space-y-1.5 block">
+      <label htmlFor={inputId} className="block text-[9px] font-black uppercase tracking-wider text-muted-foreground px-1">Access Token</label>
+      <div className="relative group/token">
+        <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/40 group-focus-within/token:text-primary/60 transition-colors">
+          <ShieldCheck className="size-3" />
+        </div>
+        <input
+          id={inputId}
+          type={showToken ? 'text' : 'password'}
+          className="h-9 w-full rounded-lg border border-border bg-background pl-8 pr-9 text-xs font-mono focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-sm"
+          value={apiToken}
+          onChange={(event) => setApiToken(event.target.value)}
+          placeholder="Bearer token (optional)"
+          disabled={disabled}
+        />
+        <button
+          type="button"
+          onClick={() => setShowToken(!showToken)}
+          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-muted transition-all"
+          title={showToken ? 'Hide token' : 'Reveal token'}
+        >
+          {showToken ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function BackendConfigForm({
   loadingConfig: _loadingConfig,
   savingConfig,
@@ -3061,68 +3267,21 @@ function BackendConfigForm({
           </div>
 
           <div className="space-y-4 p-4 rounded-xl bg-muted/20 border border-border/40">
-            <label className="space-y-1.5 block">
-              <span className="block text-[9px] font-black uppercase tracking-wider text-muted-foreground px-1">Active Profile</span>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <CustomDropdown
-                    className="w-full"
-                    value={activeProfileId}
-                    options={backendProfiles.map((p) => ({ label: p.name, value: p.id, icon: <ShieldCheck className="size-3" /> }))}
-                    onChange={(val) => void onSetActiveProfile(val)}
-                    disabled={disabled || backendProfiles.length === 0}
-                  />
-                  {profilesPending && (
-                    <div className="absolute right-8 top-1/2 -translate-y-1/2">
-                      <Loader2 className="size-3 animate-spin-smooth text-primary" />
-                    </div>
-                  )}
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  aria-label="Delete"
-                  className="h-9 px-3 rounded-lg border-destructive/20 bg-destructive/5 text-destructive hover:bg-destructive hover:text-destructive-foreground transition-all"
-                  disabled={disabled || backendProfiles.length <= 1 || activeProfileId === ''}
-                  onClick={(e) => {
-                    e.preventDefault()
-                    if (activeProfileId === '') return
-                    const name = backendProfiles.find((p) => p.id === activeProfileId)?.name ?? activeProfileId
-                    if (window.confirm(`Delete backend profile "${name}"? This cannot be undone.`)) {
-                      void onDeleteProfile(activeProfileId)
-                    }
-                  }}
-                >
-                  <Trash2 className="size-3.5" />
-                </Button>
-              </div>
-            </label>
+            <ActiveProfileField
+              activeProfileId={activeProfileId}
+              backendProfiles={backendProfiles}
+              disabled={disabled}
+              profilesPending={profilesPending}
+              onSetActiveProfile={onSetActiveProfile}
+              onDeleteProfile={onDeleteProfile}
+            />
 
-            <label className="space-y-1.5 block pt-2 border-t border-border/20">
-              <span className="block text-[9px] font-black uppercase tracking-wider text-muted-foreground px-1">New Profile</span>
-              <div className="flex gap-2">
-                <input
-                  className="h-9 flex-1 rounded-lg border border-border bg-background px-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-sm"
-                  value={newProfileName}
-                  onChange={(event) => setNewProfileName(event.target.value)}
-                  placeholder="Production, Staging, Local..."
-                  disabled={disabled}
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  aria-label="Create"
-                  className="h-9 px-3 rounded-lg bg-white/5 border-white/20 text-foreground hover:bg-white hover:text-black"
-                  disabled={disabled || newProfileName.trim() === ''}
-                  onClick={() => {
-                    void onCreateProfile(newProfileName.trim())
-                    setNewProfileName('')
-                  }}
-                >
-                  <Plus className="size-3.5" />
-                </Button>
-              </div>
-            </label>
+            <NewProfileField
+              newProfileName={newProfileName}
+              setNewProfileName={setNewProfileName}
+              disabled={disabled}
+              onCreateProfile={onCreateProfile}
+            />
           </div>
         </div>
 
@@ -3133,50 +3292,20 @@ function BackendConfigForm({
           </div>
 
           <div className="space-y-4 p-4 rounded-xl bg-muted/20 border border-border/40">
-            <label className="space-y-1.5 block">
-              <span className="block text-[9px] font-black uppercase tracking-wider text-muted-foreground px-1">Endpoint URL</span>
-              <div className="relative">
-                <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/40">
-                  <Globe className="size-3" />
-                </div>
-                <input
-                  className={`h-9 w-full rounded-lg border bg-background pl-8 pr-3 text-xs font-mono focus:ring-2 transition-all shadow-sm ${baseUrlInvalid ? 'border-destructive/60 focus:ring-destructive/20 focus:border-destructive' : 'border-border focus:ring-primary/20 focus:border-primary'}`}
-                  value={baseUrl}
-                  onChange={(event) => setBaseUrl(event.target.value)}
-                  placeholder="http://127.0.0.1:4010"
-                  disabled={disabled}
-                  aria-invalid={baseUrlInvalid || undefined}
-                />
-              </div>
-              {baseUrlInvalid && (
-                <span className="block text-[10px] text-destructive px-1">Must be a valid absolute URL (http:// or https://)</span>
-              )}
-            </label>
+            <EndpointUrlField
+              baseUrl={baseUrl}
+              setBaseUrl={setBaseUrl}
+              baseUrlInvalid={baseUrlInvalid}
+              disabled={disabled}
+            />
 
-            <label className="space-y-1.5 block">
-              <span className="block text-[9px] font-black uppercase tracking-wider text-muted-foreground px-1">Access Token</span>
-              <div className="relative group/token">
-                <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/40 group-focus-within/token:text-primary/60 transition-colors">
-                  <ShieldCheck className="size-3" />
-                </div>
-                <input
-                  type={showToken ? 'text' : 'password'}
-                  className="h-9 w-full rounded-lg border border-border bg-background pl-8 pr-9 text-xs font-mono focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-sm"
-                  value={apiToken}
-                  onChange={(event) => setApiToken(event.target.value)}
-                  placeholder="Bearer token (optional)"
-                  disabled={disabled}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowToken(!showToken)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-muted transition-all"
-                  title={showToken ? 'Hide token' : 'Reveal token'}
-                >
-                  {showToken ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
-                </button>
-              </div>
-            </label>
+            <AccessTokenField
+              apiToken={apiToken}
+              setApiToken={setApiToken}
+              showToken={showToken}
+              setShowToken={setShowToken}
+              disabled={disabled}
+            />
           </div>
         </div>
       </div>
@@ -3232,6 +3361,7 @@ function ModelSearchDropdown({
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const modelInputId = useId()
 
   const filtered = search
     ? models.filter(m =>
@@ -3245,7 +3375,7 @@ function ModelSearchDropdown({
   if (error) {
     return (
       <div className="space-y-1">
-        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Model</label>
+        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Model</span>
         <p className="text-[11px] text-red-500">{error}</p>
       </div>
     )
@@ -3254,7 +3384,7 @@ function ModelSearchDropdown({
   if (!hasKey) {
     return (
       <div className="space-y-1">
-        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Model</label>
+        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Model</span>
         <p className="text-[11px] text-muted-foreground/60">Enter an API key to load models</p>
       </div>
     )
@@ -3263,10 +3393,10 @@ function ModelSearchDropdown({
   if (models.length === 0) {
     return (
       <div className="space-y-1">
-        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
           Model
           {loading && <Loader2 className="ml-1.5 inline size-2.5 animate-spin-smooth" />}
-        </label>
+        </span>
         <p className="text-[11px] text-muted-foreground/60">Loading models…</p>
       </div>
     )
@@ -3274,7 +3404,7 @@ function ModelSearchDropdown({
 
   return (
     <div className="space-y-1 relative">
-      <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+      <label htmlFor={modelInputId} className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
         Model
         {loading && <Loader2 className="ml-1.5 inline size-2.5 animate-spin-smooth" />}
         <span className="ml-2 text-muted-foreground/40 normal-case tracking-normal font-normal">{models.length} available</span>
@@ -3282,6 +3412,7 @@ function ModelSearchDropdown({
 
       <div className="relative">
         <input
+          id={modelInputId}
           ref={inputRef}
           type="text"
           value={open ? search : (selectedModel?.name || modelId || '')}
@@ -3333,7 +3464,12 @@ function ModelSearchDropdown({
       )}
 
       {open && (
-        <div className="fixed inset-0 z-40" onClick={() => { setOpen(false); setSearch('') }} />
+        <button
+          type="button"
+          aria-label="Close model picker"
+          className="fixed inset-0 z-40 cursor-default bg-transparent"
+          onClick={() => { setOpen(false); setSearch('') }}
+        />
       )}
     </div>
   )
@@ -3344,6 +3480,8 @@ function ModelSearchDropdown({
 // ---------------------------------------------------------------------------
 
 function EmbeddedAgentConfigForm({ config, disabled }: { config: BackendConfig | null; disabled: boolean }) {
+  const providerLabelId = useId()
+  const apiKeyId = useId()
   const savedPrefs = (() => { try { return JSON.parse(localStorage.getItem('orchestra-agent-provider-prefs') ?? '{}') } catch { return {} } })()
   const [providerId, setProviderId] = useState<string>(savedPrefs.providerId ?? CHAT_PROVIDERS[0].id)
   const [modelId, setModelId] = useState<string>(savedPrefs.modelId ?? '')
@@ -3461,8 +3599,8 @@ function EmbeddedAgentConfigForm({ config, disabled }: { config: BackendConfig |
           <p className="text-[10px] text-muted-foreground">Configure the LLM provider for the chat widget</p>
         </div>
 
-        <div className="space-y-1">
-          <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Provider</label>
+        <div className="space-y-1" aria-labelledby={providerLabelId}>
+          <span id={providerLabelId} className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Provider</span>
           <CustomDropdown
             className="w-full"
             value={providerId}
@@ -3495,7 +3633,7 @@ function EmbeddedAgentConfigForm({ config, disabled }: { config: BackendConfig |
         </div>
 
         <div className="space-y-1">
-          <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+          <label htmlFor={apiKeyId} className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
             API Key
             {hasKey && (
               <span className="ml-2 inline-flex items-center gap-1 text-emerald-500">
@@ -3507,6 +3645,7 @@ function EmbeddedAgentConfigForm({ config, disabled }: { config: BackendConfig |
           <div className="flex gap-2">
             <div className="relative flex-1">
               <input
+                id={apiKeyId}
                 type={showKey ? 'text' : 'password'}
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
@@ -3575,6 +3714,8 @@ function EmbeddedAgentConfigForm({ config, disabled }: { config: BackendConfig |
 // ---------------------------------------------------------------------------
 
 function UnsandboxConfigForm({ config, disabled }: { config: BackendConfig | null; disabled: boolean }) {
+  const publicKeyId = useId()
+  const secretKeyId = useId()
   const [publicKey, setPublicKey] = useState('')
   const [secretKey, setSecretKey] = useState('')
   const [saving, setSaving] = useState(false)
@@ -3692,8 +3833,9 @@ function UnsandboxConfigForm({ config, disabled }: { config: BackendConfig | nul
 
         <div className="space-y-3">
           <div className="space-y-1">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Public Key</label>
+            <label htmlFor={publicKeyId} className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Public Key</label>
             <input
+              id={publicKeyId}
               type="text"
               value={publicKey}
               onChange={(e) => setPublicKey(e.target.value)}
@@ -3703,11 +3845,12 @@ function UnsandboxConfigForm({ config, disabled }: { config: BackendConfig | nul
             />
           </div>
           <div className="space-y-1">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+            <label htmlFor={secretKeyId} className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
               Secret Key {isConfigured && <span className="text-muted-foreground/60">(leave blank to keep current)</span>}
             </label>
             <div className="relative">
               <input
+                id={secretKeyId}
                 type={showSecret ? 'text' : 'password'}
                 value={secretKey}
                 onChange={(e) => setSecretKey(e.target.value)}

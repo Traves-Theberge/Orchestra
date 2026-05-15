@@ -169,8 +169,17 @@ export function DiagramFullscreenOverlay() {
 
     return createPortal(
         <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Mermaid diagram fullscreen"
             className="fixed inset-0 z-[9999] bg-background/95 backdrop-blur-xl flex flex-col animate-in fade-in duration-200"
             onClick={(e) => { if (e.target === e.currentTarget) close() }}
+            onKeyDown={(e) => {
+                if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) {
+                    e.preventDefault()
+                    close()
+                }
+            }}
         >
             <div className="flex items-center justify-between px-6 py-3 border-b border-border bg-card/80 shrink-0">
                 <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">

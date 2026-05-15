@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { Github, Lock, Globe } from 'lucide-react'
 
 export interface CreateRepoDialogProps {
@@ -20,6 +20,9 @@ export function CreateRepoDialog({ projectName, onCancel, onCreate }: CreateRepo
   const [isPrivate, setIsPrivate] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const nameId = useId()
+  const descriptionId = useId()
+  const visibilityId = useId()
 
   const handleCreate = async () => {
     if (!name.trim()) return
@@ -53,8 +56,9 @@ export function CreateRepoDialog({ projectName, onCancel, onCreate }: CreateRepo
         {/* Form */}
         <div className="px-6 py-5 space-y-4">
           <div className="space-y-1.5">
-            <label className="text-[10.5px] font-bold uppercase tracking-[0.16em] text-muted-foreground/60">Repository name</label>
+            <label htmlFor={nameId} className="text-[10.5px] font-bold uppercase tracking-[0.16em] text-muted-foreground/60">Repository name</label>
             <input
+              id={nameId}
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -65,8 +69,9 @@ export function CreateRepoDialog({ projectName, onCancel, onCreate }: CreateRepo
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-[10.5px] font-bold uppercase tracking-[0.16em] text-muted-foreground/60">Description</label>
+            <label htmlFor={descriptionId} className="text-[10.5px] font-bold uppercase tracking-[0.16em] text-muted-foreground/60">Description</label>
             <textarea
+              id={descriptionId}
               rows={2}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -77,8 +82,8 @@ export function CreateRepoDialog({ projectName, onCancel, onCreate }: CreateRepo
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-[10.5px] font-bold uppercase tracking-[0.16em] text-muted-foreground/60">Visibility</label>
-            <div className="grid grid-cols-2 gap-2">
+            <span id={visibilityId} className="text-[10.5px] font-bold uppercase tracking-[0.16em] text-muted-foreground/60">Visibility</span>
+            <div aria-labelledby={visibilityId} className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => setIsPrivate(true)}

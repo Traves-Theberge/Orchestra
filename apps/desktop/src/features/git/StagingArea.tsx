@@ -85,6 +85,12 @@ function FileRow({
       data-testid={`file-row-${isStaged ? 'staged' : 'unstaged'}-${entry.path}`}
       data-selected={isSelected ? 'true' : undefined}
       onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onSelect()
+        }
+      }}
       className={`group flex items-center gap-2 h-6 px-3 cursor-pointer transition-colors ${
         isSelected
           ? 'bg-foreground/[0.06] text-foreground'

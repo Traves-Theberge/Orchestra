@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { Loader2, Plus, RotateCcw, Save, Trash2 } from 'lucide-react'
 import { Button } from '@ui/button'
 import {
@@ -52,6 +52,7 @@ export function FileResourcePanel({
   const [createOpen, setCreateOpen] = useState(false)
   const [createName, setCreateName] = useState('')
   const [createPending, setCreatePending] = useState(false)
+  const createNameId = useId()
 
   const effectiveSelectedKey = selectedKey && items.some(item => item.key === selectedKey)
     ? selectedKey
@@ -199,9 +200,9 @@ export function FileResourcePanel({
               <DialogDescription>{createDescription}</DialogDescription>
             </DialogHeader>
             <div className="py-2">
-              <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Name</label>
+              <label htmlFor={createNameId} className="text-xs font-semibold text-muted-foreground mb-1.5 block">Name</label>
               <input
-                autoFocus
+                id={createNameId}
                 value={createName}
                 onChange={(event) => setCreateName(event.target.value.replace(/[^a-zA-Z0-9._/-]/g, '-'))}
                 onKeyDown={(event) => event.key === 'Enter' && createName.trim() && handleCreate()}

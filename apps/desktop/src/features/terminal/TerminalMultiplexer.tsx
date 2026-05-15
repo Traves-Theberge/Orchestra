@@ -167,10 +167,19 @@ export const TerminalMultiplexer: React.FC<TerminalMultiplexerProps> = ({
                                     <span className="text-[12px] font-medium tracking-tight truncate max-w-[140px]">{term.title}</span>
                                     <span
                                         role="button"
+                                        tabIndex={0}
                                         onClick={(e) => {
                                             e.stopPropagation()
                                             clearInitialCommandTracking(term.id)
                                             onCloseTerminal(term.id)
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                e.preventDefault()
+                                                e.stopPropagation()
+                                                clearInitialCommandTracking(term.id)
+                                                onCloseTerminal(term.id)
+                                            }
                                         }}
                                         className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-destructive/20 hover:text-destructive rounded transition-all ml-0.5"
                                     >

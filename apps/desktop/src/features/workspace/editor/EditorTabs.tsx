@@ -29,9 +29,17 @@ export function EditorTabs() {
             <span className="text-[12px] font-medium tracking-tight">{name}</span>
             <span
               role="button"
+              tabIndex={0}
               onClick={(e) => {
                 e.stopPropagation()
                 closeFile(file.id)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  closeFile(file.id)
+                }
               }}
               className="inline-flex items-center justify-center size-4 -mr-1 rounded text-muted-foreground/50 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-foreground/[0.06] transition-all"
             >

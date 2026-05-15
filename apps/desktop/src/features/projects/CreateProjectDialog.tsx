@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { Folder, Loader2 } from 'lucide-react'
 import { Button } from '@ui/button'
 import {
@@ -24,6 +24,7 @@ export function CreateProjectDialog({
 }) {
   const [path, setPath] = useState('')
   const [pending, setPending] = useState(false)
+  const pathId = useId()
 
   useEffect(() => {
     if (open) setPath('')
@@ -65,10 +66,10 @@ export function CreateProjectDialog({
 
         <form onSubmit={handleSubmit} className="space-y-6 py-6">
           <div className="space-y-1.5">
-            <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1">Workspace Root Path</label>
+            <label htmlFor={pathId} className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1">Workspace Root Path</label>
             <div className="flex gap-2">
               <input
-                autoFocus
+                id={pathId}
                 className="h-11 flex-1 rounded-xl border border-border bg-background px-4 text-sm font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-sm"
                 placeholder="/home/user/projects/my-app"
                 value={path}

@@ -881,6 +881,8 @@ function FileTree({ items, level = 0, expandedPaths, loadingPaths, onToggle, onF
             return (
                 <React.Fragment key={`${item.path}-${i}`}>
                     <div
+                        role="button"
+                        tabIndex={-1}
                         style={{ paddingLeft: `${level * 12 + 12}px` }}
                         className={`group relative flex items-center gap-2 h-7 pr-3 cursor-pointer transition-colors ${
                             isActive
@@ -890,6 +892,13 @@ function FileTree({ items, level = 0, expandedPaths, loadingPaths, onToggle, onF
                                     : 'text-muted-foreground/80 hover:text-foreground hover:bg-foreground/[0.03]'
                         }`}
                         onClick={() => item.is_dir ? void onToggle(item) : onFileClick?.(item.path)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault()
+                                if (item.is_dir) void onToggle(item)
+                                else onFileClick?.(item.path)
+                            }
+                        }}
                     >
                         {isActive && <span className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full bg-primary" />}
                         {item.is_dir ? (

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState, useRef } from 'react'
+import { lazy, Suspense, useEffect, useId, useState, useRef } from 'react'
 import {
   AlertCircle,
   ChevronDown,
@@ -119,6 +119,7 @@ export function KanbanBoard({
   const [feedbackText, setFeedbackText] = useState('')
   const [feedbackPending, setFeedbackPending] = useState(false)
   const [draggingColumnId, setDraggingColumnId] = useState<string | null>(null)
+  const feedbackId = useId()
 
 
   useEffect(() => {
@@ -809,9 +810,9 @@ export function KanbanBoard({
             </DialogDescription>
           </DialogHeader>
           <div className="py-2">
-            <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Feedback</label>
+            <label htmlFor={feedbackId} className="text-xs font-semibold text-muted-foreground mb-1.5 block">Feedback</label>
             <textarea
-              autoFocus
+              id={feedbackId}
               value={feedbackText}
               onChange={(e) => setFeedbackText(e.target.value)}
               placeholder="Describe what needs to be fixed or changed…"

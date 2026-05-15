@@ -165,14 +165,14 @@ export const DocsDashboard: React.FC<DocsDashboardProps> = ({ config, theme }) =
                 }
                 resolvedPath = normalized.join('/')
                 return (
-                    <a
-                        href="#"
-                        onClick={(e) => { e.preventDefault(); handleSelectDocRef.current(resolvedPath) }}
-                        className="text-primary border-b border-primary/30 hover:border-primary transition-colors cursor-pointer"
+                    <button
+                        type="button"
+                        onClick={() => handleSelectDocRef.current(resolvedPath)}
+                        className="text-primary border-b border-primary/30 hover:border-primary transition-colors cursor-pointer bg-transparent p-0 font-inherit"
                         {...props}
                     >
                         {children}
-                    </a>
+                    </button>
                 )
             }
             return (

@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/GeminiCommandsPanel.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@ui/button'
 import {
@@ -254,6 +254,7 @@ function CreateDialog({
   onCancel: () => void
   onCreate: () => void
 }) {
+  const nameId = useId()
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
       <DialogContent className="max-w-md">
@@ -262,9 +263,9 @@ function CreateDialog({
           <DialogDescription>Create a new Gemini command TOML file in the selected scope.</DialogDescription>
         </DialogHeader>
         <div className="py-2">
-          <label className="text-xs font-semibold text-foreground/60 mb-1.5 block">Name</label>
+          <label htmlFor={nameId} className="text-xs font-semibold text-foreground/60 mb-1.5 block">Name</label>
           <input
-            autoFocus
+            id={nameId}
             value={name}
             onChange={(event) => setName(event.target.value.replace(/[^a-zA-Z0-9._/-]/g, '-'))}
             onKeyDown={(event) => event.key === 'Enter' && name.trim() && onCreate()}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { CheckCircle2, ChevronDown, FileText, GitPullRequest, Github, Info, Loader2, Pencil, Terminal, X } from 'lucide-react'
 import { MarkdownRenderer } from '@ui/MarkdownRenderer'
 
@@ -15,6 +15,16 @@ import { extractOperationalPlanItems, extractPlanFromText, parseDiff, type DiffF
 import { getCachedPlan, setCachedPlan, clearCachedPlan } from './plan-cache'
 import { SessionTimeline } from './SessionTimeline'
 import { useAppStore } from '@core/store'
+
+function SidebarRow({ label, content }: { label: string; content: React.ReactNode }) {
+  const labelId = useId()
+  return (
+    <div className="px-4 py-3 border-b border-border/20" aria-labelledby={labelId}>
+      <span id={labelId} className="text-[9px] font-black uppercase tracking-[0.15em] text-muted-foreground/30 mb-1.5 block">{label}</span>
+      {content}
+    </div>
+  )
+}
 
 function DescriptionEditor({ value, onChange, onBlur, theme, projectId }: {
   value: string
@@ -565,22 +575,21 @@ export function IssueDetailView({
                   </span>
                 )},
               ].map(({ label, content }) => (
-                <div key={label} className="px-4 py-3 border-b border-border/20">
-                  <label className="text-[9px] font-black uppercase tracking-[0.15em] text-muted-foreground/30 mb-1.5 block">{label}</label>
-                  {content}
-                </div>
+                <SidebarRow key={label} label={label} content={content} />
               ))}
               {typed.url && typeof typed.url === 'string' && (typed.url as string).includes('github.com') && (
-                <div className="px-4 py-3 border-b border-border/20">
-                  <label className="text-[9px] font-black uppercase tracking-[0.15em] text-muted-foreground/30 mb-1.5 block">GitHub</label>
-                  <button
-                    onClick={() => openInInternalBrowser(typed.url as string)}
-                    className="text-[11px] text-primary/60 hover:text-primary flex items-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    <Github size={12} />
-                    {(typed.url as string).replace('https://github.com/', '')}
-                  </button>
-                </div>
+                <SidebarRow
+                  label="GitHub"
+                  content={
+                    <button
+                      onClick={() => openInInternalBrowser(typed.url as string)}
+                      className="text-[11px] text-primary/60 hover:text-primary flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Github size={12} />
+                      {(typed.url as string).replace('https://github.com/', '')}
+                    </button>
+                  }
+                />
               )}
             </div>
           </div>

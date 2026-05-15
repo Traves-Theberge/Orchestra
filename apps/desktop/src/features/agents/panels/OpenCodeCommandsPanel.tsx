@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/OpenCodeCommandsPanel.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@ui/button'
@@ -242,6 +242,7 @@ function CreateDialog({
   onCancel: () => void
   onCreate: () => void
 }) {
+  const nameId = useId()
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
       <DialogContent className="max-w-md">
@@ -250,9 +251,9 @@ function CreateDialog({
           <DialogDescription>Create a new OpenCode command Markdown file with frontmatter.</DialogDescription>
         </DialogHeader>
         <div className="py-2">
-          <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Name</label>
+          <label htmlFor={nameId} className="text-xs font-semibold text-muted-foreground mb-1.5 block">Name</label>
           <input
-            autoFocus
+            id={nameId}
             value={name}
             onChange={(e) => setName(e.target.value.replace(/[^a-zA-Z0-9._/-]/g, '-'))}
             onKeyDown={(e) => e.key === 'Enter' && name.trim() && onCreate()}

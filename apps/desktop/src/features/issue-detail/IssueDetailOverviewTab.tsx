@@ -467,20 +467,37 @@ export function OverviewTab({
                 {hooks.map((hook) => {
                   const status = getHookStatus(hook.id)
                   const output = hookOutputs[hook.id]
+                  if (output) {
+                    return (
+                      <button
+                        key={hook.id}
+                        type="button"
+                        className="flex flex-col gap-1 p-1.5 rounded bg-muted/30 border transition-all cursor-pointer hover:bg-muted/50 border-border/60 text-left w-full"
+                        onClick={() => {
+                          setSelectedHookLog({ id: hook.id, label: hook.label, output })
+                        }}
+                      >
+                        <div className="flex items-center justify-between w-full">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="text-[9px] font-bold text-foreground/90 truncate">{hook.label}</span>
+                            <Terminal size={8} className="text-primary/60 shrink-0" />
+                          </div>
+                          <Badge variant="outline" className={`h-3 px-1 text-[6px] font-black uppercase ${status === 'completed' ? 'border-primary/20 text-primary' : status === 'active' ? 'border-amber-500/20 text-amber-500 animate-pulse' : status === 'failed' ? 'border-red-500/30 text-red-500' : 'text-muted-foreground/40 border-border'}`}>
+                            {status}
+                          </Badge>
+                        </div>
+                        {status === 'failed' && <p className="text-[8px] text-red-500/60 font-medium leading-none">Initialization failed</p>}
+                      </button>
+                    )
+                  }
                   return (
                     <div
                       key={hook.id}
-                      className={`flex flex-col gap-1 p-1.5 rounded bg-muted/30 border transition-all ${output ? 'cursor-pointer hover:bg-muted/50 border-border/60' : 'border-border opacity-60'}`}
-                      onClick={() => {
-                        if (output) {
-                          setSelectedHookLog({ id: hook.id, label: hook.label, output })
-                        }
-                      }}
+                      className="flex flex-col gap-1 p-1.5 rounded bg-muted/30 border transition-all border-border opacity-60"
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5 min-w-0">
                           <span className="text-[9px] font-bold text-foreground/90 truncate">{hook.label}</span>
-                          {output && <Terminal size={8} className="text-primary/60 shrink-0" />}
                         </div>
                         <Badge variant="outline" className={`h-3 px-1 text-[6px] font-black uppercase ${status === 'completed' ? 'border-primary/20 text-primary' : status === 'active' ? 'border-amber-500/20 text-amber-500 animate-pulse' : status === 'failed' ? 'border-red-500/30 text-red-500' : 'text-muted-foreground/40 border-border'}`}>
                           {status}

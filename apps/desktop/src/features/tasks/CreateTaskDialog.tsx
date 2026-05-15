@@ -175,7 +175,6 @@ export function CreateTaskDialog({
 
           <div className="flex-1 flex flex-col overflow-hidden px-8 pb-4 gap-y-3">
             <input
-              autoFocus
               className="w-full bg-transparent border-none outline-none text-3xl font-black tracking-tight placeholder:text-muted-foreground/30 focus:ring-0 focus:outline-none p-0 selection:bg-primary/30"
               placeholder="What needs to be done?"
               value={title}
@@ -185,6 +184,7 @@ export function CreateTaskDialog({
             />
             {titleError && <p className="text-[11px] text-destructive">{titleError}</p>}
             <div
+              role="presentation"
               className="flex-1 min-h-0 cursor-text"
               onClick={(e) => {
                 const ta = (e.currentTarget as HTMLElement).querySelector('textarea')

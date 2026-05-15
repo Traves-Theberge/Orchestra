@@ -29,7 +29,6 @@ export function FeedbackDialog({ onSubmit, onCancel, hasPR }: FeedbackDialogProp
           onChange={(e) => setFeedback(e.target.value)}
           placeholder="What needs to change?"
           rows={4}
-          autoFocus
           className="w-full bg-muted/10 border border-border/40 rounded-lg px-3 py-2 text-[11px] text-foreground placeholder:text-muted-foreground/40 resize-none outline-none focus:border-primary/60"
         />
         <div className="flex justify-end gap-2 mt-3">

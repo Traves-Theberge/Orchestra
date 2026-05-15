@@ -171,9 +171,17 @@ export function BrowserPane() {
               <span className="text-[12px] font-medium tracking-tight truncate flex-1 text-left">{tab.title || 'New tab'}</span>
               <span
                 role="button"
+                tabIndex={0}
                 onClick={(e) => {
                   e.stopPropagation()
                   closeBrowserTab(tab.id)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    closeBrowserTab(tab.id)
+                  }
                 }}
                 className="inline-flex items-center justify-center size-5 -mr-1 rounded-full text-muted-foreground/60 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-foreground/[0.10] transition-all shrink-0"
               >

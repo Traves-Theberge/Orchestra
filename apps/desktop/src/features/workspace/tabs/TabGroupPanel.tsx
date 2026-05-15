@@ -262,9 +262,17 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
                   <span className="text-[12px] font-medium tracking-tight truncate max-w-[160px]">{title}</span>
                   <span
                     role="button"
+                    tabIndex={0}
                     onClick={(e) => {
                       e.stopPropagation()
                       closeTab(ref)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        closeTab(ref)
+                      }
                     }}
                     onMouseDown={(e) => e.stopPropagation()}
                     onDragStart={(e) => e.preventDefault()}
@@ -370,6 +378,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
       {/* Portaled menus */}
       {plusOpen && plusAnchor && createPortal(
         <div
+          role="menu"
           data-portal-menu="open"
           className="fixed z-[9999] bg-popover border border-border/60 rounded-lg shadow-xl py-1 min-w-[240px] backdrop-blur-sm text-foreground"
           style={(() => {
@@ -486,6 +495,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
 
       {splitOpen && splitAnchor && createPortal(
         <div
+          role="menu"
           data-portal-menu="open"
           className="fixed z-[9999] bg-popover border border-border/60 rounded-lg shadow-xl py-1.5 min-w-[180px] backdrop-blur-sm"
           style={(() => {

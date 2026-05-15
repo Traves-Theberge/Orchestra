@@ -37,7 +37,6 @@ export function AppCommandPalette({ onCreateIssue, onTogglePolling }: AppCommand
       className="fixed top-1/2 left-1/2 w-full max-w-xl -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-card shadow-2xl z-[100] overflow-hidden"
     >
       <Command.Input
-        autoFocus
         placeholder="Type a command or search..."
         className="w-full border-b border-border bg-transparent p-4 text-sm outline-none placeholder:text-muted-foreground"
       />

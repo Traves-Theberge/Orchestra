@@ -307,8 +307,11 @@ export function GitHubPanel({
                 {issues.map((issue) => (
                   <div key={issue.number}>
                     <div
+                      role="button"
+                      tabIndex={0}
                       className="group flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-foreground/[0.03] cursor-pointer transition-colors"
                       onClick={() => setExpandedIssue(expandedIssue === issue.number ? null : issue.number)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedIssue(expandedIssue === issue.number ? null : issue.number) } }}
                     >
                       <CircleDot size={11} className={issue.state === 'open' ? 'text-emerald-500 shrink-0' : 'text-destructive shrink-0'} />
                       <span className="text-[12px] text-foreground/90 truncate flex-1">

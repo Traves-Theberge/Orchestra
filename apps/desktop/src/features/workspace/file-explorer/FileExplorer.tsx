@@ -494,7 +494,6 @@ export function FileExplorer() {
             </DialogDescription>
           </DialogHeader>
           <input
-            autoFocus
             type="text"
             value={promptValue}
             onChange={(e) => setPromptValue(e.target.value)}

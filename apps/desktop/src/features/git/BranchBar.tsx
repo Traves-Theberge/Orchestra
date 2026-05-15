@@ -234,7 +234,10 @@ export function BranchBar({
                   <div
                     key={branch}
                     data-testid={`branch-row-${branch}`}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => handleCheckout(branch)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleCheckout(branch) } }}
                     onMouseEnter={() => setHoveredBranch(branch)}
                     onMouseLeave={() => setHoveredBranch(null)}
                     className={`group flex items-center gap-2 w-full px-2 py-1.5 rounded-md cursor-pointer transition-colors ${
@@ -289,7 +292,10 @@ export function BranchBar({
                     <div
                       key={branch}
                       data-testid={`remote-branch-row-${branch}`}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => handleCheckout(branch.replace(/^origin\//, ''))}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleCheckout(branch.replace(/^origin\//, '')) } }}
                       className="flex items-center gap-2 w-full px-2 py-1.5 rounded-md cursor-pointer text-muted-foreground/75 hover:text-foreground hover:bg-foreground/[0.04] transition-colors"
                     >
                       <span className="inline-block size-1.5 shrink-0" />

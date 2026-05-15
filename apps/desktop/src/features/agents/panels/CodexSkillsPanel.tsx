@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/CodexSkillsPanel.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@ui/button'
 import {
@@ -288,6 +288,7 @@ function CreateDialog({
   onCancel: () => void
   onCreate: () => void
 }) {
+  const nameId = useId()
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
       <DialogContent className="max-w-md">
@@ -296,9 +297,9 @@ function CreateDialog({
           <DialogDescription>Creates a Codex skill directory with a SKILL.md file.</DialogDescription>
         </DialogHeader>
         <div className="py-2">
-          <label className="text-xs font-semibold text-foreground/60 mb-1.5 block">Skill name</label>
+          <label htmlFor={nameId} className="text-xs font-semibold text-foreground/60 mb-1.5 block">Skill name</label>
           <input
-            autoFocus
+            id={nameId}
             value={name}
             onChange={(e) => setName(e.target.value.replace(/[^a-zA-Z0-9._/-]/g, '-'))}
             onKeyDown={(e) => e.key === 'Enter' && name.trim() && onCreate()}
