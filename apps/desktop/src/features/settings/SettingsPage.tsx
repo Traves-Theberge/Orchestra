@@ -3004,8 +3004,8 @@ function ShortcutsPane({ isMac }: { isMac: boolean }) {
         { label: 'Refresh Tracker', desc: 'Full state synchronization', keys: [isMac ? '⌘' : 'Ctrl', 'R'] },
         { label: 'Toggle Sidebar', desc: 'Collapse/expand navigation', keys: [isMac ? '⌘' : 'Ctrl', '/'] },
         { label: 'Switch Tab', desc: 'Ctrl+1 Tasks, Ctrl+2 Projects, etc.', keys: [isMac ? '⌘' : 'Ctrl', '1-8'] },
-      ].map((s, idx) => (
-        <div key={idx} className="group/item relative flex items-center justify-between p-4 rounded-xl border border-border/40 bg-gradient-to-b from-card via-card to-muted/20 shadow-sm transition-all hover:border-primary/20 overflow-hidden">
+      ].map((s) => (
+        <div key={s.label} className="group/item relative flex items-center justify-between p-4 rounded-xl border border-border/40 bg-gradient-to-b from-card via-card to-muted/20 shadow-sm transition-all hover:border-primary/20 overflow-hidden">
           <div className="space-y-0.5">
             <p className="text-xs font-black tracking-tight">{s.label}</p>
             <p className="text-[10px] text-muted-foreground leading-tight">{s.desc}</p>

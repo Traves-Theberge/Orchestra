@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/GeminiPermissionsPanel.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useReducer, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Button } from '@ui/button'
 import { PanelHeader } from '../components/PanelHeader'
@@ -16,22 +16,35 @@ interface GeminiPermissionsPanelProps {
   onSave: (path: string, content: string) => Promise<void>
 }
 
+type ListKey = 'allowed' | 'core' | 'excluded'
+
+interface PermissionsState {
+  sandbox: string
+  allowed: string[]
+  core: string[]
+  excluded: string[]
+}
+
+type PermissionsAction =
+  | { type: 'setSandbox', value: string }
+  | { type: 'setList', list: ListKey, items: string[] }
+  | { type: 'reset', state: PermissionsState }
+
+function permissionsReducer(state: PermissionsState, action: PermissionsAction): PermissionsState {
+  switch (action.type) {
+    case 'setSandbox':
+      return { ...state, sandbox: action.value }
+    case 'setList':
+      return { ...state, [action.list]: action.items }
+    case 'reset':
+      return action.state
+    default:
+      return state
+  }
+}
+
 export function GeminiPermissionsPanel({ settingsPath, settingsContent, scope, projectName, saving, onSave }: GeminiPermissionsPanelProps) {
   const parsed = useMemo(() => safeParse(settingsContent), [settingsContent])
-  const [sandbox, setSandbox] = useState(readSandbox(parsed))
-  const [allowed, setAllowed] = useState(readStringList(parsed, ['tools', 'allowed']))
-  const [core, setCore] = useState(readStringList(parsed, ['tools', 'core']))
-  const [excluded, setExcluded] = useState(readStringList(parsed, ['tools', 'exclude']))
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    setSandbox(readSandbox(parsed))
-    setAllowed(readStringList(parsed, ['tools', 'allowed']))
-    setCore(readStringList(parsed, ['tools', 'core']))
-    setExcluded(readStringList(parsed, ['tools', 'exclude']))
-    setError('')
-  }, [parsed])
-
   const eyebrow = scope === 'GLOBAL' ? 'Global / Permissions' : `${projectName ?? 'Project'} / Permissions`
 
   if (!settingsPath) {
@@ -70,23 +83,51 @@ export function GeminiPermissionsPanel({ settingsPath, settingsContent, scope, p
     )
   }
 
+  return (
+    <PermissionsEditor
+      key={settingsContent}
+      settingsPath={settingsPath}
+      parsed={parsed}
+      eyebrow={eyebrow}
+      saving={saving}
+      onSave={onSave}
+    />
+  )
+}
+
+interface PermissionsEditorProps {
+  settingsPath: string
+  parsed: Record<string, unknown>
+  eyebrow: string
+  saving: string | null
+  onSave: (path: string, content: string) => Promise<void>
+}
+
+function PermissionsEditor({ settingsPath, parsed, eyebrow, saving, onSave }: PermissionsEditorProps) {
+  const baseline = useMemo<PermissionsState>(() => ({
+    sandbox: readSandbox(parsed),
+    allowed: readStringList(parsed, ['tools', 'allowed']),
+    core: readStringList(parsed, ['tools', 'core']),
+    excluded: readStringList(parsed, ['tools', 'exclude']),
+  }), [parsed])
+
+  const [state, dispatch] = useReducer(permissionsReducer, baseline)
+  const [error, setError] = useState('')
+
   const isDirty =
-    sandbox !== readSandbox(parsed) ||
-    JSON.stringify(allowed) !== JSON.stringify(readStringList(parsed, ['tools', 'allowed'])) ||
-    JSON.stringify(core) !== JSON.stringify(readStringList(parsed, ['tools', 'core'])) ||
-    JSON.stringify(excluded) !== JSON.stringify(readStringList(parsed, ['tools', 'exclude']))
+    state.sandbox !== baseline.sandbox ||
+    JSON.stringify(state.allowed) !== JSON.stringify(baseline.allowed) ||
+    JSON.stringify(state.core) !== JSON.stringify(baseline.core) ||
+    JSON.stringify(state.excluded) !== JSON.stringify(baseline.excluded)
 
   const handleDiscard = () => {
-    setSandbox(readSandbox(parsed))
-    setAllowed(readStringList(parsed, ['tools', 'allowed']))
-    setCore(readStringList(parsed, ['tools', 'core']))
-    setExcluded(readStringList(parsed, ['tools', 'exclude']))
+    dispatch({ type: 'reset', state: baseline })
   }
 
   const handleSave = async () => {
     setError('')
     try {
-      await onSave(settingsPath, buildGeminiSettings(parsed, sandbox, allowed, core, excluded))
+      await onSave(settingsPath, buildGeminiSettings(parsed, state.sandbox, state.allowed, state.core, state.excluded))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save')
     }
@@ -105,8 +146,8 @@ export function GeminiPermissionsPanel({ settingsPath, settingsContent, scope, p
         <div className="max-w-2xl mx-auto w-full flex flex-col gap-6">
           <Field label="Sandbox">
             <select
-              value={sandbox}
-              onChange={(event) => setSandbox(event.target.value)}
+              value={state.sandbox}
+              onChange={(event) => dispatch({ type: 'setSandbox', value: event.target.value })}
               className="w-full max-w-sm h-9 rounded-lg border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
             >
               <option value="">Default</option>
@@ -118,9 +159,27 @@ export function GeminiPermissionsPanel({ settingsPath, settingsContent, scope, p
             </select>
           </Field>
 
-          <ListField label="Allowed Tools" description="Explicit allowlist for tool discovery and execution." items={allowed} onChange={setAllowed} placeholder="run_shell_command" />
-          <ListField label="Core Tools" description="Restrict the built-in core tool set." items={core} onChange={setCore} placeholder="read_file" />
-          <ListField label="Excluded Tools" description="Hide tools from discovery entirely." items={excluded} onChange={setExcluded} placeholder="web_fetch" />
+          <ListField
+            label="Allowed Tools"
+            description="Explicit allowlist for tool discovery and execution."
+            items={state.allowed}
+            onChange={(items) => dispatch({ type: 'setList', list: 'allowed', items })}
+            placeholder="run_shell_command"
+          />
+          <ListField
+            label="Core Tools"
+            description="Restrict the built-in core tool set."
+            items={state.core}
+            onChange={(items) => dispatch({ type: 'setList', list: 'core', items })}
+            placeholder="read_file"
+          />
+          <ListField
+            label="Excluded Tools"
+            description="Hide tools from discovery entirely."
+            items={state.excluded}
+            onChange={(items) => dispatch({ type: 'setList', list: 'excluded', items })}
+            placeholder="web_fetch"
+          />
         </div>
       </div>
 

@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/OpenCodeConfigPanel.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useReducer, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Button } from '@ui/button'
 import { PanelHeader } from '../components/PanelHeader'
@@ -18,30 +18,65 @@ interface OpenCodeConfigPanelProps {
   onCreate: () => Promise<void>
 }
 
+interface ConfigState {
+  autoupdate: string
+  defaultAgent: string
+  share: string
+  disabledProviders: string[]
+  providerIds: string[]
+  selectedProviderId: string
+  providerConfigs: Record<string, string>
+}
+
+type ConfigAction =
+  | { type: 'setAutoupdate', value: string }
+  | { type: 'setDefaultAgent', value: string }
+  | { type: 'setShare', value: string }
+  | { type: 'setDisabledProviders', value: string[] }
+  | { type: 'setProviderIds', value: string[] }
+  | { type: 'setSelectedProviderId', value: string }
+  | { type: 'setProviderConfig', id: string, value: string }
+  | { type: 'reset', state: ConfigState }
+
+function configReducer(state: ConfigState, action: ConfigAction): ConfigState {
+  switch (action.type) {
+    case 'setAutoupdate':
+      return { ...state, autoupdate: action.value }
+    case 'setDefaultAgent':
+      return { ...state, defaultAgent: action.value }
+    case 'setShare':
+      return { ...state, share: action.value }
+    case 'setDisabledProviders':
+      return { ...state, disabledProviders: action.value }
+    case 'setProviderIds': {
+      const nextConfigs: Record<string, string> = {}
+      for (const id of action.value) {
+        nextConfigs[id] = state.providerConfigs[id] ?? '{}'
+      }
+      const nextSelected = state.selectedProviderId && action.value.includes(state.selectedProviderId)
+        ? state.selectedProviderId
+        : (action.value[0] ?? '')
+      return {
+        ...state,
+        providerIds: action.value,
+        providerConfigs: nextConfigs,
+        selectedProviderId: nextSelected,
+      }
+    }
+    case 'setSelectedProviderId':
+      return { ...state, selectedProviderId: action.value }
+    case 'setProviderConfig':
+      return { ...state, providerConfigs: { ...state.providerConfigs, [action.id]: action.value } }
+    case 'reset':
+      return action.state
+    default:
+      return state
+  }
+}
+
 export function OpenCodeConfigPanel({ items, scope, projectName, saving, onSave, onCreate }: OpenCodeConfigPanelProps) {
   const selected = items[0] ?? null
   const parsed = useMemo(() => safeParse(selected?.content ?? ''), [selected?.content])
-  const [autoupdate, setAutoupdate] = useState(readStringOrBoolean(parsed, 'autoupdate'))
-  const [defaultAgent, setDefaultAgent] = useState(readString(parsed, 'default_agent'))
-  const [share, setShare] = useState(readString(parsed, 'share'))
-  const [disabledProviders, setDisabledProviders] = useState(readStringList(parsed, 'disabled_providers'))
-  const [providerIds, setProviderIds] = useState(readObjectKeys(parsed, 'provider'))
-  const [selectedProviderId, setSelectedProviderId] = useState('')
-  const [providerConfigs, setProviderConfigs] = useState<Record<string, string>>({})
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    setAutoupdate(readStringOrBoolean(parsed, 'autoupdate'))
-    setDefaultAgent(readString(parsed, 'default_agent'))
-    setShare(readString(parsed, 'share'))
-    setDisabledProviders(readStringList(parsed, 'disabled_providers'))
-    const nextProviderIds = readObjectKeys(parsed, 'provider')
-    setProviderIds(nextProviderIds)
-    const nextConfigs = buildProviderConfigDrafts(parsed)
-    setProviderConfigs(nextConfigs)
-    setSelectedProviderId((current) => (current && nextProviderIds.includes(current) ? current : (nextProviderIds[0] ?? '')))
-    setError('')
-  }, [parsed])
 
   const eyebrow = scope === 'GLOBAL' ? 'Global / OpenCode Config' : `${projectName ?? 'Project'} / OpenCode Config`
 
@@ -82,33 +117,64 @@ export function OpenCodeConfigPanel({ items, scope, projectName, saving, onSave,
     )
   }
 
-  const isDirty =
-    autoupdate !== readStringOrBoolean(parsed, 'autoupdate') ||
-    defaultAgent !== readString(parsed, 'default_agent') ||
-    share !== readString(parsed, 'share') ||
-    JSON.stringify(disabledProviders) !== JSON.stringify(readStringList(parsed, 'disabled_providers')) ||
-    JSON.stringify(providerIds) !== JSON.stringify(readObjectKeys(parsed, 'provider')) ||
-    JSON.stringify(normalizeProviderDrafts(providerConfigs, providerIds)) !== JSON.stringify(normalizeProviderDrafts(buildProviderConfigDrafts(parsed), readObjectKeys(parsed, 'provider')))
+  return (
+    <ConfigEditor
+      key={selected.content}
+      selected={selected}
+      parsed={parsed}
+      eyebrow={eyebrow}
+      saving={saving}
+      onSave={onSave}
+    />
+  )
+}
 
-  const activeProviderDraft = selectedProviderId ? (providerConfigs[selectedProviderId] ?? '{}') : ''
-  const activeProviderParseError = selectedProviderId ? readJSONError(activeProviderDraft) : ''
+interface ConfigEditorProps {
+  selected: FileResourceItem
+  parsed: Record<string, unknown>
+  eyebrow: string
+  saving: string | null
+  onSave: (path: string, content: string) => Promise<void>
+}
+
+function readBaseline(parsed: Record<string, unknown>): ConfigState {
+  const providerIds = readObjectKeys(parsed, 'provider')
+  const providerConfigs = buildProviderConfigDrafts(parsed)
+  return {
+    autoupdate: readStringOrBoolean(parsed, 'autoupdate'),
+    defaultAgent: readString(parsed, 'default_agent'),
+    share: readString(parsed, 'share'),
+    disabledProviders: readStringList(parsed, 'disabled_providers'),
+    providerIds,
+    selectedProviderId: providerIds[0] ?? '',
+    providerConfigs,
+  }
+}
+
+function ConfigEditor({ selected, parsed, eyebrow, saving, onSave }: ConfigEditorProps) {
+  const baseline = useMemo(() => readBaseline(parsed), [parsed])
+  const [state, dispatch] = useReducer(configReducer, baseline)
+  const [error, setError] = useState('')
+
+  const isDirty =
+    state.autoupdate !== baseline.autoupdate ||
+    state.defaultAgent !== baseline.defaultAgent ||
+    state.share !== baseline.share ||
+    JSON.stringify(state.disabledProviders) !== JSON.stringify(baseline.disabledProviders) ||
+    JSON.stringify(state.providerIds) !== JSON.stringify(baseline.providerIds) ||
+    JSON.stringify(normalizeProviderDrafts(state.providerConfigs, state.providerIds)) !== JSON.stringify(normalizeProviderDrafts(baseline.providerConfigs, baseline.providerIds))
+
+  const activeProviderDraft = state.selectedProviderId ? (state.providerConfigs[state.selectedProviderId] ?? '{}') : ''
+  const activeProviderParseError = state.selectedProviderId ? readJSONError(activeProviderDraft) : ''
 
   const handleDiscard = () => {
-    setAutoupdate(readStringOrBoolean(parsed, 'autoupdate'))
-    setDefaultAgent(readString(parsed, 'default_agent'))
-    setShare(readString(parsed, 'share'))
-    setDisabledProviders(readStringList(parsed, 'disabled_providers'))
-    const nextProviderIds = readObjectKeys(parsed, 'provider')
-    setProviderIds(nextProviderIds)
-    const nextConfigs = buildProviderConfigDrafts(parsed)
-    setProviderConfigs(nextConfigs)
-    setSelectedProviderId(nextProviderIds[0] ?? '')
+    dispatch({ type: 'reset', state: baseline })
   }
 
   const handleSave = async () => {
     setError('')
     try {
-      await onSave(selected.path, buildConfig(parsed, autoupdate, defaultAgent, share, disabledProviders, providerIds, providerConfigs))
+      await onSave(selected.path, buildConfig(parsed, state.autoupdate, state.defaultAgent, state.share, state.disabledProviders, state.providerIds, state.providerConfigs))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save')
     }
@@ -128,8 +194,8 @@ export function OpenCodeConfigPanel({ items, scope, projectName, saving, onSave,
 
           <Field label="Autoupdate">
             <select
-              value={autoupdate}
-              onChange={(event) => setAutoupdate(event.target.value)}
+              value={state.autoupdate}
+              onChange={(event) => dispatch({ type: 'setAutoupdate', value: event.target.value })}
               className="w-full max-w-sm h-9 rounded-lg border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
             >
               <option value="">Default</option>
@@ -141,8 +207,8 @@ export function OpenCodeConfigPanel({ items, scope, projectName, saving, onSave,
 
           <Field label="Default Agent">
             <input
-              value={defaultAgent}
-              onChange={(event) => setDefaultAgent(event.target.value)}
+              value={state.defaultAgent}
+              onChange={(event) => dispatch({ type: 'setDefaultAgent', value: event.target.value })}
               placeholder="build"
               className="w-full max-w-sm h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20"
             />
@@ -151,8 +217,8 @@ export function OpenCodeConfigPanel({ items, scope, projectName, saving, onSave,
 
           <Field label="Share">
             <select
-              value={share}
-              onChange={(event) => setShare(event.target.value)}
+              value={state.share}
+              onChange={(event) => dispatch({ type: 'setShare', value: event.target.value })}
               className="w-full max-w-sm h-9 rounded-lg border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
             >
               <option value="">Default</option>
@@ -165,57 +231,44 @@ export function OpenCodeConfigPanel({ items, scope, projectName, saving, onSave,
           <ListField
             label="Disabled Providers"
             description="Provider IDs to disable even if credentials are available."
-            items={disabledProviders}
-            onChange={setDisabledProviders}
+            items={state.disabledProviders}
+            onChange={(value) => dispatch({ type: 'setDisabledProviders', value })}
             placeholder="gemini"
           />
 
           <ListField
             label="Configured Providers"
             description="Provider IDs present in the top-level provider block."
-            items={providerIds}
-            onChange={(nextIds) => {
-              setProviderIds(nextIds)
-              setProviderConfigs((current) => {
-                const nextConfigs: Record<string, string> = {}
-                for (const id of nextIds) {
-                  nextConfigs[id] = current[id] ?? '{}'
-                }
-                return nextConfigs
-              })
-              setSelectedProviderId((current) => (current && nextIds.includes(current) ? current : (nextIds[0] ?? '')))
-            }}
+            items={state.providerIds}
+            onChange={(value) => dispatch({ type: 'setProviderIds', value })}
             placeholder="openai"
           />
 
-          {providerIds.length > 0 ? (
+          {state.providerIds.length > 0 ? (
             <div className="rounded-lg border border-border/30 bg-muted/10 p-4 space-y-3">
               <div>
                 <h4 className="text-[11px] font-semibold">Provider Block</h4>
-                <p className="text-[10px] text-muted-foreground/50 mt-1">Edit the nested <code className="font-mono">provider.{selectedProviderId || '<id>'}</code> object directly. This preserves OpenCode provider-native options without hardcoding every provider schema.</p>
+                <p className="text-[10px] text-muted-foreground/50 mt-1">Edit the nested <code className="font-mono">provider.{state.selectedProviderId || '<id>'}</code> object directly. This preserves OpenCode provider-native options without hardcoding every provider schema.</p>
               </div>
 
               <Field label="Selected Provider">
                 <select
-                  value={selectedProviderId}
-                  onChange={(event) => setSelectedProviderId(event.target.value)}
+                  value={state.selectedProviderId}
+                  onChange={(event) => dispatch({ type: 'setSelectedProviderId', value: event.target.value })}
                   className="w-full max-w-sm h-9 rounded-lg border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                 >
-                  {providerIds.map((id) => (
+                  {state.providerIds.map((id) => (
                     <option key={id} value={id}>{id}</option>
                   ))}
                 </select>
               </Field>
 
-              {selectedProviderId ? (
+              {state.selectedProviderId ? (
                 <section className="space-y-2">
                   <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Provider Config JSON</h4>
                   <textarea
                     value={activeProviderDraft}
-                    onChange={(event) => {
-                      const value = event.target.value
-                      setProviderConfigs((current) => ({ ...current, [selectedProviderId]: value }))
-                    }}
+                    onChange={(event) => dispatch({ type: 'setProviderConfig', id: state.selectedProviderId, value: event.target.value })}
                     className="min-h-[220px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20"
                     spellCheck={false}
                   />

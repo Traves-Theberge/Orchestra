@@ -37,11 +37,13 @@ function savePrefs(providerId: string, modelId: string) {
 }
 
 export function useProviderConfig(config: BackendConfig | null) {
-  const prefs = loadPrefs()
-  const [providerConfig, setProviderConfig] = useState<ChatProviderConfig>({
-    providerId: (prefs.providerId as ChatProviderConfig['providerId']) ?? 'openrouter',
-    modelId: prefs.modelId ?? '',
-    apiKey: '',
+  const [providerConfig, setProviderConfig] = useState<ChatProviderConfig>(() => {
+    const prefs = loadPrefs()
+    return {
+      providerId: (prefs.providerId as ChatProviderConfig['providerId']) ?? 'openrouter',
+      modelId: prefs.modelId ?? '',
+      apiKey: '',
+    }
   })
   const [availableKeys, setAvailableKeys] = useState<Record<string, string>>({})
   const [models, setModels] = useState<ModelInfo[]>([])

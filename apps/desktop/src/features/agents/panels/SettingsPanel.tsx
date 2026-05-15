@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/SettingsPanel.tsx
-import { useState, useEffect, useCallback, useId } from 'react'
+import { useCallback, useId, useReducer, useState } from 'react'
 import { Code, Settings2, Plus, X } from 'lucide-react'
 import { Button } from '@ui/button'
 import { Skeleton } from '@ui/skeleton'
@@ -48,135 +48,58 @@ const toggleThumbClasses = (on: boolean) =>
 
 const isPresent = (v: unknown) => v !== undefined && v !== null && v !== ''
 
-export function SettingsPanel({
-  settings,
-  globalSettings,
-  scope,
-  projectName,
-  settingsPath,
-  settingsExists,
-  saving,
-  onSave,
-}: SettingsPanelProps) {
-  const [mode, setMode] = useState<'structured' | 'raw'>('structured')
-  const [local, setLocal] = useState<Record<string, unknown>>(settings)
-  const [rawJson, setRawJson] = useState(() => JSON.stringify(settings, null, 2))
-  const [rawError, setRawError] = useState<string | null>(null)
-  const [error, setError] = useState('')
-  const [newEnvKey, setNewEnvKey] = useState('')
-  const [newEnvValue, setNewEnvValue] = useState('')
-  const modelLabelId = useId()
-  const permissionModeLabelId = useId()
-  const alwaysThinkingLabelId = useId()
-  const voiceEnabledLabelId = useId()
-  const envKeyId = useId()
-  const envValueId = useId()
+interface FormState {
+  mode: 'structured' | 'raw'
+  local: Record<string, unknown>
+  rawJson: string
+  rawError: string | null
+}
 
-  useEffect(() => {
-    setLocal(settings)
-    setRawJson(JSON.stringify(settings, null, 2))
-    setError('')
-  }, [settings])
+type FormAction =
+  | { type: 'reset'; settings: Record<string, unknown> }
+  | { type: 'toggle_mode' }
+  | { type: 'set_local'; local: Record<string, unknown> }
+  | { type: 'set_raw'; raw: string }
+  | { type: 'set_raw_error'; error: string | null }
 
-  useEffect(() => {
-    if (mode === 'raw') {
-      setRawJson(JSON.stringify(local, null, 2))
-      setRawError(null)
-    }
-  }, [mode]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const isDirty = JSON.stringify(local) !== JSON.stringify(settings)
-  const isRawDirty = mode === 'raw' && rawJson !== JSON.stringify(settings, null, 2)
-  const showDirty = mode === 'structured' ? isDirty : isRawDirty
-  usePublishDirty(showDirty)
-
-  const handleDiscard = useCallback(() => {
-    setLocal(settings)
-    setRawJson(JSON.stringify(settings, null, 2))
-    setRawError(null)
-    setError('')
-  }, [settings])
-
-  const handleSave = useCallback(async () => {
-    setError('')
-    try {
-      if (mode === 'raw') {
-        let parsed: unknown
-        try {
-          parsed = JSON.parse(rawJson)
-        } catch {
-          setRawError('Invalid JSON')
-          return
-        }
-        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-          setRawError('Settings must be a JSON object')
-          return
-        }
-        await onSave(parsed as Record<string, unknown>)
-        setLocal(parsed as Record<string, unknown>)
-        setRawError(null)
-      } else {
-        await onSave(local)
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save')
-    }
-  }, [mode, rawJson, local, onSave])
-
-  const updateField = useCallback((key: string, value: unknown) => {
-    setLocal(prev => ({ ...prev, [key]: value }))
-  }, [])
-
-  const removePlugin = useCallback((plugin: string) => {
-    setLocal(prev => {
-      const raw = prev.enabledPlugins
-      if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
-        const obj = { ...(raw as Record<string, unknown>) }
-        delete obj[plugin]
-        return { ...prev, enabledPlugins: Object.keys(obj).length > 0 ? obj : undefined }
-      }
-      const arr = Array.isArray(raw) ? (raw as string[]).filter(p => p !== plugin) : []
-      return { ...prev, enabledPlugins: arr.length > 0 ? arr : undefined }
-    })
-  }, [])
-
-  const envObj = (typeof local.env === 'object' && local.env !== null && !Array.isArray(local.env))
-    ? local.env as Record<string, string>
-    : {}
-
-  const handleAddEnv = useCallback(() => {
-    if (!newEnvKey.trim()) return
-    const updated = { ...envObj, [newEnvKey.trim()]: newEnvValue }
-    setLocal(prev => ({ ...prev, env: updated }))
-    setNewEnvKey('')
-    setNewEnvValue('')
-  }, [newEnvKey, newEnvValue, envObj])
-
-  const handleRemoveEnv = useCallback((key: string) => {
-    const { [key]: _, ...rest } = envObj
-    setLocal(prev => ({ ...prev, env: Object.keys(rest).length > 0 ? rest : undefined }))
-  }, [envObj])
-
-  const handleEnvValueChange = useCallback((key: string, value: string) => {
-    setLocal(prev => ({ ...prev, env: { ...envObj, [key]: value } }))
-  }, [envObj])
-
-  // Inheritance helpers (only meaningful at PROJECT scope)
-  const fieldInherited = (key: string) =>
-    scope === 'PROJECT' && !isPresent(local[key])
-
-  const inheritedValueString = (key: string): string => {
-    const v = globalSettings?.[key]
-    if (v === undefined || v === null || v === '') return '—'
-    if (typeof v === 'boolean') return v ? 'on' : 'off'
-    return String(v)
+function makeInitial(settings: Record<string, unknown>): FormState {
+  return {
+    mode: 'structured',
+    local: settings,
+    rawJson: JSON.stringify(settings, null, 2),
+    rawError: null,
   }
+}
 
-  const setFromGlobal = (key: string) => {
-    const v = globalSettings?.[key]
-    setLocal(prev => ({ ...prev, [key]: v ?? '' }))
+function formReducer(state: FormState, action: FormAction): FormState {
+  switch (action.type) {
+    case 'reset':
+      return {
+        mode: state.mode,
+        local: action.settings,
+        rawJson: JSON.stringify(action.settings, null, 2),
+        rawError: null,
+      }
+    case 'toggle_mode': {
+      const nextMode = state.mode === 'structured' ? 'raw' : 'structured'
+      if (nextMode === 'raw') {
+        return { ...state, mode: nextMode, rawJson: JSON.stringify(state.local, null, 2), rawError: null }
+      }
+      return { ...state, mode: nextMode }
+    }
+    case 'set_local':
+      return { ...state, local: action.local }
+    case 'set_raw':
+      return { ...state, rawJson: action.raw, rawError: null }
+    case 'set_raw_error':
+      return { ...state, rawError: action.error }
+    default:
+      return state
   }
+}
 
+export function SettingsPanel(props: SettingsPanelProps) {
+  const { settings, settingsExists, settingsPath, saving, onSave } = props
   if (!settingsExists && Object.keys(settings).length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground/30">
@@ -199,6 +122,122 @@ export function SettingsPanel({
     return <div className="p-6 space-y-3"><Skeleton className="h-6 w-48" /><Skeleton className="h-[300px] w-full" /></div>
   }
 
+  return <SettingsForm key={JSON.stringify(settings)} {...props} />
+}
+
+function SettingsForm({
+  settings,
+  globalSettings,
+  scope,
+  projectName,
+  settingsPath,
+  saving,
+  onSave,
+}: SettingsPanelProps) {
+  const [form, dispatch] = useReducer(formReducer, settings, makeInitial)
+  const [error, setError] = useState('')
+  const [newEnvKey, setNewEnvKey] = useState('')
+  const [newEnvValue, setNewEnvValue] = useState('')
+  const modelLabelId = useId()
+  const permissionModeLabelId = useId()
+  const alwaysThinkingLabelId = useId()
+  const voiceEnabledLabelId = useId()
+
+  const { mode, local, rawJson, rawError } = form
+
+  const isDirty = JSON.stringify(local) !== JSON.stringify(settings)
+  const isRawDirty = mode === 'raw' && rawJson !== JSON.stringify(settings, null, 2)
+  const showDirty = mode === 'structured' ? isDirty : isRawDirty
+  usePublishDirty(showDirty)
+
+  const handleDiscard = useCallback(() => {
+    dispatch({ type: 'reset', settings })
+    setError('')
+  }, [settings])
+
+  const handleSave = useCallback(async () => {
+    setError('')
+    try {
+      if (mode === 'raw') {
+        let parsed: unknown
+        try {
+          parsed = JSON.parse(rawJson)
+        } catch {
+          dispatch({ type: 'set_raw_error', error: 'Invalid JSON' })
+          return
+        }
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+          dispatch({ type: 'set_raw_error', error: 'Settings must be a JSON object' })
+          return
+        }
+        await onSave(parsed as Record<string, unknown>)
+        dispatch({ type: 'set_local', local: parsed as Record<string, unknown> })
+        dispatch({ type: 'set_raw_error', error: null })
+      } else {
+        await onSave(local)
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save')
+    }
+  }, [mode, rawJson, local, onSave])
+
+  const updateField = useCallback((key: string, value: unknown) => {
+    dispatch({ type: 'set_local', local: { ...local, [key]: value } })
+  }, [local])
+
+  const removePlugin = useCallback((plugin: string) => {
+    const raw = local.enabledPlugins
+    let next: unknown
+    if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
+      const obj = { ...(raw as Record<string, unknown>) }
+      delete obj[plugin]
+      next = Object.keys(obj).length > 0 ? obj : undefined
+    } else if (Array.isArray(raw)) {
+      const arr = (raw as string[]).filter(p => p !== plugin)
+      next = arr.length > 0 ? arr : undefined
+    } else {
+      next = undefined
+    }
+    dispatch({ type: 'set_local', local: { ...local, enabledPlugins: next } })
+  }, [local])
+
+  const envObj = (typeof local.env === 'object' && local.env !== null && !Array.isArray(local.env))
+    ? local.env as Record<string, string>
+    : {}
+
+  const handleAddEnv = useCallback(() => {
+    if (!newEnvKey.trim()) return
+    const updated = { ...envObj, [newEnvKey.trim()]: newEnvValue }
+    dispatch({ type: 'set_local', local: { ...local, env: updated } })
+    setNewEnvKey('')
+    setNewEnvValue('')
+  }, [newEnvKey, newEnvValue, envObj, local])
+
+  const handleRemoveEnv = useCallback((key: string) => {
+    const { [key]: _, ...rest } = envObj
+    void _
+    dispatch({ type: 'set_local', local: { ...local, env: Object.keys(rest).length > 0 ? rest : undefined } })
+  }, [envObj, local])
+
+  const handleEnvValueChange = useCallback((key: string, value: string) => {
+    dispatch({ type: 'set_local', local: { ...local, env: { ...envObj, [key]: value } } })
+  }, [envObj, local])
+
+  const fieldInherited = (key: string) =>
+    scope === 'PROJECT' && !isPresent(local[key])
+
+  const inheritedValueString = (key: string): string => {
+    const v = globalSettings?.[key]
+    if (v === undefined || v === null || v === '') return '—'
+    if (typeof v === 'boolean') return v ? 'on' : 'off'
+    return String(v)
+  }
+
+  const setFromGlobal = (key: string) => {
+    const v = globalSettings?.[key]
+    dispatch({ type: 'set_local', local: { ...local, [key]: v ?? '' } })
+  }
+
   const rawPlugins = local.enabledPlugins
   const plugins: string[] = Array.isArray(rawPlugins)
     ? (rawPlugins as string[])
@@ -213,7 +252,7 @@ export function SettingsPanel({
     <Button
       size="sm"
       variant="ghost"
-      onClick={() => setMode(m => m === 'structured' ? 'raw' : 'structured')}
+      onClick={() => dispatch({ type: 'toggle_mode' })}
       className="h-7 text-[10px] gap-1.5"
     >
       {mode === 'structured' ? <Code size={10} /> : <Settings2 size={10} />}
@@ -235,7 +274,7 @@ export function SettingsPanel({
         <div className="flex-1 min-h-0 flex flex-col gap-2">
           <textarea
             value={rawJson}
-            onChange={(e) => { setRawJson(e.target.value); setRawError(null) }}
+            onChange={(e) => dispatch({ type: 'set_raw', raw: e.target.value })}
             className="flex-1 min-h-0 bg-muted/10 rounded-lg border border-border/30 px-4 py-3 font-mono text-[13px] leading-6 text-foreground focus:outline-none focus:border-primary/30 resize-none transition-colors"
             spellCheck={false}
           />
@@ -244,11 +283,9 @@ export function SettingsPanel({
       ) : (
         <div className="flex-1 min-h-0 overflow-y-auto pr-1">
           <div className="max-w-2xl mx-auto space-y-6">
-            {/* Model & Behavior */}
             <section className="space-y-3">
               <h4 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">Model & Behavior</h4>
 
-              {/* Model */}
               <div className="space-y-1.5">
                 <span id={modelLabelId} className="text-[10px] uppercase tracking-wider text-foreground/45">Model</span>
                 <InheritedField
@@ -268,7 +305,6 @@ export function SettingsPanel({
                 </InheritedField>
               </div>
 
-              {/* Permission Mode */}
               <div className="space-y-1.5">
                 <span id={permissionModeLabelId} className="text-[10px] uppercase tracking-wider text-foreground/45">Permission Mode</span>
                 <InheritedField
@@ -288,7 +324,6 @@ export function SettingsPanel({
                 </InheritedField>
               </div>
 
-              {/* Always Thinking */}
               <div className="space-y-1.5">
                 <span id={alwaysThinkingLabelId} className="text-[10px] uppercase tracking-wider text-foreground/45">Always Thinking</span>
                 <InheritedField
@@ -312,7 +347,6 @@ export function SettingsPanel({
                 </InheritedField>
               </div>
 
-              {/* Voice Enabled */}
               <div className="space-y-1.5">
                 <span id={voiceEnabledLabelId} className="text-[10px] uppercase tracking-wider text-foreground/45">Voice Input</span>
                 <InheritedField
@@ -337,7 +371,6 @@ export function SettingsPanel({
               </div>
             </section>
 
-            {/* Plugins */}
             <section className="space-y-3">
               <h4 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">Plugins</h4>
               {plugins.length === 0 ? (
@@ -362,10 +395,8 @@ export function SettingsPanel({
               )}
             </section>
 
-            {/* Permissions */}
             <PermissionsSection local={local} updateField={updateField} />
 
-            {/* Environment Variables */}
             <section className="space-y-3">
               <h4 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">Environment Variables</h4>
 
@@ -437,10 +468,6 @@ export function SettingsPanel({
   )
 }
 
-/* ------------------------------------------------------------------ */
-/*  Inline Permissions Section                                         */
-/* ------------------------------------------------------------------ */
-
 function PermissionsSection({ local, updateField }: { local: Record<string, unknown>; updateField: (key: string, value: unknown) => void }) {
   const [newAllow, setNewAllow] = useState('')
   const [newDeny, setNewDeny] = useState('')
@@ -482,7 +509,7 @@ function PermissionsSection({ local, updateField }: { local: Record<string, unkn
       <p className="text-[10px] text-muted-foreground/40 mb-2">{description}</p>
       <div className="flex flex-wrap gap-1.5 mb-2">
         {items.map((item, i) => (
-          <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/30 border border-border/30 text-[11px] font-mono">
+          <span key={`${item}#${i}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/30 border border-border/30 text-[11px] font-mono">
             {item}
             <button onClick={() => removeFrom(field, items, i)} className="text-muted-foreground/40 hover:text-red-400">
               <X size={10} />

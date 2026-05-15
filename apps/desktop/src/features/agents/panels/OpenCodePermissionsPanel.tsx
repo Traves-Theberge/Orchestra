@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/OpenCodePermissionsPanel.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useReducer, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Button } from '@ui/button'
 import { PanelHeader } from '../components/PanelHeader'
@@ -16,22 +16,35 @@ interface OpenCodePermissionsPanelProps {
   onSave: (path: string, content: string) => Promise<void>
 }
 
+type PermissionAction = 'allow' | 'deny' | 'ask'
+
+interface PermissionsState {
+  defaultMode: string
+  allow: string[]
+  deny: string[]
+  ask: string[]
+}
+
+type PermissionsReducerAction =
+  | { type: 'setDefaultMode', value: string }
+  | { type: 'setList', list: PermissionAction, items: string[] }
+  | { type: 'reset', state: PermissionsState }
+
+function permissionsReducer(state: PermissionsState, action: PermissionsReducerAction): PermissionsState {
+  switch (action.type) {
+    case 'setDefaultMode':
+      return { ...state, defaultMode: action.value }
+    case 'setList':
+      return { ...state, [action.list]: action.items }
+    case 'reset':
+      return action.state
+    default:
+      return state
+  }
+}
+
 export function OpenCodePermissionsPanel({ configPath, configContent, scope, projectName, saving, onSave }: OpenCodePermissionsPanelProps) {
   const parsed = useMemo(() => safeParse(configContent), [configContent])
-  const [defaultMode, setDefaultMode] = useState(readDefaultMode(parsed))
-  const [allow, setAllow] = useState(readPermissionList(parsed, 'allow'))
-  const [deny, setDeny] = useState(readPermissionList(parsed, 'deny'))
-  const [ask, setAsk] = useState(readPermissionList(parsed, 'ask'))
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    setDefaultMode(readDefaultMode(parsed))
-    setAllow(readPermissionList(parsed, 'allow'))
-    setDeny(readPermissionList(parsed, 'deny'))
-    setAsk(readPermissionList(parsed, 'ask'))
-    setError('')
-  }, [parsed])
-
   const eyebrow = scope === 'GLOBAL' ? 'Global / Permissions' : `${projectName ?? 'Project'} / Permissions`
 
   if (!configPath) {
@@ -70,23 +83,51 @@ export function OpenCodePermissionsPanel({ configPath, configContent, scope, pro
     )
   }
 
+  return (
+    <PermissionsEditor
+      key={configContent}
+      configPath={configPath}
+      parsed={parsed}
+      eyebrow={eyebrow}
+      saving={saving}
+      onSave={onSave}
+    />
+  )
+}
+
+interface PermissionsEditorProps {
+  configPath: string
+  parsed: Record<string, unknown>
+  eyebrow: string
+  saving: string | null
+  onSave: (path: string, content: string) => Promise<void>
+}
+
+function PermissionsEditor({ configPath, parsed, eyebrow, saving, onSave }: PermissionsEditorProps) {
+  const baseline = useMemo<PermissionsState>(() => ({
+    defaultMode: readDefaultMode(parsed),
+    allow: readPermissionList(parsed, 'allow'),
+    deny: readPermissionList(parsed, 'deny'),
+    ask: readPermissionList(parsed, 'ask'),
+  }), [parsed])
+
+  const [state, dispatch] = useReducer(permissionsReducer, baseline)
+  const [error, setError] = useState('')
+
   const isDirty =
-    defaultMode !== readDefaultMode(parsed) ||
-    JSON.stringify(allow) !== JSON.stringify(readPermissionList(parsed, 'allow')) ||
-    JSON.stringify(deny) !== JSON.stringify(readPermissionList(parsed, 'deny')) ||
-    JSON.stringify(ask) !== JSON.stringify(readPermissionList(parsed, 'ask'))
+    state.defaultMode !== baseline.defaultMode ||
+    JSON.stringify(state.allow) !== JSON.stringify(baseline.allow) ||
+    JSON.stringify(state.deny) !== JSON.stringify(baseline.deny) ||
+    JSON.stringify(state.ask) !== JSON.stringify(baseline.ask)
 
   const handleDiscard = () => {
-    setDefaultMode(readDefaultMode(parsed))
-    setAllow(readPermissionList(parsed, 'allow'))
-    setDeny(readPermissionList(parsed, 'deny'))
-    setAsk(readPermissionList(parsed, 'ask'))
+    dispatch({ type: 'reset', state: baseline })
   }
 
   const handleSave = async () => {
     setError('')
     try {
-      await onSave(configPath, buildOpenCodeConfig(parsed, defaultMode, allow, deny, ask))
+      await onSave(configPath, buildOpenCodeConfig(parsed, state.defaultMode, state.allow, state.deny, state.ask))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save')
     }
@@ -106,8 +147,8 @@ export function OpenCodePermissionsPanel({ configPath, configContent, scope, pro
 
           <Field label="Default Permission Mode">
             <select
-              value={defaultMode}
-              onChange={(event) => setDefaultMode(event.target.value)}
+              value={state.defaultMode}
+              onChange={(event) => dispatch({ type: 'setDefaultMode', value: event.target.value })}
               className="w-full max-w-sm h-9 rounded-lg border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
             >
               <option value="">Rule Map</option>
@@ -118,9 +159,30 @@ export function OpenCodePermissionsPanel({ configPath, configContent, scope, pro
             <p className="text-[10px] text-muted-foreground/50 mt-1">When set, OpenCode uses a single global permission mode instead of per-tool rules.</p>
           </Field>
 
-          <ListField label="Allow Rules" description="Tool rules that should run without prompting." items={allow} onChange={setAllow} placeholder="bash(git status)" disabled={defaultMode !== ''} />
-          <ListField label="Deny Rules" description="Tool rules that should always be blocked." items={deny} onChange={setDeny} placeholder="bash(rm *)" disabled={defaultMode !== ''} />
-          <ListField label="Ask Rules" description="Tool rules that should always prompt." items={ask} onChange={setAsk} placeholder="edit" disabled={defaultMode !== ''} />
+          <ListField
+            label="Allow Rules"
+            description="Tool rules that should run without prompting."
+            items={state.allow}
+            onChange={(items) => dispatch({ type: 'setList', list: 'allow', items })}
+            placeholder="bash(git status)"
+            disabled={state.defaultMode !== ''}
+          />
+          <ListField
+            label="Deny Rules"
+            description="Tool rules that should always be blocked."
+            items={state.deny}
+            onChange={(items) => dispatch({ type: 'setList', list: 'deny', items })}
+            placeholder="bash(rm *)"
+            disabled={state.defaultMode !== ''}
+          />
+          <ListField
+            label="Ask Rules"
+            description="Tool rules that should always prompt."
+            items={state.ask}
+            onChange={(items) => dispatch({ type: 'setList', list: 'ask', items })}
+            placeholder="edit"
+            disabled={state.defaultMode !== ''}
+          />
         </div>
       </div>
 

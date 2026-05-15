@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/CodexModelPanel.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useReducer } from 'react'
 import { PanelHeader } from '../components/PanelHeader'
 import { PanelFooter } from '../components/PanelFooter'
 import { ErrorStrip } from '../components/ErrorStrip'
@@ -27,81 +27,126 @@ type ProviderBlock = {
   supportsWebsockets: string
 }
 
-export function CodexModelPanel({ modelConfig, configContent, scope, projectName, saving, onSave, onSaveConfig }: CodexModelPanelProps) {
-  const [model, setModel] = useState(modelConfig.model)
-  const [effort, setEffort] = useState(modelConfig.effort)
-  const [provider, setProvider] = useState(readTomlScalar(configContent, 'model_provider'))
+const EMPTY_BLOCK: ProviderBlock = {
+  name: '',
+  baseUrl: '',
+  wireApi: '',
+  envKey: '',
+  envKeyInstructions: '',
+  streamIdleTimeoutMs: '',
+  supportsWebsockets: '',
+}
+
+type FormState = {
+  model: string
+  effort: string
+  provider: string
+  baseUrl: string
+  wireApi: string
+  envKey: string
+  envKeyInstructions: string
+  streamIdleTimeoutMs: string
+  supportsWebsockets: string
+  error: string
+}
+
+type FormAction =
+  | { type: 'set-model', value: string }
+  | { type: 'set-effort', value: string }
+  | { type: 'set-provider', value: string }
+  | { type: 'set-base-url', value: string }
+  | { type: 'set-wire-api', value: string }
+  | { type: 'set-env-key', value: string }
+  | { type: 'set-env-key-instructions', value: string }
+  | { type: 'set-stream-idle-timeout', value: string }
+  | { type: 'set-supports-websockets', value: string }
+  | { type: 'set-error', value: string }
+  | { type: 'reset', state: FormState }
+
+function formReducer(state: FormState, action: FormAction): FormState {
+  switch (action.type) {
+    case 'set-model': return { ...state, model: action.value }
+    case 'set-effort': return { ...state, effort: action.value }
+    case 'set-provider': return { ...state, provider: action.value }
+    case 'set-base-url': return { ...state, baseUrl: action.value }
+    case 'set-wire-api': return { ...state, wireApi: action.value }
+    case 'set-env-key': return { ...state, envKey: action.value }
+    case 'set-env-key-instructions': return { ...state, envKeyInstructions: action.value }
+    case 'set-stream-idle-timeout': return { ...state, streamIdleTimeoutMs: action.value }
+    case 'set-supports-websockets': return { ...state, supportsWebsockets: action.value }
+    case 'set-error': return { ...state, error: action.value }
+    case 'reset': return action.state
+  }
+}
+
+function initialFormState(modelConfig: ProviderModelConfig, configContent: string): FormState {
+  const provider = readTomlScalar(configContent, 'model_provider')
+  const blocks = parseProviderBlocks(configContent)
+  const activeBlock = blocks.find(block => block.name === provider) ?? { ...EMPTY_BLOCK, name: provider }
+  return {
+    model: modelConfig.model,
+    effort: modelConfig.effort,
+    provider,
+    baseUrl: activeBlock.baseUrl,
+    wireApi: activeBlock.wireApi,
+    envKey: activeBlock.envKey,
+    envKeyInstructions: activeBlock.envKeyInstructions,
+    streamIdleTimeoutMs: activeBlock.streamIdleTimeoutMs,
+    supportsWebsockets: activeBlock.supportsWebsockets,
+    error: '',
+  }
+}
+
+export function CodexModelPanel(props: CodexModelPanelProps) {
+  const key = `${props.modelConfig.model}::${props.modelConfig.effort}::${props.configContent}`
+  return <CodexModelPanelInner key={key} {...props} />
+}
+
+function CodexModelPanelInner({ modelConfig, configContent, scope, projectName, saving, onSave, onSaveConfig }: CodexModelPanelProps) {
   const providerBlocks = useMemo(() => parseProviderBlocks(configContent), [configContent])
-  const activeBlock = providerBlocks.find(block => block.name === provider) ?? { name: provider, baseUrl: '', wireApi: '', envKey: '', envKeyInstructions: '', streamIdleTimeoutMs: '', supportsWebsockets: '' }
-  const [baseUrl, setBaseUrl] = useState(activeBlock.baseUrl)
-  const [wireApi, setWireApi] = useState(activeBlock.wireApi)
-  const [envKey, setEnvKey] = useState(activeBlock.envKey)
-  const [envKeyInstructions, setEnvKeyInstructions] = useState(activeBlock.envKeyInstructions)
-  const [streamIdleTimeoutMs, setStreamIdleTimeoutMs] = useState(activeBlock.streamIdleTimeoutMs)
-  const [supportsWebsockets, setSupportsWebsockets] = useState(activeBlock.supportsWebsockets)
-  const [error, setError] = useState('')
+  const baselineProvider = readTomlScalar(configContent, 'model_provider')
+  const activeBlock = providerBlocks.find(block => block.name === baselineProvider) ?? { ...EMPTY_BLOCK, name: baselineProvider }
 
-  useEffect(() => {
-    setModel(modelConfig.model)
-    setEffort(modelConfig.effort)
-  }, [modelConfig])
-
-  useEffect(() => {
-    setProvider(readTomlScalar(configContent, 'model_provider'))
-  }, [configContent])
-
-  useEffect(() => {
-    setBaseUrl(activeBlock.baseUrl)
-    setWireApi(activeBlock.wireApi)
-    setEnvKey(activeBlock.envKey)
-  }, [activeBlock.baseUrl, activeBlock.wireApi, activeBlock.envKey, activeBlock.name])
+  const [state, dispatch] = useReducer(formReducer, undefined as never, () => initialFormState(modelConfig, configContent))
 
   const isDirty =
-    model !== modelConfig.model ||
-    effort !== modelConfig.effort ||
-    provider !== readTomlScalar(configContent, 'model_provider') ||
-    baseUrl !== activeBlock.baseUrl ||
-    wireApi !== activeBlock.wireApi ||
-    envKey !== activeBlock.envKey ||
-    envKeyInstructions !== activeBlock.envKeyInstructions ||
-    streamIdleTimeoutMs !== activeBlock.streamIdleTimeoutMs ||
-    supportsWebsockets !== activeBlock.supportsWebsockets
+    state.model !== modelConfig.model ||
+    state.effort !== modelConfig.effort ||
+    state.provider !== baselineProvider ||
+    state.baseUrl !== activeBlock.baseUrl ||
+    state.wireApi !== activeBlock.wireApi ||
+    state.envKey !== activeBlock.envKey ||
+    state.envKeyInstructions !== activeBlock.envKeyInstructions ||
+    state.streamIdleTimeoutMs !== activeBlock.streamIdleTimeoutMs ||
+    state.supportsWebsockets !== activeBlock.supportsWebsockets
 
   const eyebrow = scope === 'GLOBAL' ? 'Global / Model' : `${projectName ?? 'Project'} / Model`
 
   const handleDiscard = () => {
-    setModel(modelConfig.model)
-    setEffort(modelConfig.effort)
-    setProvider(readTomlScalar(configContent, 'model_provider'))
-    setBaseUrl(activeBlock.baseUrl)
-    setWireApi(activeBlock.wireApi)
-    setEnvKey(activeBlock.envKey)
-    setEnvKeyInstructions(activeBlock.envKeyInstructions)
-    setStreamIdleTimeoutMs(activeBlock.streamIdleTimeoutMs)
-    setSupportsWebsockets(activeBlock.supportsWebsockets)
+    dispatch({ type: 'reset', state: initialFormState(modelConfig, configContent) })
   }
 
   const handleSave = async () => {
-    setError('')
+    dispatch({ type: 'set-error', value: '' })
     try {
-      await onSave({ ...modelConfig, model, effort })
-      let nextConfig = writeTomlScalar(configContent, 'model_provider', provider)
-      if (provider.trim()) {
+      await onSave({ ...modelConfig, model: state.model, effort: state.effort })
+      let nextConfig = writeTomlScalar(configContent, 'model_provider', state.provider)
+      if (state.provider.trim()) {
         nextConfig = upsertProviderBlock(nextConfig, {
-          name: provider.trim(),
-          baseUrl,
-          wireApi,
-          envKey,
-          envKeyInstructions,
-          streamIdleTimeoutMs,
-          supportsWebsockets,
+          name: state.provider.trim(),
+          baseUrl: state.baseUrl,
+          wireApi: state.wireApi,
+          envKey: state.envKey,
+          envKeyInstructions: state.envKeyInstructions,
+          streamIdleTimeoutMs: state.streamIdleTimeoutMs,
+          supportsWebsockets: state.supportsWebsockets,
         })
       }
       if (nextConfig !== configContent) {
         await onSaveConfig(nextConfig)
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save')
+      dispatch({ type: 'set-error', value: e instanceof Error ? e.message : 'Failed to save' })
     }
   }
 
@@ -120,8 +165,8 @@ export function CodexModelPanel({ modelConfig, configContent, scope, projectName
           <section className="space-y-2">
             <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Model</h4>
             <select
-              value={model}
-              onChange={(event) => setModel(event.target.value)}
+              value={state.model}
+              onChange={(event) => dispatch({ type: 'set-model', value: event.target.value })}
               className="w-full max-w-md px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
             >
               <option value="">Default</option>
@@ -134,8 +179,8 @@ export function CodexModelPanel({ modelConfig, configContent, scope, projectName
           <section className="space-y-2">
             <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Reasoning Effort</h4>
             <select
-              value={effort}
-              onChange={(event) => setEffort(event.target.value)}
+              value={state.effort}
+              onChange={(event) => dispatch({ type: 'set-effort', value: event.target.value })}
               className="w-full max-w-xs px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
             >
               <option value="">Default</option>
@@ -148,31 +193,31 @@ export function CodexModelPanel({ modelConfig, configContent, scope, projectName
           <section className="space-y-2">
             <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Model Provider</h4>
             <input
-              value={provider}
-              onChange={(event) => setProvider(event.target.value)}
+              value={state.provider}
+              onChange={(event) => dispatch({ type: 'set-provider', value: event.target.value })}
               placeholder="openai"
               className="w-full max-w-sm h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20"
             />
           </section>
 
-          {provider.trim() ? (
+          {state.provider.trim() ? (
             <div className="rounded-lg border border-border/30 bg-background p-3 space-y-3">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Provider Block</p>
-                <p className="text-[10px] text-foreground/50 mt-1">Edits <code className="font-mono">[model_providers.{provider.trim()}]</code> in the current Codex config.</p>
+                <p className="text-[10px] text-foreground/50 mt-1">Edits <code className="font-mono">[model_providers.{state.provider.trim()}]</code> in the current Codex config.</p>
               </div>
-              <ProviderField label="Base URL" value={baseUrl} onChange={setBaseUrl} placeholder="https://api.openai.com/v1" />
-              <ProviderField label="Wire API" value={wireApi} onChange={setWireApi} placeholder="responses" />
-              <ProviderField label="Env Key" value={envKey} onChange={setEnvKey} placeholder="OPENAI_API_KEY" />
-              <ProviderField label="Env Key Instructions" value={envKeyInstructions} onChange={setEnvKeyInstructions} placeholder="Set OPENAI_API_KEY before launching Codex." />
-              <ProviderField label="Stream Idle Timeout Ms" value={streamIdleTimeoutMs} onChange={setStreamIdleTimeoutMs} placeholder="300000" />
-              <BooleanField label="Supports WebSockets" value={supportsWebsockets} onChange={setSupportsWebsockets} />
+              <ProviderField label="Base URL" value={state.baseUrl} onChange={(value) => dispatch({ type: 'set-base-url', value })} placeholder="https://api.openai.com/v1" />
+              <ProviderField label="Wire API" value={state.wireApi} onChange={(value) => dispatch({ type: 'set-wire-api', value })} placeholder="responses" />
+              <ProviderField label="Env Key" value={state.envKey} onChange={(value) => dispatch({ type: 'set-env-key', value })} placeholder="OPENAI_API_KEY" />
+              <ProviderField label="Env Key Instructions" value={state.envKeyInstructions} onChange={(value) => dispatch({ type: 'set-env-key-instructions', value })} placeholder="Set OPENAI_API_KEY before launching Codex." />
+              <ProviderField label="Stream Idle Timeout Ms" value={state.streamIdleTimeoutMs} onChange={(value) => dispatch({ type: 'set-stream-idle-timeout', value })} placeholder="300000" />
+              <BooleanField label="Supports WebSockets" value={state.supportsWebsockets} onChange={(value) => dispatch({ type: 'set-supports-websockets', value })} />
             </div>
           ) : null}
         </div>
       </div>
 
-      <ErrorStrip message={error} onDismiss={() => setError('')} />
+      <ErrorStrip message={state.error} onDismiss={() => dispatch({ type: 'set-error', value: '' })} />
 
       <PanelFooter
         dirty={isDirty}

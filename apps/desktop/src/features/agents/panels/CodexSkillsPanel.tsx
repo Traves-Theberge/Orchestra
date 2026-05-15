@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/CodexSkillsPanel.tsx
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useId, useMemo, useReducer } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@ui/button'
 import {
@@ -36,6 +36,46 @@ type SkillOverride = {
   enabled: boolean
 }
 
+type PanelState = {
+  selectedPath: string | null
+  drafts: Record<string, string>
+  createOpen: boolean
+  createName: string
+  deleteTarget: string | null
+  error: string
+}
+
+type PanelAction =
+  | { type: 'select', path: string | null }
+  | { type: 'set-draft', path: string, value: string }
+  | { type: 'reset-draft', path: string, value: string }
+  | { type: 'open-create' }
+  | { type: 'close-create' }
+  | { type: 'set-create-name', value: string }
+  | { type: 'set-delete-target', value: string | null }
+  | { type: 'set-error', value: string }
+
+function panelReducer(state: PanelState, action: PanelAction): PanelState {
+  switch (action.type) {
+    case 'select':
+      return { ...state, selectedPath: action.path }
+    case 'set-draft':
+      return { ...state, drafts: { ...state.drafts, [action.path]: action.value } }
+    case 'reset-draft':
+      return { ...state, drafts: { ...state.drafts, [action.path]: action.value } }
+    case 'open-create':
+      return { ...state, createOpen: true }
+    case 'close-create':
+      return { ...state, createOpen: false, createName: '' }
+    case 'set-create-name':
+      return { ...state, createName: action.value }
+    case 'set-delete-target':
+      return { ...state, deleteTarget: action.value }
+    case 'set-error':
+      return { ...state, error: action.value }
+  }
+}
+
 export function CodexSkillsPanel({
   items,
   configContent,
@@ -48,23 +88,21 @@ export function CodexSkillsPanel({
   onCreate,
   onSaveConfig,
 }: CodexSkillsPanelProps) {
-  const [selectedPath, setSelectedPath] = useState<string | null>(items[0]?.path ?? null)
-  const [drafts, setDrafts] = useState<Record<string, string>>({})
-  const [createOpen, setCreateOpen] = useState(false)
-  const [createName, setCreateName] = useState('')
-  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
-  const [error, setError] = useState('')
+  const [state, dispatch] = useReducer(panelReducer, undefined as never, () => ({
+    selectedPath: items[0]?.path ?? null,
+    drafts: {},
+    createOpen: false,
+    createName: '',
+    deleteTarget: null,
+    error: '',
+  }))
   const overrides = useMemo(() => parseSkillOverrides(configContent), [configContent])
 
-  useEffect(() => {
-    if (!selectedPath && items.length > 0) setSelectedPath(items[0].path)
-    if (selectedPath && !items.some(item => item.path === selectedPath)) {
-      setSelectedPath(items[0]?.path ?? null)
-    }
-  }, [items, selectedPath])
-
-  const selected = items.find(item => item.path === selectedPath) ?? null
-  const content = selected ? (drafts[selected.path] ?? selected.content) : ''
+  const effectiveSelectedPath = state.selectedPath && items.some(item => item.path === state.selectedPath)
+    ? state.selectedPath
+    : (items[0]?.path ?? null)
+  const selected = items.find(item => item.path === effectiveSelectedPath) ?? null
+  const content = selected ? (state.drafts[selected.path] ?? selected.content) : ''
   const isDirty = selected ? content !== selected.content : false
   const skillFolder = selected ? skillFolderPath(selected.path) : ''
   const override = overrides.find(entry => entry.path === skillFolder) ?? null
@@ -72,49 +110,48 @@ export function CodexSkillsPanel({
   const eyebrow = scope === 'GLOBAL' ? 'Global / Skills' : `${projectName ?? 'Project'} / Skills`
 
   const handleCreate = async () => {
-    if (!createName.trim()) return
-    try { await onCreate(createName.trim()) } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to create')
+    if (!state.createName.trim()) return
+    try { await onCreate(state.createName.trim()) } catch (e) {
+      dispatch({ type: 'set-error', value: e instanceof Error ? e.message : 'Failed to create' })
       return
     }
-    setCreateOpen(false)
-    setCreateName('')
+    dispatch({ type: 'close-create' })
   }
 
   const handleSave = async () => {
     if (!selected) return
-    setError('')
+    dispatch({ type: 'set-error', value: '' })
     try { await onSave(selected.path, content) } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save')
+      dispatch({ type: 'set-error', value: e instanceof Error ? e.message : 'Failed to save' })
     }
   }
 
   const handleSaveOverride = async (enabled: boolean) => {
     if (!configPath || !skillFolder) return
-    setError('')
+    dispatch({ type: 'set-error', value: '' })
     try {
       await onSaveConfig(configPath, upsertSkillOverride(configContent, { path: skillFolder, enabled }))
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save')
+      dispatch({ type: 'set-error', value: e instanceof Error ? e.message : 'Failed to save' })
     }
   }
 
   const handleRemoveOverride = async () => {
     if (!configPath || !skillFolder) return
-    setError('')
+    dispatch({ type: 'set-error', value: '' })
     try {
       await onSaveConfig(configPath, removeSkillOverride(configContent, skillFolder))
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save')
+      dispatch({ type: 'set-error', value: e instanceof Error ? e.message : 'Failed to save' })
     }
   }
 
   const handleDelete = async () => {
-    if (!deleteTarget) return
-    try { await onDelete(deleteTarget) } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to delete')
+    if (!state.deleteTarget) return
+    try { await onDelete(state.deleteTarget) } catch (e) {
+      dispatch({ type: 'set-error', value: e instanceof Error ? e.message : 'Failed to delete' })
     }
-    setDeleteTarget(null)
+    dispatch({ type: 'set-delete-target', value: null })
   }
 
   if (items.length === 0) {
@@ -129,13 +166,13 @@ export function CodexSkillsPanel({
           title="No skills at this scope"
           description="Create a Codex skill to manage its SKILL.md and override state."
           ctaLabel="New skill"
-          onCreate={() => setCreateOpen(true)}
+          onCreate={() => dispatch({ type: 'open-create' })}
         />
         <CreateDialog
-          open={createOpen}
-          name={createName}
-          setName={setCreateName}
-          onCancel={() => { setCreateOpen(false); setCreateName('') }}
+          open={state.createOpen}
+          name={state.createName}
+          setName={(value) => dispatch({ type: 'set-create-name', value })}
+          onCancel={() => dispatch({ type: 'close-create' })}
           onCreate={handleCreate}
         />
       </div>
@@ -154,7 +191,7 @@ export function CodexSkillsPanel({
       <div className="flex flex-1 min-h-0 gap-3">
         <aside className={`w-[220px] flex flex-col shrink-0 ${TOKENS.surfaceCard}`}>
           <div className="p-2 border-b border-border/30">
-            <Button size="sm" variant="ghost" onClick={() => setCreateOpen(true)} className="w-full h-7 text-[10px]">
+            <Button size="sm" variant="ghost" onClick={() => dispatch({ type: 'open-create' })} className="w-full h-7 text-[10px]">
               <Plus size={10} className="mr-1" /> New skill
             </Button>
           </div>
@@ -166,9 +203,9 @@ export function CodexSkillsPanel({
                 <button
                   key={item.path}
                   type="button"
-                  onClick={() => setSelectedPath(item.path)}
+                  onClick={() => dispatch({ type: 'select', path: item.path })}
                   className={`w-full text-left px-2 py-1.5 rounded text-[11px] flex items-center gap-1.5 ${
-                    item.path === selectedPath ? 'bg-foreground/[0.06] text-foreground' : 'text-foreground/65 hover:bg-foreground/[0.03]'
+                    item.path === effectiveSelectedPath ? 'bg-foreground/[0.06] text-foreground' : 'text-foreground/65 hover:bg-foreground/[0.03]'
                   }`}
                 >
                   <span className="truncate flex-1">{item.name}</span>
@@ -217,7 +254,7 @@ export function CodexSkillsPanel({
 
               <textarea
                 value={content}
-                onChange={(event) => setDrafts(prev => ({ ...prev, [selected.path]: event.target.value }))}
+                onChange={(event) => dispatch({ type: 'set-draft', path: selected.path, value: event.target.value })}
                 className="flex-1 min-h-[200px] bg-muted/10 rounded-lg border border-border/30 px-4 py-3 font-mono text-[13px] leading-6 text-foreground focus:outline-none focus:border-primary/30 resize-none transition-colors"
                 spellCheck={false}
               />
@@ -230,18 +267,18 @@ export function CodexSkillsPanel({
         </div>
       </div>
 
-      <ErrorStrip message={error} onDismiss={() => setError('')} />
+      <ErrorStrip message={state.error} onDismiss={() => dispatch({ type: 'set-error', value: '' })} />
 
       <PanelFooter
         dirty={isDirty}
         saving={saving === (selected?.path ?? '')}
         onSave={handleSave}
-        onDiscard={() => selected && setDrafts(prev => ({ ...prev, [selected.path]: selected.content }))}
+        onDiscard={() => selected && dispatch({ type: 'reset-draft', path: selected.path, value: selected.content })}
         extraLeft={
           selected ? (
             <button
               type="button"
-              onClick={() => setDeleteTarget(selected.path.split('/').slice(-2)[0] ?? selected.path)}
+              onClick={() => dispatch({ type: 'set-delete-target', value: selected.path.split('/').slice(-2)[0] ?? selected.path })}
               className="text-[10px] text-foreground/40 hover:text-red-400 inline-flex items-center gap-1"
             >
               <Trash2 size={11} /> Delete
@@ -251,24 +288,24 @@ export function CodexSkillsPanel({
       />
 
       <CreateDialog
-        open={createOpen}
-        name={createName}
-        setName={setCreateName}
-        onCancel={() => { setCreateOpen(false); setCreateName('') }}
+        open={state.createOpen}
+        name={state.createName}
+        setName={(value) => dispatch({ type: 'set-create-name', value })}
+        onCancel={() => dispatch({ type: 'close-create' })}
         onCreate={handleCreate}
       />
 
-      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+      <Dialog open={!!state.deleteTarget} onOpenChange={(o) => !o && dispatch({ type: 'set-delete-target', value: null })}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="text-red-400">Delete skill</DialogTitle>
             <DialogDescription>This removes the skill directory from disk. Cannot be undone.</DialogDescription>
           </DialogHeader>
           <div className="py-4 rounded-md border bg-muted/30 p-3">
-            <p className="text-sm font-mono text-primary">{deleteTarget}</p>
+            <p className="text-sm font-mono text-primary">{state.deleteTarget}</p>
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => dispatch({ type: 'set-delete-target', value: null })}>Cancel</Button>
             <Button variant="destructive" onClick={handleDelete}>
               <Trash2 size={14} className="mr-2" /> Delete
             </Button>

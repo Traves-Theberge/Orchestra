@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/CodexRulesPanel.tsx
-import { useEffect, useId, useState } from 'react'
+import { useId, useReducer, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@ui/button'
 import {
@@ -31,38 +31,43 @@ const RULE_TEMPLATE = `prefix_rule("git", "status")
 Always check the repository state before modifying files.
 `
 
+type EditorState = {
+  content: string
+  error: string
+}
+
+type EditorAction =
+  | { type: 'set-content', value: string }
+  | { type: 'set-error', value: string }
+  | { type: 'discard', value: string }
+
+function editorReducer(state: EditorState, action: EditorAction): EditorState {
+  switch (action.type) {
+    case 'set-content': return { ...state, content: action.value }
+    case 'set-error': return { ...state, error: action.value }
+    case 'discard': return { content: action.value, error: '' }
+  }
+}
+
 export function CodexRulesPanel({ items, scope, projectName, saving, onSave, onDelete }: CodexRulesPanelProps) {
   const [selectedName, setSelectedName] = useState<string | null>(null)
-  const [content, setContent] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [createName, setCreateName] = useState('')
-  const [error, setError] = useState('')
+  const [createError, setCreateError] = useState('')
 
-  useEffect(() => {
-    if (!selectedName && items.length > 0) setSelectedName(items[0].name)
-  }, [selectedName, items])
+  const effectiveSelectedName = selectedName && items.some(i => i.name === selectedName)
+    ? selectedName
+    : (items[0]?.name ?? null)
+  const selected = items.find(item => item.name === effectiveSelectedName) ?? null
 
-  useEffect(() => {
-    if (selectedName && !items.find(item => item.name === selectedName)) {
-      setSelectedName(items.length > 0 ? items[0].name : null)
-    }
-  }, [selectedName, items])
-
-  const selected = items.find(item => item.name === selectedName) ?? null
-
-  useEffect(() => {
-    setContent(selected?.content ?? '')
-  }, [selected])
-
-  const isDirty = selected ? content !== selected.content : false
   const eyebrow = scope === 'GLOBAL' ? 'Global / Rules' : `${projectName ?? 'Project'} / Rules`
 
   const handleCreate = async () => {
     const name = createName.trim()
     if (!name) return
     try { await onSave(name, RULE_TEMPLATE) } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to create')
+      setCreateError(e instanceof Error ? e.message : 'Failed to create')
       return
     }
     setSelectedName(name.endsWith('.rules') ? name : `${name}.rules`)
@@ -73,17 +78,9 @@ export function CodexRulesPanel({ items, scope, projectName, saving, onSave, onD
   const handleDelete = async () => {
     if (!deleteTarget) return
     try { await onDelete(deleteTarget) } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to delete')
+      setCreateError(e instanceof Error ? e.message : 'Failed to delete')
     }
     setDeleteTarget(null)
-  }
-
-  const handleSave = async () => {
-    if (!selected) return
-    setError('')
-    try { await onSave(selected.name, content) } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save')
-    }
   }
 
   if (items.length === 0) {
@@ -100,6 +97,7 @@ export function CodexRulesPanel({ items, scope, projectName, saving, onSave, onD
           ctaLabel="New rule"
           onCreate={() => setCreateOpen(true)}
         />
+        <ErrorStrip message={createError} onDismiss={() => setCreateError('')} />
         <CreateDialog
           open={createOpen}
           name={createName}
@@ -109,6 +107,93 @@ export function CodexRulesPanel({ items, scope, projectName, saving, onSave, onD
         />
       </div>
     )
+  }
+
+  const editorKey = `${selected?.name ?? ''}::${selected?.content ?? ''}`
+
+  return (
+    <RulesEditor
+      key={editorKey}
+      items={items}
+      selected={selected}
+      effectiveSelectedName={effectiveSelectedName}
+      saving={saving}
+      eyebrow={eyebrow}
+      createOpen={createOpen}
+      createName={createName}
+      createError={createError}
+      setCreateOpen={setCreateOpen}
+      setCreateName={setCreateName}
+      setCreateError={setCreateError}
+      handleCreate={handleCreate}
+      handleDelete={handleDelete}
+      deleteTarget={deleteTarget}
+      setDeleteTarget={setDeleteTarget}
+      setSelectedName={setSelectedName}
+      onSave={onSave}
+    />
+  )
+}
+
+interface RulesEditorProps {
+  items: ProviderFileEntry[]
+  selected: ProviderFileEntry | null
+  effectiveSelectedName: string | null
+  saving: string | null
+  eyebrow: string
+  createOpen: boolean
+  createName: string
+  createError: string
+  setCreateOpen: (open: boolean) => void
+  setCreateName: (name: string) => void
+  setCreateError: (value: string) => void
+  handleCreate: () => Promise<void>
+  handleDelete: () => Promise<void>
+  deleteTarget: string | null
+  setDeleteTarget: (name: string | null) => void
+  setSelectedName: (name: string) => void
+  onSave: (name: string, content: string) => Promise<void>
+}
+
+function RulesEditor({
+  items,
+  selected,
+  effectiveSelectedName,
+  saving,
+  eyebrow,
+  createOpen,
+  createName,
+  createError,
+  setCreateOpen,
+  setCreateName,
+  setCreateError,
+  handleCreate,
+  handleDelete,
+  deleteTarget,
+  setDeleteTarget,
+  setSelectedName,
+  onSave,
+}: RulesEditorProps) {
+  const [state, dispatch] = useReducer(editorReducer, undefined as never, () => ({
+    content: selected?.content ?? '',
+    error: createError,
+  }))
+
+  const isDirty = selected ? state.content !== selected.content : false
+
+  const handleSave = async () => {
+    if (!selected) return
+    dispatch({ type: 'set-error', value: '' })
+    setCreateError('')
+    try { await onSave(selected.name, state.content) } catch (e) {
+      dispatch({ type: 'set-error', value: e instanceof Error ? e.message : 'Failed to save' })
+    }
+  }
+
+  const displayedError = state.error || createError
+  const dismissError = () => {
+    dispatch({ type: 'set-error', value: '' })
+    setCreateError('')
   }
 
   return (
@@ -133,7 +218,7 @@ export function CodexRulesPanel({ items, scope, projectName, saving, onSave, onD
                 key={item.path}
                 onClick={() => setSelectedName(item.name)}
                 className={`w-full text-left px-2 py-1.5 rounded text-[11px] truncate ${
-                  item.name === selectedName ? 'bg-foreground/[0.06] text-foreground' : 'text-foreground/65 hover:bg-foreground/[0.03]'
+                  item.name === effectiveSelectedName ? 'bg-foreground/[0.06] text-foreground' : 'text-foreground/65 hover:bg-foreground/[0.03]'
                 }`}
               >
                 {item.name}
@@ -149,8 +234,8 @@ export function CodexRulesPanel({ items, scope, projectName, saving, onSave, onD
                 {selected.name}
               </div>
               <textarea
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
+                value={state.content}
+                onChange={(e) => dispatch({ type: 'set-content', value: e.target.value })}
                 placeholder={RULE_TEMPLATE}
                 className="flex-1 min-h-0 bg-muted/10 rounded-lg border border-border/30 px-4 py-3 font-mono text-[13px] leading-6 text-foreground focus:outline-none focus:border-primary/30 resize-none transition-colors"
                 spellCheck={false}
@@ -164,13 +249,13 @@ export function CodexRulesPanel({ items, scope, projectName, saving, onSave, onD
         </div>
       </div>
 
-      <ErrorStrip message={error} onDismiss={() => setError('')} />
+      <ErrorStrip message={displayedError} onDismiss={dismissError} />
 
       <PanelFooter
         dirty={isDirty}
         saving={!!saving}
         onSave={handleSave}
-        onDiscard={() => setContent(selected?.content ?? '')}
+        onDiscard={() => dispatch({ type: 'discard', value: selected?.content ?? '' })}
         extraLeft={
           selected ? (
             <button

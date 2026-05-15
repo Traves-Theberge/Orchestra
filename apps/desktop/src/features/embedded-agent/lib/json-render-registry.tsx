@@ -147,7 +147,7 @@ export function createAgentRegistry(onAction: ActionHandler): DefineRegistryResu
             <tbody>
               {props.rows.map((row, i) => (
                 <tr
-                  key={i}
+                  key={`row-${i}`}
                   className={`border-b border-border last:border-0 ${
                     props.striped && i % 2 === 1 ? 'bg-muted/30' : ''
                   }`}
@@ -197,7 +197,7 @@ export function createAgentRegistry(onAction: ActionHandler): DefineRegistryResu
       KeyValue: ({ props }) => (
         <div className="space-y-1.5">
           {props.pairs.map((pair, i) => (
-            <div key={i} className="flex items-baseline justify-between gap-4 text-sm">
+            <div key={`${pair.key}-${i}`} className="flex items-baseline justify-between gap-4 text-sm">
               <span className="shrink-0 text-muted-foreground">{pair.key}</span>
               <span className="truncate text-right font-medium text-foreground">
                 {String(pair.value)}

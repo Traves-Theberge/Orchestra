@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/CodexInstructionsPanel.tsx
-import { useEffect, useState } from 'react'
+import { useReducer, useState } from 'react'
 import Editor from '@monaco-editor/react'
 import { useAppStore } from '@core/store'
 import { Plus } from 'lucide-react'
@@ -22,25 +22,14 @@ interface CodexInstructionsPanelProps {
 }
 
 export function CodexInstructionsPanel({ items, scope, projectName, saving, onSave, onCreate }: CodexInstructionsPanelProps) {
-  const theme = useAppStore(s => s.theme)
-  const editorSettings = useAppStore(s => s.editorSettings)
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
-  const [content, setContent] = useState('')
-  const [error, setError] = useState('')
 
   const effectiveSelectedKey = selectedKey && items.some(i => i.key === selectedKey)
     ? selectedKey
     : (items[0]?.key ?? null)
   const selected = items.find(i => i.key === effectiveSelectedKey) ?? null
 
-  useEffect(() => { setContent(selected?.content ?? ''); setError('') }, [selected])
-
-  const dirty = selected ? content !== selected.content : false
   const eyebrow = scope === 'GLOBAL' ? 'Global / Instructions' : `${projectName ?? 'Project'} / Instructions`
-  const lineCount = content ? content.split('\n').length : 0
-  const sub = selected
-    ? `${selected.path} · ${lineCount} lines`
-    : '.codex/AGENTS.md'
 
   if (items.length === 0) {
     return (
@@ -61,11 +50,74 @@ export function CodexInstructionsPanel({ items, scope, projectName, saving, onSa
     )
   }
 
+  const editorKey = `${selected?.key ?? ''}::${selected?.content ?? ''}`
+
+  return (
+    <InstructionsEditor
+      key={editorKey}
+      items={items}
+      selected={selected}
+      effectiveSelectedKey={effectiveSelectedKey}
+      eyebrow={eyebrow}
+      saving={saving}
+      onSelect={setSelectedKey}
+      onSave={onSave}
+      onCreate={onCreate}
+    />
+  )
+}
+
+interface InstructionsEditorProps {
+  items: FileResourceItem[]
+  selected: FileResourceItem | null
+  effectiveSelectedKey: string | null
+  eyebrow: string
+  saving: string | null
+  onSelect: (key: string) => void
+  onSave: (path: string, content: string) => Promise<void>
+  onCreate: () => Promise<void>
+}
+
+type EditorState = {
+  content: string
+  error: string
+}
+
+type EditorAction =
+  | { type: 'set-content', value: string }
+  | { type: 'set-error', value: string }
+  | { type: 'discard', value: string }
+
+function editorReducer(state: EditorState, action: EditorAction): EditorState {
+  switch (action.type) {
+    case 'set-content':
+      return { ...state, content: action.value }
+    case 'set-error':
+      return { ...state, error: action.value }
+    case 'discard':
+      return { content: action.value, error: '' }
+  }
+}
+
+function InstructionsEditor({ items, selected, effectiveSelectedKey, eyebrow, saving, onSelect, onSave, onCreate }: InstructionsEditorProps) {
+  const theme = useAppStore(s => s.theme)
+  const editorSettings = useAppStore(s => s.editorSettings)
+  const [state, dispatch] = useReducer(editorReducer, undefined as never, () => ({
+    content: selected?.content ?? '',
+    error: '',
+  }))
+
+  const dirty = selected ? state.content !== selected.content : false
+  const lineCount = state.content ? state.content.split('\n').length : 0
+  const sub = selected
+    ? `${selected.path} · ${lineCount} lines`
+    : '.codex/AGENTS.md'
+
   const handleSave = async () => {
     if (!selected) return
-    setError('')
-    try { await onSave(selected.path, content) } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save')
+    dispatch({ type: 'set-error', value: '' })
+    try { await onSave(selected.path, state.content) } catch (e) {
+      dispatch({ type: 'set-error', value: e instanceof Error ? e.message : 'Failed to save' })
     }
   }
 
@@ -90,7 +142,7 @@ export function CodexInstructionsPanel({ items, scope, projectName, saving, onSa
                 <button
                   key={item.key}
                   type="button"
-                  onClick={() => setSelectedKey(item.key)}
+                  onClick={() => onSelect(item.key)}
                   className={`w-full text-left px-2.5 py-2 rounded-md transition-colors border ${
                     item.key === effectiveSelectedKey
                       ? 'bg-primary/8 text-primary border-primary/20'
@@ -116,9 +168,9 @@ export function CodexInstructionsPanel({ items, scope, projectName, saving, onSa
         <div className="flex-1 min-w-0 rounded-lg border border-border/30 overflow-hidden">
           <Editor
             language="markdown"
-            value={content}
+            value={state.content}
             theme={theme === 'dark' ? 'vs-dark' : 'vs'}
-            onChange={(v) => { if (v !== undefined) setContent(v) }}
+            onChange={(v) => { if (v !== undefined) dispatch({ type: 'set-content', value: v }) }}
             options={{
               minimap: { enabled: false },
               fontSize: editorSettings.fontSize,
@@ -135,13 +187,13 @@ export function CodexInstructionsPanel({ items, scope, projectName, saving, onSa
         </div>
       </div>
 
-      <ErrorStrip message={error} onDismiss={() => setError('')} />
+      <ErrorStrip message={state.error} onDismiss={() => dispatch({ type: 'set-error', value: '' })} />
 
       <PanelFooter
         dirty={dirty}
         saving={!!saving}
         onSave={handleSave}
-        onDiscard={() => setContent(selected?.content ?? '')}
+        onDiscard={() => dispatch({ type: 'discard', value: selected?.content ?? '' })}
       />
     </div>
   )

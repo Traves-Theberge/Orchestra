@@ -16,6 +16,8 @@ import {
   DialogTitle,
 } from '@ui/dialog'
 
+const SKELETON_KEYS = ['s1', 's2', 's3', 's4', 's5', 's6'] as const
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -146,8 +148,8 @@ export const ProjectGrid: React.FC<ProjectGridProps> = ({
   if (loading && projects.length === 0) {
     return (
       <div className="flex flex-col gap-2 p-5">
-        {[1, 2, 3, 4, 5, 6].map((i) => (
-          <div key={i} className="flex items-center gap-3 p-3 rounded-lg animate-pulse">
+        {SKELETON_KEYS.map((k) => (
+          <div key={k} className="flex items-center gap-3 p-3 rounded-lg animate-pulse">
             <Skeleton className="size-8 rounded-lg" />
             <div className="flex-1 space-y-2">
               <Skeleton className="h-4 w-1/4" />

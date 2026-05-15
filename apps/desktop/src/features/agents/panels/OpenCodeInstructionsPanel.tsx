@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/OpenCodeInstructionsPanel.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Button } from '@ui/button'
 import { PanelHeader } from '../components/PanelHeader'
 import { PanelFooter } from '../components/PanelFooter'
@@ -20,14 +20,6 @@ interface OpenCodeInstructionsPanelProps {
 export function OpenCodeInstructionsPanel({ items, scope, projectName, saving, onSave, onCreate }: OpenCodeInstructionsPanelProps) {
   const selected = items[0] ?? null
   const parsed = useMemo(() => safeParse(selected?.content ?? ''), [selected?.content])
-  const [instructions, setInstructions] = useState(readInstructions(parsed))
-  const [draft, setDraft] = useState('')
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    setInstructions(readInstructions(parsed))
-    setError('')
-  }, [parsed])
 
   const eyebrow = scope === 'GLOBAL' ? 'Global / Instructions' : `${projectName ?? 'Project'} / Instructions`
 
@@ -68,22 +60,48 @@ export function OpenCodeInstructionsPanel({ items, scope, projectName, saving, o
     )
   }
 
-  const isDirty = JSON.stringify(instructions) !== JSON.stringify(readInstructions(parsed))
+  return (
+    <InstructionsEditor
+      key={selected.path}
+      selected={selected}
+      parsed={parsed}
+      eyebrow={eyebrow}
+      saving={saving}
+      onSave={onSave}
+    />
+  )
+}
+
+interface InstructionsEditorProps {
+  selected: FileResourceItem
+  parsed: Record<string, unknown>
+  eyebrow: string
+  saving: string | null
+  onSave: (path: string, content: string) => Promise<void>
+}
+
+function InstructionsEditor({ selected, parsed, eyebrow, saving, onSave }: InstructionsEditorProps) {
+  const baseline = useMemo(() => readInstructions(parsed), [parsed])
+  const [instructions, setInstructions] = useState<string[]>(baseline)
+  const [draft, setDraft] = useState('')
+  const [error, setError] = useState('')
+
+  const isDirty = JSON.stringify(instructions) !== JSON.stringify(baseline)
 
   const addInstruction = () => {
     const next = draft.trim()
     if (next && !instructions.includes(next)) {
-      setInstructions([...instructions, next])
+      setInstructions((prev) => [...prev, next])
       setDraft('')
     }
   }
 
   const removeInstruction = (item: string) => {
-    setInstructions(instructions.filter((entry) => entry !== item))
+    setInstructions((prev) => prev.filter((entry) => entry !== item))
   }
 
   const handleDiscard = () => {
-    setInstructions(readInstructions(parsed))
+    setInstructions(baseline)
     setDraft('')
   }
 

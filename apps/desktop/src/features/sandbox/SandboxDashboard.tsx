@@ -418,7 +418,7 @@ function UnsandboxTab({
           <SectionBlock label={`Session Activity (${sessionLog.length})`}>
             <div className="max-h-[280px] overflow-auto space-y-1 scroll-smooth font-mono text-[11px]">
               {sessionLog.map((entry, i) => (
-                <div key={i} className="flex gap-2">
+                <div key={`${entry.ts}-${i}`} className="flex gap-2">
                   <span className="text-muted-foreground/50 shrink-0">{entry.ts}</span>
                   <span className={`shrink-0 font-semibold ${
                     entry.type === 'assistant' ? 'text-primary' :

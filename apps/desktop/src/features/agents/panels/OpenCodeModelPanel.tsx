@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/OpenCodeModelPanel.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { PanelHeader } from '../components/PanelHeader'
 import { PanelFooter } from '../components/PanelFooter'
 import { ErrorStrip } from '../components/ErrorStrip'
@@ -16,15 +16,16 @@ interface OpenCodeModelPanelProps {
   onSave: (model: ProviderModelConfig) => Promise<void>
 }
 
-export function OpenCodeModelPanel({ modelConfig, configContent, scope, projectName, saving, onSave }: OpenCodeModelPanelProps) {
+export function OpenCodeModelPanel(props: OpenCodeModelPanelProps) {
+  const { modelConfig } = props
+  const key = `${modelConfig.model} ${modelConfig.effort}`
+  return <OpenCodeModelPanelEditor key={key} {...props} />
+}
+
+function OpenCodeModelPanelEditor({ modelConfig, configContent, scope, projectName, saving, onSave }: OpenCodeModelPanelProps) {
   const [model, setModel] = useState(modelConfig.model)
   const [smallModel, setSmallModel] = useState(modelConfig.effort)
   const [error, setError] = useState('')
-
-  useEffect(() => {
-    setModel(modelConfig.model)
-    setSmallModel(modelConfig.effort)
-  }, [modelConfig])
 
   const providerInfo = useMemo(() => {
     try {

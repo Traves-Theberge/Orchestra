@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/GeminiCommandsPanel.tsx
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useId, useMemo, useReducer, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@ui/button'
 import {
@@ -23,52 +23,153 @@ interface GeminiCommandsPanelProps {
   onCreate: (name: string) => Promise<void>
 }
 
+interface CreateState {
+  open: boolean
+  name: string
+  pending: boolean
+}
+
+type CreateAction =
+  | { type: 'open' }
+  | { type: 'close' }
+  | { type: 'setName', value: string }
+  | { type: 'setPending', value: boolean }
+
+function createReducer(state: CreateState, action: CreateAction): CreateState {
+  switch (action.type) {
+    case 'open':
+      return { ...state, open: true }
+    case 'close':
+      return { open: false, name: '', pending: false }
+    case 'setName':
+      return { ...state, name: action.value }
+    case 'setPending':
+      return { ...state, pending: action.value }
+    default:
+      return state
+  }
+}
+
 export function GeminiCommandsPanel({ items, scope, projectName, saving, onSave, onDelete, onCreate }: GeminiCommandsPanelProps) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
-  const [createOpen, setCreateOpen] = useState(false)
-  const [createName, setCreateName] = useState('')
-  const [createPending, setCreatePending] = useState(false)
+  const [create, dispatchCreate] = useReducer(createReducer, { open: false, name: '', pending: false })
   const [deleteTarget, setDeleteTarget] = useState<FileResourceItem | null>(null)
-  const [error, setError] = useState('')
 
   const effectiveSelectedKey = selectedKey && items.some(item => item.key === selectedKey)
     ? selectedKey
     : (items[0]?.key ?? null)
   const selected = items.find(item => item.key === effectiveSelectedKey) ?? null
 
-  const parsed = useMemo(() => parseGeminiCommand(selected?.content ?? ''), [selected?.content])
+  const eyebrow = scope === 'GLOBAL' ? 'Global / Commands' : `${projectName ?? 'Project'} / Commands`
+
+  const handleCreate = async () => {
+    const next = create.name.trim()
+    if (!next) return
+    dispatchCreate({ type: 'setPending', value: true })
+    try {
+      await onCreate(next)
+      dispatchCreate({ type: 'close' })
+    } finally {
+      dispatchCreate({ type: 'setPending', value: false })
+    }
+  }
+
+  const createDialog = (
+    <CreateDialog
+      open={create.open}
+      name={create.name}
+      setName={(value) => dispatchCreate({ type: 'setName', value })}
+      pending={create.pending}
+      onCancel={() => dispatchCreate({ type: 'close' })}
+      onCreate={handleCreate}
+    />
+  )
+
+  if (items.length === 0) {
+    return (
+      <div className="flex flex-col h-full p-[18px]">
+        <PanelHeader
+          eyebrow={eyebrow}
+          title="Commands"
+          sub="Custom slash commands · 0"
+        />
+        <EmptyStateCard
+          title="No commands found"
+          description="Create a Gemini command for the selected scope. New commands are TOML files with description and prompt fields."
+          ctaLabel="Add Command"
+          onCreate={() => dispatchCreate({ type: 'open' })}
+        />
+        {createDialog}
+      </div>
+    )
+  }
+
+  return (
+    <CommandsShell
+      key={selected ? `${selected.key}::${selected.content}` : 'none'}
+      items={items}
+      selected={selected}
+      effectiveSelectedKey={effectiveSelectedKey}
+      eyebrow={eyebrow}
+      saving={saving}
+      onSelect={setSelectedKey}
+      onOpenCreate={() => dispatchCreate({ type: 'open' })}
+      onRequestDelete={setDeleteTarget}
+      onSave={onSave}
+    >
+      {createDialog}
+      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-red-400">Delete command</DialogTitle>
+            <DialogDescription>This removes the file from disk. Cannot be undone.</DialogDescription>
+          </DialogHeader>
+          <div className="py-4 rounded-md border bg-muted/30 p-3">
+            <p className="text-sm font-mono text-primary">{deleteTarget?.path}</p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={async () => {
+              if (!deleteTarget) return
+              await onDelete(deleteTarget.path.split('/').pop()?.replace(/\.[^.]+$/, '') ?? deleteTarget.path)
+              setDeleteTarget(null)
+            }}>
+              <Trash2 size={14} className="mr-2" /> Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </CommandsShell>
+  )
+}
+
+interface CommandsShellProps {
+  items: FileResourceItem[]
+  selected: FileResourceItem | null
+  effectiveSelectedKey: string | null
+  eyebrow: string
+  saving: string | null
+  onSelect: (key: string) => void
+  onOpenCreate: () => void
+  onRequestDelete: (item: FileResourceItem) => void
+  onSave: (path: string, content: string) => Promise<void>
+  children?: React.ReactNode
+}
+
+function CommandsShell({ items, selected, effectiveSelectedKey, eyebrow, saving, onSelect, onOpenCreate, onRequestDelete, onSave, children }: CommandsShellProps) {
+  const isToml = selected ? isTomlGeminiCommand(selected.path) : false
+  const parsed = useMemo(() => selected ? parseGeminiCommand(selected.content) : { description: '', prompt: '' }, [selected])
+
   const [description, setDescription] = useState(parsed.description)
   const [prompt, setPrompt] = useState(parsed.prompt)
   const [raw, setRaw] = useState(selected?.content ?? '')
+  const [error, setError] = useState('')
 
-  useEffect(() => {
-    setDescription(parsed.description)
-    setPrompt(parsed.prompt)
-    setRaw(selected?.content ?? '')
-    setError('')
-  }, [parsed.description, parsed.prompt, selected?.content])
-
-  const isToml = selected ? isTomlGeminiCommand(selected.path) : false
   const isDirty = selected ? (
     isToml
       ? buildTomlCommand(description, prompt) !== selected.content
       : raw !== selected.content
   ) : false
-
-  const eyebrow = scope === 'GLOBAL' ? 'Global / Commands' : `${projectName ?? 'Project'} / Commands`
-
-  const handleCreate = async () => {
-    const next = createName.trim()
-    if (!next) return
-    setCreatePending(true)
-    try {
-      await onCreate(next)
-      setCreateOpen(false)
-      setCreateName('')
-    } finally {
-      setCreatePending(false)
-    }
-  }
 
   const handleSave = async () => {
     if (!selected) return
@@ -86,32 +187,6 @@ export function GeminiCommandsPanel({ items, scope, projectName, saving, onSave,
     setRaw(selected?.content ?? '')
   }
 
-  if (items.length === 0) {
-    return (
-      <div className="flex flex-col h-full p-[18px]">
-        <PanelHeader
-          eyebrow={eyebrow}
-          title="Commands"
-          sub="Custom slash commands · 0"
-        />
-        <EmptyStateCard
-          title="No commands found"
-          description="Create a Gemini command for the selected scope. New commands are TOML files with description and prompt fields."
-          ctaLabel="Add Command"
-          onCreate={() => setCreateOpen(true)}
-        />
-        <CreateDialog
-          open={createOpen}
-          name={createName}
-          setName={setCreateName}
-          pending={createPending}
-          onCancel={() => { setCreateOpen(false); setCreateName('') }}
-          onCreate={handleCreate}
-        />
-      </div>
-    )
-  }
-
   return (
     <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
       <PanelHeader
@@ -124,7 +199,7 @@ export function GeminiCommandsPanel({ items, scope, projectName, saving, onSave,
       <div className="flex flex-1 min-h-0 gap-3">
         <aside className={`w-[220px] flex flex-col shrink-0 ${TOKENS.surfaceCard}`}>
           <div className="p-2 border-b border-border/30">
-            <Button size="sm" variant="ghost" onClick={() => setCreateOpen(true)} className="w-full h-7 text-[10px]">
+            <Button size="sm" variant="ghost" onClick={onOpenCreate} className="w-full h-7 text-[10px]">
               <Plus size={10} className="mr-1" /> Add Command
             </Button>
           </div>
@@ -133,7 +208,7 @@ export function GeminiCommandsPanel({ items, scope, projectName, saving, onSave,
               <button
                 key={item.key}
                 type="button"
-                onClick={() => setSelectedKey(item.key)}
+                onClick={() => onSelect(item.key)}
                 className={`w-full text-left px-2 py-1.5 rounded text-[11px] flex items-center gap-1.5 ${
                   item.key === effectiveSelectedKey ? 'bg-foreground/[0.06] text-foreground' : 'text-foreground/65 hover:bg-foreground/[0.03]'
                 }`}
@@ -201,7 +276,7 @@ export function GeminiCommandsPanel({ items, scope, projectName, saving, onSave,
           selected ? (
             <button
               type="button"
-              onClick={() => setDeleteTarget(selected)}
+              onClick={() => onRequestDelete(selected)}
               className="text-[10px] text-foreground/40 hover:text-red-400 inline-flex items-center gap-1"
             >
               <Trash2 size={11} /> Delete
@@ -210,36 +285,7 @@ export function GeminiCommandsPanel({ items, scope, projectName, saving, onSave,
         }
       />
 
-      <CreateDialog
-        open={createOpen}
-        name={createName}
-        setName={setCreateName}
-        pending={createPending}
-        onCancel={() => { setCreateOpen(false); setCreateName('') }}
-        onCreate={handleCreate}
-      />
-
-      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-red-400">Delete command</DialogTitle>
-            <DialogDescription>This removes the file from disk. Cannot be undone.</DialogDescription>
-          </DialogHeader>
-          <div className="py-4 rounded-md border bg-muted/30 p-3">
-            <p className="text-sm font-mono text-primary">{deleteTarget?.path}</p>
-          </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={async () => {
-              if (!deleteTarget) return
-              await onDelete(deleteTarget.path.split('/').pop()?.replace(/\.[^.]+$/, '') ?? deleteTarget.path)
-              setDeleteTarget(null)
-            }}>
-              <Trash2 size={14} className="mr-2" /> Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {children}
     </div>
   )
 }

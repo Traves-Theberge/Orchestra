@@ -52,7 +52,7 @@ export const DocsDashboard: React.FC<DocsDashboardProps> = ({ config, theme }) =
     const [content, setContent] = useState<string>('')
     const [contentLoading, setContentLoading] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
-    const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['plans', 'specs']))
+    const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set(['plans', 'specs']))
     const [toc, setToc] = useState<{ id: string, text: string, level: number }[]>([])
     
     const scrollRef = useRef<HTMLDivElement | null>(null)

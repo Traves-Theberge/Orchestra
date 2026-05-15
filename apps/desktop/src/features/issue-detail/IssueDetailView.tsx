@@ -490,7 +490,7 @@ export function IssueDetailView({
                       {issues.length > 0 && (
                         <div className="space-y-1 pt-1">
                           {issues.map((msg, i) => (
-                            <p key={i} className="text-[9px] font-medium text-amber-500">{msg}</p>
+                            <p key={`${msg}-${i}`} className="text-[9px] font-medium text-amber-500">{msg}</p>
                           ))}
                         </div>
                       )}
@@ -610,7 +610,7 @@ export function IssueDetailView({
                 </div>
                 <div className="space-y-1">
                   {planItems.map((item, idx) => (
-                    <div key={idx} className={`flex items-start gap-3 py-2 px-3 rounded-lg ${item.done ? 'bg-primary/5' : 'hover:bg-muted/10'} transition-colors`}>
+                    <div key={`${idx}-${item.text.slice(0, 32)}`} className={`flex items-start gap-3 py-2 px-3 rounded-lg ${item.done ? 'bg-primary/5' : 'hover:bg-muted/10'} transition-colors`}>
                       <div className={`mt-0.5 size-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${item.done ? 'bg-primary border-primary text-primary-foreground' : 'border-border/50'}`}>
                         {item.done && <CheckCircle2 size={12} />}
                       </div>

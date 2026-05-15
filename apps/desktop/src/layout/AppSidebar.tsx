@@ -127,6 +127,7 @@ export function AppSidebar({
 }: AppSidebarProps) {
   const [view, setView] = useState<SidebarView>(() => sectionToView(activeSection))
   const [width, setWidth] = useState(DEFAULT_WIDTH)
+  // eslint-disable-next-line react-doctor/rerender-state-only-in-handlers -- read in JSX at line 175
   const [collapsed, setCollapsed] = useState(false)
   const dragging = useRef(false)
   const startX = useRef(0)

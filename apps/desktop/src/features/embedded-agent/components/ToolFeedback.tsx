@@ -118,7 +118,7 @@ export function ToolFeedback({ toolCalls, toolResults, isStreaming }: ToolFeedba
               {step.calls.map((call, i) => {
                 const result = step.results[i] ?? null
                 return (
-                  <div key={i} className="px-3 py-2 transition-colors hover:bg-muted/10">
+                  <div key={`${step.stepIndex}-${call.toolName}-${i}`} className="px-3 py-2 transition-colors hover:bg-muted/10">
                     <div className="flex items-center gap-1.5">
                       <span className="font-bold font-mono text-foreground/80">{call.toolName}</span>
                       {result && !result.isError && (

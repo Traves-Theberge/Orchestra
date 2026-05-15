@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/OpenCodeSkillsPanel.tsx
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useId, useMemo, useReducer, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@ui/button'
@@ -25,53 +25,153 @@ interface OpenCodeSkillsPanelProps {
   onCreate: (name: string) => Promise<void>
 }
 
+interface CreateState {
+  open: boolean
+  name: string
+  pending: boolean
+}
+
+type CreateAction =
+  | { type: 'open' }
+  | { type: 'close' }
+  | { type: 'setName', value: string }
+  | { type: 'setPending', value: boolean }
+
+function createReducer(state: CreateState, action: CreateAction): CreateState {
+  switch (action.type) {
+    case 'open':
+      return { ...state, open: true }
+    case 'close':
+      return { open: false, name: '', pending: false }
+    case 'setName':
+      return { ...state, name: action.value }
+    case 'setPending':
+      return { ...state, pending: action.value }
+    default:
+      return state
+  }
+}
+
 export function OpenCodeSkillsPanel({ items, scope, projectName, saving, onSave, onDelete, onCreate }: OpenCodeSkillsPanelProps) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
-  const [createOpen, setCreateOpen] = useState(false)
-  const [createName, setCreateName] = useState('')
-  const [createPending, setCreatePending] = useState(false)
+  const [create, dispatchCreate] = useReducer(createReducer, { open: false, name: '', pending: false })
   const [deleteTarget, setDeleteTarget] = useState<FileResourceItem | null>(null)
-  const [error, setError] = useState('')
 
   const effectiveSelectedKey = selectedKey && items.some(item => item.key === selectedKey)
     ? selectedKey
     : (items[0]?.key ?? null)
   const selected = items.find(item => item.key === effectiveSelectedKey) ?? null
 
+  const eyebrow = scope === 'GLOBAL' ? 'Global / Skills' : `${projectName ?? 'Project'} / Skills`
+
+  const handleCreate = async () => {
+    const next = create.name.trim()
+    if (!next) return
+    dispatchCreate({ type: 'setPending', value: true })
+    try {
+      await onCreate(next)
+      dispatchCreate({ type: 'close' })
+    } finally {
+      dispatchCreate({ type: 'setPending', value: false })
+    }
+  }
+
+  const createDialog = (
+    <CreateDialog
+      open={create.open}
+      name={create.name}
+      setName={(value) => dispatchCreate({ type: 'setName', value })}
+      pending={create.pending}
+      onCancel={() => dispatchCreate({ type: 'close' })}
+      onCreate={handleCreate}
+    />
+  )
+
+  if (items.length === 0) {
+    return (
+      <div className="flex flex-col h-full p-[18px]">
+        <PanelHeader
+          eyebrow={eyebrow}
+          title="Skills"
+          sub="OpenCode skill definitions"
+        />
+        <EmptyStateCard
+          title="No skills at this scope"
+          description="OpenCode skills use YAML frontmatter in SKILL.md. The recognized fields are name, description, license, and compatibility."
+          ctaLabel="New skill"
+          onCreate={() => dispatchCreate({ type: 'open' })}
+        />
+        {createDialog}
+      </div>
+    )
+  }
+
+  return (
+    <SkillsShell
+      key={selected ? `${selected.key}::${selected.content}` : 'none'}
+      items={items}
+      selected={selected}
+      effectiveSelectedKey={effectiveSelectedKey}
+      eyebrow={eyebrow}
+      saving={saving}
+      onSelect={setSelectedKey}
+      onOpenCreate={() => dispatchCreate({ type: 'open' })}
+      onRequestDelete={setDeleteTarget}
+      onSave={onSave}
+    >
+      {createDialog}
+      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-red-400">Delete skill</DialogTitle>
+            <DialogDescription>This removes the skill directory from disk. Cannot be undone.</DialogDescription>
+          </DialogHeader>
+          <div className="py-4 rounded-md border bg-muted/30 p-3">
+            <p className="text-sm font-mono text-primary">{deleteTarget?.name}</p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={async () => {
+              if (!deleteTarget) return
+              const skillName = deleteTarget.path.split('/').slice(-2)[0] ?? deleteTarget.path
+              await onDelete(skillName)
+              setDeleteTarget(null)
+              setSelectedKey(null)
+            }}>
+              <Trash2 size={14} className="mr-2" /> Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </SkillsShell>
+  )
+}
+
+interface SkillsShellProps {
+  items: FileResourceItem[]
+  selected: FileResourceItem | null
+  effectiveSelectedKey: string | null
+  eyebrow: string
+  saving: string | null
+  onSelect: (key: string) => void
+  onOpenCreate: () => void
+  onRequestDelete: (item: FileResourceItem) => void
+  onSave: (path: string, content: string) => Promise<void>
+  children?: ReactNode
+}
+
+function SkillsShell({ items, selected, effectiveSelectedKey, eyebrow, saving, onSelect, onOpenCreate, onRequestDelete, onSave, children }: SkillsShellProps) {
   const parsed = useMemo(() => parseOpenCodeSkill(selected?.content ?? ''), [selected?.content])
   const [name, setName] = useState(parsed.frontmatter.name)
   const [description, setDescription] = useState(parsed.frontmatter.description)
   const [license, setLicense] = useState(parsed.frontmatter.license ?? '')
   const [compatibility, setCompatibility] = useState(parsed.frontmatter.compatibility ?? '')
   const [body, setBody] = useState(parsed.body)
-
-  useEffect(() => {
-    setName(parsed.frontmatter.name)
-    setDescription(parsed.frontmatter.description)
-    setLicense(parsed.frontmatter.license ?? '')
-    setCompatibility(parsed.frontmatter.compatibility ?? '')
-    setBody(parsed.body)
-    setError('')
-  }, [parsed.body, parsed.frontmatter.compatibility, parsed.frontmatter.description, parsed.frontmatter.license, parsed.frontmatter.name])
+  const [error, setError] = useState('')
 
   const isDirty = selected
     ? buildOpenCodeSkill({ name, description, license, compatibility }, body) !== selected.content
     : false
-
-  const eyebrow = scope === 'GLOBAL' ? 'Global / Skills' : `${projectName ?? 'Project'} / Skills`
-
-  const handleCreate = async () => {
-    const next = createName.trim()
-    if (!next) return
-    setCreatePending(true)
-    try {
-      await onCreate(next)
-      setCreateOpen(false)
-      setCreateName('')
-    } finally {
-      setCreatePending(false)
-    }
-  }
 
   const handleSave = async () => {
     if (!selected) return
@@ -91,32 +191,6 @@ export function OpenCodeSkillsPanel({ items, scope, projectName, saving, onSave,
     setBody(parsed.body)
   }
 
-  if (items.length === 0) {
-    return (
-      <div className="flex flex-col h-full p-[18px]">
-        <PanelHeader
-          eyebrow={eyebrow}
-          title="Skills"
-          sub="OpenCode skill definitions"
-        />
-        <EmptyStateCard
-          title="No skills at this scope"
-          description="OpenCode skills use YAML frontmatter in SKILL.md. The recognized fields are name, description, license, and compatibility."
-          ctaLabel="New skill"
-          onCreate={() => setCreateOpen(true)}
-        />
-        <CreateDialog
-          open={createOpen}
-          name={createName}
-          setName={setCreateName}
-          pending={createPending}
-          onCancel={() => { setCreateOpen(false); setCreateName('') }}
-          onCreate={handleCreate}
-        />
-      </div>
-    )
-  }
-
   return (
     <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
       <PanelHeader
@@ -129,7 +203,7 @@ export function OpenCodeSkillsPanel({ items, scope, projectName, saving, onSave,
       <div className="flex flex-1 min-h-0 gap-3">
         <aside className={`w-[220px] flex flex-col shrink-0 ${TOKENS.surfaceCard}`}>
           <div className="p-2 border-b border-border/30">
-            <Button size="sm" variant="ghost" onClick={() => setCreateOpen(true)} className="w-full h-7 text-[10px]">
+            <Button size="sm" variant="ghost" onClick={onOpenCreate} className="w-full h-7 text-[10px]">
               <Plus size={10} className="mr-1" /> New skill
             </Button>
           </div>
@@ -138,7 +212,7 @@ export function OpenCodeSkillsPanel({ items, scope, projectName, saving, onSave,
               <button
                 key={item.key}
                 type="button"
-                onClick={() => setSelectedKey(item.key)}
+                onClick={() => onSelect(item.key)}
                 className={`w-full text-left px-2 py-1.5 rounded text-[11px] flex items-center gap-1.5 ${
                   item.key === effectiveSelectedKey ? 'bg-foreground/[0.06] text-foreground' : 'text-foreground/65 hover:bg-foreground/[0.03]'
                 }`}
@@ -194,7 +268,7 @@ export function OpenCodeSkillsPanel({ items, scope, projectName, saving, onSave,
           selected ? (
             <button
               type="button"
-              onClick={() => setDeleteTarget(selected)}
+              onClick={() => onRequestDelete(selected)}
               className="text-[10px] text-foreground/40 hover:text-red-400 inline-flex items-center gap-1"
             >
               <Trash2 size={11} /> Delete
@@ -203,38 +277,7 @@ export function OpenCodeSkillsPanel({ items, scope, projectName, saving, onSave,
         }
       />
 
-      <CreateDialog
-        open={createOpen}
-        name={createName}
-        setName={setCreateName}
-        pending={createPending}
-        onCancel={() => { setCreateOpen(false); setCreateName('') }}
-        onCreate={handleCreate}
-      />
-
-      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-red-400">Delete skill</DialogTitle>
-            <DialogDescription>This removes the skill directory from disk. Cannot be undone.</DialogDescription>
-          </DialogHeader>
-          <div className="py-4 rounded-md border bg-muted/30 p-3">
-            <p className="text-sm font-mono text-primary">{deleteTarget?.name}</p>
-          </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={async () => {
-              if (!deleteTarget) return
-              const skillName = deleteTarget.path.split('/').slice(-2)[0] ?? deleteTarget.path
-              await onDelete(skillName)
-              setDeleteTarget(null)
-              setSelectedKey(null)
-            }}>
-              <Trash2 size={14} className="mr-2" /> Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {children}
     </div>
   )
 }

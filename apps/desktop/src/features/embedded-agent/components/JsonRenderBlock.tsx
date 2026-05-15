@@ -105,7 +105,7 @@ export function JsonRenderBlock({ spec, onAction }: JsonRenderBlockProps) {
               </thead>
               <tbody>
                 {rows.map((row, i) => (
-                  <tr key={i} className="border-b border-border/10 transition-colors hover:bg-muted/10">
+                  <tr key={`${key}-row-${i}`} className="border-b border-border/10 transition-colors hover:bg-muted/10">
                     {columns.map((col, j) => (
                       <td key={col.key} className={`py-2 px-3 ${j === 0 ? 'font-mono font-bold text-primary/80' : ''}`}>{formatCellValue(row[col.key])}</td>
                     ))}
@@ -153,7 +153,7 @@ export function JsonRenderBlock({ spec, onAction }: JsonRenderBlockProps) {
         return (
           <div key={key} className="rounded-lg border border-border/15 overflow-hidden divide-y divide-border/10">
             {pairs.map((pair, i) => (
-              <div key={i} className="flex items-center justify-between px-3 py-2 hover:bg-muted/10 transition-colors">
+              <div key={`${key}-kv-${pair.key}-${i}`} className="flex items-center justify-between px-3 py-2 hover:bg-muted/10 transition-colors">
                 <span className="text-[11px] text-muted-foreground font-medium">{pair.key}</span>
                 <span className="text-[11px] font-mono text-foreground">{pair.value}</span>
               </div>
@@ -223,7 +223,7 @@ export function JsonRenderBlock({ spec, onAction }: JsonRenderBlockProps) {
         return (
           <div key={key} className="space-y-1">
             {items.map((item, i) => (
-              <div key={i} className="flex gap-2.5 text-[11px] p-1 rounded-md hover:bg-muted/10 transition-colors">
+              <div key={`${key}-li-${item.label}-${i}`} className="flex gap-2.5 text-[11px] p-1 rounded-md hover:bg-muted/10 transition-colors">
                 <span className="text-primary/60 mt-0.5 shrink-0">{p.ordered ? `${i + 1}.` : '•'}</span>
                 <div>
                   <span className="font-medium text-foreground">{item.label}</span>

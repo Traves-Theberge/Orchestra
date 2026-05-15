@@ -66,7 +66,7 @@ export function WatchNotifications({
                 <div className="mt-1.5 flex flex-wrap gap-1">
                   {notif.actions.map((a, i) => (
                     <button
-                      key={i}
+                      key={`${a.action}-${a.label}-${i}`}
                       onClick={() => onAction(a.action, a.params || {})}
                       className="inline-flex items-center gap-0.5 rounded-md bg-foreground/5 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-foreground/70 hover:bg-foreground/10 hover:text-foreground transition-colors"
                     >

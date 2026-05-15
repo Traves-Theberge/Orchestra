@@ -53,7 +53,7 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({ session })
                 <div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden shadow-inner">
                     <div className="max-h-[400px] overflow-y-auto custom-scrollbar p-1">
                         {session.events?.map((event: SessionEvent, idx: number) => (
-                            <div key={idx} className="p-3 border-b border-border last:border-0 hover:bg-muted/50 transition-colors group">
+                            <div key={`${event.timestamp}-${event.kind}-${idx}`} className="p-3 border-b border-border last:border-0 hover:bg-muted/50 transition-colors group">
                                 <div className="flex items-center justify-between mb-2">
                                     <div className="flex items-center gap-3">
                                         <Badge variant="outline" className="text-[10px] font-bold uppercase h-5 bg-background">

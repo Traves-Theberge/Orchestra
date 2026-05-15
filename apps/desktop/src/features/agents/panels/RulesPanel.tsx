@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/RulesPanel.tsx
-import { useState, useEffect, useId } from 'react'
+import { useReducer, useState, useId } from 'react'
 import Editor from '@monaco-editor/react'
 import { useAppStore } from '@core/store'
 import { Plus, Trash2 } from 'lucide-react'
@@ -14,6 +14,8 @@ import { ErrorStrip } from '../components/ErrorStrip'
 import { TOKENS } from '../tokens'
 import type { ClaudeFileEntry } from '@core/api/client'
 import type { Scope } from '../types'
+
+const EMPTY_ENTRIES: readonly ClaudeFileEntry[] = Object.freeze([])
 
 const RULE_TEMPLATE = `---
 paths:
@@ -36,21 +38,52 @@ interface RulesPanelProps {
 
 type DisplayItem = ClaudeFileEntry & { isInherited: boolean }
 
+interface DialogState {
+  createOpen: boolean
+  createName: string
+  createPending: boolean
+  deleteTarget: string | null
+  deletePending: boolean
+}
+
+type DialogAction =
+  | { type: 'open_create' }
+  | { type: 'set_create_name'; name: string }
+  | { type: 'close_create' }
+  | { type: 'create_start' }
+  | { type: 'create_done' }
+  | { type: 'open_delete'; name: string }
+  | { type: 'close_delete' }
+  | { type: 'delete_start' }
+  | { type: 'delete_done' }
+
+const initialDialogState: DialogState = {
+  createOpen: false,
+  createName: '',
+  createPending: false,
+  deleteTarget: null,
+  deletePending: false,
+}
+
+function dialogReducer(state: DialogState, action: DialogAction): DialogState {
+  switch (action.type) {
+    case 'open_create': return { ...state, createOpen: true }
+    case 'set_create_name': return { ...state, createName: action.name }
+    case 'close_create': return { ...state, createOpen: false, createName: '' }
+    case 'create_start': return { ...state, createPending: true }
+    case 'create_done': return { ...state, createPending: false, createOpen: false, createName: '' }
+    case 'open_delete': return { ...state, deleteTarget: action.name }
+    case 'close_delete': return { ...state, deleteTarget: null }
+    case 'delete_start': return { ...state, deletePending: true }
+    case 'delete_done': return { ...state, deletePending: false, deleteTarget: null }
+    default: return state
+  }
+}
+
 export function RulesPanel({
-  items, globalItems = [], scope = 'GLOBAL', projectName = null,
+  items, globalItems = EMPTY_ENTRIES as ClaudeFileEntry[], scope = 'GLOBAL', projectName = null,
   saving, onSave, onDelete,
 }: RulesPanelProps) {
-  const theme = useAppStore(s => s.theme)
-  const editorSettings = useAppStore(s => s.editorSettings)
-  const [selectedName, setSelectedName] = useState<string | null>(null)
-  const [content, setContent] = useState('')
-  const [error, setError] = useState('')
-  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
-  const [deletePending, setDeletePending] = useState(false)
-  const [createOpen, setCreateOpen] = useState(false)
-  const [createName, setCreateName] = useState('')
-  const [createPending, setCreatePending] = useState(false)
-
   const inheritedItems: ClaudeFileEntry[] = scope === 'PROJECT'
     ? globalItems.filter(g => !items.some(p => p.name === g.name))
     : []
@@ -59,49 +92,32 @@ export function RulesPanel({
     ...inheritedItems.map(i => ({ ...i, isInherited: true as boolean })),
   ]
 
-  useEffect(() => {
-    if (!selectedName && displayItems.length > 0) setSelectedName(displayItems[0].name)
-  }, [selectedName, displayItems])
+  const [dialog, dispatch] = useReducer(dialogReducer, initialDialogState)
 
-  useEffect(() => {
-    if (selectedName && !displayItems.find(i => i.name === selectedName)) {
-      setSelectedName(displayItems.length > 0 ? displayItems[0].name : null)
-    }
-  }, [selectedName, displayItems])
-
-  const selected = displayItems.find(i => i.name === selectedName) ?? null
-  useEffect(() => { setContent(selected?.content ?? ''); setError('') }, [selected])
-
-  const dirty = selected && !selected.isInherited ? content !== selected.content : false
-  const projectCount = items.length
-  const inheritedCount = inheritedItems.length
+  const eyebrow = scope === 'GLOBAL' ? 'Global / Rules' : `${projectName ?? 'Project'} / Rules`
 
   const handleCreate = async () => {
-    const name = createName.trim()
+    const name = dialog.createName.trim()
     if (!name) return
-    setCreatePending(true)
+    dispatch({ type: 'create_start' })
     try {
       await onSave(name, RULE_TEMPLATE.replaceAll('{{NAME}}', name))
-      setSelectedName(name)
-      setCreateOpen(false)
-      setCreateName('')
-    } finally {
-      setCreatePending(false)
+      dispatch({ type: 'create_done' })
+    } catch {
+      dispatch({ type: 'create_done' })
     }
   }
 
   const handleConfirmDelete = async () => {
-    if (!deleteTarget) return
-    setDeletePending(true)
+    if (!dialog.deleteTarget) return
+    const target = dialog.deleteTarget
+    dispatch({ type: 'delete_start' })
     try {
-      await onDelete(deleteTarget)
-      setDeleteTarget(null)
+      await onDelete(target)
     } finally {
-      setDeletePending(false)
+      dispatch({ type: 'delete_done' })
     }
   }
-
-  const eyebrow = scope === 'GLOBAL' ? 'Global / Rules' : `${projectName ?? 'Project'} / Rules`
 
   if (displayItems.length === 0 && scope === 'PROJECT' && projectName) {
     return (
@@ -115,15 +131,107 @@ export function RulesPanel({
           title="No rules at this scope"
           description="Add a rule to apply path-scoped instructions to this project."
           ctaLabel="New rule"
-          onCreate={() => setCreateOpen(true)}
+          onCreate={() => dispatch({ type: 'open_create' })}
         />
-        <CreateDialog open={createOpen} name={createName} setName={setCreateName} pending={createPending}
-          onCancel={() => { setCreateOpen(false); setCreateName('') }}
+        <CreateDialog
+          open={dialog.createOpen}
+          name={dialog.createName}
+          setName={(n) => dispatch({ type: 'set_create_name', name: n })}
+          pending={dialog.createPending}
+          onCancel={() => dispatch({ type: 'close_create' })}
           onCreate={handleCreate}
         />
       </div>
     )
   }
+
+  return (
+    <RulesPanelLoaded
+      key={`${scope}:${displayItems.map(d => d.name).join('|')}`}
+      displayItems={displayItems}
+      eyebrow={eyebrow}
+      projectCount={items.length}
+      inheritedCount={inheritedItems.length}
+      saving={saving}
+      onSave={onSave}
+      dialog={dialog}
+      dispatch={dispatch}
+      handleCreate={handleCreate}
+      handleConfirmDelete={handleConfirmDelete}
+    />
+  )
+}
+
+interface RulesPanelLoadedProps {
+  displayItems: DisplayItem[]
+  eyebrow: string
+  projectCount: number
+  inheritedCount: number
+  saving: string | null
+  onSave: (name: string, content: string) => Promise<void>
+  dialog: DialogState
+  dispatch: React.Dispatch<DialogAction>
+  handleCreate: () => Promise<void>
+  handleConfirmDelete: () => Promise<void>
+}
+
+function RulesPanelLoaded({
+  displayItems, eyebrow, projectCount, inheritedCount,
+  saving, onSave, dialog, dispatch, handleCreate, handleConfirmDelete,
+}: RulesPanelLoadedProps) {
+  const [selectedName, setSelectedName] = useState<string | null>(displayItems[0]?.name ?? null)
+  const effectiveSelected = selectedName && displayItems.some(i => i.name === selectedName)
+    ? selectedName
+    : (displayItems[0]?.name ?? null)
+  const selected = displayItems.find(i => i.name === effectiveSelected) ?? null
+
+  return (
+    <RulesEditor
+      key={selected?.name ?? '__none__'}
+      selected={selected}
+      displayItems={displayItems}
+      selectedName={effectiveSelected}
+      setSelectedName={setSelectedName}
+      eyebrow={eyebrow}
+      projectCount={projectCount}
+      inheritedCount={inheritedCount}
+      saving={saving}
+      onSave={onSave}
+      dialog={dialog}
+      dispatch={dispatch}
+      handleCreate={handleCreate}
+      handleConfirmDelete={handleConfirmDelete}
+    />
+  )
+}
+
+interface RulesEditorProps {
+  selected: DisplayItem | null
+  displayItems: DisplayItem[]
+  selectedName: string | null
+  setSelectedName: (name: string | null) => void
+  eyebrow: string
+  projectCount: number
+  inheritedCount: number
+  saving: string | null
+  onSave: (name: string, content: string) => Promise<void>
+  dialog: DialogState
+  dispatch: React.Dispatch<DialogAction>
+  handleCreate: () => Promise<void>
+  handleConfirmDelete: () => Promise<void>
+}
+
+function RulesEditor({
+  selected, displayItems, selectedName, setSelectedName,
+  eyebrow, projectCount, inheritedCount,
+  saving, onSave, dialog, dispatch, handleCreate, handleConfirmDelete,
+}: RulesEditorProps) {
+  const theme = useAppStore(s => s.theme)
+  const editorSettings = useAppStore(s => s.editorSettings)
+  const [content, setContent] = useState(selected?.content ?? '')
+  const [error, setError] = useState('')
+
+  const dirty = selected && !selected.isInherited ? content !== selected.content : false
 
   const handleSave = async () => {
     if (!selected || selected.isInherited) return
@@ -145,7 +253,7 @@ export function RulesPanel({
       <div className="flex flex-1 min-h-0 gap-3">
         <aside className={`w-[200px] flex flex-col shrink-0 ${TOKENS.surfaceCard}`}>
           <div className="p-2 border-b border-border/30">
-            <Button size="sm" variant="ghost" onClick={() => setCreateOpen(true)} className="w-full h-7 text-[10px]">
+            <Button size="sm" variant="ghost" onClick={() => dispatch({ type: 'open_create' })} className="w-full h-7 text-[10px]">
               <Plus size={10} className="mr-1" /> New rule
             </Button>
           </div>
@@ -215,7 +323,7 @@ export function RulesPanel({
           selected && !selected.isInherited ? (
             <button
               type="button"
-              onClick={() => setDeleteTarget(selected.name)}
+              onClick={() => dispatch({ type: 'open_delete', name: selected.name })}
               className="text-[10px] text-foreground/40 hover:text-red-400 inline-flex items-center gap-1"
             >
               <Trash2 size={11} /> Delete
@@ -224,24 +332,28 @@ export function RulesPanel({
         }
       />
 
-      <CreateDialog open={createOpen} name={createName} setName={setCreateName} pending={createPending}
-        onCancel={() => { setCreateOpen(false); setCreateName('') }}
+      <CreateDialog
+        open={dialog.createOpen}
+        name={dialog.createName}
+        setName={(n) => dispatch({ type: 'set_create_name', name: n })}
+        pending={dialog.createPending}
+        onCancel={() => dispatch({ type: 'close_create' })}
         onCreate={handleCreate}
       />
 
-      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+      <Dialog open={!!dialog.deleteTarget} onOpenChange={(o) => !o && dispatch({ type: 'close_delete' })}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="text-red-400">Delete rule</DialogTitle>
             <DialogDescription>This removes the file from disk. Cannot be undone.</DialogDescription>
           </DialogHeader>
           <div className="py-4 rounded-md border bg-muted/30 p-3">
-            <p className="text-sm font-mono text-primary">{deleteTarget}</p>
+            <p className="text-sm font-mono text-primary">{dialog.deleteTarget}</p>
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deletePending}>Cancel</Button>
-            <Button variant="destructive" onClick={handleConfirmDelete} disabled={deletePending}>
-              <Trash2 size={14} className="mr-2" /> {deletePending ? 'Deleting…' : 'Delete'}
+            <Button variant="outline" onClick={() => dispatch({ type: 'close_delete' })} disabled={dialog.deletePending}>Cancel</Button>
+            <Button variant="destructive" onClick={handleConfirmDelete} disabled={dialog.deletePending}>
+              <Trash2 size={14} className="mr-2" /> {dialog.deletePending ? 'Deleting…' : 'Delete'}
             </Button>
           </DialogFooter>
         </DialogContent>

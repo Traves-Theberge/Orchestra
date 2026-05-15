@@ -1,5 +1,5 @@
 // apps/desktop/src/widgets/agents/AgentsDashboard.tsx
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useAppStore } from '@core/store'
 import { AlertCircle } from 'lucide-react'
 import type { BackendConfig, Project } from '@core/api/types'
@@ -76,12 +76,11 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
     ? projects.find(p => p.id === agentHubProjectId) ?? null
     : null
 
-  useEffect(() => {
-    if (agentHubProjectId === null && selectedProjectID) {
-      setAgentHubProjectId(selectedProjectID)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedProjectID])
+  const bootstrappedProjectRef = useRef(false)
+  if (!bootstrappedProjectRef.current && agentHubProjectId === null && selectedProjectID) {
+    bootstrappedProjectRef.current = true
+    setAgentHubProjectId(selectedProjectID)
+  }
 
   const isClaude = provider === 'claude'
   const is8gent = provider === '8gent'

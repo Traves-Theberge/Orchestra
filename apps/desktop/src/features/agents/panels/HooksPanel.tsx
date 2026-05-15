@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/HooksPanel.tsx
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@ui/button'
 import { Skeleton } from '@ui/skeleton'
@@ -12,6 +12,8 @@ import { InheritedField } from '../components/InheritedField'
 import { HOOK_EVENTS_BY_PROVIDER } from '../constants'
 import type { Provider, Scope } from '../types'
 
+const EMPTY_HOOKS: readonly ProviderHook[] = Object.freeze([])
+
 interface HooksPanelProps {
   hooks: ProviderHook[]
   globalHooks?: ProviderHook[]
@@ -23,26 +25,74 @@ interface HooksPanelProps {
   provider: Provider
 }
 
+function hookKey(hook: ProviderHook, index: number): string {
+  return `${hook.event}|${hook.matcher ?? ''}|${hook.command}|${index}`
+}
+
 export function HooksPanel({
-  hooks, globalHooks = [], scope = 'GLOBAL', projectName = null,
+  hooks, globalHooks = EMPTY_HOOKS as ProviderHook[], scope = 'GLOBAL', projectName = null,
   onSave, loading, saving, provider,
 }: HooksPanelProps) {
-  const [localHooks, setLocalHooks] = useState(hooks)
+  if (loading) {
+    return <div className="p-6 space-y-3"><Skeleton className="h-6 w-48" /><Skeleton className="h-[200px] w-full" /></div>
+  }
+
+  const events = HOOK_EVENTS_BY_PROVIDER[provider] ?? []
+  const allowCustomEvents = provider === 'codex'
+
+  if (events.length === 0 && !allowCustomEvents) {
+    return (
+      <div className="flex items-center justify-center h-full text-muted-foreground/20">
+        <p className="text-sm font-bold uppercase tracking-widest">{provider} does not support hooks</p>
+      </div>
+    )
+  }
+
+  const signature = JSON.stringify(hooks)
+  return (
+    <HooksPanelEditor
+      key={`${scope}:${provider}:${signature}`}
+      initialHooks={hooks}
+      globalHooks={globalHooks}
+      scope={scope}
+      projectName={projectName}
+      onSave={onSave}
+      saving={saving}
+      provider={provider}
+      events={events}
+      allowCustomEvents={allowCustomEvents}
+    />
+  )
+}
+
+interface HooksPanelEditorProps {
+  initialHooks: ProviderHook[]
+  globalHooks: ProviderHook[]
+  scope: Scope
+  projectName: string | null
+  onSave: (hooks: ProviderHook[]) => Promise<void>
+  saving: string | null
+  provider: Provider
+  events: string[]
+  allowCustomEvents: boolean
+}
+
+function HooksPanelEditor({
+  initialHooks, globalHooks, scope, projectName,
+  onSave, saving, provider, events, allowCustomEvents,
+}: HooksPanelEditorProps) {
+  const [localHooks, setLocalHooks] = useState<ProviderHook[]>(initialHooks)
   const [newEvent, setNewEvent] = useState('')
   const [newCommand, setNewCommand] = useState('')
   const [newMatcher, setNewMatcher] = useState('')
   const [error, setError] = useState('')
-  const events = HOOK_EVENTS_BY_PROVIDER[provider] ?? []
-  const allowCustomEvents = provider === 'codex'
 
-  useEffect(() => { setLocalHooks(hooks); setError('') }, [hooks])
-
-  const dirty = JSON.stringify(localHooks) !== JSON.stringify(hooks)
+  const dirty = JSON.stringify(localHooks) !== JSON.stringify(initialHooks)
 
   const handleDiscard = useCallback(() => {
-    setLocalHooks(hooks)
+    setLocalHooks(initialHooks)
     setError('')
-  }, [hooks])
+  }, [initialHooks])
 
   const handleSave = useCallback(async () => {
     setError('')
@@ -52,18 +102,6 @@ export function HooksPanel({
       setError(e instanceof Error ? e.message : 'Failed to save')
     }
   }, [localHooks, onSave])
-
-  if (loading) {
-    return <div className="p-6 space-y-3"><Skeleton className="h-6 w-48" /><Skeleton className="h-[200px] w-full" /></div>
-  }
-
-  if (events.length === 0 && !allowCustomEvents) {
-    return (
-      <div className="flex items-center justify-center h-full text-muted-foreground/20">
-        <p className="text-sm font-bold uppercase tracking-widest">{provider} does not support hooks</p>
-      </div>
-    )
-  }
 
   const handleAdd = () => {
     if (!newEvent || !newCommand.trim()) return
@@ -84,7 +122,6 @@ export function HooksPanel({
     setLocalHooks(prev => [...prev.filter(h => h.event !== eventName), ...inherited])
   }
 
-  // Group hooks by event for inherited display at PROJECT scope
   const allEvents = allowCustomEvents
     ? Array.from(new Set([...events, ...localHooks.map(h => h.event), ...globalHooks.map(h => h.event)]))
     : events
@@ -105,7 +142,6 @@ export function HooksPanel({
 
       <div className="flex-1 min-h-0 overflow-y-auto pr-1">
         <div className="max-w-2xl mx-auto space-y-4">
-          {/* Per-event grouped view (only for fixed events at PROJECT scope) */}
           {scope === 'PROJECT' && !allowCustomEvents ? (
             <div className="space-y-4">
               {allEvents.map(ev => {
@@ -124,10 +160,10 @@ export function HooksPanel({
                         {localForEvent.length === 0 && (
                           <p className="text-[10px] text-muted-foreground/30 italic">None at this scope</p>
                         )}
-                        {localForEvent.map((hook, i) => {
+                        {localForEvent.map((hook) => {
                           const idx = localHooks.indexOf(hook)
                           return (
-                            <div key={i} className="flex items-center gap-2 group rounded-lg border border-border/20 px-3 py-2">
+                            <div key={hookKey(hook, idx)} className="flex items-center gap-2 group rounded-lg border border-border/20 px-3 py-2">
                               <code className="text-[11px] font-mono text-foreground/70 flex-1 truncate">{hook.command}</code>
                               {hook.matcher && <span className="text-[9px] text-muted-foreground/40 shrink-0">({hook.matcher})</span>}
                               <button
@@ -151,7 +187,7 @@ export function HooksPanel({
                 <p className="text-[10px] text-muted-foreground/30 py-4 text-center">No hooks configured</p>
               )}
               {localHooks.map((hook, i) => (
-                <div key={i} className="flex items-center gap-2 group rounded-lg border border-border/20 px-3 py-2">
+                <div key={hookKey(hook, i)} className="flex items-center gap-2 group rounded-lg border border-border/20 px-3 py-2">
                   <span className="text-[10px] font-bold text-primary/70 uppercase tracking-wider shrink-0 w-[120px] truncate">{hook.event}</span>
                   <code className="text-[11px] font-mono text-foreground/70 flex-1 truncate">{hook.command}</code>
                   {hook.matcher && <span className="text-[9px] text-muted-foreground/40 shrink-0">({hook.matcher})</span>}
@@ -166,7 +202,6 @@ export function HooksPanel({
             </div>
           )}
 
-          {/* Add new hook */}
           <div className="flex items-center gap-2 border-t border-border/20 pt-3">
             {allowCustomEvents ? (
               <input

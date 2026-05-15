@@ -12,6 +12,9 @@ import { TerminalView } from '@features/terminal/TerminalView'
 import type { DiffFile } from './IssueDetailUtils'
 import type { IssueHistoryEntry } from './types'
 
+const FILE_SKELETON_KEYS = ['f1', 'f2', 'f3', 'f4', 'f5'] as const
+const ART_SKELETON_KEYS = ['a1', 'a2', 'a3', 'a4', 'a5'] as const
+
 export function ChangesTab({
   diffLoading,
   diffFiles,
@@ -34,7 +37,7 @@ export function ChangesTab({
         </div>
         <div className="flex-1 overflow-auto custom-scrollbar p-2 space-y-1">
           {diffLoading ? (
-            Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-8 w-full rounded-lg bg-muted/20" />)
+            FILE_SKELETON_KEYS.map((k) => <Skeleton key={k} className="h-8 w-full rounded-lg bg-muted/20" />)
           ) : diffFiles.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 opacity-20 grayscale">
               <GitBranch size={32} className="mb-2" />
@@ -240,7 +243,7 @@ export function ArtifactsTab({
         </div>
         <div className="flex-1 overflow-auto custom-scrollbar p-2 space-y-1">
           {artifactsLoading ? (
-            Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-8 w-full rounded-lg bg-muted/30" />)
+            ART_SKELETON_KEYS.map((k) => <Skeleton key={k} className="h-8 w-full rounded-lg bg-muted/30" />)
           ) : artifacts.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 opacity-20 grayscale">
               <FileText size={32} className="mb-2" />

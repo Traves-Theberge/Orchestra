@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useReducer, useState } from 'react'
 
 import type { TimelineItem } from '@layout/types'
 import type { BackendConfig, IssueUpdatePayload } from '@core/api/client'
@@ -9,6 +9,52 @@ import { useIssueDetailData } from './use-issue-detail-data'
 import { useIssueDetailLogView } from './use-issue-detail-log-view'
 import { useIssueDetailPR } from './use-issue-detail-pr'
 import type { IssueDetailResult } from '../types'
+
+type LocalEditState = {
+  state: string
+  assignee: string
+  provider: string
+  disabledTools: string[]
+}
+
+type LocalEditAction =
+  | { type: 'sync'; state: string; assignee: string; provider: string; disabledTools: string[] }
+  | { type: 'setState'; state: string }
+  | { type: 'setAssigneeAndProvider'; assignee: string; provider: string }
+  | { type: 'setAssignee'; assignee: string }
+  | { type: 'setProvider'; provider: string }
+  | { type: 'setDisabledTools'; disabledTools: string[] }
+
+function localEditReducer(prev: LocalEditState, action: LocalEditAction): LocalEditState {
+  switch (action.type) {
+    case 'sync':
+      return {
+        state: action.state,
+        assignee: action.assignee,
+        provider: action.provider,
+        disabledTools: action.disabledTools,
+      }
+    case 'setState':
+      return { ...prev, state: action.state }
+    case 'setAssigneeAndProvider':
+      return { ...prev, assignee: action.assignee, provider: action.provider }
+    case 'setAssignee':
+      return { ...prev, assignee: action.assignee }
+    case 'setProvider':
+      return { ...prev, provider: action.provider }
+    case 'setDisabledTools':
+      return { ...prev, disabledTools: action.disabledTools }
+    default:
+      return prev
+  }
+}
+
+const INITIAL_LOCAL_EDIT: LocalEditState = {
+  state: 'Todo',
+  assignee: 'Unassigned',
+  provider: '',
+  disabledTools: [],
+}
 
 export function useIssueDetailState({
   result,
@@ -25,11 +71,9 @@ export function useIssueDetailState({
   timeline: TimelineItem[]
   availableAgents: string[]
 }) {
-  const [localState, setLocalState] = useState('Todo')
-  const [localAssignee, setLocalAssignee] = useState('Unassigned')
-  const [localProvider, setLocalProvider] = useState<string>('')
+  const [edit, dispatch] = useReducer(localEditReducer, INITIAL_LOCAL_EDIT)
+  const { state: localState, assignee: localAssignee, provider: localProvider, disabledTools } = edit
   const [activeTab, setActiveTab] = useState<'overview' | 'changes' | 'logs' | 'artifacts' | 'activity'>('overview')
-  const [disabledTools, setDisabledTools] = useState<string[]>([])
   const [hookOutputs, setHookOutputs] = useState<Record<string, string>>({})
   const [selectedHookLog, setSelectedHookLog] = useState<{ id: string; label: string; output: string } | null>(null)
 
@@ -69,10 +113,7 @@ export function useIssueDetailState({
 
   // Sync local state from issue result props
   useEffect(() => {
-    setLocalState(state)
-    setLocalAssignee(assigneeId)
-    setLocalProvider(provider)
-    setDisabledTools(disabledToolsFromResult)
+    dispatch({ type: 'sync', state, assignee: assigneeId, provider, disabledTools: disabledToolsFromResult })
   }, [state, assigneeId, provider, disabledToolsFromResult])
 
   useEffect(() => {
@@ -86,7 +127,7 @@ export function useIssueDetailState({
   }, [snapshot, issueId, identifier])
 
   const handleStateChange = async (newState: string) => {
-    setLocalState(newState)
+    dispatch({ type: 'setState', state: newState })
     if (onUpdate) {
       await onUpdate({ state: newState })
     }
@@ -94,28 +135,31 @@ export function useIssueDetailState({
 
   const handleAssigneeChange = async (newAssignee: string) => {
     const normalized = newAssignee === 'Unassigned' ? '' : newAssignee
-    setLocalAssignee(newAssignee)
-
     const agentName = normalized.replace('agent-', '')
     if (availableAgents.includes(agentName)) {
-      setLocalProvider(agentName)
+      dispatch({ type: 'setAssigneeAndProvider', assignee: newAssignee, provider: agentName })
       if (onUpdate) {
         await onUpdate({ assignee_id: normalized, provider: agentName })
       }
-    } else if (onUpdate) {
-      await onUpdate({ assignee_id: normalized })
+    } else {
+      dispatch({ type: 'setAssignee', assignee: newAssignee })
+      if (onUpdate) {
+        await onUpdate({ assignee_id: normalized })
+      }
     }
   }
 
   const handleToggleTool = async (toolName: string) => {
     const next = disabledTools.includes(toolName) ? disabledTools.filter((tool) => tool !== toolName) : [...disabledTools, toolName]
-    setDisabledTools(next)
+    dispatch({ type: 'setDisabledTools', disabledTools: next })
     if (onUpdate) {
       await onUpdate({ disabled_tools: next })
     }
   }
 
   const getHookStatusForType = (type: string) => getHookStatus(timeline, issueId, identifier, type)
+
+  const setLocalProvider = (next: string) => dispatch({ type: 'setProvider', provider: next })
 
   return {
     isValid,

@@ -718,7 +718,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                                 <p className="text-[11px] mt-1 font-mono opacity-60">{tabError}</p>
                             </div>
                         ) : loadingTab ? (
-                            <div className="m-8 space-y-2">{[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-9 w-full rounded-md" />)}</div>
+                            <div className="m-8 space-y-2">{['s1', 's2', 's3', 's4', 's5'].map(k => <Skeleton key={k} className="h-9 w-full rounded-md" />)}</div>
                         ) : (
                             <div className="flex-1 flex min-h-0">
                                 {/* File tree */}

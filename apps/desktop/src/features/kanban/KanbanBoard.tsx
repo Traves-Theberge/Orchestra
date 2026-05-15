@@ -54,14 +54,19 @@ const STATE_TO_COLUMN: Record<string, string> = Object.fromEntries(
   Object.entries(COLUMN_TO_STATE).map(([k, v]) => [v, k]),
 )
 
+const EMPTY_ISSUES: IssueListItem[] = []
+const EMPTY_PROJECTS: Project[] = []
+const EMPTY_AGENTS: string[] = []
+const SKELETON_ROW_KEYS = ['s1', 's2', 's3'] as const
+
 export function KanbanBoard({
   config,
   project,
   loadingState,
   snapshot,
-  boardIssues = [],
-  projects = [],
-  availableAgents = [],
+  boardIssues = EMPTY_ISSUES,
+  projects = EMPTY_PROJECTS,
+  availableAgents = EMPTY_AGENTS,
   onInspectIssue,
   onIssueUpdate,
   onIssueDelete,
@@ -539,7 +544,7 @@ export function KanbanBoard({
               }`}>
                 <div className="flex-1 flex flex-col gap-1.5 p-2 min-h-0 overflow-y-auto overflow-x-hidden">
                   {loadingState ? (
-                    Array.from({ length: 3 }).map((_, idx) => <Skeleton key={idx} className="h-20 w-full rounded-lg" />)
+                    SKELETON_ROW_KEYS.map((k) => <Skeleton key={k} className="h-20 w-full rounded-lg" />)
                   ) : column.items.length === 0 ? (
                     column.id === 'backlog' ? (
                       <button

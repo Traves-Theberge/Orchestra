@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/InstructionsPanel.tsx
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import Editor from '@monaco-editor/react'
 import { useAppStore } from '@core/store'
 import { PanelHeader } from '../components/PanelHeader'
@@ -21,17 +21,8 @@ interface InstructionsPanelProps {
 }
 
 export function InstructionsPanel({
-  content: propsContent, path, exists, saving, scope, projectName, onSave, onDelete,
+  content, path, exists, saving, scope, projectName, onSave, onDelete,
 }: InstructionsPanelProps) {
-  const theme = useAppStore(s => s.theme)
-  const editorSettings = useAppStore(s => s.editorSettings)
-  const [content, setContent] = useState(propsContent)
-  const [error, setError] = useState('')
-  const dirty = content !== propsContent
-  usePublishDirty(dirty)
-
-  useEffect(() => { setContent(propsContent); setError('') }, [propsContent])
-
   const eyebrow = scope === 'GLOBAL' ? 'Global / Instructions' : `${projectName ?? 'Project'} / Instructions`
   const sub = scope === 'GLOBAL'
     ? `Global instructions · ${path}`
@@ -57,6 +48,38 @@ export function InstructionsPanel({
       </div>
     )
   }
+
+  return (
+    <InstructionsEditor
+      key={`${scope}:${path}`}
+      eyebrow={eyebrow}
+      sub={sub}
+      initialContent={content}
+      saving={saving}
+      onSave={onSave}
+      onDelete={onDelete}
+    />
+  )
+}
+
+interface InstructionsEditorProps {
+  eyebrow: string
+  sub: string
+  initialContent: string
+  saving: string | null
+  onSave: (content: string) => Promise<void>
+  onDelete?: () => Promise<void>
+}
+
+function InstructionsEditor({
+  eyebrow, sub, initialContent, saving, onSave, onDelete,
+}: InstructionsEditorProps) {
+  const theme = useAppStore(s => s.theme)
+  const editorSettings = useAppStore(s => s.editorSettings)
+  const [content, setContent] = useState(initialContent)
+  const [error, setError] = useState('')
+  const dirty = content !== initialContent
+  usePublishDirty(dirty)
 
   const handleSave = async () => {
     setError('')
@@ -101,7 +124,7 @@ export function InstructionsPanel({
         dirty={dirty}
         saving={!!saving}
         onSave={handleSave}
-        onDiscard={() => setContent(propsContent)}
+        onDiscard={() => setContent(initialContent)}
         extraLeft={
           onDelete && (
             <button

@@ -15,7 +15,7 @@ function toKebabCase(str: string): string {
 }
 
 export function CreateRepoDialog({ projectName, onCancel, onCreate }: CreateRepoDialogProps) {
-  const [name, setName] = useState(toKebabCase(projectName))
+  const [name, setName] = useState(() => toKebabCase(projectName))
   const [description, setDescription] = useState('')
   const [isPrivate, setIsPrivate] = useState(true)
   const [loading, setLoading] = useState(false)
