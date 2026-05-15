@@ -404,10 +404,14 @@ export function createMetaTools(allTools: ToolSet) {
 
         // If no filters, return category overview
         if (!params.category && !params.query) {
+          const counts = new Map<string, number>()
+          for (const t of TOOL_REGISTRY) {
+            counts.set(t.category, (counts.get(t.category) ?? 0) + 1)
+          }
           const categories = Object.entries(CATEGORY_DESCRIPTIONS).map(([cat, desc]) => ({
             category: cat,
             description: desc,
-            tool_count: TOOL_REGISTRY.filter((t) => t.category === cat).length,
+            tool_count: counts.get(cat) ?? 0,
           }))
           return { type: 'category_overview', categories, total_tools: TOOL_REGISTRY.length }
         }
@@ -444,9 +448,9 @@ export function createMetaTools(allTools: ToolSet) {
       execute: async (params) => {
         const targetTool = allTools[params.tool_name]
         if (!targetTool) {
-          const suggestions = TOOL_REGISTRY
-            .filter((t) => t.name.includes(params.tool_name) || params.tool_name.includes(t.name))
-            .map((t) => t.name)
+          const suggestions = TOOL_REGISTRY.flatMap((t) =>
+            t.name.includes(params.tool_name) || params.tool_name.includes(t.name) ? [t.name] : []
+          )
           return {
             error: `Tool "${params.tool_name}" not found.`,
             ...(suggestions.length > 0 ? { did_you_mean: suggestions } : {}),

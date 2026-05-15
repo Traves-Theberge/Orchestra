@@ -327,8 +327,9 @@ function buildConfig(
   const providerObj = existingProvider && typeof existingProvider === 'object' && !Array.isArray(existingProvider)
     ? structuredClone(existingProvider as Record<string, unknown>)
     : {}
+  const providerIdSet = new Set(providerIds)
   for (const key of Object.keys(providerObj)) {
-    if (!providerIds.includes(key)) delete providerObj[key]
+    if (!providerIdSet.has(key)) delete providerObj[key]
   }
   for (const id of providerIds) {
     const raw = providerConfigs[id] ?? '{}'

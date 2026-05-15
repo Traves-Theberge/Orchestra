@@ -320,7 +320,10 @@ function readTomlArray(content: string, field: string): string {
   const pattern = new RegExp(`^${escapeRegExp(field)}\\s*=\\s*\\[(.*?)\\]\\s*$`, 'm')
   const match = content.match(pattern)
   if (!match) return ''
-  return match[1].split(',').map(part => part.trim().replace(/^["']|["']$/g, '')).filter(Boolean).join(' ')
+  return match[1].split(',').flatMap(part => {
+    const cleaned = part.trim().replace(/^["']|["']$/g, '')
+    return cleaned ? [cleaned] : []
+  }).join(' ')
 }
 
 function readTomlBoolean(content: string, field: string): string {

@@ -33,8 +33,8 @@ export function IssuesPanel() {
   // memoization the Sets and three filter passes ran on every parent render.
   type EnrichedIssue = typeof allBoardIssues[number] & { liveStatus: string }
   const { activeIssues, otherIssues } = useMemo(() => {
-    const runningIds = new Set(running.map((r) => r.issue_identifier ?? '').filter(Boolean))
-    const retryingIds = new Set(retrying.map((r) => r.issue_identifier ?? '').filter(Boolean))
+    const runningIds = new Set(running.flatMap((r) => r.issue_identifier ? [r.issue_identifier] : []))
+    const retryingIds = new Set(retrying.flatMap((r) => r.issue_identifier ? [r.issue_identifier] : []))
     const active: EnrichedIssue[] = []
     const other: EnrichedIssue[] = []
     for (const issue of allBoardIssues) {

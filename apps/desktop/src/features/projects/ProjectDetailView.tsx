@@ -686,14 +686,12 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                                 boardIssues={(() => {
                                     const local = boardIssues.filter(i => i.project_id === project.id)
                                     const localTitles = new Set(local.map(i => i.title))
-                                    const ghBacklog: IssueListItem[] = githubIssues
-                                        .filter(gh => !localTitles.has(gh.title))
-                                        .map(gh => ({
-                                            id: `github-${gh.number}`, issue_id: `github-${gh.number}`,
-                                            identifier: `GH-${gh.number}`, issue_identifier: `GH-${gh.number}`,
-                                            title: gh.title, description: gh.body, state: 'Backlog',
-                                            project_id: project.id, url: gh.html_url,
-                                        }))
+                                    const ghBacklog: IssueListItem[] = githubIssues.flatMap(gh => localTitles.has(gh.title) ? [] : [{
+                                        id: `github-${gh.number}`, issue_id: `github-${gh.number}`,
+                                        identifier: `GH-${gh.number}`, issue_identifier: `GH-${gh.number}`,
+                                        title: gh.title, description: gh.body, state: 'Backlog',
+                                        project_id: project.id, url: gh.html_url,
+                                    }])
                                     return [...local, ...ghBacklog]
                                 })()}
                                 projects={[project]}

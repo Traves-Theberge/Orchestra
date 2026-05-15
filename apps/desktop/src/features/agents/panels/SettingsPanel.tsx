@@ -242,7 +242,7 @@ function SettingsForm({
   const plugins: string[] = Array.isArray(rawPlugins)
     ? (rawPlugins as string[])
     : (typeof rawPlugins === 'object' && rawPlugins !== null)
-      ? Object.entries(rawPlugins as Record<string, unknown>).filter(([, v]) => v === true).map(([k]) => k)
+      ? Object.entries(rawPlugins as Record<string, unknown>).flatMap(([k, v]) => v === true ? [k] : [])
       : []
 
   const eyebrow = scope === 'GLOBAL' ? 'Global / Settings' : `${projectName ?? 'Project'} / Settings`

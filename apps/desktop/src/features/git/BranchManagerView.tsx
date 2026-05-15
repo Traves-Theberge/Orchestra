@@ -151,7 +151,7 @@ export function BranchManagerView({ config, projectId }: BranchManagerViewProps)
       case 'all':
       default: pool = branches.filter((b) => !b.is_current); break
     }
-    pool = [...pool].sort((a, b) => {
+    pool = pool.toSorted((a, b) => {
       const da = new Date(a.last_commit_date).getTime() || 0
       const db = new Date(b.last_commit_date).getTime() || 0
       return db - da

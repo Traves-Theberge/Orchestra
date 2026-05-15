@@ -16,7 +16,7 @@ function byIssueIdentifierAsc<T extends { issue_identifier: string }>(a: T, b: T
  * @returns A new sorted array.
  */
 export function getSortedRunningEntries(entries: RunningEntry[]): RunningEntry[] {
-  return [...entries].sort(byIssueIdentifierAsc)
+  return entries.toSorted(byIssueIdentifierAsc)
 }
 
 /**
@@ -26,7 +26,7 @@ export function getSortedRunningEntries(entries: RunningEntry[]): RunningEntry[]
  * @returns A new sorted array.
  */
 export function getSortedRetryEntries(entries: RetryEntry[]): RetryEntry[] {
-  return [...entries].sort((a, b) => {
+  return entries.toSorted((a, b) => {
     const due = a.due_at.localeCompare(b.due_at)
     if (due !== 0) {
       return due

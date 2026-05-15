@@ -64,7 +64,7 @@ export function WorkItemBrowser({
   const presentSources = useMemo(() => {
     const s = new Set<WorkItemSource>()
     for (const item of items) s.add(item.source as WorkItemSource)
-    return [...s].sort()
+    return [...s].toSorted()
   }, [items])
 
   const activeSource = (filter.source && filter.source !== 'all') ? filter.source : null

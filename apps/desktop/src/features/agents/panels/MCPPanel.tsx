@@ -1,6 +1,7 @@
 // apps/desktop/src/features/agents/panels/MCPPanel.tsx
-import { useId, useMemo, useReducer, useState } from 'react'
-import Editor from '@monaco-editor/react'
+import { lazy, Suspense, useId, useMemo, useReducer, useState } from 'react'
+
+const Editor = lazy(() => import('@monaco-editor/react'))
 import { useAppStore } from '@core/store'
 import { Plus, Trash2, Power, PowerOff } from 'lucide-react'
 import { Button } from '@ui/button'
@@ -109,16 +110,15 @@ export function MCPPanel({
       kind: 'orchestra' as const,
       server: s,
     }))
+    const providerNames = new Set(providerServers.map(p => p.name))
     const inherited = scope === 'PROJECT'
-      ? globalProviderServers
-          .filter(g => !providerServers.some(p => p.name === g.name))
-          .map(s => ({
+      ? globalProviderServers.flatMap(s => providerNames.has(s.name) ? [] : [{
             key: `inherited:${s.name}`,
             name: s.name,
             kind: 'inherited' as const,
             enabled: s.enabled,
             server: s,
-          }))
+          }])
       : []
     return [...provided, ...orchestra, ...inherited]
   }, [providerServers, orchestraServers, globalProviderServers, scope])
@@ -350,29 +350,31 @@ function MCPEditor({
                 )}
               </div>
               <div className="flex-1 min-h-0 rounded-md border border-border/30 overflow-hidden">
-                <Editor
-                  language="json"
-                  value={content}
-                  theme={theme === 'dark' ? 'vs-dark' : 'vs'}
-                  onChange={(v) => {
-                    if (v !== undefined && selected.kind === 'provider') {
-                      setContent(v)
-                      setJsonError(null)
-                    }
-                  }}
-                  options={{
-                    readOnly: selected.kind !== 'provider',
-                    minimap: { enabled: false },
-                    fontSize: editorSettings.fontSize,
-                    fontFamily: editorSettings.fontFamily || undefined,
-                    lineNumbers: 'on',
-                    wordWrap: 'on',
-                    scrollBeyondLastLine: false,
-                    automaticLayout: true,
-                    tabSize: 2,
-                    padding: { top: 10, bottom: 10 },
-                  }}
-                />
+                <Suspense fallback={null}>
+                  <Editor
+                    language="json"
+                    value={content}
+                    theme={theme === 'dark' ? 'vs-dark' : 'vs'}
+                    onChange={(v) => {
+                      if (v !== undefined && selected.kind === 'provider') {
+                        setContent(v)
+                        setJsonError(null)
+                      }
+                    }}
+                    options={{
+                      readOnly: selected.kind !== 'provider',
+                      minimap: { enabled: false },
+                      fontSize: editorSettings.fontSize,
+                      fontFamily: editorSettings.fontFamily || undefined,
+                      lineNumbers: 'on',
+                      wordWrap: 'on',
+                      scrollBeyondLastLine: false,
+                      automaticLayout: true,
+                      tabSize: 2,
+                      padding: { top: 10, bottom: 10 },
+                    }}
+                  />
+                </Suspense>
               </div>
               {jsonError && <p className="text-[10px] text-red-400 font-mono">{jsonError}</p>}
             </>

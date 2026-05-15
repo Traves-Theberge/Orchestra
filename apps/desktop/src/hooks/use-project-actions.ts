@@ -68,16 +68,21 @@ export function useProjectActions(
         // Read current stats from store to avoid stale closure
         const currentStats = useAppStore.getState().projectStats
         const statsMap: Record<string, ProjectStats> = { ...currentStats }
-        let statsUpdated = false
-        for (const p of projs) {
-          if (statsMap[p.id]) continue
+        const pending = projs.filter((p) => !statsMap[p.id])
+        const fetched = await Promise.all(pending.map(async (p) => {
           try {
             const s = await fetchProjectStats(config, p.id)
-            statsMap[p.id] = s
-            statsUpdated = true
+            return [p.id, s] as const
           } catch (e) {
             console.error(`failed to fetch stats for project ${p.id}`, e)
+            return null
           }
+        }))
+        let statsUpdated = false
+        for (const entry of fetched) {
+          if (!entry) continue
+          statsMap[entry[0]] = entry[1]
+          statsUpdated = true
         }
         if (mounted && statsUpdated) useAppStore.getState().setProjectStats(statsMap)
 
@@ -141,16 +146,21 @@ export function useProjectActions(
 
     const currentProjectStats = useAppStore.getState().projectStats
     const statsMap: Record<string, ProjectStats> = { ...currentProjectStats }
-    let statsChanged = false
-    for (const p of projs) {
-      if (statsMap[p.id]) continue
+    const pending = projs.filter((p) => !statsMap[p.id])
+    const fetched = await Promise.all(pending.map(async (p) => {
       try {
         const s = await fetchProjectStats(config, p.id)
-        statsMap[p.id] = s
-        statsChanged = true
+        return [p.id, s] as const
       } catch (e) {
         console.error(`failed to fetch stats for project ${p.id}`, e)
+        return null
       }
+    }))
+    let statsChanged = false
+    for (const entry of fetched) {
+      if (!entry) continue
+      statsMap[entry[0]] = entry[1]
+      statsChanged = true
     }
     if (statsChanged) {
       useAppStore.getState().setProjectStats(statsMap)

@@ -1,6 +1,7 @@
 // apps/desktop/src/features/agents/panels/SubAgentsPanel.tsx
-import { useReducer, useState, useId } from 'react'
-import Editor from '@monaco-editor/react'
+import { lazy, Suspense, useReducer, useState, useId } from 'react'
+
+const Editor = lazy(() => import('@monaco-editor/react'))
 import { useAppStore } from '@core/store'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@ui/button'
@@ -286,24 +287,26 @@ function SubAgentsEditor({
                 {selected.isInherited && ' · inherited from global (read-only at this scope)'}
               </div>
               <div className="flex-1 min-h-0 rounded-md border border-border/30 overflow-hidden">
-                <Editor
-                  language="markdown"
-                  value={content}
-                  theme={theme === 'dark' ? 'vs-dark' : 'vs'}
-                  onChange={(v) => { if (v !== undefined && !selected.isInherited) setContent(v) }}
-                  options={{
-                    readOnly: selected.isInherited,
-                    minimap: { enabled: false },
-                    fontSize: editorSettings.fontSize,
-                    fontFamily: editorSettings.fontFamily || undefined,
-                    lineNumbers: 'off',
-                    wordWrap: 'on',
-                    scrollBeyondLastLine: false,
-                    automaticLayout: true,
-                    tabSize: 2,
-                    padding: { top: 10, bottom: 10 },
-                  }}
-                />
+                <Suspense fallback={null}>
+                  <Editor
+                    language="markdown"
+                    value={content}
+                    theme={theme === 'dark' ? 'vs-dark' : 'vs'}
+                    onChange={(v) => { if (v !== undefined && !selected.isInherited) setContent(v) }}
+                    options={{
+                      readOnly: selected.isInherited,
+                      minimap: { enabled: false },
+                      fontSize: editorSettings.fontSize,
+                      fontFamily: editorSettings.fontFamily || undefined,
+                      lineNumbers: 'off',
+                      wordWrap: 'on',
+                      scrollBeyondLastLine: false,
+                      automaticLayout: true,
+                      tabSize: 2,
+                      padding: { top: 10, bottom: 10 },
+                    }}
+                  />
+                </Suspense>
               </div>
             </>
           ) : (

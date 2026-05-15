@@ -1,7 +1,8 @@
-import Editor from '@monaco-editor/react'
 import { useAppStore } from '@core/store'
-import { useEffect, useRef } from 'react'
+import { lazy, Suspense, useEffect, useRef } from 'react'
 import { EditorTabs } from './EditorTabs'
+
+const Editor = lazy(() => import('@monaco-editor/react'))
 
 export function EditorPanel() {
   const openFiles = useAppStore((s) => s.openFiles)
@@ -78,29 +79,31 @@ export function EditorPanel() {
       <EditorTabs />
       {activeFile && activeFile.content !== null ? (
         <div className="flex-1 min-h-0">
-          <Editor
-            key={activeFile.id}
-            language={activeFile.language}
-            value={activeFile.content}
-            theme={theme === 'dark' ? 'vs-dark' : 'vs'}
-            onChange={(value) => {
-              if (value !== undefined) {
-                setFileContent(activeFile.id, value)
-                setFileDirty(activeFile.id, value !== originalContentRef.current)
-              }
-            }}
-            options={{
-              minimap: { enabled: editorSettings.minimap },
-              fontSize: editorSettings.fontSize,
-              fontFamily: editorSettings.fontFamily || undefined,
-              lineNumbers: editorSettings.lineNumbers,
-              wordWrap: editorSettings.wordWrap,
-              scrollBeyondLastLine: false,
-              automaticLayout: true,
-              tabSize: editorSettings.tabSize,
-              renderWhitespace: editorSettings.renderWhitespace,
-            }}
-          />
+          <Suspense fallback={null}>
+            <Editor
+              key={activeFile.id}
+              language={activeFile.language}
+              value={activeFile.content}
+              theme={theme === 'dark' ? 'vs-dark' : 'vs'}
+              onChange={(value) => {
+                if (value !== undefined) {
+                  setFileContent(activeFile.id, value)
+                  setFileDirty(activeFile.id, value !== originalContentRef.current)
+                }
+              }}
+              options={{
+                minimap: { enabled: editorSettings.minimap },
+                fontSize: editorSettings.fontSize,
+                fontFamily: editorSettings.fontFamily || undefined,
+                lineNumbers: editorSettings.lineNumbers,
+                wordWrap: editorSettings.wordWrap,
+                scrollBeyondLastLine: false,
+                automaticLayout: true,
+                tabSize: editorSettings.tabSize,
+                renderWhitespace: editorSettings.renderWhitespace,
+              }}
+            />
+          </Suspense>
         </div>
       ) : activeFile ? (
         <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">

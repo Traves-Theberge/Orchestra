@@ -1,9 +1,20 @@
 import * as React from "react"
-import * as RechartsPrimitive from "recharts"
+import type * as RechartsPrimitive from "recharts"
 
 import { cn } from '@core/utils/cn'
 
-// Format: { THEME_NAME: CSS_SELECTOR }
+const ResponsiveContainer = React.lazy(() =>
+  import("recharts").then((m) => ({ default: m.ResponsiveContainer as unknown as React.ComponentType<React.ComponentProps<typeof RechartsPrimitive.ResponsiveContainer>> }))
+)
+
+const LazyTooltip = React.lazy(() =>
+  import("recharts").then((m) => ({ default: m.Tooltip as unknown as React.ComponentType<React.ComponentProps<typeof RechartsPrimitive.Tooltip>> }))
+)
+
+const LazyLegend = React.lazy(() =>
+  import("recharts").then((m) => ({ default: m.Legend as unknown as React.ComponentType<React.ComponentProps<typeof RechartsPrimitive.Legend>> }))
+)
+
 const THEMES = { light: "", dark: ".dark" } as const
 
 /** Configuration map defining chart series labels, icons, and colors (supports light/dark themes). */
@@ -61,9 +72,11 @@ const ChartContainer = React.forwardRef<
         {...props}
       >
         <ChartStyle id={chartId} config={config} />
-        <RechartsPrimitive.ResponsiveContainer>
-          {children}
-        </RechartsPrimitive.ResponsiveContainer>
+        <React.Suspense fallback={null}>
+          <ResponsiveContainer>
+            {children}
+          </ResponsiveContainer>
+        </React.Suspense>
       </div>
     </ChartContext.Provider>
   )
@@ -104,8 +117,12 @@ ${colorConfig
   )
 }
 
-/** Re-exported Recharts Tooltip component. */
-const ChartTooltip = RechartsPrimitive.Tooltip
+/** Lazy-loaded Recharts Tooltip wrapper. */
+const ChartTooltip = (props: React.ComponentProps<typeof RechartsPrimitive.Tooltip>) => (
+  <React.Suspense fallback={null}>
+    <LazyTooltip {...props} />
+  </React.Suspense>
+)
 
 /** Styled tooltip content component that reads from ChartConfig context for labels and colors. */
 const ChartTooltipContent = React.forwardRef<
@@ -197,9 +214,8 @@ const ChartTooltipContent = React.forwardRef<
       >
         {!nestLabel ? tooltipLabel : null}
         <div className="grid gap-1.5">
-          {payload!
-            .filter((item: any) => item.type !== "none")
-            .map((item: any, index: number) => {
+          {payload!.flatMap((item: any, index: number) => {
+              if (item.type === "none") return []
               const key = `${nameKey || item.name || item.dataKey || "value"}`
               const itemConfig = getPayloadConfigFromPayload(config, item, key)
               const indicatorColor = color || item.payload.fill || item.color
@@ -270,8 +286,12 @@ const ChartTooltipContent = React.forwardRef<
 )
 ChartTooltipContent.displayName = "ChartTooltip"
 
-/** Re-exported Recharts Legend component. */
-const ChartLegend = RechartsPrimitive.Legend
+/** Lazy-loaded Recharts Legend wrapper. */
+const ChartLegend = (props: React.ComponentProps<typeof RechartsPrimitive.Legend>) => (
+  <React.Suspense fallback={null}>
+    <LazyLegend {...props} />
+  </React.Suspense>
+)
 
 /** Styled legend content component that reads from ChartConfig context for labels and icons. */
 const ChartLegendContent = React.forwardRef<
@@ -302,9 +322,8 @@ const ChartLegendContent = React.forwardRef<
           className
         )}
       >
-        {payload!
-          .filter((item: any) => item.type !== "none")
-          .map((item: any) => {
+        {payload!.flatMap((item: any) => {
+            if (item.type === "none") return []
             const key = `${nameKey || item.dataKey || "value"}`
             const itemConfig = getPayloadConfigFromPayload(config, item, key)
 
@@ -335,7 +354,6 @@ const ChartLegendContent = React.forwardRef<
 )
 ChartLegendContent.displayName = "ChartLegend"
 
-// Helper to extract item config from a payload.
 function getPayloadConfigFromPayload(
   config: ChartConfig,
   payload: unknown,

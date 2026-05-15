@@ -16,8 +16,8 @@ const cache = new Map<string, CacheEntry>()
 export function trackerCacheKey(configId: string, filter?: WorkItemFilter): string {
   const normalized = filter
     ? {
-        states: filter.states ? [...filter.states].sort() : undefined,
-        labels: filter.labels ? [...filter.labels].sort() : undefined,
+        states: filter.states ? filter.states.toSorted() : undefined,
+        labels: filter.labels ? filter.labels.toSorted() : undefined,
         assigneeId: filter.assigneeId,
         search: filter.search,
       }
@@ -64,8 +64,8 @@ export function useTrackerWorkItems(
   const sourceKey = projectId ? `project:${projectId}` : configId
   const filterKey = filter
     ? JSON.stringify({
-        states: filter.states ? [...filter.states].sort() : undefined,
-        labels: filter.labels ? [...filter.labels].sort() : undefined,
+        states: filter.states ? filter.states.toSorted() : undefined,
+        labels: filter.labels ? filter.labels.toSorted() : undefined,
         assigneeId: filter.assigneeId,
         search: filter.search,
       })

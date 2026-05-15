@@ -49,18 +49,21 @@ export function FileExplorer() {
     if (!explorerRoot) return
     clearExplorerCache()
 
+    const ctrl = new AbortController()
     const loadRoot = async () => {
       if (!config) return
       try {
         const url = `${config.baseUrl}/api/v1/workspace/tree?path=${encodeURIComponent(explorerRoot)}`
         const res = await fetch(url, {
           headers: { Authorization: `Bearer ${config.apiToken}` },
+          signal: ctrl.signal,
         })
         if (!res.ok) {
           setDirChildren(explorerRoot, [])
           return
         }
         const tree: Array<{ name: string; path: string; is_dir: boolean }> = await res.json()
+        if (ctrl.signal.aborted) return
         const children: TreeNode[] = tree.map((entry) => ({
           name: entry.name,
           path: `${explorerRoot}/${entry.name}`,
@@ -72,14 +75,15 @@ export function FileExplorer() {
 
         try {
           const status = await window.orchestraDesktop?.fs?.gitStatus?.(explorerRoot)
-          if (status) setGitStatusMap(status)
+          if (status && !ctrl.signal.aborted) setGitStatusMap(status)
         } catch { /* git status is best-effort */ }
       } catch {
-        setDirChildren(explorerRoot, [])
+        if (!ctrl.signal.aborted) setDirChildren(explorerRoot, [])
       }
     }
 
     loadRoot()
+    return () => ctrl.abort()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [explorerRoot])
 

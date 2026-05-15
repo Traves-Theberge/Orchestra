@@ -21,21 +21,31 @@ interface DocsDashboardProps {
     theme?: 'light' | 'dark'
 }
 
-function AuthImage({ docPath, alt, config, ...props }: { docPath: string; alt: string; config: BackendConfig | null; [key: string]: unknown }) {
+function useAuthDocBlobUrl(docPath: string, config: BackendConfig | null): string | null {
     const [blobUrl, setBlobUrl] = useState<string | null>(null)
     useEffect(() => {
         if (!config) return
-        let revoked = false
+        const ctrl = new AbortController()
+        let created: string | null = null
         const url = new URL(`/api/v1/docs/${docPath}`, config.baseUrl).toString()
-        fetch(url, { headers: { Authorization: `Bearer ${config.apiToken}` } })
+        fetch(url, { headers: { Authorization: `Bearer ${config.apiToken}` }, signal: ctrl.signal })
             .then(r => r.blob())
             .then(blob => {
-                if (revoked) return
-                setBlobUrl(URL.createObjectURL(blob))
+                if (ctrl.signal.aborted) return
+                created = URL.createObjectURL(blob)
+                setBlobUrl(created)
             })
             .catch(() => {})
-        return () => { revoked = true; if (blobUrl) URL.revokeObjectURL(blobUrl) }
+        return () => {
+            ctrl.abort()
+            if (created) URL.revokeObjectURL(created)
+        }
     }, [config, docPath])
+    return blobUrl
+}
+
+function AuthImage({ docPath, alt, config, ...props }: { docPath: string; alt: string; config: BackendConfig | null; [key: string]: unknown }) {
+    const blobUrl = useAuthDocBlobUrl(docPath, config)
     if (!blobUrl) return <div className="h-48 bg-muted/10 rounded-xl animate-pulse" />
     return <img src={blobUrl} alt={alt} className="rounded-xl border border-border shadow-lg max-w-full" {...(props as React.ImgHTMLAttributes<HTMLImageElement>)} />
 }
@@ -343,7 +353,7 @@ export const DocsDashboard: React.FC<DocsDashboardProps> = ({ config, theme }) =
     }
 
     const sortItems = (items: DocItem[], parentDir?: string): DocItem[] => {
-        return [...items].sort((a, b) => {
+        return items.toSorted((a, b) => {
             // Folders before files, except index.md always first
             if (a.name === 'index.md') return -1
             if (b.name === 'index.md') return 1

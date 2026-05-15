@@ -1,6 +1,7 @@
 // apps/desktop/src/features/agents/panels/CodexInstructionsPanel.tsx
-import { useReducer, useState } from 'react'
-import Editor from '@monaco-editor/react'
+import { lazy, Suspense, useReducer, useState } from 'react'
+
+const Editor = lazy(() => import('@monaco-editor/react'))
 import { useAppStore } from '@core/store'
 import { Plus } from 'lucide-react'
 import { Button } from '@ui/button'
@@ -166,24 +167,26 @@ function InstructionsEditor({ items, selected, effectiveSelectedKey, eyebrow, sa
         ) : null}
 
         <div className="flex-1 min-w-0 rounded-lg border border-border/30 overflow-hidden">
-          <Editor
-            language="markdown"
-            value={state.content}
-            theme={theme === 'dark' ? 'vs-dark' : 'vs'}
-            onChange={(v) => { if (v !== undefined) dispatch({ type: 'set-content', value: v }) }}
-            options={{
-              minimap: { enabled: false },
-              fontSize: editorSettings.fontSize,
-              fontFamily: editorSettings.fontFamily || undefined,
-              lineNumbers: 'off',
-              wordWrap: 'on',
-              scrollBeyondLastLine: false,
-              automaticLayout: true,
-              tabSize: 2,
-              renderWhitespace: 'none',
-              padding: { top: 12, bottom: 12 },
-            }}
-          />
+          <Suspense fallback={null}>
+            <Editor
+              language="markdown"
+              value={state.content}
+              theme={theme === 'dark' ? 'vs-dark' : 'vs'}
+              onChange={(v) => { if (v !== undefined) dispatch({ type: 'set-content', value: v }) }}
+              options={{
+                minimap: { enabled: false },
+                fontSize: editorSettings.fontSize,
+                fontFamily: editorSettings.fontFamily || undefined,
+                lineNumbers: 'off',
+                wordWrap: 'on',
+                scrollBeyondLastLine: false,
+                automaticLayout: true,
+                tabSize: 2,
+                renderWhitespace: 'none',
+                padding: { top: 12, bottom: 12 },
+              }}
+            />
+          </Suspense>
         </div>
       </div>
 

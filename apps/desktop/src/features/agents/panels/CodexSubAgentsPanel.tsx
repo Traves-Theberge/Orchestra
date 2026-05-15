@@ -366,7 +366,10 @@ function ConfigBlockSection({ agentName, agentConfig, configPath, configContent,
         name: agentName,
         description: config.description,
         configFile: config.configFile,
-        nicknameCandidates: config.nicknameCandidates.split(/\s+/).map((item: string) => item.trim()).filter(Boolean),
+        nicknameCandidates: config.nicknameCandidates.split(/\s+/).flatMap((item: string) => {
+          const trimmed = item.trim()
+          return trimmed ? [trimmed] : []
+        }),
       }))
     } catch (e) {
       onError(e instanceof Error ? e.message : 'Failed to save')
@@ -535,7 +538,10 @@ function parseAgentConfigBlocks(content: string): AgentConfigBlock[] {
     const scalar = line.match(/^([a-zA-Z0-9_.-]+)\s*=\s*["']?([^"'\n]+)["']?\s*$/)
     const array = line.match(/^nickname_candidates\s*=\s*\[(.*?)\]\s*$/)
     if (array) {
-      current.nicknameCandidates = array[1].split(',').map(item => item.trim().replace(/^["']|["']$/g, '')).filter(Boolean)
+      current.nicknameCandidates = array[1].split(',').flatMap(item => {
+        const cleaned = item.trim().replace(/^["']|["']$/g, '')
+        return cleaned ? [cleaned] : []
+      })
       continue
     }
     if (!scalar) continue

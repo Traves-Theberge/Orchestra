@@ -68,36 +68,36 @@ export function parseDiff(rawDiff: string): DiffFile[] {
 
 /** Collects the output text of completed or failed hooks for a given issue from the timeline. */
 export function extractHookOutputs(timeline: TimelineItem[], issueId: string, issueIdentifier: string): Record<string, string> {
-  const relevant = timeline.filter((event) => {
-    const data = asEventData(event)
-    return data.issue_id === issueId || data.issue_identifier === issueIdentifier
-  })
   const outputs: Record<string, string> = {}
-  relevant.forEach((event) => {
+  for (const event of timeline) {
     const data = asEventData(event)
-    if (event.type === 'HOOK_COMPLETED' || event.type === 'HOOK_FAILED') {
-      const type = typeof data.hook_type === 'string' ? data.hook_type : ''
-      const output = typeof data.output === 'string' ? data.output : ''
-      if (type && output) {
-        outputs[type] = output
-      }
+    if (data.issue_id !== issueId && data.issue_identifier !== issueIdentifier) continue
+    if (event.type !== 'HOOK_COMPLETED' && event.type !== 'HOOK_FAILED') continue
+    const type = typeof data.hook_type === 'string' ? data.hook_type : ''
+    const output = typeof data.output === 'string' ? data.output : ''
+    if (type && output) {
+      outputs[type] = output
     }
-  })
+  }
   return outputs
 }
 
 /** Derives the current status of a specific hook type (`pending`, `active`, `completed`, or `failed`) from the timeline. */
 export function getHookStatus(timeline: TimelineItem[], issueId: string, issueIdentifier: string, type: string) {
-  const relevant = timeline.filter((event) => {
+  let hasFailed = false
+  let hasCompleted = false
+  let hasStarted = false
+  for (const event of timeline) {
     const data = asEventData(event)
-    return data.issue_id === issueId || data.issue_identifier === issueIdentifier
-  })
-  const failed = relevant.find((event) => event.type === 'HOOK_FAILED' && asEventData(event).hook_type === type)
-  if (failed) return 'failed'
-  const completed = relevant.find((event) => event.type === 'HOOK_COMPLETED' && asEventData(event).hook_type === type)
-  if (completed) return 'completed'
-  const started = relevant.find((event) => event.type === 'HOOK_STARTED' && asEventData(event).hook_type === type)
-  if (started) return 'active'
+    if (data.issue_id !== issueId && data.issue_identifier !== issueIdentifier) continue
+    if (data.hook_type !== type) continue
+    if (event.type === 'HOOK_FAILED') hasFailed = true
+    else if (event.type === 'HOOK_COMPLETED') hasCompleted = true
+    else if (event.type === 'HOOK_STARTED') hasStarted = true
+  }
+  if (hasFailed) return 'failed'
+  if (hasCompleted) return 'completed'
+  if (hasStarted) return 'active'
   return 'pending'
 }
 
@@ -158,14 +158,14 @@ function parsePlanItemsFromText(text: string): PlanItem[] {
   const stripped = text.replace(/```[\s\S]*?```/g, '')
 
   const lines = stripped.split('\n')
-  const checkboxItems = lines
-    .map((line) => line.match(/^\s*[-*+]\s*\[\s*([xX ])\s*\]\s+(.+)$/))
-    .filter((match): match is RegExpMatchArray => !!match)
-    .map((match) => ({
-      done: match[1].toLowerCase() === 'x',
-      text: match[2].trim(),
-    }))
-    .filter((item) => item.text.length > 0 && item.text !== 'step one' && item.text !== 'step two' && item.text !== 'step three')
+  const checkboxItems: PlanItem[] = []
+  for (const line of lines) {
+    const match = line.match(/^\s*[-*+]\s*\[\s*([xX ])\s*\]\s+(.+)$/)
+    if (!match) continue
+    const text = match[2].trim()
+    if (text.length === 0 || text === 'step one' || text === 'step two' || text === 'step three') continue
+    checkboxItems.push({ done: match[1].toLowerCase() === 'x', text })
+  }
 
   if (checkboxItems.length > 0) {
     return checkboxItems

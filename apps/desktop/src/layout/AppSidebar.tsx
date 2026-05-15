@@ -73,7 +73,7 @@ const DOC_SUB_SECTION_ORDER: Record<string, Record<string, number>> = {
 }
 
 function sortDocItems(items: DocItem[], parentDir?: string): DocItem[] {
-  return [...items].sort((a, b) => {
+  return items.toSorted((a, b) => {
     if (a.name === 'index.md') return -1
     if (b.name === 'index.md') return 1
     if (a.is_folder && !b.is_folder) return -1

@@ -361,10 +361,13 @@ function skillFolderPath(skillMarkdownPath: string): string {
 
 function parseSkillOverrides(content: string): SkillOverride[] {
   const blocks = content.match(/\[\[skills\.config\]\][\s\S]*?(?=\n\[\[skills\.config\]\]|\n\[[^\n]+\]|$)/g) ?? []
-  return blocks.map(block => ({
-    path: readScalar(block, 'path'),
-    enabled: readScalar(block, 'enabled').toLowerCase() === 'true',
-  })).filter(entry => entry.path)
+  const result: SkillOverride[] = []
+  for (const block of blocks) {
+    const path = readScalar(block, 'path')
+    if (!path) continue
+    result.push({ path, enabled: readScalar(block, 'enabled').toLowerCase() === 'true' })
+  }
+  return result
 }
 
 function upsertSkillOverride(content: string, override: SkillOverride): string {

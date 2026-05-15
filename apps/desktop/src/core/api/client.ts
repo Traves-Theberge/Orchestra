@@ -186,9 +186,7 @@ export function normalizeSnapshotPayload(value: unknown): SnapshotPayload {
   const rateLimits = isRecord(root.rate_limits) ? root.rate_limits : null
 
   const running = Array.isArray(root.running)
-    ? root.running
-      .filter((entry): entry is Record<string, unknown> => isRecord(entry))
-      .map((entry) => ({
+    ? root.running.flatMap((entry) => isRecord(entry) ? [{
         issue_id: asString(entry.issue_id),
         issue_identifier: asString(entry.issue_identifier),
         state: asString(entry.state),
@@ -198,20 +196,18 @@ export function normalizeSnapshotPayload(value: unknown): SnapshotPayload {
         last_message: asString(entry.last_message, ''),
         last_event_at: asString(entry.last_event_at, ''),
         started_at: asString(entry.started_at, ''),
-      }))
+      }] : [])
     : []
 
   const retrying = Array.isArray(root.retrying)
-    ? root.retrying
-      .filter((entry): entry is Record<string, unknown> => isRecord(entry))
-      .map((entry) => ({
+    ? root.retrying.flatMap((entry) => isRecord(entry) ? [{
         issue_id: asString(entry.issue_id),
         issue_identifier: asString(entry.issue_identifier),
         state: asString(entry.state),
         attempt: asNumber(entry.attempt, 0),
         due_at: asString(entry.due_at),
         error: asString(entry.error),
-      }))
+      }] : [])
     : []
 
   return {

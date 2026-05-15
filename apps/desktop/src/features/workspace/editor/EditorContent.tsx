@@ -1,9 +1,10 @@
-import Editor from '@monaco-editor/react'
 import { useAppStore } from '@core/store'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Save, RotateCcw, Check, Eye, Pencil, Columns2 } from 'lucide-react'
 import type { OpenFile } from '@core/store/types'
 import { MarkdownRenderer } from '@ui/MarkdownRenderer'
+
+const Editor = lazy(() => import('@monaco-editor/react'))
 
 interface EditorContentProps {
   file: OpenFile
@@ -241,43 +242,45 @@ export function EditorContent({ file }: EditorContentProps) {
       <div className="flex-1 min-h-0 flex">
         {(!isPreviewable || mdView !== 'preview') && (
           <div className={`min-h-0 ${isPreviewable && mdView === 'split' ? 'w-1/2 border-r border-border/60' : 'w-full'}`}>
-            <Editor
-              key={file.id}
-              language={file.language}
-              value={file.content}
-              theme={theme === 'dark' ? 'vs-dark' : 'vs'}
-              onMount={(editor) => {
-                editorRef.current = editor
-                const line = file.pendingReveal
-                if (line) {
-                  try {
-                    editor.revealLineInCenter(line)
-                    editor.setPosition({ lineNumber: line, column: 1 })
-                    editor.focus()
-                    clearPendingReveal(file.id)
-                  } catch (err) {
-                    console.warn('[editor] onMount reveal failed', err)
+            <Suspense fallback={null}>
+              <Editor
+                key={file.id}
+                language={file.language}
+                value={file.content}
+                theme={theme === 'dark' ? 'vs-dark' : 'vs'}
+                onMount={(editor) => {
+                  editorRef.current = editor
+                  const line = file.pendingReveal
+                  if (line) {
+                    try {
+                      editor.revealLineInCenter(line)
+                      editor.setPosition({ lineNumber: line, column: 1 })
+                      editor.focus()
+                      clearPendingReveal(file.id)
+                    } catch (err) {
+                      console.warn('[editor] onMount reveal failed', err)
+                    }
                   }
-                }
-              }}
-              onChange={(value) => {
-                if (value !== undefined) {
-                  setFileContent(file.id, value)
-                  setFileDirty(file.id, value !== originalContentRef.current)
-                }
-              }}
-              options={{
-                minimap: { enabled: editorSettings.minimap },
-                fontSize: editorSettings.fontSize,
-                fontFamily: editorSettings.fontFamily || undefined,
-                lineNumbers: editorSettings.lineNumbers,
-                wordWrap: editorSettings.wordWrap,
-                scrollBeyondLastLine: false,
-                automaticLayout: true,
-                tabSize: editorSettings.tabSize,
-                renderWhitespace: editorSettings.renderWhitespace,
-              }}
-            />
+                }}
+                onChange={(value) => {
+                  if (value !== undefined) {
+                    setFileContent(file.id, value)
+                    setFileDirty(file.id, value !== originalContentRef.current)
+                  }
+                }}
+                options={{
+                  minimap: { enabled: editorSettings.minimap },
+                  fontSize: editorSettings.fontSize,
+                  fontFamily: editorSettings.fontFamily || undefined,
+                  lineNumbers: editorSettings.lineNumbers,
+                  wordWrap: editorSettings.wordWrap,
+                  scrollBeyondLastLine: false,
+                  automaticLayout: true,
+                  tabSize: editorSettings.tabSize,
+                  renderWhitespace: editorSettings.renderWhitespace,
+                }}
+              />
+            </Suspense>
           </div>
         )}
         {isPreviewable && mdView !== 'edit' && (

@@ -74,11 +74,13 @@ async function fetchOpenAIModels(baseUrl: string, apiKey: string): Promise<Model
   })
   if (!res.ok) throw new Error(httpErrorMessage(res.status))
   const data = await res.json() as { data: { id: string; owned_by?: string }[] }
-  return data.data
-    .filter((m) => m.id.startsWith('gpt-') || m.id.startsWith('o'))
-    .filter((m) => !m.id.includes('instruct') && !m.id.includes('realtime') && !m.id.includes('audio') && !m.id.includes('tts') && !m.id.includes('dall-e') && !m.id.includes('whisper') && !m.id.includes('embedding'))
-    .sort((a, b) => a.id.localeCompare(b.id))
-    .map((m) => ({ id: m.id, name: m.id }))
+  const filtered: ModelInfo[] = []
+  for (const m of data.data) {
+    if (!(m.id.startsWith('gpt-') || m.id.startsWith('o'))) continue
+    if (m.id.includes('instruct') || m.id.includes('realtime') || m.id.includes('audio') || m.id.includes('tts') || m.id.includes('dall-e') || m.id.includes('whisper') || m.id.includes('embedding')) continue
+    filtered.push({ id: m.id, name: m.id })
+  }
+  return filtered.toSorted((a, b) => a.id.localeCompare(b.id))
 }
 
 async function fetchOpenRouterModels(): Promise<ModelInfo[]> {
@@ -86,9 +88,8 @@ async function fetchOpenRouterModels(): Promise<ModelInfo[]> {
   if (!res.ok) throw new Error(httpErrorMessage(res.status))
   const data = await res.json() as { data: { id: string; name: string; supported_parameters?: string[] }[] }
   return data.data
-    .filter((m) => m.supported_parameters?.includes('tools'))
-    .map((m) => ({ id: m.id, name: m.name || m.id }))
-    .sort((a, b) => a.name.localeCompare(b.name))
+    .flatMap((m) => m.supported_parameters?.includes('tools') ? [{ id: m.id, name: m.name || m.id }] : [])
+    .toSorted((a, b) => a.name.localeCompare(b.name))
 }
 
 async function fetchGeminiModels(apiKey: string): Promise<ModelInfo[]> {
@@ -96,12 +97,11 @@ async function fetchGeminiModels(apiKey: string): Promise<ModelInfo[]> {
   if (!res.ok) throw new Error(httpErrorMessage(res.status))
   const data = await res.json() as { models: { name: string; displayName: string; supportedGenerationMethods?: string[] }[] }
   return data.models
-    .filter((m) => m.supportedGenerationMethods?.includes('generateContent'))
-    .map((m) => ({
+    .flatMap((m) => m.supportedGenerationMethods?.includes('generateContent') ? [{
       id: m.name.replace('models/', ''),
       name: m.displayName || m.name.replace('models/', ''),
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name))
+    }] : [])
+    .toSorted((a, b) => a.name.localeCompare(b.name))
 }
 
 function httpErrorMessage(status: number): string {

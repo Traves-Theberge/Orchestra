@@ -1,6 +1,7 @@
 // apps/desktop/src/features/agents/panels/GeminiContextPanel.tsx
-import { useEffect, useState } from 'react'
-import Editor from '@monaco-editor/react'
+import { lazy, Suspense, useEffect, useState } from 'react'
+
+const Editor = lazy(() => import('@monaco-editor/react'))
 import { useAppStore } from '@core/store'
 import { PanelHeader } from '../components/PanelHeader'
 import { PanelFooter } from '../components/PanelFooter'
@@ -67,24 +68,26 @@ export function GeminiContextPanel({ items, scope, projectName, saving, onSave, 
       />
 
       <div className="flex-1 min-h-0 rounded-lg border border-border/30 overflow-hidden">
-        <Editor
-          language="markdown"
-          value={content}
-          theme={theme === 'dark' ? 'vs-dark' : 'vs'}
-          onChange={(v) => { if (v !== undefined) setContent(v) }}
-          options={{
-            minimap: { enabled: false },
-            fontSize: editorSettings.fontSize,
-            fontFamily: editorSettings.fontFamily || undefined,
-            lineNumbers: 'off',
-            wordWrap: 'on',
-            scrollBeyondLastLine: false,
-            automaticLayout: true,
-            tabSize: 2,
-            renderWhitespace: 'none',
-            padding: { top: 12, bottom: 12 },
-          }}
-        />
+        <Suspense fallback={null}>
+          <Editor
+            language="markdown"
+            value={content}
+            theme={theme === 'dark' ? 'vs-dark' : 'vs'}
+            onChange={(v) => { if (v !== undefined) setContent(v) }}
+            options={{
+              minimap: { enabled: false },
+              fontSize: editorSettings.fontSize,
+              fontFamily: editorSettings.fontFamily || undefined,
+              lineNumbers: 'off',
+              wordWrap: 'on',
+              scrollBeyondLastLine: false,
+              automaticLayout: true,
+              tabSize: 2,
+              renderWhitespace: 'none',
+              padding: { top: 12, bottom: 12 },
+            }}
+          />
+        </Suspense>
       </div>
 
       <ErrorStrip message={error} onDismiss={() => setError('')} />
