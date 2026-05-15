@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/OpenCodeConfigPanel.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Button } from '@ui/button'
 import { PanelHeader } from '../components/PanelHeader'
@@ -18,30 +18,45 @@ interface OpenCodeConfigPanelProps {
   onCreate: () => Promise<void>
 }
 
-export function OpenCodeConfigPanel({ items, scope, projectName, saving, onSave, onCreate }: OpenCodeConfigPanelProps) {
+interface ConfigForm {
+  autoupdate: string
+  defaultAgent: string
+  share: string
+  disabledProviders: string[]
+  providerIds: string[]
+  providerConfigs: Record<string, string>
+}
+
+function deriveConfigForm(parsed: Record<string, unknown> | null): ConfigForm {
+  return {
+    autoupdate: readStringOrBoolean(parsed, 'autoupdate'),
+    defaultAgent: readString(parsed, 'default_agent'),
+    share: readString(parsed, 'share'),
+    disabledProviders: readStringList(parsed, 'disabled_providers'),
+    providerIds: readObjectKeys(parsed, 'provider'),
+    providerConfigs: buildProviderConfigDrafts(parsed),
+  }
+}
+
+export function OpenCodeConfigPanel(props: OpenCodeConfigPanelProps) {
+  const selected = props.items[0] ?? null
+  return <OpenCodeConfigPanelInner key={selected?.content ?? '__none__'} {...props} />
+}
+
+function OpenCodeConfigPanelInner({ items, scope, projectName, saving, onSave, onCreate }: OpenCodeConfigPanelProps) {
   const selected = items[0] ?? null
   const parsed = useMemo(() => safeParse(selected?.content ?? ''), [selected?.content])
-  const [autoupdate, setAutoupdate] = useState(readStringOrBoolean(parsed, 'autoupdate'))
-  const [defaultAgent, setDefaultAgent] = useState(readString(parsed, 'default_agent'))
-  const [share, setShare] = useState(readString(parsed, 'share'))
-  const [disabledProviders, setDisabledProviders] = useState(readStringList(parsed, 'disabled_providers'))
-  const [providerIds, setProviderIds] = useState(readObjectKeys(parsed, 'provider'))
-  const [selectedProviderId, setSelectedProviderId] = useState('')
-  const [providerConfigs, setProviderConfigs] = useState<Record<string, string>>({})
+  // react-doctor: keyed-subcomponent
+  const [form, setForm] = useState<ConfigForm>(() => deriveConfigForm(parsed))
+  // react-doctor: keyed-subcomponent
+  const [selectedProviderId, setSelectedProviderId] = useState(() => deriveConfigForm(parsed).providerIds[0] ?? '')
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    setAutoupdate(readStringOrBoolean(parsed, 'autoupdate'))
-    setDefaultAgent(readString(parsed, 'default_agent'))
-    setShare(readString(parsed, 'share'))
-    setDisabledProviders(readStringList(parsed, 'disabled_providers'))
-    const nextProviderIds = readObjectKeys(parsed, 'provider')
-    setProviderIds(nextProviderIds)
-    const nextConfigs = buildProviderConfigDrafts(parsed)
-    setProviderConfigs(nextConfigs)
-    setSelectedProviderId((current) => (current && nextProviderIds.includes(current) ? current : (nextProviderIds[0] ?? '')))
-    setError('')
-  }, [parsed])
+  const { autoupdate, defaultAgent, share, disabledProviders, providerIds, providerConfigs } = form
+  const setAutoupdate = (value: string) => setForm((prev) => ({ ...prev, autoupdate: value }))
+  const setDefaultAgent = (value: string) => setForm((prev) => ({ ...prev, defaultAgent: value }))
+  const setShare = (value: string) => setForm((prev) => ({ ...prev, share: value }))
+  const setDisabledProviders = (value: string[]) => setForm((prev) => ({ ...prev, disabledProviders: value }))
 
   const eyebrow = scope === 'GLOBAL' ? 'Global / OpenCode Config' : `${projectName ?? 'Project'} / OpenCode Config`
 
@@ -94,15 +109,9 @@ export function OpenCodeConfigPanel({ items, scope, projectName, saving, onSave,
   const activeProviderParseError = selectedProviderId ? readJSONError(activeProviderDraft) : ''
 
   const handleDiscard = () => {
-    setAutoupdate(readStringOrBoolean(parsed, 'autoupdate'))
-    setDefaultAgent(readString(parsed, 'default_agent'))
-    setShare(readString(parsed, 'share'))
-    setDisabledProviders(readStringList(parsed, 'disabled_providers'))
-    const nextProviderIds = readObjectKeys(parsed, 'provider')
-    setProviderIds(nextProviderIds)
-    const nextConfigs = buildProviderConfigDrafts(parsed)
-    setProviderConfigs(nextConfigs)
-    setSelectedProviderId(nextProviderIds[0] ?? '')
+    const next = deriveConfigForm(parsed)
+    setForm(next)
+    setSelectedProviderId(next.providerIds[0] ?? '')
   }
 
   const handleSave = async () => {
@@ -115,7 +124,7 @@ export function OpenCodeConfigPanel({ items, scope, projectName, saving, onSave,
   }
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="OpenCode config"
@@ -175,13 +184,12 @@ export function OpenCodeConfigPanel({ items, scope, projectName, saving, onSave,
             description="Provider IDs present in the top-level provider block."
             items={providerIds}
             onChange={(nextIds) => {
-              setProviderIds(nextIds)
-              setProviderConfigs((current) => {
+              setForm((prev) => {
                 const nextConfigs: Record<string, string> = {}
                 for (const id of nextIds) {
-                  nextConfigs[id] = current[id] ?? '{}'
+                  nextConfigs[id] = prev.providerConfigs[id] ?? '{}'
                 }
-                return nextConfigs
+                return { ...prev, providerIds: nextIds, providerConfigs: nextConfigs }
               })
               setSelectedProviderId((current) => (current && nextIds.includes(current) ? current : (nextIds[0] ?? '')))
             }}
@@ -209,12 +217,12 @@ export function OpenCodeConfigPanel({ items, scope, projectName, saving, onSave,
 
               {selectedProviderId ? (
                 <section className="space-y-2">
-                  <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Provider Config JSON</h4>
+                  <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Provider Config JSON</h4>
                   <textarea
                     value={activeProviderDraft}
                     onChange={(event) => {
                       const value = event.target.value
-                      setProviderConfigs((current) => ({ ...current, [selectedProviderId]: value }))
+                      setForm((prev) => ({ ...prev, providerConfigs: { ...prev.providerConfigs, [selectedProviderId]: value } }))
                     }}
                     className="min-h-[220px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20"
                     spellCheck={false}
@@ -274,8 +282,9 @@ function buildConfig(
   const providerObj = existingProvider && typeof existingProvider === 'object' && !Array.isArray(existingProvider)
     ? structuredClone(existingProvider as Record<string, unknown>)
     : {}
+  const providerIdSet = new Set(providerIds)
   for (const key of Object.keys(providerObj)) {
-    if (!providerIds.includes(key)) delete providerObj[key]
+    if (!providerIdSet.has(key)) delete providerObj[key]
   }
   for (const id of providerIds) {
     const raw = providerConfigs[id] ?? '{}'
@@ -345,7 +354,7 @@ function readJSONError(content: string): string {
 function Field({ label, children }: { label: string, children: ReactNode }) {
   return (
     <section className="space-y-2">
-      <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">{label}</h4>
+      <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">{label}</h4>
       {children}
     </section>
   )
@@ -358,7 +367,7 @@ function ListField({
   return (
     <section className="space-y-2">
       <div>
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">{label}</h4>
+        <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">{label}</h4>
         <p className="text-[10px] text-muted-foreground/50 mt-1">{description}</p>
       </div>
       <div className="flex flex-wrap gap-1.5">

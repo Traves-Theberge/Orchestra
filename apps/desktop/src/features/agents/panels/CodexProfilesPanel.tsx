@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/CodexProfilesPanel.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useReducer } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@ui/button'
 import {
@@ -33,30 +33,56 @@ type ProfileSummary = {
   sandboxMode: string
 }
 
+type PanelState = {
+  selectedName: string | null
+  createOpen: boolean
+  createName: string
+  deleteTarget: string | null
+  error: string
+}
+
+type PanelAction =
+  | { type: 'selectProfile'; name: string | null }
+  | { type: 'openCreate' }
+  | { type: 'cancelCreate' }
+  | { type: 'setCreateName'; value: string }
+  | { type: 'openDelete'; name: string | null }
+  | { type: 'closeDelete' }
+  | { type: 'setError'; message: string }
+  | { type: 'createSuccess'; name: string }
+
+const panelReducer = (state: PanelState, action: PanelAction): PanelState => {
+  switch (action.type) {
+    case 'selectProfile': return { ...state, selectedName: action.name }
+    case 'openCreate': return { ...state, createOpen: true }
+    case 'cancelCreate': return { ...state, createOpen: false, createName: '' }
+    case 'setCreateName': return { ...state, createName: action.value }
+    case 'openDelete': return { ...state, deleteTarget: action.name }
+    case 'closeDelete': return { ...state, deleteTarget: null }
+    case 'setError': return { ...state, error: action.message }
+    case 'createSuccess': return { ...state, createOpen: false, createName: '', selectedName: action.name }
+    default: return state
+  }
+}
+
 export function CodexProfilesPanel({ items, scope, projectName, saving, onSave }: CodexProfilesPanelProps) {
   const config = items[0] ?? null
   const profiles = useMemo(() => extractProfiles(config?.content ?? ''), [config?.content])
-  const [selectedName, setSelectedName] = useState<string | null>(profiles[0]?.name ?? null)
-  const [draft, setDraft] = useState<ProfileSummary | null>(profiles[0] ?? null)
-  const [createOpen, setCreateOpen] = useState(false)
-  const [createName, setCreateName] = useState('')
-  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
-  const [error, setError] = useState('')
+  const [state, dispatch] = useReducer(panelReducer, {
+    selectedName: profiles[0]?.name ?? null,
+    createOpen: false,
+    createName: '',
+    deleteTarget: null,
+    error: '',
+  })
+  const { selectedName, createOpen, createName, deleteTarget, error } = state
 
   useEffect(() => {
-    if (!selectedName && profiles.length > 0) setSelectedName(profiles[0].name)
-    if (selectedName && !profiles.some(profile => profile.name === selectedName)) {
-      setSelectedName(profiles[0]?.name ?? null)
-    }
-  }, [profiles, selectedName])
-
-  useEffect(() => {
-    const selected = profiles.find(profile => profile.name === selectedName) ?? null
-    setDraft(selected)
+    if (selectedName && profiles.some(profile => profile.name === selectedName)) return
+    dispatch({ type: 'selectProfile', name: profiles[0]?.name ?? null })
   }, [profiles, selectedName])
 
   const selected = profiles.find(profile => profile.name === selectedName) ?? null
-  const isDirty = JSON.stringify(draft) !== JSON.stringify(selected)
 
   const eyebrow = scope === 'GLOBAL' ? 'Global / Profiles' : `${projectName ?? 'Project'} / Profiles`
 
@@ -69,7 +95,7 @@ export function CodexProfilesPanel({ items, scope, projectName, saving, onSave }
           sub="Named TOML configurations"
         />
         <div className="flex-1 flex items-center justify-center text-foreground/30">
-          <div className="text-center space-y-2">
+          <div className="text-center flex flex-col gap-2">
             <p className="text-sm font-bold uppercase tracking-widest">No config found</p>
             <p className="text-[10px]">Create a Codex config file before editing profiles.</p>
           </div>
@@ -78,22 +104,14 @@ export function CodexProfilesPanel({ items, scope, projectName, saving, onSave }
     )
   }
 
-  const saveDraft = async () => {
-    if (!draft) return
-    setError('')
-    try { await onSave(config.path, upsertProfile(config.content, draft)) } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save')
-    }
-  }
-
   const deleteSelected = async () => {
     if (!deleteTarget) return
-    setError('')
+    dispatch({ type: 'setError', message: '' })
     try {
       await onSave(config.path, removeProfile(config.content, deleteTarget))
-      setDeleteTarget(null)
+      dispatch({ type: 'closeDelete' })
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to delete')
+      dispatch({ type: 'setError', message: e instanceof Error ? e.message : 'Failed to delete' })
     }
   }
 
@@ -102,17 +120,15 @@ export function CodexProfilesPanel({ items, scope, projectName, saving, onSave }
     if (!name || !config) return
     const profile: ProfileSummary = { name, model: '', approvalPolicy: '', sandboxMode: '' }
     try { await onSave(config.path, upsertProfile(config.content, profile)) } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to create')
+      dispatch({ type: 'setError', message: e instanceof Error ? e.message : 'Failed to create' })
       return
     }
-    setCreateOpen(false)
-    setCreateName('')
-    setSelectedName(name)
+    dispatch({ type: 'createSuccess', name })
   }
 
   if (profiles.length === 0) {
     return (
-      <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+      <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
         <PanelHeader
           eyebrow={eyebrow}
           title="Codex profiles"
@@ -122,13 +138,13 @@ export function CodexProfilesPanel({ items, scope, projectName, saving, onSave }
           title="No profiles at this scope"
           description="Add a profile to create a [profiles.*] block in the Codex config."
           ctaLabel="New profile"
-          onCreate={() => setCreateOpen(true)}
+          onCreate={() => dispatch({ type: 'openCreate' })}
         />
         <CreateDialog
           open={createOpen}
           name={createName}
-          setName={setCreateName}
-          onCancel={() => { setCreateOpen(false); setCreateName('') }}
+          setName={(value) => dispatch({ type: 'setCreateName', value })}
+          onCancel={() => dispatch({ type: 'cancelCreate' })}
           onCreate={createProfile}
         />
       </div>
@@ -136,7 +152,104 @@ export function CodexProfilesPanel({ items, scope, projectName, saving, onSave }
   }
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <ProfileEditor
+      key={selected?.name ?? 'none'}
+      profiles={profiles}
+      selected={selected}
+      eyebrow={eyebrow}
+      config={config}
+      saving={saving}
+      error={error}
+      onError={(message) => dispatch({ type: 'setError', message })}
+      onSelect={(name) => dispatch({ type: 'selectProfile', name })}
+      onSave={onSave}
+      onRequestDelete={(name) => dispatch({ type: 'openDelete', name })}
+      deleteTarget={deleteTarget}
+      onCloseDelete={() => dispatch({ type: 'closeDelete' })}
+      onConfirmDelete={deleteSelected}
+      createOpen={createOpen}
+      createName={createName}
+      setCreateName={(value) => dispatch({ type: 'setCreateName', value })}
+      onOpenCreate={() => dispatch({ type: 'openCreate' })}
+      onCancelCreate={() => dispatch({ type: 'cancelCreate' })}
+      onCreate={createProfile}
+    />
+  )
+}
+
+type DraftState = { draft: ProfileSummary | null }
+type DraftAction =
+  | { type: 'patch'; patch: Partial<ProfileSummary> }
+  | { type: 'reset'; value: ProfileSummary | null }
+
+const draftReducer = (state: DraftState, action: DraftAction): DraftState => {
+  switch (action.type) {
+    case 'patch':
+      return { draft: state.draft ? { ...state.draft, ...action.patch } : state.draft }
+    case 'reset':
+      return { draft: action.value }
+    default:
+      return state
+  }
+}
+
+interface ProfileEditorProps {
+  profiles: ProfileSummary[]
+  selected: ProfileSummary | null
+  eyebrow: string
+  config: ProviderFileEntry
+  saving: string | null
+  error: string
+  onError: (message: string) => void
+  onSelect: (name: string) => void
+  onSave: (path: string, content: string) => Promise<void>
+  onRequestDelete: (name: string | null) => void
+  deleteTarget: string | null
+  onCloseDelete: () => void
+  onConfirmDelete: () => Promise<void>
+  createOpen: boolean
+  createName: string
+  setCreateName: (name: string) => void
+  onOpenCreate: () => void
+  onCancelCreate: () => void
+  onCreate: () => Promise<void>
+}
+
+function ProfileEditor({
+  profiles,
+  selected,
+  eyebrow,
+  config,
+  saving,
+  error,
+  onError,
+  onSelect,
+  onSave,
+  onRequestDelete,
+  deleteTarget,
+  onCloseDelete,
+  onConfirmDelete,
+  createOpen,
+  createName,
+  setCreateName,
+  onOpenCreate,
+  onCancelCreate,
+  onCreate,
+}: ProfileEditorProps) {
+  const [draftState, dispatchDraft] = useReducer(draftReducer, { draft: selected })
+  const { draft } = draftState
+  const isDirty = JSON.stringify(draft) !== JSON.stringify(selected)
+
+  const saveDraft = async () => {
+    if (!draft) return
+    onError('')
+    try { await onSave(config.path, upsertProfile(config.content, draft)) } catch (e) {
+      onError(e instanceof Error ? e.message : 'Failed to save')
+    }
+  }
+
+  return (
+    <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="Codex profiles"
@@ -147,7 +260,7 @@ export function CodexProfilesPanel({ items, scope, projectName, saving, onSave }
       <div className="flex flex-1 min-h-0 gap-3">
         <aside className={`w-[200px] flex flex-col shrink-0 ${TOKENS.surfaceCard}`}>
           <div className="p-2 border-b border-border/30">
-            <Button size="sm" variant="ghost" onClick={() => setCreateOpen(true)} className="w-full h-7 text-[10px]">
+            <Button size="sm" variant="ghost" onClick={onOpenCreate} className="w-full h-7 text-[10px]">
               <Plus size={10} className="mr-1" /> New profile
             </Button>
           </div>
@@ -156,9 +269,9 @@ export function CodexProfilesPanel({ items, scope, projectName, saving, onSave }
               <button
                 key={profile.name}
                 type="button"
-                onClick={() => setSelectedName(profile.name)}
+                onClick={() => onSelect(profile.name)}
                 className={`w-full text-left px-2 py-1.5 rounded text-[11px] ${
-                  profile.name === selectedName ? 'bg-foreground/[0.06] text-foreground' : 'text-foreground/65 hover:bg-foreground/[0.03]'
+                  profile.name === selected?.name ? 'bg-foreground/[0.06] text-foreground' : 'text-foreground/65 hover:bg-foreground/[0.03]'
                 }`}
               >
                 <div className="truncate font-semibold">{profile.name}</div>
@@ -174,9 +287,9 @@ export function CodexProfilesPanel({ items, scope, projectName, saving, onSave }
               <div className="text-[10px] text-foreground/45 font-mono">
                 {draft.name} · [profiles.{draft.name}]
               </div>
-              <ProfileField label="Model" value={draft.model} onChange={(value) => setDraft(current => current ? { ...current, model: value } : current)} />
-              <ProfileField label="Approval Policy" value={draft.approvalPolicy} onChange={(value) => setDraft(current => current ? { ...current, approvalPolicy: value } : current)} />
-              <ProfileField label="Sandbox Mode" value={draft.sandboxMode} onChange={(value) => setDraft(current => current ? { ...current, sandboxMode: value } : current)} />
+              <ProfileField label="Model" value={draft.model} onChange={(value) => dispatchDraft({ type: 'patch', patch: { model: value } })} />
+              <ProfileField label="Approval Policy" value={draft.approvalPolicy} onChange={(value) => dispatchDraft({ type: 'patch', patch: { approvalPolicy: value } })} />
+              <ProfileField label="Sandbox Mode" value={draft.sandboxMode} onChange={(value) => dispatchDraft({ type: 'patch', patch: { sandboxMode: value } })} />
             </div>
           ) : (
             <div className="flex-1 flex items-center justify-center text-[11px] text-foreground/30">
@@ -186,18 +299,18 @@ export function CodexProfilesPanel({ items, scope, projectName, saving, onSave }
         </div>
       </div>
 
-      <ErrorStrip message={error} onDismiss={() => setError('')} />
+      <ErrorStrip message={error} onDismiss={() => onError('')} />
 
       <PanelFooter
         dirty={!!isDirty}
         saving={saving === config.path}
         onSave={saveDraft}
-        onDiscard={() => setDraft(selected)}
+        onDiscard={() => dispatchDraft({ type: 'reset', value: selected })}
         extraLeft={
           selected ? (
             <button
               type="button"
-              onClick={() => setDeleteTarget(selected.name)}
+              onClick={() => onRequestDelete(selected.name)}
               className="text-[10px] text-foreground/40 hover:text-red-400 inline-flex items-center gap-1"
             >
               <Trash2 size={11} /> Delete
@@ -210,11 +323,11 @@ export function CodexProfilesPanel({ items, scope, projectName, saving, onSave }
         open={createOpen}
         name={createName}
         setName={setCreateName}
-        onCancel={() => { setCreateOpen(false); setCreateName('') }}
-        onCreate={createProfile}
+        onCancel={onCancelCreate}
+        onCreate={onCreate}
       />
 
-      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && onCloseDelete()}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="text-red-400">Delete profile</DialogTitle>
@@ -224,8 +337,8 @@ export function CodexProfilesPanel({ items, scope, projectName, saving, onSave }
             <p className="text-sm font-mono text-primary">{deleteTarget}</p>
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={deleteSelected}>
+            <Button variant="outline" onClick={onCloseDelete}>Cancel</Button>
+            <Button variant="destructive" onClick={onConfirmDelete}>
               <Trash2 size={14} className="mr-2" /> Delete
             </Button>
           </DialogFooter>
@@ -237,8 +350,8 @@ export function CodexProfilesPanel({ items, scope, projectName, saving, onSave }
 
 function ProfileField({ label, value, onChange }: { label: string, value: string, onChange: (value: string) => void }) {
   return (
-    <section className="space-y-2">
-      <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">{label}</h4>
+    <section className="flex flex-col gap-2">
+      <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">{label}</h4>
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -257,6 +370,7 @@ function CreateDialog({
   onCancel: () => void
   onCreate: () => void
 }) {
+  const nameId = useId()
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
       <DialogContent className="max-w-md">
@@ -265,9 +379,9 @@ function CreateDialog({
           <DialogDescription>Creates a new [profiles.*] block in the current Codex config.</DialogDescription>
         </DialogHeader>
         <div className="py-2">
-          <label className="text-xs font-semibold text-foreground/60 mb-1.5 block">Profile name</label>
+          <label htmlFor={nameId} className="text-xs font-semibold text-foreground/60 mb-1.5 block">Profile name</label>
           <input
-            autoFocus
+            id={nameId}
             value={name}
             onChange={(e) => setName(e.target.value.replace(/[^a-zA-Z0-9._-]/g, ''))}
             onKeyDown={(e) => e.key === 'Enter' && name.trim() && onCreate()}

@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/GeminiPermissionsPanel.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useReducer, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Button } from '@ui/button'
 import { PanelHeader } from '../components/PanelHeader'
@@ -16,21 +16,48 @@ interface GeminiPermissionsPanelProps {
   onSave: (path: string, content: string) => Promise<void>
 }
 
-export function GeminiPermissionsPanel({ settingsPath, settingsContent, scope, projectName, saving, onSave }: GeminiPermissionsPanelProps) {
-  const parsed = useMemo(() => safeParse(settingsContent), [settingsContent])
-  const [sandbox, setSandbox] = useState(readSandbox(parsed))
-  const [allowed, setAllowed] = useState(readStringList(parsed, ['tools', 'allowed']))
-  const [core, setCore] = useState(readStringList(parsed, ['tools', 'core']))
-  const [excluded, setExcluded] = useState(readStringList(parsed, ['tools', 'exclude']))
-  const [error, setError] = useState('')
+type PermsDraft = {
+  sandbox: string
+  allowed: string[]
+  core: string[]
+  excluded: string[]
+}
 
-  useEffect(() => {
-    setSandbox(readSandbox(parsed))
-    setAllowed(readStringList(parsed, ['tools', 'allowed']))
-    setCore(readStringList(parsed, ['tools', 'core']))
-    setExcluded(readStringList(parsed, ['tools', 'exclude']))
-    setError('')
-  }, [parsed])
+type PermsAction =
+  | { type: 'set'; field: keyof PermsDraft; value: string | string[] }
+  | { type: 'reset'; draft: PermsDraft }
+
+function permsReducer(state: PermsDraft, action: PermsAction): PermsDraft {
+  switch (action.type) {
+    case 'set':
+      return { ...state, [action.field]: action.value } as PermsDraft
+    case 'reset':
+      return action.draft
+  }
+}
+
+function readPerms(parsed: Record<string, unknown> | null): PermsDraft {
+  return {
+    sandbox: readSandbox(parsed),
+    allowed: readStringList(parsed, ['tools', 'allowed']),
+    core: readStringList(parsed, ['tools', 'core']),
+    excluded: readStringList(parsed, ['tools', 'exclude']),
+  }
+}
+
+function listsEqual(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i])
+}
+
+export function GeminiPermissionsPanel(props: GeminiPermissionsPanelProps) {
+  return <Inner key={props.settingsPath || '__empty__'} {...props} />
+}
+
+function Inner({ settingsPath, settingsContent, scope, projectName, saving, onSave }: GeminiPermissionsPanelProps) {
+  const parsed = useMemo(() => safeParse(settingsContent), [settingsContent])
+  const initialDraft = useMemo(() => readPerms(parsed), [parsed])
+  const [draft, dispatch] = useReducer(permsReducer, parsed, readPerms)
+  const [error, setError] = useState('')
 
   const eyebrow = scope === 'GLOBAL' ? 'Global / Permissions' : `${projectName ?? 'Project'} / Permissions`
 
@@ -71,29 +98,26 @@ export function GeminiPermissionsPanel({ settingsPath, settingsContent, scope, p
   }
 
   const isDirty =
-    sandbox !== readSandbox(parsed) ||
-    JSON.stringify(allowed) !== JSON.stringify(readStringList(parsed, ['tools', 'allowed'])) ||
-    JSON.stringify(core) !== JSON.stringify(readStringList(parsed, ['tools', 'core'])) ||
-    JSON.stringify(excluded) !== JSON.stringify(readStringList(parsed, ['tools', 'exclude']))
+    draft.sandbox !== initialDraft.sandbox ||
+    !listsEqual(draft.allowed, initialDraft.allowed) ||
+    !listsEqual(draft.core, initialDraft.core) ||
+    !listsEqual(draft.excluded, initialDraft.excluded)
 
   const handleDiscard = () => {
-    setSandbox(readSandbox(parsed))
-    setAllowed(readStringList(parsed, ['tools', 'allowed']))
-    setCore(readStringList(parsed, ['tools', 'core']))
-    setExcluded(readStringList(parsed, ['tools', 'exclude']))
+    dispatch({ type: 'reset', draft: initialDraft })
   }
 
   const handleSave = async () => {
     setError('')
     try {
-      await onSave(settingsPath, buildGeminiSettings(parsed, sandbox, allowed, core, excluded))
+      await onSave(settingsPath, buildGeminiSettings(parsed, draft.sandbox, draft.allowed, draft.core, draft.excluded))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save')
     }
   }
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="Permissions"
@@ -105,8 +129,8 @@ export function GeminiPermissionsPanel({ settingsPath, settingsContent, scope, p
         <div className="max-w-2xl mx-auto w-full flex flex-col gap-6">
           <Field label="Sandbox">
             <select
-              value={sandbox}
-              onChange={(event) => setSandbox(event.target.value)}
+              value={draft.sandbox}
+              onChange={(event) => dispatch({ type: 'set', field: 'sandbox', value: event.target.value })}
               className="w-full max-w-sm h-9 rounded-lg border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
             >
               <option value="">Default</option>
@@ -118,9 +142,9 @@ export function GeminiPermissionsPanel({ settingsPath, settingsContent, scope, p
             </select>
           </Field>
 
-          <ListField label="Allowed Tools" description="Explicit allowlist for tool discovery and execution." items={allowed} onChange={setAllowed} placeholder="run_shell_command" />
-          <ListField label="Core Tools" description="Restrict the built-in core tool set." items={core} onChange={setCore} placeholder="read_file" />
-          <ListField label="Excluded Tools" description="Hide tools from discovery entirely." items={excluded} onChange={setExcluded} placeholder="web_fetch" />
+          <ListField label="Allowed Tools" description="Explicit allowlist for tool discovery and execution." items={draft.allowed} onChange={(v) => dispatch({ type: 'set', field: 'allowed', value: v })} placeholder="run_shell_command" />
+          <ListField label="Core Tools" description="Restrict the built-in core tool set." items={draft.core} onChange={(v) => dispatch({ type: 'set', field: 'core', value: v })} placeholder="read_file" />
+          <ListField label="Excluded Tools" description="Hide tools from discovery entirely." items={draft.excluded} onChange={(v) => dispatch({ type: 'set', field: 'excluded', value: v })} placeholder="web_fetch" />
         </div>
       </div>
 
@@ -189,8 +213,8 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function Field({ label, children }: { label: string, children: ReactNode }) {
   return (
-    <section className="space-y-2">
-      <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">{label}</h4>
+    <section className="flex flex-col gap-2">
+      <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">{label}</h4>
       {children}
     </section>
   )
@@ -201,9 +225,9 @@ function ListField({
 }: { label: string, description: string, items: string[], onChange: (items: string[]) => void, placeholder: string }) {
   const [draft, setDraft] = useState('')
   return (
-    <section className="space-y-2">
+    <section className="flex flex-col gap-2">
       <div>
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">{label}</h4>
+        <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">{label}</h4>
         <p className="text-[10px] text-foreground/50 mt-1">{description}</p>
       </div>
       <div className="flex flex-wrap gap-1.5">

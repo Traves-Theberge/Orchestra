@@ -16,14 +16,17 @@ interface OpenCodeModelPanelProps {
   onSave: (model: ProviderModelConfig) => Promise<void>
 }
 
+interface ModelDraft {
+  model: string
+  smallModel: string
+}
+
 export function OpenCodeModelPanel({ modelConfig, configContent, scope, projectName, saving, onSave }: OpenCodeModelPanelProps) {
-  const [model, setModel] = useState(modelConfig.model)
-  const [smallModel, setSmallModel] = useState(modelConfig.effort)
+  const [draft, setDraft] = useState<ModelDraft>(() => ({ model: modelConfig.model, smallModel: modelConfig.effort }))
   const [error, setError] = useState('')
 
   useEffect(() => {
-    setModel(modelConfig.model)
-    setSmallModel(modelConfig.effort)
+    setDraft({ model: modelConfig.model, smallModel: modelConfig.effort })
   }, [modelConfig])
 
   const providerInfo = useMemo(() => {
@@ -41,13 +44,13 @@ export function OpenCodeModelPanel({ modelConfig, configContent, scope, projectN
     }
   }, [configContent])
 
+  const { model, smallModel } = draft
   const isDirty = model !== modelConfig.model || smallModel !== modelConfig.effort
 
   const eyebrow = scope === 'GLOBAL' ? 'Global / Model' : `${projectName ?? 'Project'} / Model`
 
   const handleDiscard = () => {
-    setModel(modelConfig.model)
-    setSmallModel(modelConfig.effort)
+    setDraft({ model: modelConfig.model, smallModel: modelConfig.effort })
   }
 
   const handleSave = async () => {
@@ -60,7 +63,7 @@ export function OpenCodeModelPanel({ modelConfig, configContent, scope, projectN
   }
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="Model"
@@ -72,10 +75,10 @@ export function OpenCodeModelPanel({ modelConfig, configContent, scope, projectN
         <div className="max-w-2xl mx-auto w-full flex flex-col gap-6">
 
           <section className="space-y-2">
-            <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Primary Model</h4>
+            <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Primary Model</h4>
             <select
               value={model}
-              onChange={(event) => setModel(event.target.value)}
+              onChange={(event) => setDraft((prev) => ({ ...prev, model: event.target.value }))}
               className="w-full max-w-md px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
             >
               <option value="">Default</option>
@@ -86,10 +89,10 @@ export function OpenCodeModelPanel({ modelConfig, configContent, scope, projectN
           </section>
 
           <section className="space-y-2">
-            <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Small Model</h4>
+            <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Small Model</h4>
             <input
               value={smallModel}
-              onChange={(event) => setSmallModel(event.target.value)}
+              onChange={(event) => setDraft((prev) => ({ ...prev, smallModel: event.target.value }))}
               placeholder="openai/gpt-5.3-codex-spark"
               className="w-full max-w-md h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20"
             />

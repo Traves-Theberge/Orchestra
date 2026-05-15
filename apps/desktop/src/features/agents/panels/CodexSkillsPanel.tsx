@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/CodexSkillsPanel.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useReducer, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@ui/button'
 import {
@@ -36,6 +36,32 @@ type SkillOverride = {
   enabled: boolean
 }
 
+type DialogState = {
+  createOpen: boolean
+  createName: string
+  deleteTarget: string | null
+}
+
+type DialogAction =
+  | { type: 'openCreate' }
+  | { type: 'closeCreate' }
+  | { type: 'setCreateName'; value: string }
+  | { type: 'openDelete'; name: string }
+  | { type: 'closeDelete' }
+
+const initialDialogState: DialogState = { createOpen: false, createName: '', deleteTarget: null }
+
+function dialogReducer(state: DialogState, action: DialogAction): DialogState {
+  switch (action.type) {
+    case 'openCreate': return { ...state, createOpen: true }
+    case 'closeCreate': return { ...state, createOpen: false, createName: '' }
+    case 'setCreateName': return { ...state, createName: action.value }
+    case 'openDelete': return { ...state, deleteTarget: action.name }
+    case 'closeDelete': return { ...state, deleteTarget: null }
+    default: return state
+  }
+}
+
 export function CodexSkillsPanel({
   items,
   configContent,
@@ -50,17 +76,13 @@ export function CodexSkillsPanel({
 }: CodexSkillsPanelProps) {
   const [selectedPath, setSelectedPath] = useState<string | null>(items[0]?.path ?? null)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
-  const [createOpen, setCreateOpen] = useState(false)
-  const [createName, setCreateName] = useState('')
-  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
+  const [dialog, dispatchDialog] = useReducer(dialogReducer, initialDialogState)
   const [error, setError] = useState('')
   const overrides = useMemo(() => parseSkillOverrides(configContent), [configContent])
 
   useEffect(() => {
-    if (!selectedPath && items.length > 0) setSelectedPath(items[0].path)
-    if (selectedPath && !items.some(item => item.path === selectedPath)) {
-      setSelectedPath(items[0]?.path ?? null)
-    }
+    if (selectedPath && items.some(item => item.path === selectedPath)) return
+    setSelectedPath(items[0]?.path ?? null)
   }, [items, selectedPath])
 
   const selected = items.find(item => item.path === selectedPath) ?? null
@@ -72,13 +94,12 @@ export function CodexSkillsPanel({
   const eyebrow = scope === 'GLOBAL' ? 'Global / Skills' : `${projectName ?? 'Project'} / Skills`
 
   const handleCreate = async () => {
-    if (!createName.trim()) return
-    try { await onCreate(createName.trim()) } catch (e) {
+    if (!dialog.createName.trim()) return
+    try { await onCreate(dialog.createName.trim()) } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to create')
       return
     }
-    setCreateOpen(false)
-    setCreateName('')
+    dispatchDialog({ type: 'closeCreate' })
   }
 
   const handleSave = async () => {
@@ -110,16 +131,16 @@ export function CodexSkillsPanel({
   }
 
   const handleDelete = async () => {
-    if (!deleteTarget) return
-    try { await onDelete(deleteTarget) } catch (e) {
+    if (!dialog.deleteTarget) return
+    try { await onDelete(dialog.deleteTarget) } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to delete')
     }
-    setDeleteTarget(null)
+    dispatchDialog({ type: 'closeDelete' })
   }
 
   if (items.length === 0) {
     return (
-      <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+      <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
         <PanelHeader
           eyebrow={eyebrow}
           title="Skills"
@@ -129,13 +150,13 @@ export function CodexSkillsPanel({
           title="No skills at this scope"
           description="Create a Codex skill to manage its SKILL.md and override state."
           ctaLabel="New skill"
-          onCreate={() => setCreateOpen(true)}
+          onCreate={() => dispatchDialog({ type: 'openCreate' })}
         />
         <CreateDialog
-          open={createOpen}
-          name={createName}
-          setName={setCreateName}
-          onCancel={() => { setCreateOpen(false); setCreateName('') }}
+          open={dialog.createOpen}
+          name={dialog.createName}
+          setName={(value) => dispatchDialog({ type: 'setCreateName', value })}
+          onCancel={() => dispatchDialog({ type: 'closeCreate' })}
           onCreate={handleCreate}
         />
       </div>
@@ -143,7 +164,7 @@ export function CodexSkillsPanel({
   }
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="Skills"
@@ -154,7 +175,7 @@ export function CodexSkillsPanel({
       <div className="flex flex-1 min-h-0 gap-3">
         <aside className={`w-[220px] flex flex-col shrink-0 ${TOKENS.surfaceCard}`}>
           <div className="p-2 border-b border-border/30">
-            <Button size="sm" variant="ghost" onClick={() => setCreateOpen(true)} className="w-full h-7 text-[10px]">
+            <Button size="sm" variant="ghost" onClick={() => dispatchDialog({ type: 'openCreate' })} className="w-full h-7 text-[10px]">
               <Plus size={10} className="mr-1" /> New skill
             </Button>
           </div>
@@ -190,7 +211,7 @@ export function CodexSkillsPanel({
                 {selected.path}
               </div>
 
-              <div className="rounded-lg border border-border/30 bg-background px-3 py-3 shrink-0 space-y-3">
+              <div className="rounded-lg border border-border/30 bg-background p-3 shrink-0 space-y-3">
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Enablement Override</p>
                   <p className="text-[10px] text-foreground/50 mt-1 font-mono break-all">{skillFolder}</p>
@@ -241,7 +262,7 @@ export function CodexSkillsPanel({
           selected ? (
             <button
               type="button"
-              onClick={() => setDeleteTarget(selected.path.split('/').slice(-2)[0] ?? selected.path)}
+              onClick={() => dispatchDialog({ type: 'openDelete', name: selected.path.split('/').slice(-2)[0] ?? selected.path })}
               className="text-[10px] text-foreground/40 hover:text-red-400 inline-flex items-center gap-1"
             >
               <Trash2 size={11} /> Delete
@@ -251,24 +272,24 @@ export function CodexSkillsPanel({
       />
 
       <CreateDialog
-        open={createOpen}
-        name={createName}
-        setName={setCreateName}
-        onCancel={() => { setCreateOpen(false); setCreateName('') }}
+        open={dialog.createOpen}
+        name={dialog.createName}
+        setName={(value) => dispatchDialog({ type: 'setCreateName', value })}
+        onCancel={() => dispatchDialog({ type: 'closeCreate' })}
         onCreate={handleCreate}
       />
 
-      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+      <Dialog open={!!dialog.deleteTarget} onOpenChange={(o) => !o && dispatchDialog({ type: 'closeDelete' })}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="text-red-400">Delete skill</DialogTitle>
             <DialogDescription>This removes the skill directory from disk. Cannot be undone.</DialogDescription>
           </DialogHeader>
           <div className="py-4 rounded-md border bg-muted/30 p-3">
-            <p className="text-sm font-mono text-primary">{deleteTarget}</p>
+            <p className="text-sm font-mono text-primary">{dialog.deleteTarget}</p>
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => dispatchDialog({ type: 'closeDelete' })}>Cancel</Button>
             <Button variant="destructive" onClick={handleDelete}>
               <Trash2 size={14} className="mr-2" /> Delete
             </Button>
@@ -288,6 +309,7 @@ function CreateDialog({
   onCancel: () => void
   onCreate: () => void
 }) {
+  const nameId = useId()
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
       <DialogContent className="max-w-md">
@@ -296,9 +318,9 @@ function CreateDialog({
           <DialogDescription>Creates a Codex skill directory with a SKILL.md file.</DialogDescription>
         </DialogHeader>
         <div className="py-2">
-          <label className="text-xs font-semibold text-foreground/60 mb-1.5 block">Skill name</label>
+          <label htmlFor={nameId} className="text-xs font-semibold text-foreground/60 mb-1.5 block">Skill name</label>
           <input
-            autoFocus
+            id={nameId}
             value={name}
             onChange={(e) => setName(e.target.value.replace(/[^a-zA-Z0-9._/-]/g, '-'))}
             onKeyDown={(e) => e.key === 'Enter' && name.trim() && onCreate()}
@@ -323,10 +345,11 @@ function skillFolderPath(skillMarkdownPath: string): string {
 
 function parseSkillOverrides(content: string): SkillOverride[] {
   const blocks = content.match(/\[\[skills\.config\]\][\s\S]*?(?=\n\[\[skills\.config\]\]|\n\[[^\n]+\]|$)/g) ?? []
-  return blocks.map(block => ({
-    path: readScalar(block, 'path'),
-    enabled: readScalar(block, 'enabled').toLowerCase() === 'true',
-  })).filter(entry => entry.path)
+  return blocks.flatMap(block => {
+    const path = readScalar(block, 'path')
+    if (!path) return []
+    return [{ path, enabled: readScalar(block, 'enabled').toLowerCase() === 'true' }]
+  })
 }
 
 function upsertSkillOverride(content: string, override: SkillOverride): string {

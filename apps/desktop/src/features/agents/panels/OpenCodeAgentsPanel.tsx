@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/OpenCodeAgentsPanel.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useReducer, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@ui/button'
@@ -25,11 +25,34 @@ interface OpenCodeAgentsPanelProps {
   onCreate: (name: string) => Promise<void>
 }
 
+interface AgentForm {
+  description: string
+  mode: string
+  model: string
+  body: string
+}
+
+type AgentFormAction =
+  | { type: 'set'; field: keyof AgentForm; value: string }
+  | { type: 'reset'; value: AgentForm }
+
+function agentFormReducer(state: AgentForm, action: AgentFormAction): AgentForm {
+  if (action.type === 'reset') return action.value
+  return { ...state, [action.field]: action.value }
+}
+
+function deriveAgentForm(parsed: ReturnType<typeof parseOpenCodeMarkdown>): AgentForm {
+  return {
+    description: parsed.frontmatter.description ?? '',
+    mode: parsed.frontmatter.mode ?? '',
+    model: parsed.frontmatter.model ?? '',
+    body: parsed.body,
+  }
+}
+
 export function OpenCodeAgentsPanel({ items, scope, projectName, saving, onSave, onDelete, onCreate }: OpenCodeAgentsPanelProps) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
-  const [createOpen, setCreateOpen] = useState(false)
-  const [createName, setCreateName] = useState('')
-  const [createPending, setCreatePending] = useState(false)
+  const [createState, setCreateState] = useState<{ open: boolean; name: string; pending: boolean }>({ open: false, name: '', pending: false })
   const [deleteTarget, setDeleteTarget] = useState<FileResourceItem | null>(null)
   const [error, setError] = useState('')
 
@@ -39,18 +62,13 @@ export function OpenCodeAgentsPanel({ items, scope, projectName, saving, onSave,
   const selected = items.find(item => item.key === effectiveSelectedKey) ?? null
 
   const parsed = useMemo(() => parseOpenCodeMarkdown(selected?.content ?? ''), [selected?.content])
-  const [description, setDescription] = useState(parsed.frontmatter.description ?? '')
-  const [mode, setMode] = useState(parsed.frontmatter.mode ?? '')
-  const [model, setModel] = useState(parsed.frontmatter.model ?? '')
-  const [body, setBody] = useState(parsed.body)
+  const [form, dispatchForm] = useReducer(agentFormReducer, parsed, deriveAgentForm)
+  const { description, mode, model, body } = form
 
   useEffect(() => {
-    setDescription(parsed.frontmatter.description ?? '')
-    setMode(parsed.frontmatter.mode ?? '')
-    setModel(parsed.frontmatter.model ?? '')
-    setBody(parsed.body)
+    dispatchForm({ type: 'reset', value: deriveAgentForm(parsed) })
     setError('')
-  }, [parsed.body, parsed.frontmatter.description, parsed.frontmatter.mode, parsed.frontmatter.model])
+  }, [parsed])
 
   const isDirty = selected
     ? buildOpenCodeMarkdown({ description, mode, model }, body) !== selected.content
@@ -59,15 +77,14 @@ export function OpenCodeAgentsPanel({ items, scope, projectName, saving, onSave,
   const eyebrow = scope === 'GLOBAL' ? 'Global / Agents' : `${projectName ?? 'Project'} / Agents`
 
   const handleCreate = async () => {
-    const next = createName.trim()
+    const next = createState.name.trim()
     if (!next) return
-    setCreatePending(true)
+    setCreateState((prev) => ({ ...prev, pending: true }))
     try {
       await onCreate(next)
-      setCreateOpen(false)
-      setCreateName('')
+      setCreateState({ open: false, name: '', pending: false })
     } finally {
-      setCreatePending(false)
+      setCreateState((prev) => ({ ...prev, pending: false }))
     }
   }
 
@@ -82,11 +99,11 @@ export function OpenCodeAgentsPanel({ items, scope, projectName, saving, onSave,
   }
 
   const handleDiscard = () => {
-    setDescription(parsed.frontmatter.description ?? '')
-    setMode(parsed.frontmatter.mode ?? '')
-    setModel(parsed.frontmatter.model ?? '')
-    setBody(parsed.body)
+    dispatchForm({ type: 'reset', value: deriveAgentForm(parsed) })
   }
+
+  const setCreateOpen = (open: boolean) => setCreateState((prev) => ({ ...prev, open, name: open ? prev.name : '' }))
+  const setCreateName = (name: string) => setCreateState((prev) => ({ ...prev, name }))
 
   if (items.length === 0) {
     return (
@@ -103,11 +120,11 @@ export function OpenCodeAgentsPanel({ items, scope, projectName, saving, onSave,
           onCreate={() => setCreateOpen(true)}
         />
         <CreateDialog
-          open={createOpen}
-          name={createName}
+          open={createState.open}
+          name={createState.name}
           setName={setCreateName}
-          pending={createPending}
-          onCancel={() => { setCreateOpen(false); setCreateName('') }}
+          pending={createState.pending}
+          onCancel={() => setCreateOpen(false)}
           onCreate={handleCreate}
         />
       </div>
@@ -115,7 +132,7 @@ export function OpenCodeAgentsPanel({ items, scope, projectName, saving, onSave,
   }
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="Agents"
@@ -152,11 +169,11 @@ export function OpenCodeAgentsPanel({ items, scope, projectName, saving, onSave,
               <div className="text-[10px] text-foreground/45 font-mono truncate">{selected.path}</div>
               <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-5">
                 <Field label="Description">
-                  <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Planner agent for repo-wide work" className="w-full max-w-md h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                  <input value={description} onChange={(event) => dispatchForm({ type: 'set', field: 'description', value: event.target.value })} placeholder="Planner agent for repo-wide work" className="w-full max-w-md h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20" />
                 </Field>
 
                 <Field label="Mode">
-                  <select value={mode} onChange={(event) => setMode(event.target.value)} className="w-full max-w-sm h-9 rounded-lg border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20">
+                  <select value={mode} onChange={(event) => dispatchForm({ type: 'set', field: 'mode', value: event.target.value })} className="w-full max-w-sm h-9 rounded-lg border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20">
                     <option value="">Default</option>
                     <option value="subagent">subagent</option>
                     <option value="agent">agent</option>
@@ -164,11 +181,11 @@ export function OpenCodeAgentsPanel({ items, scope, projectName, saving, onSave,
                 </Field>
 
                 <Field label="Model">
-                  <input value={model} onChange={(event) => setModel(event.target.value)} placeholder="anthropic/claude-sonnet-4-5" className="w-full max-w-md h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                  <input value={model} onChange={(event) => dispatchForm({ type: 'set', field: 'model', value: event.target.value })} placeholder="anthropic/claude-sonnet-4-5" className="w-full max-w-md h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20" />
                 </Field>
 
                 <Field label="Instructions">
-                  <textarea value={body} onChange={(event) => setBody(event.target.value)} className="min-h-[260px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20" spellCheck={false} />
+                  <textarea value={body} onChange={(event) => dispatchForm({ type: 'set', field: 'body', value: event.target.value })} className="min-h-[260px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20" spellCheck={false} />
                 </Field>
               </div>
             </>
@@ -201,11 +218,11 @@ export function OpenCodeAgentsPanel({ items, scope, projectName, saving, onSave,
       />
 
       <CreateDialog
-        open={createOpen}
-        name={createName}
+        open={createState.open}
+        name={createState.name}
         setName={setCreateName}
-        pending={createPending}
-        onCancel={() => { setCreateOpen(false); setCreateName('') }}
+        pending={createState.pending}
+        onCancel={() => setCreateOpen(false)}
         onCreate={handleCreate}
       />
 
@@ -246,6 +263,7 @@ function CreateDialog({
   onCancel: () => void
   onCreate: () => void
 }) {
+  const nameId = useId()
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
       <DialogContent className="max-w-md">
@@ -254,9 +272,9 @@ function CreateDialog({
           <DialogDescription>Create a new OpenCode agent Markdown file with frontmatter.</DialogDescription>
         </DialogHeader>
         <div className="py-2">
-          <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Name</label>
+          <label htmlFor={nameId} className="text-xs font-semibold text-muted-foreground mb-1.5 block">Name</label>
           <input
-            autoFocus
+            id={nameId}
             value={name}
             onChange={(e) => setName(e.target.value.replace(/[^a-zA-Z0-9._/-]/g, '-'))}
             onKeyDown={(e) => e.key === 'Enter' && name.trim() && onCreate()}
@@ -267,7 +285,7 @@ function CreateDialog({
         <DialogFooter className="gap-2">
           <Button variant="outline" onClick={onCancel}>Cancel</Button>
           <Button onClick={onCreate} disabled={!name.trim() || pending}>
-            <Plus className="h-4 w-4 mr-2" />
+            <Plus className="size-4 mr-2" />
             {pending ? 'Creating...' : 'Add Agent'}
           </Button>
         </DialogFooter>
@@ -279,7 +297,7 @@ function CreateDialog({
 function Field({ label, children }: { label: string, children: ReactNode }) {
   return (
     <section className="space-y-2">
-      <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">{label}</h4>
+      <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">{label}</h4>
       {children}
     </section>
   )

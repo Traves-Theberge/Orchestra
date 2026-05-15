@@ -1,6 +1,5 @@
 // apps/desktop/src/features/agents/panels/GeminiContextPanel.tsx
-import { useEffect, useState } from 'react'
-import Editor from '@monaco-editor/react'
+import { lazy, Suspense, useState } from 'react'
 import { useAppStore } from '@core/store'
 import { PanelHeader } from '../components/PanelHeader'
 import { PanelFooter } from '../components/PanelFooter'
@@ -8,6 +7,8 @@ import { EmptyStateCard } from '../components/EmptyStateCard'
 import { ErrorStrip } from '../components/ErrorStrip'
 import type { Scope } from '../types'
 import type { FileResourceItem } from './FileResourcePanel'
+
+const Editor = lazy(() => import('@monaco-editor/react'))
 
 interface GeminiContextPanelProps {
   items: FileResourceItem[]
@@ -18,14 +19,17 @@ interface GeminiContextPanelProps {
   onCreate: () => Promise<void>
 }
 
-export function GeminiContextPanel({ items, scope, projectName, saving, onSave, onCreate }: GeminiContextPanelProps) {
+export function GeminiContextPanel(props: GeminiContextPanelProps) {
+  const selected = props.items[0] ?? null
+  return <Inner key={`${selected?.path ?? '__none__'}|${selected?.content ?? ''}`} {...props} />
+}
+
+function Inner({ items, scope, projectName, saving, onSave, onCreate }: GeminiContextPanelProps) {
   const theme = useAppStore(s => s.theme)
   const editorSettings = useAppStore(s => s.editorSettings)
   const selected = items[0] ?? null
   const [content, setContent] = useState(selected?.content ?? '')
   const [error, setError] = useState('')
-
-  useEffect(() => { setContent(selected?.content ?? ''); setError('') }, [selected?.path, selected?.content])
 
   const dirty = selected ? content !== selected.content : false
   const lineCount = content.split('\n').length
@@ -58,7 +62,7 @@ export function GeminiContextPanel({ items, scope, projectName, saving, onSave, 
   }
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="GEMINI.md"
@@ -67,24 +71,26 @@ export function GeminiContextPanel({ items, scope, projectName, saving, onSave, 
       />
 
       <div className="flex-1 min-h-0 rounded-lg border border-border/30 overflow-hidden">
-        <Editor
-          language="markdown"
-          value={content}
-          theme={theme === 'dark' ? 'vs-dark' : 'vs'}
-          onChange={(v) => { if (v !== undefined) setContent(v) }}
-          options={{
-            minimap: { enabled: false },
-            fontSize: editorSettings.fontSize,
-            fontFamily: editorSettings.fontFamily || undefined,
-            lineNumbers: 'off',
-            wordWrap: 'on',
-            scrollBeyondLastLine: false,
-            automaticLayout: true,
-            tabSize: 2,
-            renderWhitespace: 'none',
-            padding: { top: 12, bottom: 12 },
-          }}
-        />
+        <Suspense fallback={null}>
+          <Editor
+            language="markdown"
+            value={content}
+            theme={theme === 'dark' ? 'vs-dark' : 'vs'}
+            onChange={(v) => { if (v !== undefined) setContent(v) }}
+            options={{
+              minimap: { enabled: false },
+              fontSize: editorSettings.fontSize,
+              fontFamily: editorSettings.fontFamily || undefined,
+              lineNumbers: 'off',
+              wordWrap: 'on',
+              scrollBeyondLastLine: false,
+              automaticLayout: true,
+              tabSize: 2,
+              renderWhitespace: 'none',
+              padding: { top: 12, bottom: 12 },
+            }}
+          />
+        </Suspense>
       </div>
 
       <ErrorStrip message={error} onDismiss={() => setError('')} />

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useEffectEvent } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Bell,
@@ -73,7 +73,7 @@ const DOC_SUB_SECTION_ORDER: Record<string, Record<string, number>> = {
 }
 
 function sortDocItems(items: DocItem[], parentDir?: string): DocItem[] {
-  return [...items].sort((a, b) => {
+  return items.toSorted((a, b) => {
     if (a.name === 'index.md') return -1
     if (b.name === 'index.md') return 1
     if (a.is_folder && !b.is_folder) return -1
@@ -90,6 +90,8 @@ function sortDocItems(items: DocItem[], parentDir?: string): DocItem[] {
 const MIN_WIDTH = 180
 const MAX_WIDTH = 400
 const DEFAULT_WIDTH = 224
+
+const EMPTY_SEARCH_RESULTS: IssueListItem[] = []
 
 function sectionToView(section: string): SidebarView {
   switch (section) {
@@ -127,6 +129,7 @@ export function AppSidebar({
 }: AppSidebarProps) {
   const [view, setView] = useState<SidebarView>(() => sectionToView(activeSection))
   const [width, setWidth] = useState(DEFAULT_WIDTH)
+  // eslint-disable-next-line react-doctor/rerender-state-only-in-handlers -- read at line 177 to early-return a collapsed-rail variant; setter triggers the re-render switch
   const [collapsed, setCollapsed] = useState(false)
   const dragging = useRef(false)
   const startX = useRef(0)
@@ -178,7 +181,7 @@ export function AppSidebar({
         <button
           type="button"
           onClick={() => setCollapsed(false)}
-          className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.06] transition-colors"
+          className="size-8 rounded-lg flex items-center justify-center text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.06] transition-colors"
           title="Expand sidebar"
         >
           <ChevronRight size={15} strokeWidth={2} />
@@ -192,11 +195,11 @@ export function AppSidebar({
               type="button"
               title={item.label}
               onClick={() => handleItemClick(item.id)}
-              className={`h-9 w-9 rounded-lg flex items-center justify-center transition-colors ${
+              className={`size-9 rounded-lg flex items-center justify-center transition-colors ${
                 active ? 'bg-foreground/[0.08] text-primary' : 'text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.06]'
               }`}
             >
-              <Icon className="h-[15px] w-[15px]" strokeWidth={active ? 2.2 : 1.8} />
+              <Icon className="size-[15px]" strokeWidth={active ? 2.2 : 1.8} />
             </button>
           )
         })}
@@ -213,12 +216,12 @@ export function AppSidebar({
       {/* Header */}
       <div className="shrink-0 border-b border-border/30">
         <div className="h-20 flex items-center gap-3 px-3">
-          <img src="/Orchesta.png" alt="Orchestra" className="h-16 w-16 dark:invert shrink-0" aria-hidden="true" />
+          <img src="/Orchesta.png" alt="Orchestra" className="size-16 dark:invert shrink-0" aria-hidden="true" />
           <span className="text-[20px] font-bold text-foreground tracking-tight flex-1 truncate">Orchestra</span>
           <button
             type="button"
             onClick={() => setCollapsed(true)}
-            className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground/30 hover:text-foreground hover:bg-foreground/[0.06] transition-colors shrink-0"
+            className="size-6 rounded flex items-center justify-center text-muted-foreground/30 hover:text-foreground hover:bg-foreground/[0.06] transition-colors shrink-0"
             title="Collapse sidebar"
           >
             <ChevronLeft size={13} strokeWidth={2} />
@@ -257,7 +260,23 @@ export function AppSidebar({
 
       {/* Drag handle */}
       <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+        tabIndex={0}
         onMouseDown={onDragMouseDown}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowLeft') {
+            e.preventDefault()
+            setWidth((w) => Math.max(MIN_WIDTH, w - 10))
+          } else if (e.key === 'ArrowRight') {
+            e.preventDefault()
+            setWidth((w) => Math.min(MAX_WIDTH, w + 10))
+          } else if (e.key === 'Home') {
+            e.preventDefault()
+            setWidth(DEFAULT_WIDTH)
+          }
+        }}
         className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/30 transition-colors z-10"
       />
     </aside>
@@ -273,9 +292,10 @@ function SidebarSearch({
 }) {
   const { isMac } = usePlatform()
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState<IssueListItem[]>([])
-  const [pending, setPending] = useState(false)
-  const [showResults, setShowResults] = useState(false)
+  const [search, setSearch] = useState<{ results: IssueListItem[]; pending: boolean; showResults: boolean }>(
+    { results: EMPTY_SEARCH_RESULTS, pending: false, showResults: false },
+  )
+  const { results, pending, showResults } = search
   const inputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -284,29 +304,30 @@ function SidebarSearch({
     const handler = (e: MouseEvent) => {
       const t = e.target as Node
       if (containerRef.current?.contains(t) || dropdownRef.current?.contains(t)) return
-      setShowResults(false)
+      setSearch((s) => (s.showResults ? { ...s, showResults: false } : s))
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  useEffect(() => {
-    const id = setTimeout(async () => {
-      if (query.trim().length >= 2 && onSearch) {
-        setPending(true)
-        try {
-          const res = await onSearch(query)
-          setResults(res)
-          setShowResults(true)
-        } catch { setResults([]) }
-        finally { setPending(false) }
-      } else {
-        setResults([])
-        setShowResults(false)
+  const runSearch = useEffectEvent(async (q: string) => {
+    if (q.trim().length >= 2 && onSearch) {
+      setSearch((s) => ({ ...s, pending: true }))
+      try {
+        const res = await onSearch(q)
+        setSearch({ results: res, pending: false, showResults: true })
+      } catch {
+        setSearch({ results: EMPTY_SEARCH_RESULTS, pending: false, showResults: false })
       }
-    }, 300)
+    } else {
+      setSearch({ results: EMPTY_SEARCH_RESULTS, pending: false, showResults: false })
+    }
+  })
+
+  useEffect(() => {
+    const id = setTimeout(() => { void runSearch(query) }, 300)
     return () => clearTimeout(id)
-  }, [query, onSearch])
+  }, [query])
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -331,7 +352,11 @@ function SidebarSearch({
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          onFocus={() => query.trim().length >= 2 && setShowResults(true)}
+          onFocus={() => {
+            if (query.trim().length >= 2) {
+              setSearch((s) => (s.showResults ? s : { ...s, showResults: true }))
+            }
+          }}
           placeholder="Search…"
           className="flex-1 min-w-0 bg-transparent text-[11.5px] text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
         />
@@ -361,7 +386,7 @@ function SidebarSearch({
                 onClick={() => {
                   const id = r.identifier ?? r.issue_identifier
                   if (id) onResultClick?.(id)
-                  setShowResults(false)
+                  setSearch((s) => ({ ...s, showResults: false }))
                   setQuery('')
                 }}
               >
@@ -438,7 +463,7 @@ function PrimaryNav({
   }
 
   return (
-    <nav className="flex flex-col h-full py-2 px-2" aria-label="Primary navigation">
+    <nav className="flex flex-col h-full p-2" aria-label="Primary navigation">
       <div className="flex-1 overflow-y-auto space-y-0.5">
         {mainItems.map((item) => (
           <NavItem key={item.id} item={item} activeSection={activeSection} onItemClick={onItemClick} />
@@ -455,7 +480,7 @@ function PrimaryNav({
             onClick={openSwagger}
             className="w-full flex items-center gap-3 h-11 px-3 rounded-lg text-left text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.04] transition-colors"
           >
-            <Globe className="h-[17px] w-[17px] shrink-0" strokeWidth={1.8} />
+            <Globe className="size-[17px] shrink-0" strokeWidth={1.8} />
             <span className="text-[13.5px] font-medium truncate flex-1">API Docs</span>
             <ChevronRight size={13} className="shrink-0 text-muted-foreground/30" strokeWidth={2} />
           </button>
@@ -562,7 +587,7 @@ function ProjectsSubNav({
       </div>
       <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-0.5">
         {projects.length === 0 && (
-          <p className="text-[11.5px] text-muted-foreground/40 px-2 py-2">No projects yet</p>
+          <p className="text-[11.5px] text-muted-foreground/40 p-2">No projects yet</p>
         )}
         {projects.map((p) => {
           const active = p.id === selectedId
@@ -836,7 +861,7 @@ function DocsSubNav({ onBack }: { onBack: () => void }) {
           type="button"
           onClick={() => useAppStore.getState().setDocTree([])}
           title="Refresh"
-          className="h-7 w-7 shrink-0 grid place-items-center rounded-md text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.04] transition-colors"
+          className="size-7 shrink-0 grid place-items-center rounded-md text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.04] transition-colors"
         >
           <RefreshCcw size={12} />
         </button>

@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/OpenCodePermissionsPanel.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Button } from '@ui/button'
 import { PanelHeader } from '../components/PanelHeader'
@@ -16,21 +16,37 @@ interface OpenCodePermissionsPanelProps {
   onSave: (path: string, content: string) => Promise<void>
 }
 
-export function OpenCodePermissionsPanel({ configPath, configContent, scope, projectName, saving, onSave }: OpenCodePermissionsPanelProps) {
+interface PermissionForm {
+  defaultMode: string
+  allow: string[]
+  deny: string[]
+  ask: string[]
+}
+
+function derivePermissionForm(parsed: Record<string, unknown> | null): PermissionForm {
+  return {
+    defaultMode: readDefaultMode(parsed),
+    allow: readPermissionList(parsed, 'allow'),
+    deny: readPermissionList(parsed, 'deny'),
+    ask: readPermissionList(parsed, 'ask'),
+  }
+}
+
+export function OpenCodePermissionsPanel(props: OpenCodePermissionsPanelProps) {
+  return <OpenCodePermissionsPanelInner key={props.configContent} {...props} />
+}
+
+function OpenCodePermissionsPanelInner({ configPath, configContent, scope, projectName, saving, onSave }: OpenCodePermissionsPanelProps) {
   const parsed = useMemo(() => safeParse(configContent), [configContent])
-  const [defaultMode, setDefaultMode] = useState(readDefaultMode(parsed))
-  const [allow, setAllow] = useState(readPermissionList(parsed, 'allow'))
-  const [deny, setDeny] = useState(readPermissionList(parsed, 'deny'))
-  const [ask, setAsk] = useState(readPermissionList(parsed, 'ask'))
+  // react-doctor: keyed-subcomponent
+  const [form, setForm] = useState<PermissionForm>(() => derivePermissionForm(parsed))
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    setDefaultMode(readDefaultMode(parsed))
-    setAllow(readPermissionList(parsed, 'allow'))
-    setDeny(readPermissionList(parsed, 'deny'))
-    setAsk(readPermissionList(parsed, 'ask'))
-    setError('')
-  }, [parsed])
+  const { defaultMode, allow, deny, ask } = form
+  const setDefaultMode = (value: string) => setForm((prev) => ({ ...prev, defaultMode: value }))
+  const setAllow = (value: string[]) => setForm((prev) => ({ ...prev, allow: value }))
+  const setDeny = (value: string[]) => setForm((prev) => ({ ...prev, deny: value }))
+  const setAsk = (value: string[]) => setForm((prev) => ({ ...prev, ask: value }))
 
   const eyebrow = scope === 'GLOBAL' ? 'Global / Permissions' : `${projectName ?? 'Project'} / Permissions`
 
@@ -77,10 +93,7 @@ export function OpenCodePermissionsPanel({ configPath, configContent, scope, pro
     JSON.stringify(ask) !== JSON.stringify(readPermissionList(parsed, 'ask'))
 
   const handleDiscard = () => {
-    setDefaultMode(readDefaultMode(parsed))
-    setAllow(readPermissionList(parsed, 'allow'))
-    setDeny(readPermissionList(parsed, 'deny'))
-    setAsk(readPermissionList(parsed, 'ask'))
+    setForm(derivePermissionForm(parsed))
   }
 
   const handleSave = async () => {
@@ -93,7 +106,7 @@ export function OpenCodePermissionsPanel({ configPath, configContent, scope, pro
   }
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="Permissions"
@@ -200,7 +213,7 @@ function safeParse(content: string): Record<string, unknown> | null {
 function Field({ label, children }: { label: string, children: ReactNode }) {
   return (
     <section className="space-y-2">
-      <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">{label}</h4>
+      <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">{label}</h4>
       {children}
     </section>
   )
@@ -213,7 +226,7 @@ function ListField({
   return (
     <section className="space-y-2">
       <div>
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">{label}</h4>
+        <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">{label}</h4>
         <p className="text-[10px] text-muted-foreground/50 mt-1">{description}</p>
       </div>
       <div className="flex flex-wrap gap-1.5">

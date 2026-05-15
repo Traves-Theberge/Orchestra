@@ -1,6 +1,5 @@
 // apps/desktop/src/features/agents/panels/SkillsPanel.tsx
-import { useState, useEffect } from 'react'
-import Editor from '@monaco-editor/react'
+import { lazy, Suspense, useId, useMemo, useReducer, useRef, useState } from 'react'
 import { useAppStore } from '@core/store'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@ui/button'
@@ -15,6 +14,8 @@ import { TOKENS } from '../tokens'
 import type { ClaudeFileEntry } from '@core/api/client'
 import type { Scope } from '../types'
 import { usePublishDirty } from '../hooks/use-publish-dirty'
+
+const Editor = lazy(() => import('@monaco-editor/react'))
 
 const SKILL_TEMPLATE = `---
 name: {{NAME}}
@@ -39,6 +40,30 @@ interface SkillsPanelProps {
 
 type DisplayItem = ClaudeFileEntry & { isInherited: boolean }
 
+type DialogState = {
+  deleteTarget: string | null
+  createOpen: boolean
+  createName: string
+}
+
+type DialogAction =
+  | { type: 'openDelete'; name: string }
+  | { type: 'closeDelete' }
+  | { type: 'openCreate' }
+  | { type: 'closeCreate' }
+  | { type: 'setCreateName'; value: string }
+
+function dialogReducer(state: DialogState, action: DialogAction): DialogState {
+  switch (action.type) {
+    case 'openDelete': return { ...state, deleteTarget: action.name }
+    case 'closeDelete': return { ...state, deleteTarget: null }
+    case 'openCreate': return { ...state, createOpen: true }
+    case 'closeCreate': return { ...state, createOpen: false, createName: '' }
+    case 'setCreateName': return { ...state, createName: action.value }
+    default: return state
+  }
+}
+
 export function SkillsPanel({
   items, globalItems, scope, projectName, saving, onSave, onDelete,
 }: SkillsPanelProps) {
@@ -46,36 +71,51 @@ export function SkillsPanel({
   const editorSettings = useAppStore(s => s.editorSettings)
   const [selectedName, setSelectedName] = useState<string | null>(null)
   const [content, setContent] = useState('')
+  const contentKeyRef = useRef<string | null>(null)
   const [error, setError] = useState('')
-  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
-  const [createOpen, setCreateOpen] = useState(false)
-  const [createName, setCreateName] = useState('')
+  const [dialogs, dispatchDialog] = useReducer(dialogReducer, {
+    deleteTarget: null,
+    createOpen: false,
+    createName: '',
+  })
 
-  const inheritedItems: ClaudeFileEntry[] = scope === 'PROJECT'
-    ? globalItems.filter(g => !items.some(p => p.name === g.name))
-    : []
-  const displayItems: DisplayItem[] = [
+  const inheritedItems: ClaudeFileEntry[] = useMemo(() =>
+    scope === 'PROJECT'
+      ? globalItems.filter(g => !items.some(p => p.name === g.name))
+      : [],
+    [scope, globalItems, items],
+  )
+  const displayItems: DisplayItem[] = useMemo(() => [
     ...items.map(i => ({ ...i, isInherited: false as boolean })),
     ...inheritedItems.map(i => ({ ...i, isInherited: true as boolean })),
-  ]
+  ], [items, inheritedItems])
 
-  useEffect(() => {
-    if (!selectedName && displayItems.length > 0) setSelectedName(displayItems[0].name)
-  }, [selectedName, displayItems])
+  const effectiveSelectedName = (() => {
+    if (selectedName && displayItems.find(i => i.name === selectedName)) return selectedName
+    return displayItems.length > 0 ? displayItems[0].name : null
+  })()
 
-  useEffect(() => {
-    if (selectedName && !displayItems.find(i => i.name === selectedName)) {
-      setSelectedName(displayItems.length > 0 ? displayItems[0].name : null)
-    }
-  }, [selectedName, displayItems])
+  const selected = displayItems.find(i => i.name === effectiveSelectedName) ?? null
 
-  const selected = displayItems.find(i => i.name === selectedName) ?? null
-  useEffect(() => { setContent(selected?.content ?? ''); setError('') }, [selected])
+  const selectedContentKey = selected ? `${selected.name}::${selected.content}` : null
+  if (selectedContentKey !== contentKeyRef.current) {
+    contentKeyRef.current = selectedContentKey
+    setContent(selected?.content ?? '')
+    setError('')
+  }
 
   const dirty = selected && !selected.isInherited ? content !== selected.content : false
   usePublishDirty(!!dirty)
   const projectCount = items.length
   const inheritedCount = inheritedItems.length
+
+  const handleCreate = async () => {
+    const n = dialogs.createName.trim()
+    if (!n) return
+    await onSave(n, SKILL_TEMPLATE.replaceAll('{{NAME}}', n))
+    setSelectedName(n)
+    dispatchDialog({ type: 'closeCreate' })
+  }
 
   if (displayItems.length === 0 && scope === 'PROJECT' && projectName) {
     return (
@@ -89,20 +129,14 @@ export function SkillsPanel({
           title="No skills at this scope"
           description="Add a skill to make it available to this project."
           ctaLabel="New skill"
-          onCreate={() => setCreateOpen(true)}
+          onCreate={() => dispatchDialog({ type: 'openCreate' })}
         />
         <CreateDialog
-          open={createOpen}
-          name={createName}
-          setName={setCreateName}
-          onCancel={() => { setCreateOpen(false); setCreateName('') }}
-          onCreate={async () => {
-            const n = createName.trim()
-            if (!n) return
-            await onSave(n, SKILL_TEMPLATE.replaceAll('{{NAME}}', n))
-            setSelectedName(n)
-            setCreateOpen(false); setCreateName('')
-          }}
+          open={dialogs.createOpen}
+          name={dialogs.createName}
+          setName={(v) => dispatchDialog({ type: 'setCreateName', value: v })}
+          onCancel={() => dispatchDialog({ type: 'closeCreate' })}
+          onCreate={handleCreate}
         />
       </div>
     )
@@ -116,8 +150,15 @@ export function SkillsPanel({
     }
   }
 
+  const handleConfirmDelete = async () => {
+    if (!dialogs.deleteTarget) return
+    await onDelete(dialogs.deleteTarget)
+    dispatchDialog({ type: 'closeDelete' })
+    setSelectedName(null)
+  }
+
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-[14px]">
       <PanelHeader
         eyebrow={scope === 'GLOBAL' ? 'Global / Skills' : `${projectName ?? 'Project'} / Skills`}
         title="Skills"
@@ -128,7 +169,7 @@ export function SkillsPanel({
       <div className="flex flex-1 min-h-0 gap-3">
         <aside className={`w-[200px] flex flex-col shrink-0 ${TOKENS.surfaceCard}`}>
           <div className="p-2 border-b border-border/30">
-            <Button size="sm" variant="ghost" onClick={() => setCreateOpen(true)} className="w-full h-7 text-[10px]">
+            <Button size="sm" variant="ghost" onClick={() => dispatchDialog({ type: 'openCreate' })} className="w-full h-7 text-[10px]">
               <Plus size={10} className="mr-1" /> New skill
             </Button>
           </div>
@@ -139,7 +180,7 @@ export function SkillsPanel({
                 type="button"
                 onClick={() => setSelectedName(item.name)}
                 className={`w-full text-left px-2 py-1.5 rounded text-[11px] flex items-center gap-1.5 ${
-                  item.name === selectedName ? 'bg-foreground/[0.06] text-foreground' : 'text-foreground/65 hover:bg-foreground/[0.03]'
+                  item.name === effectiveSelectedName ? 'bg-foreground/[0.06] text-foreground' : 'text-foreground/65 hover:bg-foreground/[0.03]'
                 }`}
               >
                 <span className="truncate flex-1">{item.name}</span>
@@ -159,24 +200,26 @@ export function SkillsPanel({
                 {selected.isInherited && ' · inherited from global (read-only at this scope)'}
               </div>
               <div className="flex-1 min-h-0 rounded-md border border-border/30 overflow-hidden">
-                <Editor
-                  language="markdown"
-                  value={content}
-                  theme={theme === 'dark' ? 'vs-dark' : 'vs'}
-                  onChange={(v) => { if (v !== undefined && !selected.isInherited) setContent(v) }}
-                  options={{
-                    readOnly: selected.isInherited,
-                    minimap: { enabled: false },
-                    fontSize: editorSettings.fontSize,
-                    fontFamily: editorSettings.fontFamily || undefined,
-                    lineNumbers: 'off',
-                    wordWrap: 'on',
-                    scrollBeyondLastLine: false,
-                    automaticLayout: true,
-                    tabSize: 2,
-                    padding: { top: 10, bottom: 10 },
-                  }}
-                />
+                <Suspense fallback={null}>
+                  <Editor
+                    language="markdown"
+                    value={content}
+                    theme={theme === 'dark' ? 'vs-dark' : 'vs'}
+                    onChange={(v) => { if (v !== undefined && !selected.isInherited) setContent(v) }}
+                    options={{
+                      readOnly: selected.isInherited,
+                      minimap: { enabled: false },
+                      fontSize: editorSettings.fontSize,
+                      fontFamily: editorSettings.fontFamily || undefined,
+                      lineNumbers: 'off',
+                      wordWrap: 'on',
+                      scrollBeyondLastLine: false,
+                      automaticLayout: true,
+                      tabSize: 2,
+                      padding: { top: 10, bottom: 10 },
+                    }}
+                  />
+                </Suspense>
               </div>
             </>
           ) : (
@@ -198,7 +241,7 @@ export function SkillsPanel({
           selected && !selected.isInherited ? (
             <button
               type="button"
-              onClick={() => setDeleteTarget(selected.name)}
+              onClick={() => dispatchDialog({ type: 'openDelete', name: selected.name })}
               className="text-[10px] text-foreground/40 hover:text-red-400 inline-flex items-center gap-1"
             >
               <Trash2 size={11} /> Delete
@@ -208,36 +251,25 @@ export function SkillsPanel({
       />
 
       <CreateDialog
-        open={createOpen}
-        name={createName}
-        setName={setCreateName}
-        onCancel={() => { setCreateOpen(false); setCreateName('') }}
-        onCreate={async () => {
-          const n = createName.trim()
-          if (!n) return
-          await onSave(n, SKILL_TEMPLATE.replaceAll('{{NAME}}', n))
-          setSelectedName(n)
-          setCreateOpen(false); setCreateName('')
-        }}
+        open={dialogs.createOpen}
+        name={dialogs.createName}
+        setName={(v) => dispatchDialog({ type: 'setCreateName', value: v })}
+        onCancel={() => dispatchDialog({ type: 'closeCreate' })}
+        onCreate={handleCreate}
       />
 
-      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+      <Dialog open={!!dialogs.deleteTarget} onOpenChange={(o) => !o && dispatchDialog({ type: 'closeDelete' })}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="text-red-400">Delete skill</DialogTitle>
             <DialogDescription>This removes the file from disk. Cannot be undone.</DialogDescription>
           </DialogHeader>
           <div className="py-4 rounded-md border bg-muted/30 p-3">
-            <p className="text-sm font-mono text-primary">{deleteTarget}</p>
+            <p className="text-sm font-mono text-primary">{dialogs.deleteTarget}</p>
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={async () => {
-              if (!deleteTarget) return
-              await onDelete(deleteTarget)
-              setDeleteTarget(null)
-              setSelectedName(null)
-            }}>
+            <Button variant="outline" onClick={() => dispatchDialog({ type: 'closeDelete' })}>Cancel</Button>
+            <Button variant="destructive" onClick={handleConfirmDelete}>
               <Trash2 size={14} className="mr-2" /> Delete
             </Button>
           </DialogFooter>
@@ -256,6 +288,7 @@ function CreateDialog({
   onCancel: () => void
   onCreate: () => void
 }) {
+  const nameId = useId()
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
       <DialogContent className="max-w-md">
@@ -264,9 +297,9 @@ function CreateDialog({
           <DialogDescription>Creates a markdown file in the skills directory.</DialogDescription>
         </DialogHeader>
         <div className="py-2">
-          <label className="text-xs font-semibold text-foreground/60 mb-1.5 block">Name</label>
+          <label htmlFor={nameId} className="text-xs font-semibold text-foreground/60 mb-1.5 block">Name</label>
           <input
-            autoFocus
+            id={nameId}
             value={name}
             onChange={(e) => setName(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ''))}
             className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm font-mono"

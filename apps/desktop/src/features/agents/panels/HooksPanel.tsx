@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/HooksPanel.tsx
-import { useState, useEffect, useCallback } from 'react'
+import { useCallback, useReducer } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@ui/button'
 import { Skeleton } from '@ui/skeleton'
@@ -23,33 +23,110 @@ interface HooksPanelProps {
   provider: Provider
 }
 
+const EMPTY_HOOKS: ProviderHook[] = []
+
+type HooksState = {
+  localHooks: ProviderHook[]
+  newEvent: string
+  newCommand: string
+  newMatcher: string
+  error: string
+}
+
+type HooksAction =
+  | { type: 'reset'; hooks: ProviderHook[] }
+  | { type: 'setLocal'; hooks: ProviderHook[] }
+  | { type: 'setNewEvent'; value: string }
+  | { type: 'setNewCommand'; value: string }
+  | { type: 'setNewMatcher'; value: string }
+  | { type: 'setError'; value: string }
+  | { type: 'addHook' }
+
+function hooksReducer(state: HooksState, action: HooksAction): HooksState {
+  switch (action.type) {
+    case 'reset':
+      return { localHooks: action.hooks, newEvent: '', newCommand: '', newMatcher: '', error: '' }
+    case 'setLocal':
+      return { ...state, localHooks: action.hooks }
+    case 'setNewEvent':
+      return { ...state, newEvent: action.value }
+    case 'setNewCommand':
+      return { ...state, newCommand: action.value }
+    case 'setNewMatcher':
+      return { ...state, newMatcher: action.value }
+    case 'setError':
+      return { ...state, error: action.value }
+    case 'addHook': {
+      if (!state.newEvent || !state.newCommand.trim()) return state
+      const next: ProviderHook = {
+        event: state.newEvent,
+        command: state.newCommand.trim(),
+        matcher: state.newMatcher.trim() || undefined,
+        type: 'command',
+      }
+      return {
+        ...state,
+        localHooks: [...state.localHooks, next],
+        newEvent: '',
+        newCommand: '',
+        newMatcher: '',
+      }
+    }
+    default:
+      return state
+  }
+}
+
 export function HooksPanel({
-  hooks, globalHooks = [], scope = 'GLOBAL', projectName = null,
+  hooks, globalHooks = EMPTY_HOOKS, scope = 'GLOBAL', projectName = null,
   onSave, loading, saving, provider,
 }: HooksPanelProps) {
-  const [localHooks, setLocalHooks] = useState(hooks)
-  const [newEvent, setNewEvent] = useState('')
-  const [newCommand, setNewCommand] = useState('')
-  const [newMatcher, setNewMatcher] = useState('')
-  const [error, setError] = useState('')
+  return (
+    <HooksPanelInner
+      key={JSON.stringify(hooks)}
+      hooks={hooks}
+      globalHooks={globalHooks}
+      scope={scope}
+      projectName={projectName}
+      onSave={onSave}
+      loading={loading}
+      saving={saving}
+      provider={provider}
+    />
+  )
+}
+
+function HooksPanelInner({
+  hooks, globalHooks, scope, projectName, onSave, loading, saving, provider,
+}: Required<Omit<HooksPanelProps, 'globalHooks' | 'scope' | 'projectName'>> & {
+  globalHooks: ProviderHook[]
+  scope: Scope
+  projectName: string | null
+}) {
   const events = HOOK_EVENTS_BY_PROVIDER[provider] ?? []
   const allowCustomEvents = provider === 'codex'
 
-  useEffect(() => { setLocalHooks(hooks); setError('') }, [hooks])
+  const [state, dispatch] = useReducer(hooksReducer, undefined, () => ({
+    localHooks: hooks,
+    newEvent: '',
+    newCommand: '',
+    newMatcher: '',
+    error: '',
+  }))
+  const { localHooks, newEvent, newCommand, newMatcher, error } = state
 
   const dirty = JSON.stringify(localHooks) !== JSON.stringify(hooks)
 
   const handleDiscard = useCallback(() => {
-    setLocalHooks(hooks)
-    setError('')
+    dispatch({ type: 'reset', hooks })
   }, [hooks])
 
   const handleSave = useCallback(async () => {
-    setError('')
+    dispatch({ type: 'setError', value: '' })
     try {
       await onSave(localHooks)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save')
+      dispatch({ type: 'setError', value: e instanceof Error ? e.message : 'Failed to save' })
     }
   }, [localHooks, onSave])
 
@@ -65,26 +142,15 @@ export function HooksPanel({
     )
   }
 
-  const handleAdd = () => {
-    if (!newEvent || !newCommand.trim()) return
-    setLocalHooks(prev => [...prev, {
-      event: newEvent,
-      command: newCommand.trim(),
-      matcher: newMatcher.trim() || undefined,
-      type: 'command',
-    }])
-    setNewEvent('')
-    setNewCommand('')
-    setNewMatcher('')
-  }
-
   const setEventFromGlobal = (eventName: string) => {
     const inherited = globalHooks.filter(h => h.event === eventName)
     if (inherited.length === 0) return
-    setLocalHooks(prev => [...prev.filter(h => h.event !== eventName), ...inherited])
+    dispatch({
+      type: 'setLocal',
+      hooks: [...localHooks.filter(h => h.event !== eventName), ...inherited],
+    })
   }
 
-  // Group hooks by event for inherited display at PROJECT scope
   const allEvents = allowCustomEvents
     ? Array.from(new Set([...events, ...localHooks.map(h => h.event), ...globalHooks.map(h => h.event)]))
     : events
@@ -94,8 +160,11 @@ export function HooksPanel({
     ? 'Writes to .claude/settings.json :: hooks'
     : `Run commands on ${provider} events`
 
+  const hookKey = (h: ProviderHook, fallbackIdx: number) =>
+    `${h.event}::${h.command}::${h.matcher ?? ''}::${fallbackIdx}`
+
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="Hooks"
@@ -105,7 +174,6 @@ export function HooksPanel({
 
       <div className="flex-1 min-h-0 overflow-y-auto pr-1">
         <div className="max-w-2xl mx-auto space-y-4">
-          {/* Per-event grouped view (only for fixed events at PROJECT scope) */}
           {scope === 'PROJECT' && !allowCustomEvents ? (
             <div className="space-y-4">
               {allEvents.map(ev => {
@@ -127,12 +195,12 @@ export function HooksPanel({
                         {localForEvent.map((hook, i) => {
                           const idx = localHooks.indexOf(hook)
                           return (
-                            <div key={i} className="flex items-center gap-2 group rounded-lg border border-border/20 px-3 py-2">
+                            <div key={hookKey(hook, i)} className="flex items-center gap-2 group rounded-lg border border-border/20 px-3 py-2">
                               <code className="text-[11px] font-mono text-foreground/70 flex-1 truncate">{hook.command}</code>
                               {hook.matcher && <span className="text-[9px] text-muted-foreground/40 shrink-0">({hook.matcher})</span>}
                               <button
-                                onClick={() => setLocalHooks(prev => prev.filter((_, j) => j !== idx))}
-                                className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground/20 hover:text-red-400 hover:bg-red-500/10 transition-all opacity-0 group-hover:opacity-100 shrink-0"
+                                onClick={() => dispatch({ type: 'setLocal', hooks: localHooks.filter((_, j) => j !== idx) })}
+                                className="size-5 rounded flex items-center justify-center text-muted-foreground/20 hover:text-red-400 hover:bg-red-500/10 transition-all opacity-0 group-hover:opacity-100 shrink-0"
                               >
                                 <Trash2 size={10} />
                               </button>
@@ -151,13 +219,13 @@ export function HooksPanel({
                 <p className="text-[10px] text-muted-foreground/30 py-4 text-center">No hooks configured</p>
               )}
               {localHooks.map((hook, i) => (
-                <div key={i} className="flex items-center gap-2 group rounded-lg border border-border/20 px-3 py-2">
+                <div key={hookKey(hook, i)} className="flex items-center gap-2 group rounded-lg border border-border/20 px-3 py-2">
                   <span className="text-[10px] font-bold text-primary/70 uppercase tracking-wider shrink-0 w-[120px] truncate">{hook.event}</span>
                   <code className="text-[11px] font-mono text-foreground/70 flex-1 truncate">{hook.command}</code>
                   {hook.matcher && <span className="text-[9px] text-muted-foreground/40 shrink-0">({hook.matcher})</span>}
                   <button
-                    onClick={() => setLocalHooks(prev => prev.filter((_, idx) => idx !== i))}
-                    className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground/20 hover:text-red-400 hover:bg-red-500/10 transition-all opacity-0 group-hover:opacity-100 shrink-0"
+                    onClick={() => dispatch({ type: 'setLocal', hooks: localHooks.filter((_, idx) => idx !== i) })}
+                    className="size-5 rounded flex items-center justify-center text-muted-foreground/20 hover:text-red-400 hover:bg-red-500/10 transition-all opacity-0 group-hover:opacity-100 shrink-0"
                   >
                     <Trash2 size={10} />
                   </button>
@@ -166,13 +234,12 @@ export function HooksPanel({
             </div>
           )}
 
-          {/* Add new hook */}
           <div className="flex items-center gap-2 border-t border-border/20 pt-3">
             {allowCustomEvents ? (
               <input
                 className="h-8 w-[150px] rounded-lg border border-border bg-background px-3 text-xs font-mono focus:ring-2 focus:ring-primary/20 outline-none"
                 value={newEvent}
-                onChange={e => setNewEvent(e.target.value)}
+                onChange={e => dispatch({ type: 'setNewEvent', value: e.target.value })}
                 placeholder="Event"
               />
             ) : (
@@ -181,20 +248,20 @@ export function HooksPanel({
                 direction="up"
                 value={newEvent}
                 options={events.map(e => ({ label: e, value: e }))}
-                onChange={setNewEvent}
+                onChange={(v) => dispatch({ type: 'setNewEvent', value: v })}
                 placeholder="Event"
               />
             )}
             <input
               className="h-8 flex-1 rounded-lg border border-border bg-background px-3 text-xs font-mono focus:ring-2 focus:ring-primary/20 outline-none"
               value={newCommand}
-              onChange={e => setNewCommand(e.target.value)}
+              onChange={e => dispatch({ type: 'setNewCommand', value: e.target.value })}
               placeholder="Command"
             />
             <input
               className="h-8 w-[100px] rounded-lg border border-border bg-background px-3 text-xs font-mono focus:ring-2 focus:ring-primary/20 outline-none"
               value={newMatcher}
-              onChange={e => setNewMatcher(e.target.value)}
+              onChange={e => dispatch({ type: 'setNewMatcher', value: e.target.value })}
               placeholder="Matcher"
             />
             <Button
@@ -202,7 +269,7 @@ export function HooksPanel({
               variant="outline"
               className="h-8 text-[9px] font-bold uppercase"
               disabled={!newEvent || !newCommand.trim()}
-              onClick={handleAdd}
+              onClick={() => dispatch({ type: 'addHook' })}
             >
               <Plus size={10} className="mr-1" /> Add
             </Button>
@@ -210,7 +277,7 @@ export function HooksPanel({
         </div>
       </div>
 
-      <ErrorStrip message={error} onDismiss={() => setError('')} />
+      <ErrorStrip message={error} onDismiss={() => dispatch({ type: 'setError', value: '' })} />
 
       <PanelFooter
         dirty={dirty}

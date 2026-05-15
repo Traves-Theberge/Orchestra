@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/OpenCodeInstructionsPanel.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Button } from '@ui/button'
 import { PanelHeader } from '../components/PanelHeader'
 import { PanelFooter } from '../components/PanelFooter'
@@ -17,17 +17,18 @@ interface OpenCodeInstructionsPanelProps {
   onCreate: () => Promise<void>
 }
 
-export function OpenCodeInstructionsPanel({ items, scope, projectName, saving, onSave, onCreate }: OpenCodeInstructionsPanelProps) {
+export function OpenCodeInstructionsPanel(props: OpenCodeInstructionsPanelProps) {
+  const selected = props.items[0] ?? null
+  return <OpenCodeInstructionsPanelInner key={selected?.content ?? '__none__'} {...props} />
+}
+
+function OpenCodeInstructionsPanelInner({ items, scope, projectName, saving, onSave, onCreate }: OpenCodeInstructionsPanelProps) {
   const selected = items[0] ?? null
   const parsed = useMemo(() => safeParse(selected?.content ?? ''), [selected?.content])
-  const [instructions, setInstructions] = useState(readInstructions(parsed))
+  // react-doctor: keyed-subcomponent
+  const [instructions, setInstructions] = useState(() => readInstructions(parsed))
   const [draft, setDraft] = useState('')
   const [error, setError] = useState('')
-
-  useEffect(() => {
-    setInstructions(readInstructions(parsed))
-    setError('')
-  }, [parsed])
 
   const eyebrow = scope === 'GLOBAL' ? 'Global / Instructions' : `${projectName ?? 'Project'} / Instructions`
 
@@ -73,7 +74,7 @@ export function OpenCodeInstructionsPanel({ items, scope, projectName, saving, o
   const addInstruction = () => {
     const next = draft.trim()
     if (next && !instructions.includes(next)) {
-      setInstructions([...instructions, next])
+      setInstructions((prev) => [...prev, next])
       setDraft('')
     }
   }
@@ -97,7 +98,7 @@ export function OpenCodeInstructionsPanel({ items, scope, projectName, saving, o
   }
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="Instructions"

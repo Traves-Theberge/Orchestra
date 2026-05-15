@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/OpenCodeSkillsPanel.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useReducer, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@ui/button'
@@ -25,11 +25,36 @@ interface OpenCodeSkillsPanelProps {
   onCreate: (name: string) => Promise<void>
 }
 
+interface SkillForm {
+  name: string
+  description: string
+  license: string
+  compatibility: string
+  body: string
+}
+
+type SkillFormAction =
+  | { type: 'set'; field: keyof SkillForm; value: string }
+  | { type: 'reset'; value: SkillForm }
+
+function skillFormReducer(state: SkillForm, action: SkillFormAction): SkillForm {
+  if (action.type === 'reset') return action.value
+  return { ...state, [action.field]: action.value }
+}
+
+function deriveSkillForm(parsed: ReturnType<typeof parseOpenCodeSkill>): SkillForm {
+  return {
+    name: parsed.frontmatter.name,
+    description: parsed.frontmatter.description,
+    license: parsed.frontmatter.license ?? '',
+    compatibility: parsed.frontmatter.compatibility ?? '',
+    body: parsed.body,
+  }
+}
+
 export function OpenCodeSkillsPanel({ items, scope, projectName, saving, onSave, onDelete, onCreate }: OpenCodeSkillsPanelProps) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
-  const [createOpen, setCreateOpen] = useState(false)
-  const [createName, setCreateName] = useState('')
-  const [createPending, setCreatePending] = useState(false)
+  const [createState, setCreateState] = useState<{ open: boolean; name: string; pending: boolean }>({ open: false, name: '', pending: false })
   const [deleteTarget, setDeleteTarget] = useState<FileResourceItem | null>(null)
   const [error, setError] = useState('')
 
@@ -39,20 +64,13 @@ export function OpenCodeSkillsPanel({ items, scope, projectName, saving, onSave,
   const selected = items.find(item => item.key === effectiveSelectedKey) ?? null
 
   const parsed = useMemo(() => parseOpenCodeSkill(selected?.content ?? ''), [selected?.content])
-  const [name, setName] = useState(parsed.frontmatter.name)
-  const [description, setDescription] = useState(parsed.frontmatter.description)
-  const [license, setLicense] = useState(parsed.frontmatter.license ?? '')
-  const [compatibility, setCompatibility] = useState(parsed.frontmatter.compatibility ?? '')
-  const [body, setBody] = useState(parsed.body)
+  const [form, dispatchForm] = useReducer(skillFormReducer, parsed, deriveSkillForm)
+  const { name, description, license, compatibility, body } = form
 
   useEffect(() => {
-    setName(parsed.frontmatter.name)
-    setDescription(parsed.frontmatter.description)
-    setLicense(parsed.frontmatter.license ?? '')
-    setCompatibility(parsed.frontmatter.compatibility ?? '')
-    setBody(parsed.body)
+    dispatchForm({ type: 'reset', value: deriveSkillForm(parsed) })
     setError('')
-  }, [parsed.body, parsed.frontmatter.compatibility, parsed.frontmatter.description, parsed.frontmatter.license, parsed.frontmatter.name])
+  }, [parsed])
 
   const isDirty = selected
     ? buildOpenCodeSkill({ name, description, license, compatibility }, body) !== selected.content
@@ -61,15 +79,14 @@ export function OpenCodeSkillsPanel({ items, scope, projectName, saving, onSave,
   const eyebrow = scope === 'GLOBAL' ? 'Global / Skills' : `${projectName ?? 'Project'} / Skills`
 
   const handleCreate = async () => {
-    const next = createName.trim()
+    const next = createState.name.trim()
     if (!next) return
-    setCreatePending(true)
+    setCreateState((prev) => ({ ...prev, pending: true }))
     try {
       await onCreate(next)
-      setCreateOpen(false)
-      setCreateName('')
+      setCreateState({ open: false, name: '', pending: false })
     } finally {
-      setCreatePending(false)
+      setCreateState((prev) => ({ ...prev, pending: false }))
     }
   }
 
@@ -84,12 +101,11 @@ export function OpenCodeSkillsPanel({ items, scope, projectName, saving, onSave,
   }
 
   const handleDiscard = () => {
-    setName(parsed.frontmatter.name)
-    setDescription(parsed.frontmatter.description)
-    setLicense(parsed.frontmatter.license ?? '')
-    setCompatibility(parsed.frontmatter.compatibility ?? '')
-    setBody(parsed.body)
+    dispatchForm({ type: 'reset', value: deriveSkillForm(parsed) })
   }
+
+  const setCreateOpen = (open: boolean) => setCreateState((prev) => ({ ...prev, open, name: open ? prev.name : '' }))
+  const setCreateName = (n: string) => setCreateState((prev) => ({ ...prev, name: n }))
 
   if (items.length === 0) {
     return (
@@ -106,11 +122,11 @@ export function OpenCodeSkillsPanel({ items, scope, projectName, saving, onSave,
           onCreate={() => setCreateOpen(true)}
         />
         <CreateDialog
-          open={createOpen}
-          name={createName}
+          open={createState.open}
+          name={createState.name}
           setName={setCreateName}
-          pending={createPending}
-          onCancel={() => { setCreateOpen(false); setCreateName('') }}
+          pending={createState.pending}
+          onCancel={() => setCreateOpen(false)}
           onCreate={handleCreate}
         />
       </div>
@@ -118,7 +134,7 @@ export function OpenCodeSkillsPanel({ items, scope, projectName, saving, onSave,
   }
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="Skills"
@@ -155,23 +171,23 @@ export function OpenCodeSkillsPanel({ items, scope, projectName, saving, onSave,
               <div className="text-[10px] text-foreground/45 font-mono truncate">{selected.path}</div>
               <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-5">
                 <Field label="Name">
-                  <input value={name} onChange={(event) => setName(event.target.value)} placeholder="git-release" className="w-full max-w-md h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                  <input value={name} onChange={(event) => dispatchForm({ type: 'set', field: 'name', value: event.target.value })} placeholder="git-release" className="w-full max-w-md h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20" />
                 </Field>
 
                 <Field label="Description">
-                  <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Create consistent releases and changelogs" className="w-full max-w-md h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                  <input value={description} onChange={(event) => dispatchForm({ type: 'set', field: 'description', value: event.target.value })} placeholder="Create consistent releases and changelogs" className="w-full max-w-md h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20" />
                 </Field>
 
                 <Field label="License">
-                  <input value={license} onChange={(event) => setLicense(event.target.value)} placeholder="MIT" className="w-full max-w-md h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                  <input value={license} onChange={(event) => dispatchForm({ type: 'set', field: 'license', value: event.target.value })} placeholder="MIT" className="w-full max-w-md h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20" />
                 </Field>
 
                 <Field label="Compatibility">
-                  <input value={compatibility} onChange={(event) => setCompatibility(event.target.value)} placeholder="opencode" className="w-full max-w-md h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                  <input value={compatibility} onChange={(event) => dispatchForm({ type: 'set', field: 'compatibility', value: event.target.value })} placeholder="opencode" className="w-full max-w-md h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20" />
                 </Field>
 
                 <Field label="Body">
-                  <textarea value={body} onChange={(event) => setBody(event.target.value)} className="min-h-[260px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20" spellCheck={false} />
+                  <textarea value={body} onChange={(event) => dispatchForm({ type: 'set', field: 'body', value: event.target.value })} className="min-h-[260px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20" spellCheck={false} />
                 </Field>
               </div>
             </>
@@ -204,11 +220,11 @@ export function OpenCodeSkillsPanel({ items, scope, projectName, saving, onSave,
       />
 
       <CreateDialog
-        open={createOpen}
-        name={createName}
+        open={createState.open}
+        name={createState.name}
         setName={setCreateName}
-        pending={createPending}
-        onCancel={() => { setCreateOpen(false); setCreateName('') }}
+        pending={createState.pending}
+        onCancel={() => setCreateOpen(false)}
         onCreate={handleCreate}
       />
 
@@ -249,6 +265,7 @@ function CreateDialog({
   onCancel: () => void
   onCreate: () => void
 }) {
+  const nameId = useId()
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
       <DialogContent className="max-w-md">
@@ -257,9 +274,9 @@ function CreateDialog({
           <DialogDescription>Create a new OpenCode skill directory with SKILL.md.</DialogDescription>
         </DialogHeader>
         <div className="py-2">
-          <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Name</label>
+          <label htmlFor={nameId} className="text-xs font-semibold text-muted-foreground mb-1.5 block">Name</label>
           <input
-            autoFocus
+            id={nameId}
             value={name}
             onChange={(e) => setName(e.target.value.replace(/[^a-z0-9-]/g, '-'))}
             onKeyDown={(e) => e.key === 'Enter' && name.trim() && onCreate()}
@@ -270,7 +287,7 @@ function CreateDialog({
         <DialogFooter className="gap-2">
           <Button variant="outline" onClick={onCancel}>Cancel</Button>
           <Button onClick={onCreate} disabled={!name.trim() || pending}>
-            <Plus className="h-4 w-4 mr-2" />
+            <Plus className="size-4 mr-2" />
             {pending ? 'Creating...' : 'Add Skill'}
           </Button>
         </DialogFooter>
@@ -282,7 +299,7 @@ function CreateDialog({
 function Field({ label, children }: { label: string, children: ReactNode }) {
   return (
     <section className="space-y-2">
-      <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">{label}</h4>
+      <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">{label}</h4>
       {children}
     </section>
   )

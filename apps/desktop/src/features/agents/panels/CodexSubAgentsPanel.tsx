@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/CodexSubAgentsPanel.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useReducer, useState } from 'react'
 import { Loader2, Plus, Save, Trash2 } from 'lucide-react'
 import { Button } from '@ui/button'
 import {
@@ -38,6 +38,53 @@ type AgentConfigBlock = {
   nicknameCandidates: string[]
 }
 
+type GlobalSettings = { maxThreads: string, maxDepth: string, jobRuntime: string }
+
+type ConfigFormState = {
+  description: string
+  configFile: string
+  nicknameCandidates: string
+}
+
+type GlobalFormState = GlobalSettings
+
+type ConfigFormAction = { type: 'set'; field: keyof ConfigFormState; value: string }
+type GlobalFormAction = { type: 'set'; field: keyof GlobalFormState; value: string }
+
+function configReducer(state: ConfigFormState, action: ConfigFormAction): ConfigFormState {
+  return { ...state, [action.field]: action.value }
+}
+
+function globalReducer(state: GlobalFormState, action: GlobalFormAction): GlobalFormState {
+  return { ...state, [action.field]: action.value }
+}
+
+type DialogState = {
+  createOpen: boolean
+  createName: string
+  deleteTarget: string | null
+}
+
+type DialogAction =
+  | { type: 'openCreate' }
+  | { type: 'closeCreate' }
+  | { type: 'setCreateName'; value: string }
+  | { type: 'openDelete'; name: string }
+  | { type: 'closeDelete' }
+
+const initialDialogState: DialogState = { createOpen: false, createName: '', deleteTarget: null }
+
+function dialogReducer(state: DialogState, action: DialogAction): DialogState {
+  switch (action.type) {
+    case 'openCreate': return { ...state, createOpen: true }
+    case 'closeCreate': return { ...state, createOpen: false, createName: '' }
+    case 'setCreateName': return { ...state, createName: action.value }
+    case 'openDelete': return { ...state, deleteTarget: action.name }
+    case 'closeDelete': return { ...state, deleteTarget: null }
+    default: return state
+  }
+}
+
 export function CodexSubAgentsPanel({
   items,
   configContent,
@@ -50,19 +97,16 @@ export function CodexSubAgentsPanel({
   onCreate,
   onSaveConfig,
 }: CodexSubAgentsPanelProps) {
-  const [selectedPath, setSelectedPath] = useState<string | null>(items[0]?.path ?? null)
+  const [selectedPath, setSelectedPath] = useState<string | null>(() => items[0]?.path ?? null)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
-  const [createOpen, setCreateOpen] = useState(false)
-  const [createName, setCreateName] = useState('')
-  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
+  const [dialog, dispatchDialog] = useReducer(dialogReducer, initialDialogState)
   const [error, setError] = useState('')
   const configBlocks = useMemo(() => parseAgentConfigBlocks(configContent), [configContent])
+  const globalSettings = useMemo(() => parseAgentGlobalSettings(configContent), [configContent])
 
   useEffect(() => {
-    if (!selectedPath && items.length > 0) setSelectedPath(items[0].path)
-    if (selectedPath && !items.some(item => item.path === selectedPath)) {
-      setSelectedPath(items[0]?.path ?? null)
-    }
+    if (selectedPath && items.some(item => item.path === selectedPath)) return
+    setSelectedPath(items[0]?.path ?? null)
   }, [items, selectedPath])
 
   const selected = items.find(item => item.path === selectedPath) ?? null
@@ -70,45 +114,16 @@ export function CodexSubAgentsPanel({
   const isDirty = selected ? content !== selected.content : false
   const agentName = selected ? selected.path.split('/').pop()?.replace(/\.toml$/i, '') ?? '' : ''
   const agentConfig: AgentConfigBlock = configBlocks.find(block => block.name === agentName) ?? { name: agentName, description: '', configFile: '', nicknameCandidates: [] }
-  const [description, setDescription] = useState(agentConfig.description)
-  const [configFile, setConfigFile] = useState(agentConfig.configFile)
-  const [nicknameCandidates, setNicknameCandidates] = useState(agentConfig.nicknameCandidates.join(' '))
-  const globalSettings = useMemo(() => parseAgentGlobalSettings(configContent), [configContent])
-  const [maxThreads, setMaxThreads] = useState(globalSettings.maxThreads)
-  const [maxDepth, setMaxDepth] = useState(globalSettings.maxDepth)
-  const [jobRuntime, setJobRuntime] = useState(globalSettings.jobRuntime)
-
-  useEffect(() => {
-    setDescription(agentConfig.description)
-    setConfigFile(agentConfig.configFile)
-    setNicknameCandidates(agentConfig.nicknameCandidates.join(' '))
-  }, [agentConfig.description, agentConfig.configFile, agentConfig.nicknameCandidates, agentName])
-
-  useEffect(() => {
-    setMaxThreads(globalSettings.maxThreads)
-    setMaxDepth(globalSettings.maxDepth)
-    setJobRuntime(globalSettings.jobRuntime)
-  }, [globalSettings.jobRuntime, globalSettings.maxDepth, globalSettings.maxThreads])
-
-  const isConfigDirty =
-    description !== agentConfig.description ||
-    configFile !== agentConfig.configFile ||
-    nicknameCandidates !== agentConfig.nicknameCandidates.join(' ')
-  const isGlobalDirty =
-    maxThreads !== globalSettings.maxThreads ||
-    maxDepth !== globalSettings.maxDepth ||
-    jobRuntime !== globalSettings.jobRuntime
 
   const eyebrow = scope === 'GLOBAL' ? 'Global / Sub-agents' : `${projectName ?? 'Project'} / Sub-agents`
 
   const handleCreate = async () => {
-    if (!createName.trim()) return
-    try { await onCreate(createName.trim()) } catch (e) {
+    if (!dialog.createName.trim()) return
+    try { await onCreate(dialog.createName.trim()) } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to create')
       return
     }
-    setCreateOpen(false)
-    setCreateName('')
+    dispatchDialog({ type: 'closeCreate' })
   }
 
   const handleSaveAgent = async () => {
@@ -119,46 +134,17 @@ export function CodexSubAgentsPanel({
     }
   }
 
-  const handleSaveConfigBlock = async () => {
-    if (!configPath || !agentName) return
-    setError('')
-    try {
-      await onSaveConfig(configPath, upsertAgentConfigBlock(configContent, {
-        name: agentName,
-        description,
-        configFile,
-        nicknameCandidates: nicknameCandidates.split(/\s+/).map((item: string) => item.trim()).filter(Boolean),
-      }))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save')
-    }
-  }
-
-  const handleSaveGlobalSettings = async () => {
-    if (!configPath) return
-    setError('')
-    try {
-      await onSaveConfig(configPath, upsertAgentGlobalSettings(configContent, {
-        maxThreads,
-        maxDepth,
-        jobRuntime,
-      }))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save')
-    }
-  }
-
   const handleDelete = async () => {
-    if (!deleteTarget) return
-    try { await onDelete(deleteTarget) } catch (e) {
+    if (!dialog.deleteTarget) return
+    try { await onDelete(dialog.deleteTarget) } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to delete')
     }
-    setDeleteTarget(null)
+    dispatchDialog({ type: 'closeDelete' })
   }
 
   if (items.length === 0) {
     return (
-      <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+      <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
         <PanelHeader
           eyebrow={eyebrow}
           title="Sub-agents"
@@ -168,13 +154,13 @@ export function CodexSubAgentsPanel({
           title="No sub-agents at this scope"
           description="Create a Codex subagent to manage both the agent TOML file and its config routing block."
           ctaLabel="New sub-agent"
-          onCreate={() => setCreateOpen(true)}
+          onCreate={() => dispatchDialog({ type: 'openCreate' })}
         />
         <CreateDialog
-          open={createOpen}
-          name={createName}
-          setName={setCreateName}
-          onCancel={() => { setCreateOpen(false); setCreateName('') }}
+          open={dialog.createOpen}
+          name={dialog.createName}
+          setName={(value) => dispatchDialog({ type: 'setCreateName', value })}
+          onCancel={() => dispatchDialog({ type: 'closeCreate' })}
           onCreate={handleCreate}
         />
       </div>
@@ -182,7 +168,7 @@ export function CodexSubAgentsPanel({
   }
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="Sub-agents"
@@ -193,7 +179,7 @@ export function CodexSubAgentsPanel({
       <div className="flex flex-1 min-h-0 gap-3">
         <aside className={`w-[220px] flex flex-col shrink-0 ${TOKENS.surfaceCard}`}>
           <div className="p-2 border-b border-border/30">
-            <Button size="sm" variant="ghost" onClick={() => setCreateOpen(true)} className="w-full h-7 text-[10px]">
+            <Button size="sm" variant="ghost" onClick={() => dispatchDialog({ type: 'openCreate' })} className="w-full h-7 text-[10px]">
               <Plus size={10} className="mr-1" /> New sub-agent
             </Button>
           </div>
@@ -232,51 +218,26 @@ export function CodexSubAgentsPanel({
                 spellCheck={false}
               />
 
-              <div className="rounded-lg border border-border/30 bg-background px-3 py-3 shrink-0 space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Agent Routing Config</p>
-                    <p className="text-[10px] text-foreground/50 mt-1">Writes the <code className="font-mono">[agents.{agentName}]</code> block inside the active Codex config.</p>
-                  </div>
-                  {isConfigDirty ? (
-                    <Button
-                      size="sm"
-                      onClick={handleSaveConfigBlock}
-                      disabled={saving === configPath}
-                      className="h-7 bg-primary text-primary-foreground font-bold uppercase text-[10px] px-4 rounded-lg"
-                    >
-                      {saving === configPath ? <Loader2 size={12} className="animate-spin mr-1.5" /> : <Save size={12} className="mr-1.5" />}
-                      Save block
-                    </Button>
-                  ) : null}
-                </div>
-                <AgentField label="Description" value={description} onChange={setDescription} />
-                <AgentField label="Config File" value={configFile} onChange={setConfigFile} placeholder=".codex/agents/reviewer.toml" />
-                <AgentField label="Nickname Candidates" value={nicknameCandidates} onChange={setNicknameCandidates} placeholder="reviewer critic analyst" />
-              </div>
+              <AgentConfigSection
+                key={`config:${agentName}`}
+                agentName={agentName}
+                agentConfig={agentConfig}
+                configPath={configPath}
+                configContent={configContent}
+                saving={saving}
+                onSaveConfig={onSaveConfig}
+                onError={setError}
+              />
 
-              <div className="rounded-lg border border-border/30 bg-background px-3 py-3 shrink-0 space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Global Agent Limits</p>
-                    <p className="text-[10px] text-foreground/50 mt-1">Writes top-level <code className="font-mono">agents.max_threads</code>, <code className="font-mono">agents.max_depth</code>, and <code className="font-mono">agents.job_max_runtime_seconds</code>.</p>
-                  </div>
-                  {isGlobalDirty ? (
-                    <Button
-                      size="sm"
-                      onClick={handleSaveGlobalSettings}
-                      disabled={saving === configPath}
-                      className="h-7 bg-primary text-primary-foreground font-bold uppercase text-[10px] px-4 rounded-lg"
-                    >
-                      {saving === configPath ? <Loader2 size={12} className="animate-spin mr-1.5" /> : <Save size={12} className="mr-1.5" />}
-                      Save limits
-                    </Button>
-                  ) : null}
-                </div>
-                <AgentField label="Max Threads" value={maxThreads} onChange={setMaxThreads} placeholder="6" />
-                <AgentField label="Max Depth" value={maxDepth} onChange={setMaxDepth} placeholder="1" />
-                <AgentField label="Job Runtime Seconds" value={jobRuntime} onChange={setJobRuntime} placeholder="1800" />
-              </div>
+              <GlobalSettingsSection
+                key={`global:${globalSettings.maxThreads}|${globalSettings.maxDepth}|${globalSettings.jobRuntime}`}
+                globalSettings={globalSettings}
+                configPath={configPath}
+                configContent={configContent}
+                saving={saving}
+                onSaveConfig={onSaveConfig}
+                onError={setError}
+              />
             </>
           ) : (
             <div className="flex-1 flex items-center justify-center text-[11px] text-foreground/30">
@@ -297,7 +258,7 @@ export function CodexSubAgentsPanel({
           selected ? (
             <button
               type="button"
-              onClick={() => setDeleteTarget(agentName)}
+              onClick={() => dispatchDialog({ type: 'openDelete', name: agentName })}
               className="text-[10px] text-foreground/40 hover:text-red-400 inline-flex items-center gap-1"
             >
               <Trash2 size={11} /> Delete
@@ -307,30 +268,149 @@ export function CodexSubAgentsPanel({
       />
 
       <CreateDialog
-        open={createOpen}
-        name={createName}
-        setName={setCreateName}
-        onCancel={() => { setCreateOpen(false); setCreateName('') }}
+        open={dialog.createOpen}
+        name={dialog.createName}
+        setName={(value) => dispatchDialog({ type: 'setCreateName', value })}
+        onCancel={() => dispatchDialog({ type: 'closeCreate' })}
         onCreate={handleCreate}
       />
 
-      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+      <Dialog open={!!dialog.deleteTarget} onOpenChange={(o) => !o && dispatchDialog({ type: 'closeDelete' })}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="text-red-400">Delete sub-agent</DialogTitle>
             <DialogDescription>This removes the agent TOML file from disk. Cannot be undone.</DialogDescription>
           </DialogHeader>
           <div className="py-4 rounded-md border bg-muted/30 p-3">
-            <p className="text-sm font-mono text-primary">{deleteTarget}</p>
+            <p className="text-sm font-mono text-primary">{dialog.deleteTarget}</p>
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => dispatchDialog({ type: 'closeDelete' })}>Cancel</Button>
             <Button variant="destructive" onClick={handleDelete}>
               <Trash2 size={14} className="mr-2" /> Delete
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+interface AgentConfigSectionProps {
+  agentName: string
+  agentConfig: AgentConfigBlock
+  configPath: string
+  configContent: string
+  saving: string | null
+  onSaveConfig: (path: string, content: string) => Promise<void>
+  onError: (message: string) => void
+}
+
+function AgentConfigSection({ agentName, agentConfig, configPath, configContent, saving, onSaveConfig, onError }: AgentConfigSectionProps) {
+  const [state, dispatch] = useReducer(configReducer, {
+    description: agentConfig.description,
+    configFile: agentConfig.configFile,
+    nicknameCandidates: agentConfig.nicknameCandidates.join(' '),
+  })
+
+  const isConfigDirty =
+    state.description !== agentConfig.description ||
+    state.configFile !== agentConfig.configFile ||
+    state.nicknameCandidates !== agentConfig.nicknameCandidates.join(' ')
+
+  const handleSaveConfigBlock = async () => {
+    if (!configPath || !agentName) return
+    onError('')
+    try {
+      await onSaveConfig(configPath, upsertAgentConfigBlock(configContent, {
+        name: agentName,
+        description: state.description,
+        configFile: state.configFile,
+        nicknameCandidates: state.nicknameCandidates.split(/\s+/).flatMap((item: string) => {
+          const trimmed = item.trim()
+          return trimmed ? [trimmed] : []
+        }),
+      }))
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'Failed to save')
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-border/30 bg-background p-3 shrink-0 flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Agent Routing Config</p>
+          <p className="text-[10px] text-foreground/50 mt-1">Writes the <code className="font-mono">[agents.{agentName}]</code> block inside the active Codex config.</p>
+        </div>
+        {isConfigDirty ? (
+          <Button
+            size="sm"
+            onClick={handleSaveConfigBlock}
+            disabled={saving === configPath}
+            className="h-7 bg-primary text-primary-foreground font-bold uppercase text-[10px] px-4 rounded-lg"
+          >
+            {saving === configPath ? <Loader2 size={12} className="animate-spin mr-1.5" /> : <Save size={12} className="mr-1.5" />}
+            Save block
+          </Button>
+        ) : null}
+      </div>
+      <AgentField label="Description" value={state.description} onChange={(v) => dispatch({ type: 'set', field: 'description', value: v })} />
+      <AgentField label="Config File" value={state.configFile} onChange={(v) => dispatch({ type: 'set', field: 'configFile', value: v })} placeholder=".codex/agents/reviewer.toml" />
+      <AgentField label="Nickname Candidates" value={state.nicknameCandidates} onChange={(v) => dispatch({ type: 'set', field: 'nicknameCandidates', value: v })} placeholder="reviewer critic analyst" />
+    </div>
+  )
+}
+
+interface GlobalSettingsSectionProps {
+  globalSettings: GlobalSettings
+  configPath: string
+  configContent: string
+  saving: string | null
+  onSaveConfig: (path: string, content: string) => Promise<void>
+  onError: (message: string) => void
+}
+
+function GlobalSettingsSection({ globalSettings, configPath, configContent, saving, onSaveConfig, onError }: GlobalSettingsSectionProps) {
+  const [state, dispatch] = useReducer(globalReducer, globalSettings)
+
+  const isGlobalDirty =
+    state.maxThreads !== globalSettings.maxThreads ||
+    state.maxDepth !== globalSettings.maxDepth ||
+    state.jobRuntime !== globalSettings.jobRuntime
+
+  const handleSaveGlobalSettings = async () => {
+    if (!configPath) return
+    onError('')
+    try {
+      await onSaveConfig(configPath, upsertAgentGlobalSettings(configContent, state))
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'Failed to save')
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-border/30 bg-background p-3 shrink-0 flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Global Agent Limits</p>
+          <p className="text-[10px] text-foreground/50 mt-1">Writes top-level <code className="font-mono">agents.max_threads</code>, <code className="font-mono">agents.max_depth</code>, and <code className="font-mono">agents.job_max_runtime_seconds</code>.</p>
+        </div>
+        {isGlobalDirty ? (
+          <Button
+            size="sm"
+            onClick={handleSaveGlobalSettings}
+            disabled={saving === configPath}
+            className="h-7 bg-primary text-primary-foreground font-bold uppercase text-[10px] px-4 rounded-lg"
+          >
+            {saving === configPath ? <Loader2 size={12} className="animate-spin mr-1.5" /> : <Save size={12} className="mr-1.5" />}
+            Save limits
+          </Button>
+        ) : null}
+      </div>
+      <AgentField label="Max Threads" value={state.maxThreads} onChange={(v) => dispatch({ type: 'set', field: 'maxThreads', value: v })} placeholder="6" />
+      <AgentField label="Max Depth" value={state.maxDepth} onChange={(v) => dispatch({ type: 'set', field: 'maxDepth', value: v })} placeholder="1" />
+      <AgentField label="Job Runtime Seconds" value={state.jobRuntime} onChange={(v) => dispatch({ type: 'set', field: 'jobRuntime', value: v })} placeholder="1800" />
     </div>
   )
 }
@@ -344,6 +424,7 @@ function CreateDialog({
   onCancel: () => void
   onCreate: () => void
 }) {
+  const nameId = useId()
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
       <DialogContent className="max-w-md">
@@ -352,9 +433,9 @@ function CreateDialog({
           <DialogDescription>Creates a Codex subagent TOML file for the selected scope.</DialogDescription>
         </DialogHeader>
         <div className="py-2">
-          <label className="text-xs font-semibold text-foreground/60 mb-1.5 block">Sub-agent name</label>
+          <label htmlFor={nameId} className="text-xs font-semibold text-foreground/60 mb-1.5 block">Sub-agent name</label>
           <input
-            autoFocus
+            id={nameId}
             value={name}
             onChange={(e) => setName(e.target.value.replace(/[^a-zA-Z0-9._/-]/g, '-'))}
             onKeyDown={(e) => e.key === 'Enter' && name.trim() && onCreate()}
@@ -375,8 +456,8 @@ function CreateDialog({
 
 function AgentField({ label, value, onChange, placeholder }: { label: string, value: string, onChange: (value: string) => void, placeholder?: string }) {
   return (
-    <section className="space-y-2">
-      <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">{label}</h4>
+    <section className="flex flex-col gap-2">
+      <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">{label}</h4>
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -409,7 +490,10 @@ function parseAgentConfigBlocks(content: string): AgentConfigBlock[] {
     const scalar = line.match(/^([a-zA-Z0-9_.-]+)\s*=\s*["']?([^"'\n]+)["']?\s*$/)
     const array = line.match(/^nickname_candidates\s*=\s*\[(.*?)\]\s*$/)
     if (array) {
-      current.nicknameCandidates = array[1].split(',').map(item => item.trim().replace(/^["']|["']$/g, '')).filter(Boolean)
+      current.nicknameCandidates = array[1].split(',').flatMap(item => {
+        const cleaned = item.trim().replace(/^["']|["']$/g, '')
+        return cleaned ? [cleaned] : []
+      })
       continue
     }
     if (!scalar) continue
@@ -440,7 +524,7 @@ function buildAgentSection(block: AgentConfigBlock): string {
   return lines.join('\n')
 }
 
-function parseAgentGlobalSettings(content: string): { maxThreads: string, maxDepth: string, jobRuntime: string } {
+function parseAgentGlobalSettings(content: string): GlobalSettings {
   return {
     maxThreads: readGlobalScalar(content, 'agents.max_threads'),
     maxDepth: readGlobalScalar(content, 'agents.max_depth'),
@@ -448,7 +532,7 @@ function parseAgentGlobalSettings(content: string): { maxThreads: string, maxDep
   }
 }
 
-function upsertAgentGlobalSettings(content: string, settings: { maxThreads: string, maxDepth: string, jobRuntime: string }): string {
+function upsertAgentGlobalSettings(content: string, settings: GlobalSettings): string {
   let next = content
   next = writeGlobalNumber(next, 'agents.max_threads', settings.maxThreads)
   next = writeGlobalNumber(next, 'agents.max_depth', settings.maxDepth)

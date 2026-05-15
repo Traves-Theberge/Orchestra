@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/GeminiModelPanel.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useReducer, useState } from 'react'
 import { PanelHeader } from '../components/PanelHeader'
 import { PanelFooter } from '../components/PanelFooter'
 import { ErrorStrip } from '../components/ErrorStrip'
@@ -16,15 +16,35 @@ interface GeminiModelPanelProps {
   onSave: (model: ProviderModelConfig) => Promise<void>
 }
 
-export function GeminiModelPanel({ modelConfig, settingsContent, scope, projectName, saving, onSave }: GeminiModelPanelProps) {
-  const [model, setModel] = useState(modelConfig.model)
-  const [effort, setEffort] = useState(modelConfig.effort)
-  const [error, setError] = useState('')
+type ModelState = { model: string; effort: string }
+type ModelAction =
+  | { type: 'setModel'; value: string }
+  | { type: 'setEffort'; value: string }
+  | { type: 'reset'; model: string; effort: string }
 
-  useEffect(() => {
-    setModel(modelConfig.model)
-    setEffort(modelConfig.effort)
-  }, [modelConfig])
+const modelReducer = (state: ModelState, action: ModelAction): ModelState => {
+  switch (action.type) {
+    case 'setModel': return { ...state, model: action.value }
+    case 'setEffort': return { ...state, effort: action.value }
+    case 'reset': return { model: action.model, effort: action.effort }
+    default: return state
+  }
+}
+
+export function GeminiModelPanel(props: GeminiModelPanelProps) {
+  // key on prop identity resets local edit state when the source-of-truth changes
+  return (
+    <Inner
+      key={`${props.modelConfig.model}|${props.modelConfig.effort}`}
+      {...props}
+    />
+  )
+}
+
+function Inner({ modelConfig, settingsContent, scope, projectName, saving, onSave }: GeminiModelPanelProps) {
+  const [state, dispatch] = useReducer(modelReducer, { model: modelConfig.model, effort: modelConfig.effort })
+  const { model, effort } = state
+  const [error, setError] = useState('')
 
   const sandboxMode = useMemo(() => {
     try {
@@ -41,8 +61,7 @@ export function GeminiModelPanel({ modelConfig, settingsContent, scope, projectN
   const eyebrow = scope === 'GLOBAL' ? 'Global / Model' : `${projectName ?? 'Project'} / Model`
 
   const handleDiscard = () => {
-    setModel(modelConfig.model)
-    setEffort(modelConfig.effort)
+    dispatch({ type: 'reset', model: modelConfig.model, effort: modelConfig.effort })
   }
 
   const handleSave = async () => {
@@ -55,7 +74,7 @@ export function GeminiModelPanel({ modelConfig, settingsContent, scope, projectN
   }
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="Model"
@@ -66,10 +85,10 @@ export function GeminiModelPanel({ modelConfig, settingsContent, scope, projectN
       <div className="flex-1 min-h-0 overflow-y-auto pr-1">
         <div className="max-w-2xl mx-auto w-full flex flex-col gap-6">
           <section className="space-y-2">
-            <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Primary Model</h4>
+            <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Primary Model</h4>
             <select
               value={model}
-              onChange={(event) => setModel(event.target.value)}
+              onChange={(event) => dispatch({ type: 'setModel', value: event.target.value })}
               className="w-full max-w-md px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
             >
               <option value="">Default</option>
@@ -80,10 +99,10 @@ export function GeminiModelPanel({ modelConfig, settingsContent, scope, projectN
           </section>
 
           <section className="space-y-2">
-            <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Thinking Mode</h4>
+            <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Thinking Mode</h4>
             <select
               value={effort}
-              onChange={(event) => setEffort(event.target.value)}
+              onChange={(event) => dispatch({ type: 'setEffort', value: event.target.value })}
               className="w-full max-w-xs px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
             >
               <option value="">Default</option>

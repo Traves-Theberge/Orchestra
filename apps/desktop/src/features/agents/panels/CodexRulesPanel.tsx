@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/CodexRulesPanel.tsx
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useReducer, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@ui/button'
 import {
@@ -31,64 +31,67 @@ const RULE_TEMPLATE = `prefix_rule("git", "status")
 Always check the repository state before modifying files.
 `
 
+type DialogState = {
+  createOpen: boolean
+  createName: string
+  deleteTarget: string | null
+}
+
+type DialogAction =
+  | { type: 'openCreate' }
+  | { type: 'closeCreate' }
+  | { type: 'setCreateName'; value: string }
+  | { type: 'openDelete'; name: string }
+  | { type: 'closeDelete' }
+
+const initialDialogState: DialogState = { createOpen: false, createName: '', deleteTarget: null }
+
+function dialogReducer(state: DialogState, action: DialogAction): DialogState {
+  switch (action.type) {
+    case 'openCreate': return { ...state, createOpen: true }
+    case 'closeCreate': return { ...state, createOpen: false, createName: '' }
+    case 'setCreateName': return { ...state, createName: action.value }
+    case 'openDelete': return { ...state, deleteTarget: action.name }
+    case 'closeDelete': return { ...state, deleteTarget: null }
+    default: return state
+  }
+}
+
 export function CodexRulesPanel({ items, scope, projectName, saving, onSave, onDelete }: CodexRulesPanelProps) {
-  const [selectedName, setSelectedName] = useState<string | null>(null)
-  const [content, setContent] = useState('')
-  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
-  const [createOpen, setCreateOpen] = useState(false)
-  const [createName, setCreateName] = useState('')
+  const [selectedName, setSelectedName] = useState<string | null>(() => items[0]?.name ?? null)
+  const [dialog, dispatchDialog] = useReducer(dialogReducer, initialDialogState)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (!selectedName && items.length > 0) setSelectedName(items[0].name)
-  }, [selectedName, items])
-
-  useEffect(() => {
-    if (selectedName && !items.find(item => item.name === selectedName)) {
-      setSelectedName(items.length > 0 ? items[0].name : null)
-    }
-  }, [selectedName, items])
+    if (selectedName && items.find(item => item.name === selectedName)) return
+    setSelectedName(items[0]?.name ?? null)
+  }, [items, selectedName])
 
   const selected = items.find(item => item.name === selectedName) ?? null
-
-  useEffect(() => {
-    setContent(selected?.content ?? '')
-  }, [selected])
-
-  const isDirty = selected ? content !== selected.content : false
   const eyebrow = scope === 'GLOBAL' ? 'Global / Rules' : `${projectName ?? 'Project'} / Rules`
 
   const handleCreate = async () => {
-    const name = createName.trim()
+    const name = dialog.createName.trim()
     if (!name) return
     try { await onSave(name, RULE_TEMPLATE) } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to create')
       return
     }
     setSelectedName(name.endsWith('.rules') ? name : `${name}.rules`)
-    setCreateOpen(false)
-    setCreateName('')
+    dispatchDialog({ type: 'closeCreate' })
   }
 
   const handleDelete = async () => {
-    if (!deleteTarget) return
-    try { await onDelete(deleteTarget) } catch (e) {
+    if (!dialog.deleteTarget) return
+    try { await onDelete(dialog.deleteTarget) } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to delete')
     }
-    setDeleteTarget(null)
-  }
-
-  const handleSave = async () => {
-    if (!selected) return
-    setError('')
-    try { await onSave(selected.name, content) } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save')
-    }
+    dispatchDialog({ type: 'closeDelete' })
   }
 
   if (items.length === 0) {
     return (
-      <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+      <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
         <PanelHeader
           eyebrow={eyebrow}
           title="Rules"
@@ -98,13 +101,13 @@ export function CodexRulesPanel({ items, scope, projectName, saving, onSave, onD
           title="No rules at this scope"
           description="Codex rules live in .rules files and are loaded by the Codex client to shape tool and command permissions."
           ctaLabel="New rule"
-          onCreate={() => setCreateOpen(true)}
+          onCreate={() => dispatchDialog({ type: 'openCreate' })}
         />
         <CreateDialog
-          open={createOpen}
-          name={createName}
-          setName={setCreateName}
-          onCancel={() => { setCreateOpen(false); setCreateName('') }}
+          open={dialog.createOpen}
+          name={dialog.createName}
+          setName={(value) => dispatchDialog({ type: 'setCreateName', value })}
+          onCancel={() => dispatchDialog({ type: 'closeCreate' })}
           onCreate={handleCreate}
         />
       </div>
@@ -112,7 +115,84 @@ export function CodexRulesPanel({ items, scope, projectName, saving, onSave, onD
   }
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <RuleEditor
+      key={selected?.name ?? 'none'}
+      items={items}
+      selected={selected}
+      eyebrow={eyebrow}
+      saving={!!saving}
+      error={error}
+      createOpen={dialog.createOpen}
+      createName={dialog.createName}
+      deleteTarget={dialog.deleteTarget}
+      onSelect={setSelectedName}
+      onError={setError}
+      onSave={onSave}
+      onDelete={handleDelete}
+      onOpenCreate={() => dispatchDialog({ type: 'openCreate' })}
+      onSetCreateName={(value) => dispatchDialog({ type: 'setCreateName', value })}
+      onCancelCreate={() => dispatchDialog({ type: 'closeCreate' })}
+      onCreate={handleCreate}
+      onRequestDelete={(name) => name ? dispatchDialog({ type: 'openDelete', name }) : dispatchDialog({ type: 'closeDelete' })}
+      onCloseDelete={() => dispatchDialog({ type: 'closeDelete' })}
+    />
+  )
+}
+
+interface RuleEditorProps {
+  items: ProviderFileEntry[]
+  selected: ProviderFileEntry | null
+  eyebrow: string
+  saving: boolean
+  error: string
+  createOpen: boolean
+  createName: string
+  deleteTarget: string | null
+  onSelect: (name: string) => void
+  onError: (message: string) => void
+  onSave: (name: string, content: string) => Promise<void>
+  onDelete: () => Promise<void>
+  onOpenCreate: () => void
+  onSetCreateName: (name: string) => void
+  onCancelCreate: () => void
+  onCreate: () => Promise<void>
+  onRequestDelete: (name: string | null) => void
+  onCloseDelete: () => void
+}
+
+function RuleEditor({
+  items,
+  selected,
+  eyebrow,
+  saving,
+  error,
+  createOpen,
+  createName,
+  deleteTarget,
+  onSelect,
+  onError,
+  onSave,
+  onDelete,
+  onOpenCreate,
+  onSetCreateName,
+  onCancelCreate,
+  onCreate,
+  onRequestDelete,
+  onCloseDelete,
+}: RuleEditorProps) {
+  const [content, setContent] = useState(selected?.content ?? '')
+  const isDirty = selected ? content !== selected.content : false
+
+  const handleSave = async () => {
+    if (!selected) return
+    onError('')
+    try { await onSave(selected.name, content) } catch (e) {
+      onError(e instanceof Error ? e.message : 'Failed to save')
+    }
+  }
+
+  return (
+    <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="Rules"
@@ -123,7 +203,7 @@ export function CodexRulesPanel({ items, scope, projectName, saving, onSave, onD
       <div className="flex flex-1 min-h-0 gap-3">
         <aside className={`w-[200px] flex flex-col shrink-0 ${TOKENS.surfaceCard}`}>
           <div className="p-2 border-b border-border/30">
-            <Button size="sm" variant="ghost" onClick={() => setCreateOpen(true)} className="w-full h-7 text-[10px]">
+            <Button size="sm" variant="ghost" onClick={onOpenCreate} className="w-full h-7 text-[10px]">
               <Plus size={10} className="mr-1" /> New rule
             </Button>
           </div>
@@ -131,9 +211,9 @@ export function CodexRulesPanel({ items, scope, projectName, saving, onSave, onD
             {items.map(item => (
               <button
                 key={item.path}
-                onClick={() => setSelectedName(item.name)}
+                onClick={() => onSelect(item.name)}
                 className={`w-full text-left px-2 py-1.5 rounded text-[11px] truncate ${
-                  item.name === selectedName ? 'bg-foreground/[0.06] text-foreground' : 'text-foreground/65 hover:bg-foreground/[0.03]'
+                  item.name === selected?.name ? 'bg-foreground/[0.06] text-foreground' : 'text-foreground/65 hover:bg-foreground/[0.03]'
                 }`}
               >
                 {item.name}
@@ -164,18 +244,18 @@ export function CodexRulesPanel({ items, scope, projectName, saving, onSave, onD
         </div>
       </div>
 
-      <ErrorStrip message={error} onDismiss={() => setError('')} />
+      <ErrorStrip message={error} onDismiss={() => onError('')} />
 
       <PanelFooter
         dirty={isDirty}
-        saving={!!saving}
+        saving={saving}
         onSave={handleSave}
         onDiscard={() => setContent(selected?.content ?? '')}
         extraLeft={
           selected ? (
             <button
               type="button"
-              onClick={() => setDeleteTarget(selected.name)}
+              onClick={() => onRequestDelete(selected.name)}
               className="text-[10px] text-foreground/40 hover:text-red-400 inline-flex items-center gap-1"
             >
               <Trash2 size={11} /> Delete
@@ -187,12 +267,12 @@ export function CodexRulesPanel({ items, scope, projectName, saving, onSave, onD
       <CreateDialog
         open={createOpen}
         name={createName}
-        setName={setCreateName}
-        onCancel={() => { setCreateOpen(false); setCreateName('') }}
-        onCreate={handleCreate}
+        setName={onSetCreateName}
+        onCancel={onCancelCreate}
+        onCreate={onCreate}
       />
 
-      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && onCloseDelete()}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="text-red-400">Delete rule</DialogTitle>
@@ -202,8 +282,8 @@ export function CodexRulesPanel({ items, scope, projectName, saving, onSave, onD
             <p className="text-sm font-mono text-primary">{deleteTarget}</p>
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleDelete}>
+            <Button variant="outline" onClick={onCloseDelete}>Cancel</Button>
+            <Button variant="destructive" onClick={onDelete}>
               <Trash2 size={14} className="mr-2" /> Delete
             </Button>
           </DialogFooter>
@@ -222,6 +302,7 @@ function CreateDialog({
   onCancel: () => void
   onCreate: () => void
 }) {
+  const nameId = useId()
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
       <DialogContent className="max-w-md">
@@ -230,9 +311,9 @@ function CreateDialog({
           <DialogDescription>Creates a new .rules file in .codex/rules.</DialogDescription>
         </DialogHeader>
         <div className="py-2">
-          <label className="text-xs font-semibold text-foreground/60 mb-1.5 block">Rule name</label>
+          <label htmlFor={nameId} className="text-xs font-semibold text-foreground/60 mb-1.5 block">Rule name</label>
           <input
-            autoFocus
+            id={nameId}
             value={name}
             onChange={(e) => setName(e.target.value.replace(/[^a-zA-Z0-9._-]/g, ''))}
             onKeyDown={(e) => e.key === 'Enter' && name.trim() && onCreate()}

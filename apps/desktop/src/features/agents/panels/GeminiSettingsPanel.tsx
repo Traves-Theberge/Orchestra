@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/GeminiSettingsPanel.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useReducer, useState } from 'react'
 import type { ReactNode } from 'react'
 import { PanelHeader } from '../components/PanelHeader'
 import { PanelFooter } from '../components/PanelFooter'
@@ -17,47 +17,93 @@ interface GeminiSettingsPanelProps {
   onCreate: () => Promise<void>
 }
 
+type SettingsDraft = {
+  preferredEditor: string
+  vimMode: string
+  disableAutoUpdate: string
+  disableUpdateNag: string
+  checkpointingEnabled: string
+  outputFormat: string
+  theme: string
+  hideBanner: string
+  hideTips: string
+  hideFooter: string
+  showLineNumbers: string
+  showCitations: string
+  telemetryEnabled: string
+  telemetryTarget: string
+  telemetryLogPrompts: string
+  telemetryOutfile: string
+}
+
+type DraftAction =
+  | { type: 'set'; field: keyof SettingsDraft; value: string }
+  | { type: 'reset'; draft: SettingsDraft }
+
+function draftReducer(state: SettingsDraft, action: DraftAction): SettingsDraft {
+  switch (action.type) {
+    case 'set':
+      return { ...state, [action.field]: action.value }
+    case 'reset':
+      return action.draft
+  }
+}
+
+function readDraft(parsed: Record<string, unknown> | null): SettingsDraft {
+  return {
+    preferredEditor: readString(parsed, ['general', 'preferredEditor']),
+    vimMode: readBooleanString(parsed, ['general', 'vimMode']),
+    disableAutoUpdate: readBooleanString(parsed, ['general', 'disableAutoUpdate']),
+    disableUpdateNag: readBooleanString(parsed, ['general', 'disableUpdateNag']),
+    checkpointingEnabled: readBooleanString(parsed, ['general', 'checkpointing', 'enabled']),
+    outputFormat: readString(parsed, ['output', 'format']),
+    theme: readString(parsed, ['ui', 'theme']),
+    hideBanner: readBooleanString(parsed, ['ui', 'hideBanner']),
+    hideTips: readBooleanString(parsed, ['ui', 'hideTips']),
+    hideFooter: readBooleanString(parsed, ['ui', 'hideFooter']),
+    showLineNumbers: readBooleanString(parsed, ['ui', 'showLineNumbers']),
+    showCitations: readBooleanString(parsed, ['ui', 'showCitations']),
+    telemetryEnabled: readBooleanString(parsed, ['telemetry', 'enabled']),
+    telemetryTarget: readString(parsed, ['telemetry', 'target']),
+    telemetryLogPrompts: readBooleanString(parsed, ['telemetry', 'logPrompts']),
+    telemetryOutfile: readString(parsed, ['telemetry', 'outfile']),
+  }
+}
+
+function draftsEqual(a: SettingsDraft, b: SettingsDraft): boolean {
+  const keys = Object.keys(a) as Array<keyof SettingsDraft>
+  return keys.every((k) => a[k] === b[k])
+}
+
 export function GeminiSettingsPanel({ items, scope, projectName, saving, onSave, onCreate }: GeminiSettingsPanelProps) {
   const selected = items[0] ?? null
+  return (
+    <GeminiSettingsPanelInner
+      key={selected?.path ?? '__empty__'}
+      selected={selected}
+      scope={scope}
+      projectName={projectName}
+      saving={saving}
+      onSave={onSave}
+      onCreate={onCreate}
+    />
+  )
+}
+
+interface InnerProps {
+  selected: FileResourceItem | null
+  scope: Scope
+  projectName: string | null
+  saving: string | null
+  onSave: (path: string, content: string) => Promise<void>
+  onCreate: () => Promise<void>
+}
+
+function GeminiSettingsPanelInner({ selected, scope, projectName, saving, onSave, onCreate }: InnerProps) {
   const parsed = useMemo(() => safeParse(selected?.content ?? ''), [selected?.content])
-
-  const [preferredEditor, setPreferredEditor] = useState(readString(parsed, ['general', 'preferredEditor']))
-  const [vimMode, setVimMode] = useState(readBooleanString(parsed, ['general', 'vimMode']))
-  const [disableAutoUpdate, setDisableAutoUpdate] = useState(readBooleanString(parsed, ['general', 'disableAutoUpdate']))
-  const [disableUpdateNag, setDisableUpdateNag] = useState(readBooleanString(parsed, ['general', 'disableUpdateNag']))
-  const [checkpointingEnabled, setCheckpointingEnabled] = useState(readBooleanString(parsed, ['general', 'checkpointing', 'enabled']))
-  const [outputFormat, setOutputFormat] = useState(readString(parsed, ['output', 'format']))
-  const [theme, setTheme] = useState(readString(parsed, ['ui', 'theme']))
-  const [hideBanner, setHideBanner] = useState(readBooleanString(parsed, ['ui', 'hideBanner']))
-  const [hideTips, setHideTips] = useState(readBooleanString(parsed, ['ui', 'hideTips']))
-  const [hideFooter, setHideFooter] = useState(readBooleanString(parsed, ['ui', 'hideFooter']))
-  const [showLineNumbers, setShowLineNumbers] = useState(readBooleanString(parsed, ['ui', 'showLineNumbers']))
-  const [showCitations, setShowCitations] = useState(readBooleanString(parsed, ['ui', 'showCitations']))
-  const [telemetryEnabled, setTelemetryEnabled] = useState(readBooleanString(parsed, ['telemetry', 'enabled']))
-  const [telemetryTarget, setTelemetryTarget] = useState(readString(parsed, ['telemetry', 'target']))
-  const [telemetryLogPrompts, setTelemetryLogPrompts] = useState(readBooleanString(parsed, ['telemetry', 'logPrompts']))
-  const [telemetryOutfile, setTelemetryOutfile] = useState(readString(parsed, ['telemetry', 'outfile']))
+  const initialDraft = useMemo(() => readDraft(parsed), [parsed])
+  const [draft, dispatch] = useReducer(draftReducer, parsed, readDraft)
   const [error, setError] = useState('')
-
-  useEffect(() => {
-    setPreferredEditor(readString(parsed, ['general', 'preferredEditor']))
-    setVimMode(readBooleanString(parsed, ['general', 'vimMode']))
-    setDisableAutoUpdate(readBooleanString(parsed, ['general', 'disableAutoUpdate']))
-    setDisableUpdateNag(readBooleanString(parsed, ['general', 'disableUpdateNag']))
-    setCheckpointingEnabled(readBooleanString(parsed, ['general', 'checkpointing', 'enabled']))
-    setOutputFormat(readString(parsed, ['output', 'format']))
-    setTheme(readString(parsed, ['ui', 'theme']))
-    setHideBanner(readBooleanString(parsed, ['ui', 'hideBanner']))
-    setHideTips(readBooleanString(parsed, ['ui', 'hideTips']))
-    setHideFooter(readBooleanString(parsed, ['ui', 'hideFooter']))
-    setShowLineNumbers(readBooleanString(parsed, ['ui', 'showLineNumbers']))
-    setShowCitations(readBooleanString(parsed, ['ui', 'showCitations']))
-    setTelemetryEnabled(readBooleanString(parsed, ['telemetry', 'enabled']))
-    setTelemetryTarget(readString(parsed, ['telemetry', 'target']))
-    setTelemetryLogPrompts(readBooleanString(parsed, ['telemetry', 'logPrompts']))
-    setTelemetryOutfile(readString(parsed, ['telemetry', 'outfile']))
-    setError('')
-  }, [parsed])
 
   const eyebrow = scope === 'GLOBAL' ? 'Global / Gemini Settings' : `${projectName ?? 'Project'} / Gemini Settings`
 
@@ -98,71 +144,25 @@ export function GeminiSettingsPanel({ items, scope, projectName, saving, onSave,
     )
   }
 
-  const isDirty =
-    preferredEditor !== readString(parsed, ['general', 'preferredEditor']) ||
-    vimMode !== readBooleanString(parsed, ['general', 'vimMode']) ||
-    disableAutoUpdate !== readBooleanString(parsed, ['general', 'disableAutoUpdate']) ||
-    disableUpdateNag !== readBooleanString(parsed, ['general', 'disableUpdateNag']) ||
-    checkpointingEnabled !== readBooleanString(parsed, ['general', 'checkpointing', 'enabled']) ||
-    outputFormat !== readString(parsed, ['output', 'format']) ||
-    theme !== readString(parsed, ['ui', 'theme']) ||
-    hideBanner !== readBooleanString(parsed, ['ui', 'hideBanner']) ||
-    hideTips !== readBooleanString(parsed, ['ui', 'hideTips']) ||
-    hideFooter !== readBooleanString(parsed, ['ui', 'hideFooter']) ||
-    showLineNumbers !== readBooleanString(parsed, ['ui', 'showLineNumbers']) ||
-    showCitations !== readBooleanString(parsed, ['ui', 'showCitations']) ||
-    telemetryEnabled !== readBooleanString(parsed, ['telemetry', 'enabled']) ||
-    telemetryTarget !== readString(parsed, ['telemetry', 'target']) ||
-    telemetryLogPrompts !== readBooleanString(parsed, ['telemetry', 'logPrompts']) ||
-    telemetryOutfile !== readString(parsed, ['telemetry', 'outfile'])
+  const isDirty = !draftsEqual(draft, initialDraft)
+
+  const setField = (field: keyof SettingsDraft) => (value: string) => dispatch({ type: 'set', field, value })
 
   const handleDiscard = () => {
-    setPreferredEditor(readString(parsed, ['general', 'preferredEditor']))
-    setVimMode(readBooleanString(parsed, ['general', 'vimMode']))
-    setDisableAutoUpdate(readBooleanString(parsed, ['general', 'disableAutoUpdate']))
-    setDisableUpdateNag(readBooleanString(parsed, ['general', 'disableUpdateNag']))
-    setCheckpointingEnabled(readBooleanString(parsed, ['general', 'checkpointing', 'enabled']))
-    setOutputFormat(readString(parsed, ['output', 'format']))
-    setTheme(readString(parsed, ['ui', 'theme']))
-    setHideBanner(readBooleanString(parsed, ['ui', 'hideBanner']))
-    setHideTips(readBooleanString(parsed, ['ui', 'hideTips']))
-    setHideFooter(readBooleanString(parsed, ['ui', 'hideFooter']))
-    setShowLineNumbers(readBooleanString(parsed, ['ui', 'showLineNumbers']))
-    setShowCitations(readBooleanString(parsed, ['ui', 'showCitations']))
-    setTelemetryEnabled(readBooleanString(parsed, ['telemetry', 'enabled']))
-    setTelemetryTarget(readString(parsed, ['telemetry', 'target']))
-    setTelemetryLogPrompts(readBooleanString(parsed, ['telemetry', 'logPrompts']))
-    setTelemetryOutfile(readString(parsed, ['telemetry', 'outfile']))
+    dispatch({ type: 'reset', draft: initialDraft })
   }
 
   const handleSave = async () => {
     setError('')
     try {
-      await onSave(selected.path, buildSettings(parsed, {
-        preferredEditor,
-        vimMode,
-        disableAutoUpdate,
-        disableUpdateNag,
-        checkpointingEnabled,
-        outputFormat,
-        theme,
-        hideBanner,
-        hideTips,
-        hideFooter,
-        showLineNumbers,
-        showCitations,
-        telemetryEnabled,
-        telemetryTarget,
-        telemetryLogPrompts,
-        telemetryOutfile,
-      }))
+      await onSave(selected.path, buildSettings(parsed, draft))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save')
     }
   }
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="Gemini settings"
@@ -173,36 +173,36 @@ export function GeminiSettingsPanel({ items, scope, projectName, saving, onSave,
       <div className="flex-1 min-h-0 overflow-y-auto pr-1">
         <div className="max-w-2xl mx-auto w-full flex flex-col gap-6">
           <Section title="General">
-            <TextField label="Preferred Editor" value={preferredEditor} onChange={setPreferredEditor} placeholder="code" />
-            <BooleanField label="Vim Mode" value={vimMode} onChange={setVimMode} />
-            <BooleanField label="Disable Auto Update" value={disableAutoUpdate} onChange={setDisableAutoUpdate} />
-            <BooleanField label="Disable Update Nag" value={disableUpdateNag} onChange={setDisableUpdateNag} />
-            <BooleanField label="Checkpointing Enabled" value={checkpointingEnabled} onChange={setCheckpointingEnabled} />
+            <TextField label="Preferred Editor" value={draft.preferredEditor} onChange={setField('preferredEditor')} placeholder="code" />
+            <BooleanField label="Vim Mode" value={draft.vimMode} onChange={setField('vimMode')} />
+            <BooleanField label="Disable Auto Update" value={draft.disableAutoUpdate} onChange={setField('disableAutoUpdate')} />
+            <BooleanField label="Disable Update Nag" value={draft.disableUpdateNag} onChange={setField('disableUpdateNag')} />
+            <BooleanField label="Checkpointing Enabled" value={draft.checkpointingEnabled} onChange={setField('checkpointingEnabled')} />
           </Section>
 
           <Section title="Output">
             <SelectField
               label="Format"
-              value={outputFormat}
-              onChange={setOutputFormat}
+              value={draft.outputFormat}
+              onChange={setField('outputFormat')}
               options={['text', 'json']}
             />
           </Section>
 
           <Section title="UI">
-            <TextField label="Theme" value={theme} onChange={setTheme} placeholder="GitHub" />
-            <BooleanField label="Hide Banner" value={hideBanner} onChange={setHideBanner} />
-            <BooleanField label="Hide Tips" value={hideTips} onChange={setHideTips} />
-            <BooleanField label="Hide Footer" value={hideFooter} onChange={setHideFooter} />
-            <BooleanField label="Show Line Numbers" value={showLineNumbers} onChange={setShowLineNumbers} />
-            <BooleanField label="Show Citations" value={showCitations} onChange={setShowCitations} />
+            <TextField label="Theme" value={draft.theme} onChange={setField('theme')} placeholder="GitHub" />
+            <BooleanField label="Hide Banner" value={draft.hideBanner} onChange={setField('hideBanner')} />
+            <BooleanField label="Hide Tips" value={draft.hideTips} onChange={setField('hideTips')} />
+            <BooleanField label="Hide Footer" value={draft.hideFooter} onChange={setField('hideFooter')} />
+            <BooleanField label="Show Line Numbers" value={draft.showLineNumbers} onChange={setField('showLineNumbers')} />
+            <BooleanField label="Show Citations" value={draft.showCitations} onChange={setField('showCitations')} />
           </Section>
 
           <Section title="Telemetry">
-            <BooleanField label="Enabled" value={telemetryEnabled} onChange={setTelemetryEnabled} />
-            <SelectField label="Target" value={telemetryTarget} onChange={setTelemetryTarget} options={['local', 'gcp']} />
-            <BooleanField label="Log Prompts" value={telemetryLogPrompts} onChange={setTelemetryLogPrompts} />
-            <TextField label="Outfile" value={telemetryOutfile} onChange={setTelemetryOutfile} placeholder="~/.gemini/telemetry.log" />
+            <BooleanField label="Enabled" value={draft.telemetryEnabled} onChange={setField('telemetryEnabled')} />
+            <SelectField label="Target" value={draft.telemetryTarget} onChange={setField('telemetryTarget')} options={['local', 'gcp']} />
+            <BooleanField label="Log Prompts" value={draft.telemetryLogPrompts} onChange={setField('telemetryLogPrompts')} />
+            <TextField label="Outfile" value={draft.telemetryOutfile} onChange={setField('telemetryOutfile')} placeholder="~/.gemini/telemetry.log" />
           </Section>
         </div>
       </div>
@@ -217,25 +217,6 @@ export function GeminiSettingsPanel({ items, scope, projectName, saving, onSave,
       />
     </div>
   )
-}
-
-type SettingsDraft = {
-  preferredEditor: string
-  vimMode: string
-  disableAutoUpdate: string
-  disableUpdateNag: string
-  checkpointingEnabled: string
-  outputFormat: string
-  theme: string
-  hideBanner: string
-  hideTips: string
-  hideFooter: string
-  showLineNumbers: string
-  showCitations: string
-  telemetryEnabled: string
-  telemetryTarget: string
-  telemetryLogPrompts: string
-  telemetryOutfile: string
 }
 
 function buildSettings(base: Record<string, unknown>, draft: SettingsDraft) {
@@ -331,7 +312,7 @@ function pruneEmpty(value: unknown): boolean {
 
 function Section({ title, children }: { title: string, children: ReactNode }) {
   return (
-    <div className="rounded-lg border border-border/30 bg-muted/10 p-4 space-y-4">
+    <div className="rounded-lg border border-border/30 bg-muted/10 p-4 flex flex-col gap-4">
       <div>
         <h4 className="text-[11px] font-semibold">{title}</h4>
       </div>
@@ -342,8 +323,8 @@ function Section({ title, children }: { title: string, children: ReactNode }) {
 
 function TextField({ label, value, onChange, placeholder }: { label: string, value: string, onChange: (value: string) => void, placeholder?: string }) {
   return (
-    <section className="space-y-2">
-      <h5 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{label}</h5>
+    <section className="flex flex-col gap-2">
+      <h5 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">{label}</h5>
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -364,8 +345,8 @@ function SelectField({
   label, value, onChange, options, allowDefault = true,
 }: { label: string, value: string, onChange: (value: string) => void, options: string[], allowDefault?: boolean }) {
   return (
-    <section className="space-y-2">
-      <h5 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{label}</h5>
+    <section className="flex flex-col gap-2">
+      <h5 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">{label}</h5>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
