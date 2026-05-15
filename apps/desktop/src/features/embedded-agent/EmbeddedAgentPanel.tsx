@@ -76,9 +76,9 @@ export function EmbeddedAgentPanel({ onOpenSettings }: { onOpenSettings?: () => 
                 variant="ghost"
                 size="sm"
                 onClick={() => { togglePanel(); onOpenSettings() }}
-                className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.04]"
+                className="size-7 p-0 text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.04]"
               >
-                <Settings2 className="h-3.5 w-3.5" />
+                <Settings2 className="size-3.5" />
               </Button>
             </AppTooltip>
           )}
@@ -87,9 +87,9 @@ export function EmbeddedAgentPanel({ onOpenSettings }: { onOpenSettings?: () => 
               variant="ghost"
               size="sm"
               onClick={clearChat}
-              className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.04]"
+              className="size-7 p-0 text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.04]"
             >
-              <RefreshCcw className="h-3.5 w-3.5" />
+              <RefreshCcw className="size-3.5" />
             </Button>
           </AppTooltip>
           <AppTooltip content="Close (Ctrl+.)">
@@ -97,9 +97,9 @@ export function EmbeddedAgentPanel({ onOpenSettings }: { onOpenSettings?: () => 
               variant="ghost"
               size="sm"
               onClick={togglePanel}
-              className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.04]"
+              className="size-7 p-0 text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.04]"
             >
-              <X className="h-3.5 w-3.5" />
+              <X className="size-3.5" />
             </Button>
           </AppTooltip>
         </div>

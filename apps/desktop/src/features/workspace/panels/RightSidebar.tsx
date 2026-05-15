@@ -33,7 +33,7 @@ export function RightSidebar({ children }: RightSidebarProps) {
             onClick={() => setRightSidebarOpen(false)}
             aria-label="Close issue detail"
           >
-            <X className="h-4 w-4" />
+            <X className="size-4" />
           </button>
         </div>
 

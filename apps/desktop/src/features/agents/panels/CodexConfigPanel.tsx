@@ -76,7 +76,7 @@ export function CodexConfigPanel({ items, scope, projectName, saving, onSave, on
   ) : null
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="Codex config"
@@ -88,7 +88,7 @@ export function CodexConfigPanel({ items, scope, projectName, saving, onSave, on
       <div className="flex flex-1 min-h-0 gap-3">
         <aside className={`w-[220px] flex flex-col shrink-0 ${TOKENS.surfaceCard}`}>
           <div className="px-3 pt-3 pb-2 shrink-0">
-            <h3 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Codex Config</h3>
+            <h3 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Codex Config</h3>
             <p className="text-[10px] text-foreground/35 mt-0.5">config.toml</p>
           </div>
           <div className="flex-1 overflow-y-auto px-2">
@@ -167,7 +167,7 @@ export function CodexConfigPanel({ items, scope, projectName, saving, onSave, on
 function StructuredField({ label, value, onChange }: { label: string, value: string, onChange: (value: string) => void }) {
   return (
     <section className="space-y-2">
-      <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">{label}</h4>
+      <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">{label}</h4>
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}

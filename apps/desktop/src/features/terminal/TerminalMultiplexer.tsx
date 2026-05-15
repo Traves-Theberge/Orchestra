@@ -100,7 +100,7 @@ export const TerminalMultiplexer: React.FC<TerminalMultiplexerProps> = ({
     if (activeTerminals.length === 0) {
         return (
             <div className="w-full h-full bg-background overflow-hidden terminal-multiplexer flex flex-col">
-                <div className="w-full h-full flex flex-col items-center justify-center text-muted-foreground/20 space-y-6">
+                <div className="w-full h-full flex flex-col items-center justify-center text-muted-foreground/20 gap-y-6">
                     <div className="relative">
                         <TerminalIcon size={80} className="animate-pulse" strokeWidth={1} />
                         <div className="absolute inset-0 bg-primary/10 blur-3xl rounded-full" />

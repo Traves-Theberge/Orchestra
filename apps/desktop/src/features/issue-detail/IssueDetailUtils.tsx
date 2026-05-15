@@ -105,19 +105,19 @@ export function getHookStatus(timeline: TimelineItem[], issueId: string, issueId
 export function getEventIcon(kind: string) {
   const normalizedKind = kind.toLowerCase()
   if (normalizedKind.includes('started') || normalizedKind.includes('init')) {
-    return <Play className="h-3 w-3 text-emerald-500" fill="currentColor" />
+    return <Play className="size-3 text-emerald-500" fill="currentColor" />
   }
   if (normalizedKind.includes('failed') || normalizedKind.includes('error')) {
-    return <AlertCircle className="h-3 w-3 text-red-500" />
+    return <AlertCircle className="size-3 text-red-500" />
   }
   if (normalizedKind.includes('completed') || normalizedKind.includes('success')) {
-    return <CheckCircle2 className="h-3 w-3 text-primary" />
+    return <CheckCircle2 className="size-3 text-primary" />
   }
   if (normalizedKind.includes('tool')) {
-    return <Wrench className="h-3 w-3 text-amber-500" />
+    return <Wrench className="size-3 text-amber-500" />
   }
   if (normalizedKind.includes('hook')) {
-    return <Rows className="h-3 w-3 text-blue-400" />
+    return <Rows className="size-3 text-blue-400" />
   }
   return <Activity size={12} className="text-muted-foreground/40" />
 }

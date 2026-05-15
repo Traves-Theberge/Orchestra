@@ -128,7 +128,7 @@ export function WorkspaceSearch() {
             title="Match Case"
             aria-label="Match Case"
           >
-            <CaseSensitive className="h-3.5 w-3.5" />
+            <CaseSensitive className="size-3.5" />
           </button>
           <button
             className={`p-1 rounded text-[10px] font-mono transition-colors ${
@@ -140,7 +140,7 @@ export function WorkspaceSearch() {
             title="Match Whole Word"
             aria-label="Match Whole Word"
           >
-            <WholeWord className="h-3.5 w-3.5" />
+            <WholeWord className="size-3.5" />
           </button>
           <button
             className={`p-1 rounded text-[10px] font-mono transition-colors ${
@@ -152,7 +152,7 @@ export function WorkspaceSearch() {
             title="Use Regular Expression"
             aria-label="Use Regular Expression"
           >
-            <Regex className="h-3.5 w-3.5" />
+            <Regex className="size-3.5" />
           </button>
 
           {/* Results summary */}
@@ -163,7 +163,7 @@ export function WorkspaceSearch() {
             </span>
           )}
           {searchLoading && (
-            <Loader2 className="ml-auto h-3 w-3 animate-spin text-muted-foreground" />
+            <Loader2 className="ml-auto size-3 animate-spin text-muted-foreground" />
           )}
         </div>
       </div>
@@ -198,7 +198,7 @@ export function WorkspaceSearch() {
                       transform: `translateY(${virtualRow.start}px)`,
                     }}
                   >
-                    <File className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+                    <File className="size-3 flex-shrink-0 text-muted-foreground" />
                     <span className="truncate">{row.relativePath}</span>
                     <span className="ml-auto flex-shrink-0 text-[10px] font-normal text-muted-foreground bg-accent rounded px-1">
                       {row.matchCount}

@@ -98,14 +98,14 @@ function WidgetInner({ onOpenSettings }: { onOpenSettings?: () => void }) {
           onMouseDown={onMouseDown}
           onClick={(e) => { if (moved.current) { e.preventDefault(); return } togglePanel() }}
           style={{ right: pos.right, bottom: pos.bottom }}
-          className={`fixed z-50 grid h-14 w-14 place-items-center rounded-full border border-white/30 bg-white text-black shadow-lg shadow-black/25 transition-shadow duration-300 hover:shadow-xl hover:shadow-black/30 select-none cursor-grab active:cursor-grabbing ${
+          className={`fixed z-50 grid size-14 place-items-center rounded-full border border-white/30 bg-white text-black shadow-lg shadow-black/25 transition-shadow duration-300 hover:shadow-xl hover:shadow-black/30 select-none cursor-grab active:cursor-grabbing ${
             isStreaming ? 'agent-fab-streaming' : ''
           }`}
           title="Orchestra Agent (Ctrl+.)"
         >
-          <AgentIcon className="h-12 w-12" />
+          <AgentIcon className="size-12" />
           {watchMode.unreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[8px] font-bold text-white">
+            <span className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-red-500 text-[8px] font-bold text-white">
               {watchMode.unreadCount > 9 ? '9+' : watchMode.unreadCount}
             </span>
           )}

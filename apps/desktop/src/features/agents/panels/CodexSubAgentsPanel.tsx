@@ -158,7 +158,7 @@ export function CodexSubAgentsPanel({
 
   if (items.length === 0) {
     return (
-      <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+      <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
         <PanelHeader
           eyebrow={eyebrow}
           title="Sub-agents"
@@ -182,7 +182,7 @@ export function CodexSubAgentsPanel({
   }
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="Sub-agents"
@@ -232,7 +232,7 @@ export function CodexSubAgentsPanel({
                 spellCheck={false}
               />
 
-              <div className="rounded-lg border border-border/30 bg-background px-3 py-3 shrink-0 space-y-3">
+              <div className="rounded-lg border border-border/30 bg-background p-3 shrink-0 space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Agent Routing Config</p>
@@ -255,7 +255,7 @@ export function CodexSubAgentsPanel({
                 <AgentField label="Nickname Candidates" value={nicknameCandidates} onChange={setNicknameCandidates} placeholder="reviewer critic analyst" />
               </div>
 
-              <div className="rounded-lg border border-border/30 bg-background px-3 py-3 shrink-0 space-y-3">
+              <div className="rounded-lg border border-border/30 bg-background p-3 shrink-0 space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Global Agent Limits</p>
@@ -376,7 +376,7 @@ function CreateDialog({
 function AgentField({ label, value, onChange, placeholder }: { label: string, value: string, onChange: (value: string) => void, placeholder?: string }) {
   return (
     <section className="space-y-2">
-      <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">{label}</h4>
+      <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">{label}</h4>
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}

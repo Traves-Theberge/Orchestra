@@ -104,7 +104,7 @@ export function EditorPanel() {
         </div>
       ) : activeFile ? (
         <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
-          Loading...
+          Loading…
         </div>
       ) : null}
     </div>

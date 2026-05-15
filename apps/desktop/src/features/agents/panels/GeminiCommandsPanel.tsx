@@ -113,7 +113,7 @@ export function GeminiCommandsPanel({ items, scope, projectName, saving, onSave,
   }
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="Commands"
@@ -154,7 +154,7 @@ export function GeminiCommandsPanel({ items, scope, projectName, saving, onSave,
               {isToml ? (
                 <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-5">
                   <section className="space-y-2">
-                    <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Description</h4>
+                    <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Description</h4>
                     <input
                       value={description}
                       onChange={(event) => setDescription(event.target.value)}
@@ -164,7 +164,7 @@ export function GeminiCommandsPanel({ items, scope, projectName, saving, onSave,
                   </section>
 
                   <section className="space-y-2">
-                    <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Prompt</h4>
+                    <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Prompt</h4>
                     <textarea
                       value={prompt}
                       onChange={(event) => setPrompt(event.target.value)}
@@ -275,8 +275,8 @@ function CreateDialog({
         <DialogFooter className="gap-2">
           <Button variant="outline" onClick={onCancel}>Cancel</Button>
           <Button onClick={onCreate} disabled={!name.trim() || pending}>
-            <Plus className="h-4 w-4 mr-2" />
-            {pending ? 'Creating...' : 'Add Command'}
+            <Plus className="size-4 mr-2" />
+            {pending ? 'Creating…' : 'Add Command'}
           </Button>
         </DialogFooter>
       </DialogContent>

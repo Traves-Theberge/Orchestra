@@ -86,7 +86,7 @@ function CustomDropdownImpl<T extends DropdownValue>(
               {selectedOption?.icon}
               <span className="whitespace-nowrap">{selectedOption?.label || placeholder}</span>
             </div>
-            <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`size-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
           </>
         )}
       </button>
@@ -106,7 +106,7 @@ function CustomDropdownImpl<T extends DropdownValue>(
               >
                 {option.icon}
                 <span className="flex-1 whitespace-nowrap">{option.label}</span>
-                {option.value === value && <div className="h-1.5 w-1.5 rounded-full bg-primary" />}
+                {option.value === value && <div className="size-1.5 rounded-full bg-primary" />}
               </button>
             ))}
           </div>
@@ -160,7 +160,7 @@ export function RuntimeSelector({
       options={configured.map((r) => ({
         label: r.target === 'LOCAL' ? 'Local' : r.target.charAt(0) + r.target.slice(1).toLowerCase(),
         value: r.target,
-        icon: <Server className="h-3.5 w-3.5 opacity-60" />,
+        icon: <Server className="size-3.5 opacity-60" />,
       }))}
       onChange={onChange}
       triggerContent={
@@ -212,8 +212,8 @@ export function ProjectSelector({
       value={value}
       direction={direction}
       options={[
-        { label: 'Select Project', value: '', icon: <FolderTree className="h-3.5 w-3.5 opacity-40" /> },
-        ...projects.map((p) => ({ label: p.name, value: p.id, icon: <Folder className="h-3.5 w-3.5 text-primary/60" /> })),
+        { label: 'Select Project', value: '', icon: <FolderTree className="size-3.5 opacity-40" /> },
+        ...projects.map((p) => ({ label: p.name, value: p.id, icon: <Folder className="size-3.5 text-primary/60" /> })),
       ]}
       onChange={onChange}
       triggerContent={

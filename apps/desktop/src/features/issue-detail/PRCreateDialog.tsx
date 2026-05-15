@@ -77,7 +77,7 @@ export function PRCreateDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="bg-card border border-border/40 rounded-xl shadow-lg p-6 max-w-2xl w-full mx-4">
-        <h3 className="text-sm font-bold text-foreground mb-3">Create Pull Request</h3>
+        <h3 className="text-sm font-semibold text-foreground mb-3">Create Pull Request</h3>
 
         <div className="space-y-3">
           <div>

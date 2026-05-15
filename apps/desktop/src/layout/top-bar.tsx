@@ -52,7 +52,7 @@ export function TopBar({
           <div className="flex-1 flex items-center overflow-hidden min-w-0">
             {errorMessage && (
               <div className="flex items-center gap-2.5 bg-red-500/5 border border-red-500/10 rounded-lg px-3 py-1.5 text-[10px] font-bold text-red-500 animate-in fade-in slide-in-from-left-2 duration-500 shadow-sm truncate" role="alert" aria-live="assertive">
-                <AlertTriangle className="h-3 w-3 shrink-0" />
+                <AlertTriangle className="size-3 shrink-0" />
                 <span className="truncate tracking-tight">{errorMessage}</span>
               </div>
             )}
@@ -62,18 +62,18 @@ export function TopBar({
         <div className="flex items-center gap-1 shrink-0">
           <div className="flex items-center gap-1 border-l border-border/50 pl-2 shrink-0">
             {onDownloadDiagnostics && (
-              <IconButton icon={<Download className="h-3.5 w-3.5" />} title="System Diagnostics" onClick={onDownloadDiagnostics} />
+              <IconButton icon={<Download className="size-3.5" />} title="System Diagnostics" onClick={onDownloadDiagnostics} />
             )}
-            <IconButton icon={<Settings2 className="h-3.5 w-3.5" />} title="Control Plane Settings" onClick={onOpenSettings} />
+            <IconButton icon={<Settings2 className="size-3.5" />} title="Control Plane Settings" onClick={onOpenSettings} />
             <IconButton
-              icon={theme === 'dark' ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+              icon={theme === 'dark' ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
               title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             />
             <IconButton
               icon={refreshPending
-                ? <Loader2 className="h-3.5 w-3.5 animate-spin-smooth" />
-                : <RefreshCcw className="h-3.5 w-3.5" />}
+                ? <Loader2 className="size-3.5 animate-spin-smooth" />
+                : <RefreshCcw className="size-3.5" />}
               title={refreshPending ? 'Syncing…' : 'Refresh'}
               onClick={onRefresh}
             />
@@ -91,7 +91,7 @@ function IconButton({ icon, title, onClick }: { icon: ReactNode; title: string; 
         type="button"
         aria-label={title}
         onClick={onClick}
-        className="grid h-7 w-7 place-items-center rounded-md bg-transparent text-muted-foreground transition hover:bg-muted hover:text-foreground"
+        className="grid size-7 place-items-center rounded-md bg-transparent text-muted-foreground transition hover:bg-muted hover:text-foreground"
       >
         {icon}
       </button>

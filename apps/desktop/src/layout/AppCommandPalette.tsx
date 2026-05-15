@@ -27,7 +27,7 @@ export function AppCommandPalette({ onCreateIssue, onTogglePolling }: AppCommand
     { id: 'DOCS', label: 'Go to Documentation', icon: FileText },
   ]
 
-  const itemClass = 'flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm text-foreground hover:bg-muted/50 data-[selected=true]:bg-muted/50'
+  const itemClass = 'flex cursor-pointer items-center gap-2 rounded-md p-2 text-sm text-foreground hover:bg-muted/50 data-[selected=true]:bg-muted/50'
 
   return (
     <Command.Dialog
@@ -51,20 +51,20 @@ export function AppCommandPalette({ onCreateIssue, onTogglePolling }: AppCommand
               onSelect={() => { setActiveSection(id); setPaletteOpen(false) }}
               className={itemClass}
             >
-              <Icon className="h-4 w-4" /> {label}
+              <Icon className="size-4" /> {label}
             </Command.Item>
           ))}
         </Command.Group>
 
         <Command.Group heading="Actions" className="px-2 py-1 mt-2 text-xs font-semibold text-muted-foreground border-t border-border/40">
           <Command.Item onSelect={() => { onCreateIssue('Backlog'); setPaletteOpen(false) }} className={itemClass}>
-            <ListTodo className="h-4 w-4" /> Create New Task
+            <ListTodo className="size-4" /> Create New Task
           </Command.Item>
           <Command.Item onSelect={() => { setTheme(theme === 'dark' ? 'light' : 'dark'); setPaletteOpen(false) }} className={itemClass}>
-            <Settings2 className="h-4 w-4" /> Toggle Theme
+            <Settings2 className="size-4" /> Toggle Theme
           </Command.Item>
           <Command.Item onSelect={() => { onTogglePolling(); setPaletteOpen(false) }} className={itemClass}>
-            <Activity className="h-4 w-4" /> Toggle Connection Mode (SSE/Polling)
+            <Activity className="size-4" /> Toggle Connection Mode (SSE/Polling)
           </Command.Item>
         </Command.Group>
 
@@ -76,7 +76,7 @@ export function AppCommandPalette({ onCreateIssue, onTogglePolling }: AppCommand
                 onSelect={() => { setActiveSection('PROJECTS'); setSelectedProjectID(p.id); setPaletteOpen(false) }}
                 className={itemClass}
               >
-                <FolderTree className="h-4 w-4" /> {p.name}
+                <FolderTree className="size-4" /> {p.name}
               </Command.Item>
             ))}
           </Command.Group>

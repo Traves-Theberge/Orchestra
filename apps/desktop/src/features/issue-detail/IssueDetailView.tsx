@@ -63,8 +63,8 @@ function DescriptionEditor({ value, onChange, onBlur, theme, projectId }: {
         className="flex-1 flex flex-col items-center justify-center rounded-lg border border-dashed border-border/40 hover:border-primary/30 hover:bg-primary/5 transition-all cursor-text group"
         onClick={() => setEditing(true)}
       >
-        <Pencil className="h-5 w-5 text-muted-foreground/15 group-hover:text-primary/30 transition-colors mb-2" />
-        <span className="text-sm text-muted-foreground/20 group-hover:text-muted-foreground/40 transition-colors">Click to add a description...</span>
+        <Pencil className="size-5 text-muted-foreground/15 group-hover:text-primary/30 transition-colors mb-2" />
+        <span className="text-sm text-muted-foreground/20 group-hover:text-muted-foreground/40 transition-colors">Click to add a description…</span>
       </button>
     )
   }
@@ -76,7 +76,7 @@ function DescriptionEditor({ value, onChange, onBlur, theme, projectId }: {
     >
       <div className="absolute top-2 right-2 opacity-0 group-hover/md:opacity-100 transition-opacity">
         <div className="flex items-center gap-1 rounded-md bg-muted/80 backdrop-blur px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50 border border-border/30">
-          <Pencil className="h-2.5 w-2.5" />
+          <Pencil className="size-2.5" />
           Edit
         </div>
       </div>
@@ -322,7 +322,7 @@ export function IssueDetailView({
       <div className="shrink-0 border-b border-border/30">
         <div className="flex items-center gap-4 px-6 h-14 pr-12">
           <span className="shrink-0 font-mono text-[11px] font-bold text-primary bg-primary/10 px-2.5 py-1 rounded-lg border border-primary/15">{identifier}</span>
-          <h2 className="text-base font-bold truncate flex-1 min-w-0">{localTitle}</h2>
+          <h2 className="text-base font-semibold truncate flex-1 min-w-0">{localTitle}</h2>
           <div className="flex items-center gap-2 shrink-0">
           {localState === 'Review' && config && projectId && onUpdate && (
             <>
@@ -463,7 +463,7 @@ export function IssueDetailView({
                     return (
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-muted-foreground/40" />
+                        <span className="size-2 rounded-full bg-muted-foreground/40" />
                         <span className="text-[11px] text-muted-foreground/60">Draft</span>
                       </div>
                       <button
@@ -491,7 +491,7 @@ export function IssueDetailView({
                   {localState === 'Todo' && (
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-blue-500" />
+                        <span className="size-2 rounded-full bg-blue-500" />
                         <span className="text-[11px] text-blue-400">Planning</span>
                       </div>
                       <button
@@ -512,7 +512,7 @@ export function IssueDetailView({
                   {localState === 'In Progress' && (
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                        <span className="size-2 rounded-full bg-amber-500 animate-pulse" />
                         <span className="text-[11px] text-amber-400">Executing</span>
                       </div>
                       <button onClick={() => setShowStopConfirm(true)} className="w-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all">
@@ -524,7 +524,7 @@ export function IssueDetailView({
                   {localState === 'Review' && (
                     <div className="space-y-3">
                       <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-purple-500" />
+                        <span className="size-2 rounded-full bg-purple-500" />
                         <span className="text-[11px] text-purple-400">{prUrl ? 'PR Created' : 'Awaiting Review'}</span>
                       </div>
                       {prUrl && (
@@ -541,7 +541,7 @@ export function IssueDetailView({
 
                   {localState === 'Done' && (
                     <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                      <span className="size-2 rounded-full bg-emerald-500" />
                       <span className="text-[11px] text-emerald-400">Completed</span>
                     </div>
                   )}
@@ -602,7 +602,7 @@ export function IssueDetailView({
                 <div className="space-y-1">
                   {planItems.map((item, idx) => (
                     <div key={idx} className={`flex items-start gap-3 py-2 px-3 rounded-lg ${item.done ? 'bg-primary/5' : 'hover:bg-muted/10'} transition-colors`}>
-                      <div className={`mt-0.5 h-5 w-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${item.done ? 'bg-primary border-primary text-primary-foreground' : 'border-border/50'}`}>
+                      <div className={`mt-0.5 size-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${item.done ? 'bg-primary border-primary text-primary-foreground' : 'border-border/50'}`}>
                         {item.done && <CheckCircle2 size={12} />}
                       </div>
                       <div className={`text-sm leading-relaxed prose prose-sm dark:prose-invert max-w-none prose-p:my-0 prose-code:text-primary/70 ${item.done ? 'text-muted-foreground/40 line-through opacity-50' : 'text-foreground'}`}>
@@ -633,7 +633,7 @@ export function IssueDetailView({
         {bottomTab === 'changes' && (
           <div className="h-full">
             {diffLoading ? (
-              <div className="h-full flex items-center justify-center"><Loader2 className="h-5 w-5 animate-spin-smooth text-primary/30" /></div>
+              <div className="h-full flex items-center justify-center"><Loader2 className="size-5 animate-spin-smooth text-primary/30" /></div>
             ) : diffFiles.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-muted-foreground/20 gap-3">
                 <FileText size={36} />
@@ -692,7 +692,7 @@ export function IssueDetailView({
       {showStopConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-card border border-border/40 rounded-xl shadow-lg p-6 max-w-sm">
-            <h3 className="text-sm font-bold text-foreground mb-2">Stop &amp; Reset Task?</h3>
+            <h3 className="text-sm font-semibold text-foreground mb-2">Stop &amp; Reset Task?</h3>
             <p className="text-[11px] text-muted-foreground mb-4">
               This will clear the plan and all changes. The task will return to Backlog for editing.
             </p>

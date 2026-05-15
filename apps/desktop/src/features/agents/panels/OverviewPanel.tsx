@@ -32,7 +32,7 @@ const providerLabel: Record<Provider, string> = {
 export function OverviewPanel({ provider, projectName, globalSummary, projectSummary, onNavigate }: OverviewPanelProps) {
   const label = providerLabel[provider]
   return (
-    <div className="flex flex-col h-full p-6 space-y-6">
+    <div className="flex flex-col h-full p-6 gap-y-6">
       <PanelHeader
         eyebrow={`${label} / Configuration`}
         title="Global & project overrides"

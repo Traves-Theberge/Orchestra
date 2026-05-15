@@ -75,12 +75,12 @@ export function FileTreeRow({
     >
       {isDir ? (
         isExpanded ? (
-          <ChevronDown className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+          <ChevronDown className="size-3.5 flex-shrink-0 text-muted-foreground" />
         ) : (
-          <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+          <ChevronRight className="size-3.5 flex-shrink-0 text-muted-foreground" />
         )
       ) : (
-        <File className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+        <File className="size-3.5 flex-shrink-0 text-muted-foreground" />
       )}
       <span
         className={`ml-1.5 text-sm truncate ${gitStatusColor(gitStatus)}`}

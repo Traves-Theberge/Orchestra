@@ -60,7 +60,7 @@ export function OpenCodeModelPanel({ modelConfig, configContent, scope, projectN
   }
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="Model"
@@ -72,7 +72,7 @@ export function OpenCodeModelPanel({ modelConfig, configContent, scope, projectN
         <div className="max-w-2xl mx-auto w-full flex flex-col gap-6">
 
           <section className="space-y-2">
-            <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Primary Model</h4>
+            <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Primary Model</h4>
             <select
               value={model}
               onChange={(event) => setModel(event.target.value)}
@@ -86,7 +86,7 @@ export function OpenCodeModelPanel({ modelConfig, configContent, scope, projectN
           </section>
 
           <section className="space-y-2">
-            <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Small Model</h4>
+            <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Small Model</h4>
             <input
               value={smallModel}
               onChange={(event) => setSmallModel(event.target.value)}

@@ -216,7 +216,7 @@ export function SettingsPanel({
   )
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title={title}
@@ -240,7 +240,7 @@ export function SettingsPanel({
           <div className="max-w-2xl mx-auto space-y-6">
             {/* Model & Behavior */}
             <section className="space-y-3">
-              <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Model & Behavior</h4>
+              <h4 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">Model & Behavior</h4>
 
               {/* Model */}
               <div className="space-y-1.5">
@@ -327,7 +327,7 @@ export function SettingsPanel({
 
             {/* Plugins */}
             <section className="space-y-3">
-              <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Plugins</h4>
+              <h4 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">Plugins</h4>
               {plugins.length === 0 ? (
                 <p className="text-[10px] text-muted-foreground/20">No plugins enabled</p>
               ) : (
@@ -355,7 +355,7 @@ export function SettingsPanel({
 
             {/* Environment Variables */}
             <section className="space-y-3">
-              <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Environment Variables</h4>
+              <h4 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">Environment Variables</h4>
 
               {Object.keys(envObj).length === 0 && (
                 <p className="text-[10px] text-muted-foreground/20">No environment variables set</p>
@@ -499,7 +499,7 @@ function PermissionsSection({ local, updateField }: { local: Record<string, unkn
 
   return (
     <section className="space-y-3">
-      <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Permissions</h4>
+      <h4 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">Permissions</h4>
       <div className="space-y-4">
         {renderList('Allow', 'Auto-approved without prompting', 'allow', allow, newAllow, setNewAllow)}
         {renderList('Deny', 'Always blocked (takes precedence)', 'deny', deny, newDeny, setNewDeny)}

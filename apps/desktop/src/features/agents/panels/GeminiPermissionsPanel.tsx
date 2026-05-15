@@ -93,7 +93,7 @@ export function GeminiPermissionsPanel({ settingsPath, settingsContent, scope, p
   }
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="Permissions"
@@ -190,7 +190,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 function Field({ label, children }: { label: string, children: ReactNode }) {
   return (
     <section className="space-y-2">
-      <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">{label}</h4>
+      <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">{label}</h4>
       {children}
     </section>
   )
@@ -203,7 +203,7 @@ function ListField({
   return (
     <section className="space-y-2">
       <div>
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">{label}</h4>
+        <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">{label}</h4>
         <p className="text-[10px] text-foreground/50 mt-1">{description}</p>
       </div>
       <div className="flex flex-wrap gap-1.5">

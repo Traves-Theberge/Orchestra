@@ -55,7 +55,7 @@ export function GeminiModelPanel({ modelConfig, settingsContent, scope, projectN
   }
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="Model"
@@ -66,7 +66,7 @@ export function GeminiModelPanel({ modelConfig, settingsContent, scope, projectN
       <div className="flex-1 min-h-0 overflow-y-auto pr-1">
         <div className="max-w-2xl mx-auto w-full flex flex-col gap-6">
           <section className="space-y-2">
-            <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Primary Model</h4>
+            <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Primary Model</h4>
             <select
               value={model}
               onChange={(event) => setModel(event.target.value)}
@@ -80,7 +80,7 @@ export function GeminiModelPanel({ modelConfig, settingsContent, scope, projectN
           </section>
 
           <section className="space-y-2">
-            <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Thinking Mode</h4>
+            <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Thinking Mode</h4>
             <select
               value={effort}
               onChange={(event) => setEffort(event.target.value)}

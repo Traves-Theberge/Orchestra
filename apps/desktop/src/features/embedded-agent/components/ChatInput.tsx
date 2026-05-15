@@ -66,20 +66,20 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled }: ChatInputPr
           <button
             type="button"
             onClick={onStop}
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-destructive/10 text-destructive transition-colors hover:bg-destructive/20"
+            className="grid size-9 shrink-0 place-items-center rounded-md bg-destructive/10 text-destructive transition-colors hover:bg-destructive/20"
             aria-label="Stop"
           >
-            <Square className="h-3.5 w-3.5" />
+            <Square className="size-3.5" />
           </button>
         ) : (
           <button
             type="button"
             onClick={handleSend}
             disabled={disabled || !value.trim()}
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-primary text-primary-foreground shadow-sm shadow-primary/20 transition-all hover:bg-primary/90 hover:shadow-primary/30 disabled:opacity-30 disabled:shadow-none disabled:cursor-not-allowed"
+            className="grid size-9 shrink-0 place-items-center rounded-md bg-primary text-primary-foreground shadow-sm shadow-primary/20 transition-all hover:bg-primary/90 hover:shadow-primary/30 disabled:opacity-30 disabled:shadow-none disabled:cursor-not-allowed"
             aria-label="Send"
           >
-            <Send className="h-3.5 w-3.5" />
+            <Send className="size-3.5" />
           </button>
         )}
       </div>

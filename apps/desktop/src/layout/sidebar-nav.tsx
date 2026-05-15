@@ -33,7 +33,7 @@ export function SidebarNav({
     <aside className="h-full w-12 shrink-0 bg-background border-r border-border/40 flex flex-col">
       <div className="flex flex-col items-center pt-3 pb-2">
         <span className="grid shrink-0 place-items-center text-foreground">
-          <AppMonogramIcon className="h-8 w-8" />
+          <AppMonogramIcon className="size-8" />
         </span>
       </div>
 
@@ -57,21 +57,21 @@ export function SidebarNav({
                   onKeyDown={handleNavKeyDown(index)}
                   aria-current={active ? 'page' : undefined}
                   data-testid={`sidebar-nav-${item.id}`}
-                  className={`group relative flex justify-center items-center h-11 w-11 mx-auto rounded-xl transition-all duration-200 outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                  className={`group relative flex justify-center items-center size-11 mx-auto rounded-xl transition-all duration-200 outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
                     active
                       ? 'bg-gradient-to-r from-primary/[0.22] via-primary/[0.12] to-primary/[0.04] text-foreground shadow-[inset_0_0_0_1px] shadow-primary/20 ring-1 ring-primary/10'
                       : 'text-muted-foreground/85 hover:text-foreground hover:bg-foreground/[0.05] hover:shadow-[inset_0_0_0_1px] hover:shadow-foreground/[0.06]'
                   }`}
                 >
                   <span
-                    className={`relative grid place-items-center shrink-0 transition-all duration-200 h-9 w-9 rounded-lg ${
+                    className={`relative grid place-items-center shrink-0 transition-all duration-200 size-9 rounded-lg ${
                       active
                         ? 'bg-primary/20 text-primary ring-1 ring-primary/25 shadow-[0_0_12px_-2px] shadow-primary/40'
                         : 'text-muted-foreground/75 bg-foreground/[0.02] group-hover:bg-foreground/[0.06] group-hover:text-foreground ring-1 ring-transparent group-hover:ring-foreground/[0.06]'
                     }`}
                   >
                     <ItemIcon
-                      className="h-[17px] w-[17px]"
+                      className="size-[17px]"
                       strokeWidth={active ? 2.4 : 1.9}
                     />
                   </span>

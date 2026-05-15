@@ -544,7 +544,7 @@ export function FileExplorer() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-destructive">
-              <Trash2 className="h-5 w-5" /> Delete
+              <Trash2 className="size-5" /> Delete
             </DialogTitle>
             <DialogDescription>
               {confirmDialog?.node.isDirectory
@@ -573,7 +573,7 @@ export function FileExplorer() {
               onClick={() => void submitConfirm()}
               disabled={confirmPending}
             >
-              <Trash2 className="h-4 w-4 mr-2" />
+              <Trash2 className="size-4 mr-2" />
               {confirmPending ? 'Deleting…' : 'Delete'}
             </Button>
           </DialogFooter>

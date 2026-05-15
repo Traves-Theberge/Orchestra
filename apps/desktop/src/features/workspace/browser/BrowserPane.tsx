@@ -175,7 +175,7 @@ export function BrowserPane() {
                   e.stopPropagation()
                   closeBrowserTab(tab.id)
                 }}
-                className="inline-flex items-center justify-center w-5 h-5 -mr-1 rounded-full text-muted-foreground/60 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-foreground/[0.10] transition-all shrink-0"
+                className="inline-flex items-center justify-center size-5 -mr-1 rounded-full text-muted-foreground/60 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-foreground/[0.10] transition-all shrink-0"
               >
                 <X size={11} />
               </span>
@@ -184,7 +184,7 @@ export function BrowserPane() {
         })}
         <button
           onClick={() => openBrowserTab()}
-          className="inline-flex items-center justify-center h-8 w-8 mb-0.5 rounded-md text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.06] transition-colors shrink-0"
+          className="inline-flex items-center justify-center size-8 mb-0.5 rounded-md text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.06] transition-colors shrink-0"
           title="New tab"
         >
           <Plus size={14} strokeWidth={2.25} />
@@ -196,7 +196,7 @@ export function BrowserPane() {
         <button
           onClick={() => webviewRef.current?.goBack()}
           disabled={!activeTab?.canGoBack}
-          className="grid place-items-center h-8 w-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06] disabled:opacity-25 disabled:hover:bg-transparent transition-colors"
+          className="grid place-items-center size-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06] disabled:opacity-25 disabled:hover:bg-transparent transition-colors"
           title="Back"
         >
           <ArrowLeft size={16} strokeWidth={2} />
@@ -204,14 +204,14 @@ export function BrowserPane() {
         <button
           onClick={() => webviewRef.current?.goForward()}
           disabled={!activeTab?.canGoForward}
-          className="grid place-items-center h-8 w-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06] disabled:opacity-25 disabled:hover:bg-transparent transition-colors"
+          className="grid place-items-center size-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06] disabled:opacity-25 disabled:hover:bg-transparent transition-colors"
           title="Forward"
         >
           <ArrowRight size={16} strokeWidth={2} />
         </button>
         <button
           onClick={() => webviewRef.current?.reload()}
-          className="grid place-items-center h-8 w-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06] transition-colors"
+          className="grid place-items-center size-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06] transition-colors"
           title="Reload"
         >
           <RotateCw size={15} strokeWidth={2} className={activeTab?.loading ? 'animate-spin' : ''} />
@@ -225,7 +225,7 @@ export function BrowserPane() {
           }}
         >
           <div className="relative flex items-center h-8 rounded-full bg-muted/40 border border-border/40 hover:bg-muted/60 focus-within:bg-background focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15 transition-all">
-            <span className="grid place-items-center h-8 w-8 text-muted-foreground/70 shrink-0">
+            <span className="grid place-items-center size-8 text-muted-foreground/70 shrink-0">
               {activeTab?.url?.startsWith('https://') ? (
                 <Lock size={11.5} strokeWidth={2.25} className="text-emerald-500/85" />
               ) : (
@@ -246,7 +246,7 @@ export function BrowserPane() {
 
         <button
           onClick={() => armGrab(webviewRef.current)}
-          className={`grid place-items-center h-8 w-8 rounded-full transition-colors ${
+          className={`grid place-items-center size-8 rounded-full transition-colors ${
             grabState === 'armed'
               ? 'bg-primary text-primary-foreground'
               : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06]'
@@ -263,14 +263,14 @@ export function BrowserPane() {
             if (bridge?.openExternal) bridge.openExternal(url)
             else window.open(url, '_blank')
           }}
-          className="grid place-items-center h-8 w-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06] transition-colors"
+          className="grid place-items-center size-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06] transition-colors"
           title="Open in system browser"
         >
           <ExternalLink size={14} strokeWidth={2} />
         </button>
         <button
           onClick={() => setMaximized((m) => !m)}
-          className="grid place-items-center h-8 w-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06] transition-colors"
+          className="grid place-items-center size-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06] transition-colors"
           title={maximized ? 'Restore browser pane' : 'Fullscreen browser pane'}
         >
           {maximized ? <Minimize2 size={14} strokeWidth={2} /> : <Maximize2 size={14} strokeWidth={2} />}
@@ -278,7 +278,7 @@ export function BrowserPane() {
         <div ref={menuRef} className="relative">
           <button
             onClick={() => setMenuOpen((v) => !v)}
-            className={`grid place-items-center h-8 w-8 rounded-full transition-colors ${
+            className={`grid place-items-center size-8 rounded-full transition-colors ${
               menuOpen ? 'bg-foreground/[0.08] text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06]'
             }`}
             title="More options"

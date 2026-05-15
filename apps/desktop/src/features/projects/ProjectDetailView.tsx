@@ -401,13 +401,13 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
             <div className="shrink-0 flex items-center gap-2 px-5 h-12 border-b border-border/30">
                 <button
                     onClick={onBack}
-                    className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.04] transition-colors shrink-0"
+                    className="size-8 grid place-items-center rounded-md text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.04] transition-colors shrink-0"
                     title="Back to projects"
                 >
                     <ArrowLeft size={14} />
                 </button>
 
-                <h1 className="font-bold tracking-tight truncate shrink-0" style={{ fontSize: '11px' }}>{project.name}</h1>
+                <h1 className="font-semibold tracking-tight truncate shrink-0" style={{ fontSize: '11px' }}>{project.name}</h1>
 
                 <span className="text-[11px] font-mono text-muted-foreground/50 truncate min-w-0 hidden md:inline">
                     {project.root_path}
@@ -415,7 +415,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                 <AppTooltip content="Open folder">
                     <button
                         onClick={() => void handleOpenFolder()}
-                        className="h-7 w-7 grid place-items-center rounded text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.04] transition-colors shrink-0 hidden md:grid"
+                        className="size-7 grid place-items-center rounded text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.04] transition-colors shrink-0 hidden md:grid"
                     >
                         <ExternalLink size={11} />
                     </button>
@@ -467,7 +467,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                         <button
                             onClick={handleRefresh}
                             disabled={refreshing}
-                            className="h-7 w-7 grid place-items-center rounded text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.04] transition-colors disabled:opacity-50"
+                            className="size-7 grid place-items-center rounded text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.04] transition-colors disabled:opacity-50"
                         >
                             <RefreshCcw size={12} className={refreshing ? 'animate-refresh-spin' : ''} />
                         </button>
@@ -476,7 +476,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                         <AppTooltip content="Open repository in browser">
                             <button
                                 onClick={() => openUrl(sshToHttps(project.remote_url))}
-                                className="h-7 w-7 grid place-items-center rounded text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.04] transition-colors"
+                                className="size-7 grid place-items-center rounded text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.04] transition-colors"
                             >
                                 <Globe size={12} />
                             </button>
@@ -485,7 +485,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                     <AppTooltip content="Remove project">
                         <button
                             onClick={() => setIsDeleteDialogOpen(true)}
-                            className="h-7 w-7 grid place-items-center rounded text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10 transition-colors"
+                            className="size-7 grid place-items-center rounded text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10 transition-colors"
                         >
                             <Trash2 size={12} />
                         </button>
@@ -617,7 +617,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                                     onClick={() => { setSourceEndpoint(tp.id); setShowProjectPicker(false) }}
                                     className={`w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-foreground/[0.04] transition-colors ${idx > 0 ? 'border-t border-border/20' : ''} ${sourceEndpoint === tp.id ? 'bg-foreground/[0.06]' : ''}`}
                                 >
-                                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${sourceEndpoint === tp.id ? 'bg-primary' : 'bg-muted-foreground/30'}`} />
+                                    <span className={`size-1.5 rounded-full shrink-0 ${sourceEndpoint === tp.id ? 'bg-primary' : 'bg-muted-foreground/30'}`} />
                                     <span className="text-[12px] font-medium text-foreground/85 truncate">{tp.name}</span>
                                     <span className="ml-auto font-mono text-[10.5px] text-muted-foreground/50 shrink-0">{tp.id}</span>
                                 </button>
@@ -625,7 +625,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                         </div>
                     )}
                     {showProjectPicker && trackerProjects.length === 0 && !projectsLoading && (
-                        <p className="text-[11px] text-muted-foreground/60">No projects found — check your credentials.</p>
+                        <p className="text-[11px] text-muted-foreground/60">No projects found: check your credentials.</p>
                     )}
                     {projectsError && <p className="text-[11px] text-destructive">{projectsError}</p>}
 
@@ -818,7 +818,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                     <DialogFooter className="mt-4 flex gap-2 sm:gap-2">
                         <Button variant="ghost" onClick={() => setIsDeleteDialogOpen(false)} className="flex-1 h-9" disabled={deletePending}>Cancel</Button>
                         <Button variant="destructive" onClick={handleDelete} className="flex-1 h-9 font-semibold" disabled={deletePending}>
-                            {deletePending ? 'Removing...' : 'Remove'}
+                            {deletePending ? 'Removing…' : 'Remove'}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

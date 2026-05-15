@@ -133,7 +133,7 @@ function TabStatusPill({ status }: { status: PillStatus }) {
   if (status === 'connected') {
     return (
       <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-500">
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+        <span className="size-1.5 rounded-full bg-emerald-500" />
         Connected
       </span>
     )
@@ -141,14 +141,14 @@ function TabStatusPill({ status }: { status: PillStatus }) {
   if (status === 'configured') {
     return (
       <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-emerald-500">
-        <CheckCircle2 className="h-3 w-3" />
+        <CheckCircle2 className="size-3" />
         Configured
       </span>
     )
   }
   return (
     <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground/60">
-      <CircleDashed className="h-3 w-3" />
+      <CircleDashed className="size-3" />
       Not configured
     </span>
   )
@@ -354,7 +354,7 @@ function UnsandboxTab({
               onClick={onOpenSettings}
               className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-foreground text-background hover:bg-foreground/90 text-[11px] font-semibold tracking-tight transition-colors"
             >
-              <Settings2 className="h-3.5 w-3.5" />
+              <Settings2 className="size-3.5" />
               Open Settings
             </button>
           )}
@@ -399,7 +399,7 @@ function UnsandboxTab({
             disabled={executing || !code.trim() || !isConfigured}
             className="inline-flex items-center gap-1.5 h-9 px-4 rounded-md bg-foreground text-background hover:bg-foreground/90 text-[12px] font-semibold tracking-tight disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            {executing ? <Loader2 className="h-3.5 w-3.5 animate-spin-smooth" /> : <Play className="h-3.5 w-3.5" />}
+            {executing ? <Loader2 className="size-3.5 animate-spin-smooth" /> : <Play className="size-3.5" />}
             Execute
           </button>
           <span className="text-[11px] text-muted-foreground/70 font-mono">
@@ -409,7 +409,7 @@ function UnsandboxTab({
 
         {executing && progressStatus && (
           <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-muted/20 text-[12px] font-mono text-muted-foreground">
-            <Loader2 className="h-3.5 w-3.5 animate-spin-smooth text-primary" />
+            <Loader2 className="size-3.5 animate-spin-smooth text-primary" />
             {progressStatus}
           </div>
         )}
@@ -487,13 +487,13 @@ function UnsandboxTab({
               <div key={entry.id}>
                 <button
                   onClick={() => setExpandedHistoryId(expandedHistoryId === entry.id ? '' : entry.id)}
-                  className="flex items-center justify-between w-full px-2 py-2 text-left hover:bg-foreground/[0.03] rounded-sm transition-colors"
+                  className="flex items-center justify-between w-full p-2 text-left hover:bg-foreground/[0.03] rounded-sm transition-colors"
                 >
                   <div className="flex items-center gap-2 min-w-0 text-[11px]">
                     {expandedHistoryId === entry.id
-                      ? <ChevronDown className="h-3 w-3 text-muted-foreground/60 shrink-0" />
-                      : <ChevronRight className="h-3 w-3 text-muted-foreground/60 shrink-0" />}
-                    <Clock className="h-3 w-3 text-muted-foreground/50 shrink-0" />
+                      ? <ChevronDown className="size-3 text-muted-foreground/60 shrink-0" />
+                      : <ChevronRight className="size-3 text-muted-foreground/60 shrink-0" />}
+                    <Clock className="size-3 text-muted-foreground/50 shrink-0" />
                     <span className="text-muted-foreground/70 shrink-0 tabular-nums">
                       {new Date(entry.ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </span>
@@ -548,7 +548,7 @@ function UnsandboxTab({
           <button
             onClick={refreshResources}
             disabled={loadingSessions}
-            className="h-7 w-7 grid place-items-center rounded-md text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.03] transition-colors disabled:opacity-40"
+            className="size-7 grid place-items-center rounded-md text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.03] transition-colors disabled:opacity-40"
             title="Refresh"
           >
             <RefreshCcw
@@ -561,7 +561,7 @@ function UnsandboxTab({
       >
         {currentJobId && (
           <ResourceRow
-            icon={<Zap className={`h-3.5 w-3.5 ${currentJobStatus === 'running' || currentJobStatus === 'pending' ? 'text-primary animate-pulse' : 'text-muted-foreground/60'}`} />}
+            icon={<Zap className={`size-3.5 ${currentJobStatus === 'running' || currentJobStatus === 'pending' ? 'text-primary animate-pulse' : 'text-muted-foreground/60'}`} />}
             label="Current job"
             id={currentJobId.slice(0, 12)}
             meta={language}
@@ -578,7 +578,7 @@ function UnsandboxTab({
         {sessions.map((s) => (
           <ResourceRow
             key={s.id}
-            icon={<Terminal className="h-3.5 w-3.5 text-muted-foreground/60" />}
+            icon={<Terminal className="size-3.5 text-muted-foreground/60" />}
             id={s.id.slice(0, 12)}
             meta={s.language}
             statusLabel={s.status}
@@ -589,7 +589,7 @@ function UnsandboxTab({
         {services.map((s) => (
           <ResourceRow
             key={s.id}
-            icon={<Globe className="h-3.5 w-3.5 text-muted-foreground/60" />}
+            icon={<Globe className="size-3.5 text-muted-foreground/60" />}
             id={s.id.slice(0, 12)}
             statusLabel={s.status}
             statusColor={s.status === 'active' ? 'text-emerald-500' : 'text-muted-foreground/60'}
@@ -597,7 +597,7 @@ function UnsandboxTab({
         ))}
 
         {sessions.length === 0 && services.length === 0 && !currentJobId && !loadingSessions && (
-          <p className="text-[11px] text-muted-foreground/60 px-2 py-2">No active sessions or services.</p>
+          <p className="text-[11px] text-muted-foreground/60 p-2">No active sessions or services.</p>
         )}
       </SectionBlock>
     </div>
@@ -756,7 +756,7 @@ function TailscaleTab({ config }: { config: BackendConfig | null }) {
           disabled={saving || !canSave}
           className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-black hover:bg-white/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          {saving ? <Loader2 className="h-3 w-3 animate-spin-smooth" /> : <Check className="h-3 w-3" />}
+          {saving ? <Loader2 className="size-3 animate-spin-smooth" /> : <Check className="size-3" />}
           Save
         </button>
         <button
@@ -764,7 +764,7 @@ function TailscaleTab({ config }: { config: BackendConfig | null }) {
           disabled={testing || !isConfigured}
           className="flex items-center gap-1.5 rounded-lg border border-border/40 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground hover:text-foreground hover:border-border disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          {testing ? <Loader2 className="h-3 w-3 animate-spin-smooth" /> : <ShieldCheck className="h-3 w-3" />}
+          {testing ? <Loader2 className="size-3 animate-spin-smooth" /> : <ShieldCheck className="size-3" />}
           Test
         </button>
         {isConfigured && (
@@ -773,7 +773,7 @@ function TailscaleTab({ config }: { config: BackendConfig | null }) {
             disabled={saving}
             className="flex items-center gap-1.5 rounded-lg border border-red-500/20 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-red-500 hover:bg-red-500/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            <Trash2 className="h-3 w-3" />
+            <Trash2 className="size-3" />
             Remove
           </button>
         )}
@@ -940,7 +940,7 @@ function KubernetesTab({ config }: { config: BackendConfig | null }) {
           disabled={saving || !canSave}
           className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-black hover:bg-white/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          {saving ? <Loader2 className="h-3 w-3 animate-spin-smooth" /> : <Check className="h-3 w-3" />}
+          {saving ? <Loader2 className="size-3 animate-spin-smooth" /> : <Check className="size-3" />}
           Save
         </button>
         <button
@@ -948,7 +948,7 @@ function KubernetesTab({ config }: { config: BackendConfig | null }) {
           disabled={testing || !isConfigured}
           className="flex items-center gap-1.5 rounded-lg border border-border/40 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground hover:text-foreground hover:border-border disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          {testing ? <Loader2 className="h-3 w-3 animate-spin-smooth" /> : <ShieldCheck className="h-3 w-3" />}
+          {testing ? <Loader2 className="size-3 animate-spin-smooth" /> : <ShieldCheck className="size-3" />}
           Test
         </button>
         {isConfigured && (
@@ -957,7 +957,7 @@ function KubernetesTab({ config }: { config: BackendConfig | null }) {
             disabled={saving}
             className="flex items-center gap-1.5 rounded-lg border border-red-500/20 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-red-500 hover:bg-red-500/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            <Trash2 className="h-3 w-3" />
+            <Trash2 className="size-3" />
             Remove
           </button>
         )}
@@ -1067,7 +1067,7 @@ function SectionBlock({ label, trailing, children }: { label: string; trailing?:
   return (
     <section className="space-y-2">
       <div className="flex items-center justify-between px-1">
-        <h3 className="text-[10px] font-bold tracking-[0.18em] uppercase text-muted-foreground/60">{label}</h3>
+        <h3 className="text-[10px] font-semibold tracking-[0.18em] uppercase text-muted-foreground/60">{label}</h3>
         {trailing}
       </div>
       <div className="space-y-2">{children}</div>

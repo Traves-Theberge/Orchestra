@@ -106,7 +106,7 @@ export function CodexModelPanel({ modelConfig, configContent, scope, projectName
   }
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="Model"
@@ -118,7 +118,7 @@ export function CodexModelPanel({ modelConfig, configContent, scope, projectName
         <div className="max-w-2xl mx-auto w-full flex flex-col gap-6">
 
           <section className="space-y-2">
-            <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Model</h4>
+            <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Model</h4>
             <select
               value={model}
               onChange={(event) => setModel(event.target.value)}
@@ -132,7 +132,7 @@ export function CodexModelPanel({ modelConfig, configContent, scope, projectName
           </section>
 
           <section className="space-y-2">
-            <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Reasoning Effort</h4>
+            <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Reasoning Effort</h4>
             <select
               value={effort}
               onChange={(event) => setEffort(event.target.value)}
@@ -146,7 +146,7 @@ export function CodexModelPanel({ modelConfig, configContent, scope, projectName
           </section>
 
           <section className="space-y-2">
-            <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Model Provider</h4>
+            <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Model Provider</h4>
             <input
               value={provider}
               onChange={(event) => setProvider(event.target.value)}
@@ -156,7 +156,7 @@ export function CodexModelPanel({ modelConfig, configContent, scope, projectName
           </section>
 
           {provider.trim() ? (
-            <div className="rounded-lg border border-border/30 bg-background px-3 py-3 space-y-3">
+            <div className="rounded-lg border border-border/30 bg-background p-3 space-y-3">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Provider Block</p>
                 <p className="text-[10px] text-foreground/50 mt-1">Edits <code className="font-mono">[model_providers.{provider.trim()}]</code> in the current Codex config.</p>
@@ -187,7 +187,7 @@ export function CodexModelPanel({ modelConfig, configContent, scope, projectName
 function ProviderField({ label, value, onChange, placeholder }: { label: string, value: string, onChange: (value: string) => void, placeholder?: string }) {
   return (
     <section className="space-y-2">
-      <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">{label}</h4>
+      <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">{label}</h4>
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -201,7 +201,7 @@ function ProviderField({ label, value, onChange, placeholder }: { label: string,
 function BooleanField({ label, value, onChange }: { label: string, value: string, onChange: (value: string) => void }) {
   return (
     <section className="space-y-2">
-      <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">{label}</h4>
+      <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">{label}</h4>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}

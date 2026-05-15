@@ -168,7 +168,7 @@ export function EditorContent({ file }: EditorContentProps) {
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <span className="truncate text-muted-foreground" title={file.filePath}>{file.relativePath}</span>
           {file.isDirty && (
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" title="Unsaved changes" />
+            <span className="size-1.5 rounded-full bg-blue-400 shrink-0" title="Unsaved changes" />
           )}
         </div>
         <div className="flex items-center gap-1.5 shrink-0">

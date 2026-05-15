@@ -258,7 +258,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
                     <span className="absolute bottom-0 left-2 right-2 h-[2px] rounded-full bg-primary" />
                   )}
                   {iconFor(ref, isActive)}
-                  {isDirty && <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />}
+                  {isDirty && <span className="size-1.5 rounded-full bg-primary shrink-0" />}
                   <span className="text-[12px] font-medium tracking-tight truncate max-w-[160px]">{title}</span>
                   <span
                     role="button"
@@ -268,7 +268,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
                     }}
                     onMouseDown={(e) => e.stopPropagation()}
                     onDragStart={(e) => e.preventDefault()}
-                    className="inline-flex items-center justify-center w-4 h-4 -mr-1 rounded text-muted-foreground/50 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-foreground/[0.06] transition-all"
+                    className="inline-flex items-center justify-center size-4 -mr-1 rounded text-muted-foreground/50 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-foreground/[0.06] transition-all"
                   >
                     <X size={11} />
                   </span>
@@ -287,7 +287,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
               }
               setPlusOpen((v) => !v)
             }}
-            className={`inline-flex items-center justify-center h-11 w-11 transition-colors shrink-0 ${
+            className={`inline-flex items-center justify-center size-11 transition-colors shrink-0 ${
               plusOpen
                 ? 'text-foreground bg-foreground/[0.04]'
                 : 'text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.03]'
@@ -309,7 +309,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
               }
               setSplitOpen((v) => !v)
             }}
-            className={`flex items-center justify-center h-7 w-7 my-1 mx-0.5 rounded-md transition-colors ${
+            className={`flex items-center justify-center size-7 my-1 mx-0.5 rounded-md transition-colors ${
               splitOpen
                 ? 'bg-accent/60 text-foreground'
                 : 'text-muted-foreground/50 hover:text-foreground hover:bg-muted/40'
@@ -321,7 +321,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
           {siblingGroupIds.length > 1 && (
             <button
               onClick={() => closeGroup(projectId, group.id)}
-              className="flex items-center justify-center h-7 w-7 my-1 mx-0.5 rounded-md text-muted-foreground/50 hover:text-foreground hover:bg-muted/40 transition-colors"
+              className="flex items-center justify-center size-7 my-1 mx-0.5 rounded-md text-muted-foreground/50 hover:text-foreground hover:bg-muted/40 transition-colors"
               title="Close group"
             >
               <X size={13} />
@@ -548,7 +548,7 @@ function PlusMenuItem({
       onClick={onClick}
       className="flex items-center gap-2.5 w-full px-3 py-1.5 text-[12.5px] font-medium text-foreground hover:bg-accent/60 text-left transition-colors"
     >
-      <span className="inline-flex w-4 h-4 items-center justify-center shrink-0">{icon}</span>
+      <span className="inline-flex size-4 items-center justify-center shrink-0">{icon}</span>
       <span className="flex-1 truncate">{label}</span>
       {shortcut && (
         <span className="text-[10.5px] tabular-nums text-muted-foreground/70 font-mono">{shortcut}</span>

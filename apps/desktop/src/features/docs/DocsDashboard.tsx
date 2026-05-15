@@ -215,13 +215,13 @@ export const DocsDashboard: React.FC<DocsDashboardProps> = ({ config, theme }) =
                         <div className="bg-muted/30 px-6 py-3 flex items-center justify-between border-b border-border">
                             <div className="flex items-center gap-3">
                                 <div className="flex gap-1.5">
-                                    <div className="h-2.5 w-2.5 rounded-full bg-destructive/20 border border-destructive/10" />
-                                    <div className="h-2.5 w-2.5 rounded-full bg-amber-500/20 border border-amber-500/10" />
-                                    <div className="h-2.5 w-2.5 rounded-full bg-emerald-500/20 border border-emerald-500/10" />
+                                    <div className="size-2.5 rounded-full bg-destructive/20 border border-destructive/10" />
+                                    <div className="size-2.5 rounded-full bg-amber-500/20 border border-amber-500/10" />
+                                    <div className="size-2.5 rounded-full bg-emerald-500/20 border border-emerald-500/10" />
                                 </div>
                                 <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/40">{match[1]}</span>
                             </div>
-                            <div className="h-5 w-5 rounded-md bg-muted/20 flex items-center justify-center border border-border">
+                            <div className="size-5 rounded-md bg-muted/20 flex items-center justify-center border border-border">
                                 <CodeIcon size={12} className="text-muted-foreground/40" />
                             </div>
                         </div>
@@ -454,7 +454,7 @@ export const DocsDashboard: React.FC<DocsDashboardProps> = ({ config, theme }) =
                         onClick={() => {
                             scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
                         }}
-                        className="absolute bottom-6 right-6 h-9 w-9 rounded-md bg-muted/40 text-muted-foreground/70 hover:text-foreground hover:bg-muted/60 grid place-items-center transition-colors"
+                        className="absolute bottom-6 right-6 size-9 rounded-md bg-muted/40 text-muted-foreground/70 hover:text-foreground hover:bg-muted/60 grid place-items-center transition-colors"
                         title="Back to top"
                     >
                         <ArrowUp size={15} />

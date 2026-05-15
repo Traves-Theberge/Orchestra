@@ -70,7 +70,7 @@ export function CodexInstructionsPanel({ items, scope, projectName, saving, onSa
   }
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="AGENTS.md"
@@ -82,7 +82,7 @@ export function CodexInstructionsPanel({ items, scope, projectName, saving, onSa
         {items.length > 1 ? (
           <aside className={`w-[220px] flex flex-col shrink-0 ${TOKENS.surfaceCard}`}>
             <div className="px-3 pt-3 pb-2 shrink-0">
-              <h3 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Instruction Stack</h3>
+              <h3 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Instruction Stack</h3>
               <p className="text-[10px] text-foreground/35 mt-0.5">AGENTS.md files</p>
             </div>
             <div className="flex-1 overflow-y-auto px-2">

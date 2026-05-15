@@ -288,7 +288,7 @@ export function BranchManagerView({ config, projectId }: BranchManagerViewProps)
           </div>
 
           {createOpen && (
-            <div className="px-3 py-3 rounded-md bg-foreground/[0.02] border border-border/40">
+            <div className="p-3 rounded-md bg-foreground/[0.02] border border-border/40">
               <div className="flex items-center gap-2 flex-wrap">
                 <input
                   type="text"
@@ -502,7 +502,7 @@ function BranchRow({
       <span className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
         <button
           onClick={(e) => { e.stopPropagation(); onCheckout(branch.name) }}
-          className="inline-flex items-center h-6 w-6 justify-center rounded text-muted-foreground/70 hover:text-primary hover:bg-primary/10 transition-colors"
+          className="inline-flex items-center size-6 justify-center rounded text-muted-foreground/70 hover:text-primary hover:bg-primary/10 transition-colors"
           title="Checkout"
         >
           <Check size={12} strokeWidth={2.5} />
@@ -510,7 +510,7 @@ function BranchRow({
         {!branch.is_current && !branch.is_remote && (
           <button
             onClick={(e) => { e.stopPropagation(); onMergeConfirm(branch.name) }}
-            className="inline-flex items-center h-6 w-6 justify-center rounded text-muted-foreground/70 hover:text-primary hover:bg-primary/10 transition-colors"
+            className="inline-flex items-center size-6 justify-center rounded text-muted-foreground/70 hover:text-primary hover:bg-primary/10 transition-colors"
             title={`Merge into ${currentBranch}`}
           >
             <GitMerge size={12} strokeWidth={2.5} />
@@ -519,7 +519,7 @@ function BranchRow({
         {canDelete && (
           <button
             onClick={(e) => { e.stopPropagation(); onDeleteConfirm(branch.name) }}
-            className="inline-flex items-center h-6 w-6 justify-center rounded text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10 transition-colors"
+            className="inline-flex items-center size-6 justify-center rounded text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10 transition-colors"
             title="Delete branch"
           >
             <Trash2 size={12} strokeWidth={2.25} />

@@ -105,7 +105,7 @@ function FileRow({
         <button
           onClick={(e) => { e.stopPropagation(); onAction() }}
           onPointerDown={(e) => e.stopPropagation()}
-          className={`hidden group-hover:inline-flex items-center justify-center w-5 h-5 rounded text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.06] transition-colors`}
+          className={`hidden group-hover:inline-flex items-center justify-center size-5 rounded text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.06] transition-colors`}
           title={isStaged ? 'Unstage' : 'Stage'}
         >
           {isStaged ? <Minus size={11} strokeWidth={2.5} /> : <Plus size={11} strokeWidth={2.5} />}
@@ -114,7 +114,7 @@ function FileRow({
           <button
             onClick={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
-            className="hidden group-hover:inline-flex items-center justify-center w-5 h-5 rounded text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.06] transition-colors"
+            className="hidden group-hover:inline-flex items-center justify-center size-5 rounded text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.06] transition-colors"
             title="Discard changes"
           >
             <RotateCcw size={10} strokeWidth={2.25} />

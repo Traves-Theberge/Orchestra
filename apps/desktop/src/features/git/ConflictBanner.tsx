@@ -13,7 +13,7 @@ export function ConflictBanner({ conflicts, onResolve, onAbort }: ConflictBanner
     <div className="bg-amber-500/[0.06] border-b border-amber-500/20 px-5 py-3">
       <div className="flex items-center justify-between mb-2">
         <p className="text-[12px] font-semibold tracking-tight text-amber-500">
-          Merge in progress — {conflicts.files.length} conflicted file{conflicts.files.length === 1 ? '' : 's'}
+          Merge in progress: {conflicts.files.length} conflicted file{conflicts.files.length === 1 ? '' : 's'}
         </p>
         <button
           onClick={onAbort}

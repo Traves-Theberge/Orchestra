@@ -46,11 +46,11 @@ export function SchedulePanel({ items, onCancel }: SchedulePanelProps) {
         className="flex w-full items-center gap-2 px-2.5 py-1.5 text-muted-foreground transition-colors hover:text-foreground"
       >
         {expanded ? (
-          <ChevronDown className="h-3 w-3 shrink-0" />
+          <ChevronDown className="size-3 shrink-0" />
         ) : (
-          <ChevronRight className="h-3 w-3 shrink-0" />
+          <ChevronRight className="size-3 shrink-0" />
         )}
-        <Clock className="h-3 w-3 shrink-0 text-primary/60" />
+        <Clock className="size-3 shrink-0 text-primary/60" />
         <span className="font-bold uppercase tracking-wider">
           {active.length} scheduled
         </span>
@@ -75,7 +75,7 @@ export function SchedulePanel({ items, onCancel }: SchedulePanelProps) {
                   className="text-foreground/30 hover:text-red-400 transition-colors"
                   title="Cancel"
                 >
-                  <X className="h-3 w-3" />
+                  <X className="size-3" />
                 </button>
               </div>
             </div>

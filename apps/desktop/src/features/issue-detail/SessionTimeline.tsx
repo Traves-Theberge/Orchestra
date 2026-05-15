@@ -214,7 +214,7 @@ export function SessionTimeline({ logs, loading }: SessionTimelineProps) {
   if (loading) {
     return (
       <div className="h-full flex items-center justify-center" data-testid="timeline-loading">
-        <Loader2 className="h-5 w-5 animate-spin-smooth text-primary/30" />
+        <Loader2 className="size-5 animate-spin-smooth text-primary/30" />
       </div>
     )
   }
@@ -251,7 +251,7 @@ export function SessionTimeline({ logs, loading }: SessionTimelineProps) {
             return (
               <div key={`${entry.idx}-${entry.kind}`} className="relative">
                 {/* Timeline dot */}
-                <div className={`absolute -left-[14px] top-2.5 h-2.5 w-2.5 rounded-full ${dot} ring-2 ring-background z-10`} />
+                <div className={`absolute -left-[14px] top-2.5 size-2.5 rounded-full ${dot} ring-2 ring-background z-10`} />
 
                 {/* Agent message */}
                 {(entry.kind === 'agent' || entry.kind === 'thinking') && (

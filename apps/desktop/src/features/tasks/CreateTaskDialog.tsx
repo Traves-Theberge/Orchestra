@@ -173,7 +173,7 @@ export function CreateTaskDialog({
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50">New task</p>
           </div>
 
-          <div className="flex-1 flex flex-col overflow-hidden px-8 pb-4 space-y-3">
+          <div className="flex-1 flex flex-col overflow-hidden px-8 pb-4 gap-y-3">
             <input
               autoFocus
               className="w-full bg-transparent border-none outline-none text-3xl font-black tracking-tight placeholder:text-muted-foreground/30 focus:ring-0 focus:outline-none p-0 selection:bg-primary/30"
@@ -269,13 +269,13 @@ export function CreateTaskDialog({
                 }`}
               >
                 {recording ? (
-                  <><Square className="h-3.5 w-3.5" /> Release</>
+                  <><Square className="size-3.5" /> Release</>
                 ) : whisperStatus.state === 'loading' ? (
-                  <><Loader2 className="h-3.5 w-3.5 animate-spin-smooth" /> Loading {whisperStatus.progress}%</>
+                  <><Loader2 className="size-3.5 animate-spin-smooth" /> Loading {whisperStatus.progress}%</>
                 ) : whisperStatus.state === 'transcribing' ? (
-                  <><Loader2 className="h-3.5 w-3.5 animate-spin-smooth" /> Transcribing</>
+                  <><Loader2 className="size-3.5 animate-spin-smooth" /> Transcribing</>
                 ) : (
-                  <><Mic className="h-3.5 w-3.5" /> Hold to talk</>
+                  <><Mic className="size-3.5" /> Hold to talk</>
                 )}
               </button>
               <button
@@ -291,7 +291,7 @@ export function CreateTaskDialog({
                 disabled={pending || !title.trim() || !description.trim() || !projectID || !assignee || assignee === 'Unassigned'}
                 className="inline-flex items-center gap-1.5 h-10 px-5 rounded-md bg-foreground text-background hover:bg-foreground/90 text-[12.5px] font-semibold tracking-tight transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               >
-                {pending ? <Loader2 className="h-4 w-4 animate-spin-smooth" /> : 'Create task'}
+                {pending ? <Loader2 className="size-4 animate-spin-smooth" /> : 'Create task'}
               </button>
             </div>
           </div>

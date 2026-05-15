@@ -119,7 +119,7 @@ export function CodexSkillsPanel({
 
   if (items.length === 0) {
     return (
-      <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+      <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
         <PanelHeader
           eyebrow={eyebrow}
           title="Skills"
@@ -143,7 +143,7 @@ export function CodexSkillsPanel({
   }
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="Skills"
@@ -190,7 +190,7 @@ export function CodexSkillsPanel({
                 {selected.path}
               </div>
 
-              <div className="rounded-lg border border-border/30 bg-background px-3 py-3 shrink-0 space-y-3">
+              <div className="rounded-lg border border-border/30 bg-background p-3 shrink-0 space-y-3">
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Enablement Override</p>
                   <p className="text-[10px] text-foreground/50 mt-1 font-mono break-all">{skillFolder}</p>

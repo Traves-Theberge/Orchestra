@@ -271,7 +271,7 @@ export function GitHubPanel({
                 </div>
                 <button
                   onClick={() => setShowCreateIssue((v) => !v)}
-                  className="ml-auto h-7 w-7 grid place-items-center rounded-md text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.04] transition-colors"
+                  className="ml-auto size-7 grid place-items-center rounded-md text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.04] transition-colors"
                   title={showCreateIssue ? 'Cancel' : 'New issue'}
                 >
                   {showCreateIssue ? <X size={13} /> : <Plus size={13} />}
@@ -362,7 +362,7 @@ export function GitHubPanel({
               <div className="flex items-center mb-3">
                 <button
                   onClick={() => setShowCreatePR((v) => !v)}
-                  className="ml-auto h-7 w-7 grid place-items-center rounded-md text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.04] transition-colors"
+                  className="ml-auto size-7 grid place-items-center rounded-md text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.04] transition-colors"
                   title={showCreatePR ? 'Cancel' : 'New PR'}
                 >
                   {showCreatePR ? <X size={13} /> : <Plus size={13} />}

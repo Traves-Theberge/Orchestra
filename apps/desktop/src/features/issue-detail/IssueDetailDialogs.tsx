@@ -39,7 +39,7 @@ export function PRReviewDialog({
           <div className="p-6 border-b border-border/10 bg-muted/20">
             <div className="flex items-center gap-3 mb-1">
               <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
-                <GitBranch className="h-5 w-5 text-primary" />
+                <GitBranch className="size-5 text-primary" />
               </div>
               <div>
                 <DialogTitle className="text-xl font-bold tracking-tight">Pull Request Review</DialogTitle>
@@ -98,7 +98,7 @@ export function PRReviewDialog({
                 {prPending ? (
                   <div className="flex items-center gap-2">
                     <Loader2 size={14} className="animate-spin-smooth" />
-                    <span>Creating...</span>
+                    <span>Creating…</span>
                   </div>
                 ) : (
                   'Create Pull Request'
@@ -126,7 +126,7 @@ export function HookOutputDialog({
           <div className="p-4 border-b border-border/10 bg-muted/20 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20">
-                <Terminal className="h-4 w-4 text-primary" />
+                <Terminal className="size-4 text-primary" />
               </div>
               <div>
                 <DialogTitle className="text-sm font-bold tracking-tight">{selectedHookLog?.label} Output</DialogTitle>

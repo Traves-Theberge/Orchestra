@@ -71,7 +71,7 @@ export function WatchNotifications({
                       className="inline-flex items-center gap-0.5 rounded-md bg-foreground/5 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-foreground/70 hover:bg-foreground/10 hover:text-foreground transition-colors"
                     >
                       {a.label}
-                      <ChevronRight className="h-2.5 w-2.5" />
+                      <ChevronRight className="size-2.5" />
                     </button>
                   ))}
                 </div>
@@ -81,7 +81,7 @@ export function WatchNotifications({
               onClick={() => onDismiss(notif.id)}
               className="shrink-0 text-foreground/30 hover:text-foreground/60 transition-colors"
             >
-              <X className="h-3 w-3" />
+              <X className="size-3" />
             </button>
           </div>
         </div>
@@ -102,9 +102,9 @@ export function WatchToggle({ enabled, onToggle, unreadCount }: { enabled: boole
       }`}
       title={enabled ? 'Watch mode on (click to disable)' : 'Watch mode off (click to enable)'}
     >
-      {enabled ? <Bell className="h-3 w-3" /> : <BellOff className="h-3 w-3" />}
+      {enabled ? <Bell className="size-3" /> : <BellOff className="size-3" />}
       {unreadCount > 0 && (
-        <span className="absolute -top-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full bg-primary text-[7px] text-primary-foreground">
+        <span className="absolute -top-0.5 -right-0.5 flex size-3 items-center justify-center rounded-full bg-primary text-[7px] text-primary-foreground">
           {unreadCount > 9 ? '9+' : unreadCount}
         </span>
       )}

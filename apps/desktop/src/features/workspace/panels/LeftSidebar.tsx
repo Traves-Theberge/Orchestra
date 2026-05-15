@@ -31,7 +31,7 @@ export function LeftSidebar() {
           title="Open Sidebar (Cmd+B)"
           aria-label="Open sidebar"
         >
-          <PanelLeftOpen className="h-4 w-4" />
+          <PanelLeftOpen className="size-4" />
         </button>
       </div>
     )
@@ -58,7 +58,7 @@ export function LeftSidebar() {
               title="File Explorer"
               aria-label="File Explorer"
             >
-              <FolderTree className="h-4 w-4" />
+              <FolderTree className="size-4" />
             </button>
             <button
               className={`p-1.5 rounded transition-colors ${
@@ -70,7 +70,7 @@ export function LeftSidebar() {
               title="Search"
               aria-label="Search"
             >
-              <Search className="h-4 w-4" />
+              <Search className="size-4" />
             </button>
           </div>
           <button
@@ -79,7 +79,7 @@ export function LeftSidebar() {
             title="Close Sidebar (Cmd+B)"
             aria-label="Close sidebar"
           >
-            <PanelLeftClose className="h-4 w-4" />
+            <PanelLeftClose className="size-4" />
           </button>
         </div>
 

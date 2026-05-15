@@ -286,7 +286,7 @@ export function GitTab({
   if (!config) {
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-        Waiting for backend connection...
+        Waiting for backend connection…
       </div>
     )
   }
@@ -321,7 +321,7 @@ export function GitTab({
           <button
             onClick={loadAll}
             disabled={refreshing}
-            className="shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.04] transition-colors disabled:opacity-40"
+            className="shrink-0 inline-flex items-center justify-center size-7 rounded-md text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.04] transition-colors disabled:opacity-40"
           >
             <RefreshCw size={12} className={refreshing ? 'animate-refresh-spin' : ''} />
           </button>

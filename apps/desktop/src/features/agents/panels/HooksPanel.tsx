@@ -95,7 +95,7 @@ export function HooksPanel({
     : `Run commands on ${provider} events`
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="Hooks"
@@ -132,7 +132,7 @@ export function HooksPanel({
                               {hook.matcher && <span className="text-[9px] text-muted-foreground/40 shrink-0">({hook.matcher})</span>}
                               <button
                                 onClick={() => setLocalHooks(prev => prev.filter((_, j) => j !== idx))}
-                                className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground/20 hover:text-red-400 hover:bg-red-500/10 transition-all opacity-0 group-hover:opacity-100 shrink-0"
+                                className="size-5 rounded flex items-center justify-center text-muted-foreground/20 hover:text-red-400 hover:bg-red-500/10 transition-all opacity-0 group-hover:opacity-100 shrink-0"
                               >
                                 <Trash2 size={10} />
                               </button>
@@ -157,7 +157,7 @@ export function HooksPanel({
                   {hook.matcher && <span className="text-[9px] text-muted-foreground/40 shrink-0">({hook.matcher})</span>}
                   <button
                     onClick={() => setLocalHooks(prev => prev.filter((_, idx) => idx !== i))}
-                    className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground/20 hover:text-red-400 hover:bg-red-500/10 transition-all opacity-0 group-hover:opacity-100 shrink-0"
+                    className="size-5 rounded flex items-center justify-center text-muted-foreground/20 hover:text-red-400 hover:bg-red-500/10 transition-all opacity-0 group-hover:opacity-100 shrink-0"
                   >
                     <Trash2 size={10} />
                   </button>

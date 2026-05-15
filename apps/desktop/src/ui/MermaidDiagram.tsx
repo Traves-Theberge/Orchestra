@@ -21,7 +21,7 @@ export class DiagramErrorBoundary extends Component<
             return (
                 <div className="my-10 rounded-2xl overflow-hidden border border-amber-500/30 bg-amber-500/5 p-5">
                     <div className="flex items-center gap-2 mb-2">
-                        <div className="h-2 w-2 rounded-full bg-amber-500" />
+                        <div className="size-2 rounded-full bg-amber-500" />
                         <p className="text-xs font-bold text-amber-500 uppercase tracking-widest">Diagram Render Error</p>
                     </div>
                     <pre className="text-xs text-muted-foreground/80 whitespace-pre-wrap leading-relaxed">{this.state.error}</pre>
@@ -179,17 +179,17 @@ export function DiagramFullscreenOverlay() {
                     <span>{Math.round(state.scale * 100)}%</span>
                 </div>
                 <div className="flex items-center gap-1">
-                    <button onClick={zoomOut} className="h-8 w-8 rounded-lg border border-border bg-muted/30 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
+                    <button onClick={zoomOut} className="size-8 rounded-lg border border-border bg-muted/30 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
                         <ZoomOut size={14} />
                     </button>
                     <button onClick={resetZoom} className="h-8 px-3 rounded-lg border border-border bg-muted/30 flex items-center justify-center text-[10px] font-bold text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
                         Reset
                     </button>
-                    <button onClick={zoomIn} className="h-8 w-8 rounded-lg border border-border bg-muted/30 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
+                    <button onClick={zoomIn} className="size-8 rounded-lg border border-border bg-muted/30 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
                         <ZoomIn size={14} />
                     </button>
                     <div className="w-px h-5 bg-border mx-2" />
-                    <button onClick={close} className="h-8 w-8 rounded-lg border border-destructive/30 bg-destructive/10 flex items-center justify-center text-destructive hover:bg-destructive/20 transition-all">
+                    <button onClick={close} className="size-8 rounded-lg border border-destructive/30 bg-destructive/10 flex items-center justify-center text-destructive hover:bg-destructive/20 transition-all">
                         <X size={14} />
                     </button>
                 </div>
@@ -285,7 +285,7 @@ export const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, theme }) 
         return (
             <div className="my-10 rounded-2xl overflow-hidden border border-amber-500/30 bg-amber-500/5 p-5">
                 <div className="flex items-center gap-2 mb-2">
-                    <div className="h-2 w-2 rounded-full bg-amber-500" />
+                    <div className="size-2 rounded-full bg-amber-500" />
                     <p className="text-xs font-bold text-amber-500 uppercase tracking-widest">Diagram Syntax Error</p>
                 </div>
                 <pre className="text-xs text-muted-foreground/80 whitespace-pre-wrap leading-relaxed">{error}</pre>
@@ -301,7 +301,7 @@ export const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, theme }) 
         return (
             <div className="my-10 rounded-3xl overflow-hidden border border-border bg-card/50 p-8 flex items-center justify-center h-48">
                 <div className="flex items-center gap-3 text-muted-foreground/40">
-                    <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin-smooth" />
+                    <div className="size-4 border-2 border-current border-t-transparent rounded-full animate-spin-smooth" />
                     <span className="text-[10px] font-black uppercase tracking-widest">Rendering diagram</span>
                 </div>
             </div>
@@ -313,7 +313,7 @@ export const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, theme }) 
             <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                 <button
                     onClick={openFullscreen}
-                    className="h-8 w-8 rounded-lg border border-border bg-card/80 backdrop-blur-sm flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-all shadow-lg"
+                    className="size-8 rounded-lg border border-border bg-card/80 backdrop-blur-sm flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-all shadow-lg"
                 >
                     <Maximize2 size={14} />
                 </button>

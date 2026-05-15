@@ -16,7 +16,7 @@ export function ContextSuggestions({ suggestions, onDismiss, onAction }: Context
 
   return (
     <div className="flex flex-wrap gap-1 px-3 pt-2">
-      <Sparkles className="h-3 w-3 text-primary/40 shrink-0 mt-0.5" />
+      <Sparkles className="size-3 text-primary/40 shrink-0 mt-0.5" />
       {suggestions.map((s) => (
         <button
           key={s.id}
@@ -39,7 +39,7 @@ export function ContextSuggestions({ suggestions, onDismiss, onAction }: Context
             }}
             className="opacity-0 group-hover:opacity-100 transition-opacity"
           >
-            <X className="h-2.5 w-2.5" />
+            <X className="size-2.5" />
           </span>
         </button>
       ))}

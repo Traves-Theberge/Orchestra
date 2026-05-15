@@ -83,7 +83,7 @@ export function CreateProjectDialog({
                 tooltip="Browse filesystem"
                 aria-label="Browse filesystem"
               >
-                <Folder className="h-4 w-4" />
+                <Folder className="size-4" />
               </Button>
             </div>
           </div>
@@ -105,8 +105,8 @@ export function CreateProjectDialog({
             >
               {pending ? (
                 <div className="flex items-center gap-2">
-                  <Loader2 className="h-3 w-3 animate-spin-smooth" />
-                  <span>Adding...</span>
+                  <Loader2 className="size-3 animate-spin-smooth" />
+                  <span>Adding…</span>
                 </div>
               ) : 'Add Project'}
             </Button>

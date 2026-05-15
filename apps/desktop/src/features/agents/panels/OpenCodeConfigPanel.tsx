@@ -115,7 +115,7 @@ export function OpenCodeConfigPanel({ items, scope, projectName, saving, onSave,
   }
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="OpenCode config"
@@ -209,7 +209,7 @@ export function OpenCodeConfigPanel({ items, scope, projectName, saving, onSave,
 
               {selectedProviderId ? (
                 <section className="space-y-2">
-                  <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Provider Config JSON</h4>
+                  <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Provider Config JSON</h4>
                   <textarea
                     value={activeProviderDraft}
                     onChange={(event) => {
@@ -345,7 +345,7 @@ function readJSONError(content: string): string {
 function Field({ label, children }: { label: string, children: ReactNode }) {
   return (
     <section className="space-y-2">
-      <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">{label}</h4>
+      <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">{label}</h4>
       {children}
     </section>
   )
@@ -358,7 +358,7 @@ function ListField({
   return (
     <section className="space-y-2">
       <div>
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">{label}</h4>
+        <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">{label}</h4>
         <p className="text-[10px] text-muted-foreground/50 mt-1">{description}</p>
       </div>
       <div className="flex flex-wrap gap-1.5">

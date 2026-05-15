@@ -157,7 +157,7 @@ export function BranchBar({
     onMerge?.(branch)
   }
 
-  const iconBtn = 'inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.04] transition-colors disabled:opacity-40 relative'
+  const iconBtn = 'inline-flex items-center justify-center size-7 rounded-md text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.04] transition-colors disabled:opacity-40 relative'
 
   return (
     <div className="flex items-center gap-1 px-2 shrink-0 relative">
@@ -242,9 +242,9 @@ export function BranchBar({
                     }`}
                   >
                     {branch === currentBranch ? (
-                      <span data-testid="green-dot" className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                      <span data-testid="green-dot" className="inline-block size-1.5 rounded-full bg-emerald-500 shrink-0" />
                     ) : (
-                      <span className="inline-block w-1.5 h-1.5 shrink-0" />
+                      <span className="inline-block size-1.5 shrink-0" />
                     )}
                     <span className={`min-w-0 flex-1 font-mono text-[12.5px] truncate ${
                       branch === currentBranch ? 'text-foreground font-semibold' : 'text-foreground/85'
@@ -292,7 +292,7 @@ export function BranchBar({
                       onClick={() => handleCheckout(branch.replace(/^origin\//, ''))}
                       className="flex items-center gap-2 w-full px-2 py-1.5 rounded-md cursor-pointer text-muted-foreground/75 hover:text-foreground hover:bg-foreground/[0.04] transition-colors"
                     >
-                      <span className="inline-block w-1.5 h-1.5 shrink-0" />
+                      <span className="inline-block size-1.5 shrink-0" />
                       <span className="font-mono text-[12.5px] truncate">{branch}</span>
                     </div>
                   ))}

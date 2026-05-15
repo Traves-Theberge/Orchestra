@@ -54,7 +54,7 @@ export function CodexEnvironmentPanel({ items, scope, projectName, saving, onSav
 
   if (!config) {
     return (
-      <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+      <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
         <PanelHeader
           eyebrow={eyebrow}
           title="Environment"
@@ -78,7 +78,7 @@ export function CodexEnvironmentPanel({ items, scope, projectName, saving, onSav
   }
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="Environment"
@@ -90,7 +90,7 @@ export function CodexEnvironmentPanel({ items, scope, projectName, saving, onSav
         <div className="max-w-2xl mx-auto w-full flex flex-col gap-6">
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">History Persistence</h4>
+        <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">History Persistence</h4>
         <input
           value={fields.history}
           onChange={(event) => setField('history.persistence', event.target.value)}
@@ -100,7 +100,7 @@ export function CodexEnvironmentPanel({ items, scope, projectName, saving, onSav
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">History Max Bytes</h4>
+        <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">History Max Bytes</h4>
         <input
           value={fields.historyMaxBytes}
           onChange={(event) => setField('history.max_bytes', event.target.value)}
@@ -110,7 +110,7 @@ export function CodexEnvironmentPanel({ items, scope, projectName, saving, onSav
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Shell Environment Inherit</h4>
+        <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Shell Environment Inherit</h4>
         <input
           value={fields.inheritEnv}
           onChange={(event) => setField('shell_environment_policy.inherit', event.target.value)}
@@ -120,7 +120,7 @@ export function CodexEnvironmentPanel({ items, scope, projectName, saving, onSav
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Shell Include Only</h4>
+        <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Shell Include Only</h4>
         <input
           value={fields.includeOnly}
           onChange={(event) => setArrayField('shell_environment_policy.include_only', event.target.value)}
@@ -130,7 +130,7 @@ export function CodexEnvironmentPanel({ items, scope, projectName, saving, onSav
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Shell Exclude</h4>
+        <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Shell Exclude</h4>
         <input
           value={fields.exclude}
           onChange={(event) => setArrayField('shell_environment_policy.exclude', event.target.value)}
@@ -140,7 +140,7 @@ export function CodexEnvironmentPanel({ items, scope, projectName, saving, onSav
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Workspace Write Network Access</h4>
+        <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Workspace Write Network Access</h4>
         <select
           value={fields.workspaceWriteNetwork}
           onChange={(event) => setBooleanField('sandbox_workspace_write.network_access', event.target.value)}
@@ -153,7 +153,7 @@ export function CodexEnvironmentPanel({ items, scope, projectName, saving, onSav
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Workspace Write Writable Roots</h4>
+        <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Workspace Write Writable Roots</h4>
         <input
           value={fields.writableRoots}
           onChange={(event) => setArrayField('sandbox_workspace_write.writable_roots', event.target.value)}
@@ -163,7 +163,7 @@ export function CodexEnvironmentPanel({ items, scope, projectName, saving, onSav
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">File Opener</h4>
+        <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">File Opener</h4>
         <input
           value={fields.fileOpener}
           onChange={(event) => setField('file_opener', event.target.value)}
@@ -173,7 +173,7 @@ export function CodexEnvironmentPanel({ items, scope, projectName, saving, onSav
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Log Directory</h4>
+        <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Log Directory</h4>
         <input
           value={fields.logDir}
           onChange={(event) => setField('log_dir', event.target.value)}
@@ -183,7 +183,7 @@ export function CodexEnvironmentPanel({ items, scope, projectName, saving, onSav
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">SQLite Home</h4>
+        <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">SQLite Home</h4>
         <input
           value={fields.sqliteHome}
           onChange={(event) => setField('sqlite_home', event.target.value)}
@@ -193,7 +193,7 @@ export function CodexEnvironmentPanel({ items, scope, projectName, saving, onSav
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Service Tier</h4>
+        <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Service Tier</h4>
         <select
           value={fields.serviceTier}
           onChange={(event) => setField('service_tier', event.target.value)}
@@ -206,7 +206,7 @@ export function CodexEnvironmentPanel({ items, scope, projectName, saving, onSav
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Show Raw Agent Reasoning</h4>
+        <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Show Raw Agent Reasoning</h4>
         <select
           value={fields.showRawReasoning}
           onChange={(event) => setBooleanField('show_raw_agent_reasoning', event.target.value)}
@@ -219,7 +219,7 @@ export function CodexEnvironmentPanel({ items, scope, projectName, saving, onSav
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Hide Rate Limit Model Nudge</h4>
+        <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Hide Rate Limit Model Nudge</h4>
         <select
           value={fields.hideRateLimitNudge}
           onChange={(event) => setBooleanField('notice.hide_rate_limit_model_nudge', event.target.value)}
@@ -232,7 +232,7 @@ export function CodexEnvironmentPanel({ items, scope, projectName, saving, onSav
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Hide World Writable Warning</h4>
+        <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Hide World Writable Warning</h4>
         <select
           value={fields.hideWorldWritableWarning}
           onChange={(event) => setBooleanField('notice.hide_world_writable_warning', event.target.value)}
@@ -245,7 +245,7 @@ export function CodexEnvironmentPanel({ items, scope, projectName, saving, onSav
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Use Shell Profile</h4>
+        <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Use Shell Profile</h4>
         <select
           value={fields.experimentalUseProfile}
           onChange={(event) => setBooleanField('shell_environment_policy.experimental_use_profile', event.target.value)}
@@ -258,7 +258,7 @@ export function CodexEnvironmentPanel({ items, scope, projectName, saving, onSav
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Ignore Default Excludes</h4>
+        <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Ignore Default Excludes</h4>
         <select
           value={fields.ignoreDefaultExcludes}
           onChange={(event) => setBooleanField('shell_environment_policy.ignore_default_excludes', event.target.value)}
@@ -271,7 +271,7 @@ export function CodexEnvironmentPanel({ items, scope, projectName, saving, onSav
       </section>
 
       <section className="space-y-2">
-        <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Notify Command</h4>
+        <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Notify Command</h4>
         <input
           value={fields.notify}
           onChange={(event) => setNotify(event.target.value)}

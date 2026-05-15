@@ -181,7 +181,7 @@ export const D3ArchitectureGraph: React.FC<{ data?: string }> = ({ data: rawData
             <div className="mb-6 flex items-center justify-between border-b border-border pb-4">
                 <div className="flex items-center gap-3 text-left">
                     <div className="rounded-lg bg-primary/10 p-2 text-primary">
-                        <Activity className="h-5 w-5" />
+                        <Activity className="size-5" />
                     </div>
                     <div>
                         <span className="block text-xs font-black uppercase tracking-widest text-foreground/90">System Relations</span>
@@ -189,9 +189,9 @@ export const D3ArchitectureGraph: React.FC<{ data?: string }> = ({ data: rawData
                     </div>
                 </div>
                 <div className="flex gap-6 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">
-                    <span className="flex items-center gap-2"><div className="h-2 w-2 rounded-full bg-[#10b981]" /> Core</span>
-                    <span className="flex items-center gap-2"><div className="h-2 w-2 rounded-full bg-[#3b82f6]" /> UI</span>
-                    <span className="flex items-center gap-2"><div className="h-2 w-2 rounded-full bg-[#f59e0b]" /> Agents</span>
+                    <span className="flex items-center gap-2"><div className="size-2 rounded-full bg-[#10b981]" /> Core</span>
+                    <span className="flex items-center gap-2"><div className="size-2 rounded-full bg-[#3b82f6]" /> UI</span>
+                    <span className="flex items-center gap-2"><div className="size-2 rounded-full bg-[#f59e0b]" /> Agents</span>
                 </div>
             </div>
             <div className="relative rounded-2xl bg-background border border-border">

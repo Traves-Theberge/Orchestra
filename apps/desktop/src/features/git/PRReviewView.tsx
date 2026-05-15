@@ -103,7 +103,7 @@ export function PRReviewView({
       <div className="flex items-center gap-3 px-4 h-12 border-b border-border/30 shrink-0">
         <button
           onClick={onClose}
-          className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.04] transition-colors"
+          className="inline-flex items-center justify-center size-7 rounded-md text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.04] transition-colors"
         >
           <X size={14} />
         </button>
@@ -112,7 +112,7 @@ export function PRReviewView({
             <span className="font-mono text-[11px] text-muted-foreground/60">#{pr.number}</span>
             <span className="text-[13px] font-medium tracking-tight text-foreground/90 truncate">{pr.title}</span>
             <span className="inline-flex items-center gap-1.5 shrink-0">
-              <span className={`w-1.5 h-1.5 rounded-full ${status.dot}`} />
+              <span className={`size-1.5 rounded-full ${status.dot}`} />
               <span className={`text-[10.5px] font-medium tracking-tight ${status.text}`}>{status.label}</span>
             </span>
           </div>
@@ -140,7 +140,7 @@ export function PRReviewView({
         {tab === 'files' ? (
           <DiffViewer filePath={`PR #${pr.number}: ${pr.title}`} diff={diffText || null} mode={diffMode} onModeChange={setDiffMode} />
         ) : (
-          <div className="overflow-y-auto h-full px-4 py-4 space-y-3">
+          <div className="overflow-y-auto h-full p-4 space-y-3">
             {reviews.map((review, i) => {
               const style = reviewStateStyle(review.state)
               return (
@@ -148,7 +148,7 @@ export function PRReviewView({
                   <div className="flex items-center gap-2 mb-1.5">
                     <span className="text-[12px] font-medium text-foreground/90">{review.user?.login ?? 'unknown'}</span>
                     <span className="inline-flex items-center gap-1.5">
-                      <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
+                      <span className={`size-1.5 rounded-full ${style.dot}`} />
                       <span className={`text-[10.5px] font-medium tracking-tight ${style.label}`}>{review.state.replace('_', ' ').toLowerCase()}</span>
                     </span>
                   </div>

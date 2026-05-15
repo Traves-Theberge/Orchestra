@@ -64,9 +64,9 @@ function SortHeader({ label, sortKey, currentKey, currentDir, onSort }: {
     >
       {label}
       {active ? (
-        currentDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+        currentDir === 'asc' ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" />
       ) : (
-        <ArrowUpDown className="h-3 w-3 opacity-0 group-hover/header:opacity-50" />
+        <ArrowUpDown className="size-3 opacity-0 group-hover/header:opacity-50" />
       )}
     </button>
   )
@@ -148,7 +148,7 @@ export const ProjectGrid: React.FC<ProjectGridProps> = ({
       <div className="flex flex-col gap-2 p-5">
         {[1, 2, 3, 4, 5, 6].map((i) => (
           <div key={i} className="flex items-center gap-3 p-3 rounded-lg animate-pulse">
-            <Skeleton className="h-8 w-8 rounded-lg" />
+            <Skeleton className="size-8 rounded-lg" />
             <div className="flex-1 space-y-2">
               <Skeleton className="h-4 w-1/4" />
               <Skeleton className="h-3 w-1/2" />
@@ -172,7 +172,7 @@ export const ProjectGrid: React.FC<ProjectGridProps> = ({
       {/* Toolbar */}
       <div className="px-8 pb-4 flex items-center gap-3">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/50" />
           <input
             type="text"
             placeholder="Search projects..."
@@ -195,7 +195,7 @@ export const ProjectGrid: React.FC<ProjectGridProps> = ({
         {sorted.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <Folder size={28} className="text-muted-foreground/40 mb-3" strokeWidth={1.5} />
-            <h2 className="text-base font-bold tracking-tight mb-1">{search ? 'No matches' : 'No projects yet'}</h2>
+            <h2 className="text-base font-semibold tracking-tight mb-1">{search ? 'No matches' : 'No projects yet'}</h2>
             <p className="text-muted-foreground/60 max-w-xs text-xs">
               {search ? `Nothing matched "${search}"` : 'Add a local repository to get started.'}
             </p>
@@ -235,11 +235,11 @@ export const ProjectGrid: React.FC<ProjectGridProps> = ({
                     onClick={() => onProjectClick(project.id)}
                     className="group flex items-center gap-3 px-3 h-12 rounded-md cursor-pointer border border-border/30 bg-card/40 transition-colors hover:bg-foreground/[0.03] hover:border-border/60"
                   >
-                    <Folder className="w-[15px] h-[15px] shrink-0 text-muted-foreground/60 group-hover:text-foreground transition-colors" strokeWidth={1.75} />
+                    <Folder className="size-[15px] shrink-0 text-muted-foreground/60 group-hover:text-foreground transition-colors" strokeWidth={1.75} />
 
                     <div className="flex-1 min-w-0 flex items-center gap-2">
                       <span className="text-[13px] font-semibold tracking-tight truncate text-foreground/90 group-hover:text-foreground">{project.name}</span>
-                      {hasGit && <GitBranch className="h-3 w-3 shrink-0 text-muted-foreground/40" />}
+                      {hasGit && <GitBranch className="size-3 shrink-0 text-muted-foreground/40" />}
                       {project.github_token ? (
                         <span className="text-[10px] font-medium text-primary/80">GitHub</span>
                       ) : project.github_owner ? (
@@ -266,7 +266,7 @@ export const ProjectGrid: React.FC<ProjectGridProps> = ({
                     <div className="w-7 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         type="button"
-                        className="h-6 w-6 grid place-items-center rounded text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-colors"
+                        className="size-6 grid place-items-center rounded text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-colors"
                         data-testid="project-delete-btn"
                         onClick={(e) => { e.stopPropagation(); setProjectToDelete(project) }}
                         title="Remove project"

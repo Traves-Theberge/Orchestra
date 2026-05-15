@@ -776,7 +776,7 @@ function SectionHeading({ icon: Icon, title, description }: { icon: React.Compon
   return (
     <div className="flex items-start gap-3 pb-1 border-b border-border/30">
       <div className="rounded-lg bg-gradient-to-br from-primary/15 to-primary/5 p-2 text-primary ring-1 ring-primary/15 mt-0.5">
-        <Icon className="h-4 w-4" />
+        <Icon className="size-4" />
       </div>
       <div className="flex-1 min-w-0 pb-3">
         <h2 className="text-base font-black tracking-tight leading-tight">{title}</h2>
@@ -890,7 +890,7 @@ function EditorSettingsPane() {
               onClick={() => setEditorSettings({ [key]: !editorSettings[key] })}
               className={`relative h-5 w-9 rounded-full transition-colors ${editorSettings[key] ? 'bg-primary' : 'bg-muted'}`}
             >
-              <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${editorSettings[key] ? 'translate-x-4' : 'translate-x-0.5'}`} />
+              <span className={`absolute top-0.5 size-4 rounded-full bg-white transition-transform ${editorSettings[key] ? 'translate-x-4' : 'translate-x-0.5'}`} />
             </button>
           </label>
         ))}
@@ -970,7 +970,7 @@ function ThemePresetPane({
           </p>
         </div>
         <Button size="sm" variant="outline" className="shrink-0 gap-2" onClick={onOpenStudio}>
-          <SlidersHorizontal className="h-3.5 w-3.5" />
+          <SlidersHorizontal className="size-3.5" />
           Theme Studio
         </Button>
       </div>
@@ -1070,16 +1070,16 @@ function ThemeStudioDialog({
                   </Button>
                   <div className="flex items-center gap-1 rounded-xl border border-border/40 bg-card/60 p-1">
                     <Button size="icon" variant="ghost" tooltip="Duplicate theme" onClick={onDuplicateDraft}>
-                      <Copy className="h-4 w-4" />
+                      <Copy className="size-4" />
                     </Button>
                     <Button size="icon" variant="ghost" tooltip="Import theme" onClick={() => importInputRef.current?.click()}>
-                      <Upload className="h-4 w-4" />
+                      <Upload className="size-4" />
                     </Button>
                     <Button size="icon" variant="ghost" tooltip="Export theme" onClick={onExportDraft}>
-                      <Download className="h-4 w-4" />
+                      <Download className="size-4" />
                     </Button>
                     <Button size="icon" variant="ghost" tooltip="Reset draft" onClick={onResetDraft}>
-                      <RefreshCcw className="h-4 w-4" />
+                      <RefreshCcw className="size-4" />
                     </Button>
                     <Button
                       size="icon"
@@ -1088,14 +1088,14 @@ function ThemeStudioDialog({
                       onClick={onDeleteDraft}
                       disabled={draft.builtin}
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="size-4" />
                     </Button>
                   </div>
                 </div>
                 <DialogClose asChild>
                   <Button size="icon" variant="ghost" className="shrink-0" aria-label="Close Theme Studio">
                     <span className="sr-only">Close Theme Studio</span>
-                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M18 6 6 18" />
                       <path d="m6 6 12 12" />
                     </svg>
@@ -1172,7 +1172,7 @@ function ThemeStudioThemeList({
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="border-b border-border/40 px-4 py-4">
+      <div className="border-b border-border/40 p-4">
         <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary/80">Themes</p>
         <p className="mt-1 text-[11px] text-muted-foreground">Choose a base preset for the working draft.</p>
       </div>
@@ -1201,7 +1201,7 @@ function ThemeStudioThemeList({
                       {theme.builtin ? 'Built-in' : 'Custom'}{isActive ? ' • active' : ''}
                     </p>
                   </div>
-                  {isSelected ? <Check className="h-4 w-4 text-primary" /> : null}
+                  {isSelected ? <Check className="size-4 text-primary" /> : null}
                 </div>
                 <div className="flex gap-1.5">
                   <div className="h-8 flex-1 rounded-lg border border-black/10" style={{ background: `hsl(${roles.background})` }} />
@@ -1363,7 +1363,7 @@ function TypographyEditor({
     <div className="surface p-4">
       <div className="flex items-start gap-3">
         <div className="rounded-lg bg-primary/10 p-2 text-primary ring-1 ring-primary/15">
-          <Type className="h-4 w-4" />
+          <Type className="size-4" />
         </div>
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-black tracking-tight">Typography</h3>
@@ -1459,7 +1459,7 @@ function DensityShapeEditor({
     <div className="surface p-4">
       <div className="flex items-start gap-3">
         <div className="rounded-lg bg-primary/10 p-2 text-primary ring-1 ring-primary/15">
-          <PanelLeft className="h-4 w-4" />
+          <PanelLeft className="size-4" />
         </div>
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-black tracking-tight">Density & Shape</h3>
@@ -1582,7 +1582,7 @@ function SurfaceMotionEditor({
     <div className="surface p-4">
       <div className="flex items-start gap-3">
         <div className="rounded-lg bg-primary/10 p-2 text-primary ring-1 ring-primary/15">
-          <Eye className="h-4 w-4" />
+          <Eye className="size-4" />
         </div>
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-black tracking-tight">Surface & Motion</h3>
@@ -1705,7 +1705,7 @@ function ToneSeedEditor({
         </div>
         <div className="flex gap-1.5">
           {(['background', 'surface', 'accent'] as const).map((key) => (
-            <div key={key} className="h-8 w-8 rounded-full border border-black/10" style={{ background: `hsl(${roleSet[key]})` }} />
+            <div key={key} className="size-8 rounded-full border border-black/10" style={{ background: `hsl(${roleSet[key]})` }} />
           ))}
         </div>
       </div>
@@ -1752,8 +1752,8 @@ function RoleEditorCard({
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <div className="h-5 w-5 rounded-full border border-black/10" style={{ background: `hsl(${value})` }} />
-            <h5 className="text-[12px] font-bold tracking-tight">{label}</h5>
+            <div className="size-5 rounded-full border border-black/10" style={{ background: `hsl(${value})` }} />
+            <h5 className="text-[12px] font-semibold tracking-tight">{label}</h5>
           </div>
           <p className="mt-1 text-[10px] text-muted-foreground">{description}</p>
         </div>
@@ -1775,7 +1775,7 @@ function RoleEditorCard({
                   const next = hexToHslTriplet(event.target.value)
                   if (next) onChange(next)
                 }}
-                className="h-8 w-8 shrink-0 cursor-pointer rounded-md border border-border/40 bg-card p-0.5 disabled:cursor-not-allowed"
+                className="size-8 shrink-0 cursor-pointer rounded-md border border-border/40 bg-card p-0.5 disabled:cursor-not-allowed"
               />
               <input
                 value={hexValue}
@@ -1784,7 +1784,7 @@ function RoleEditorCard({
                   const next = hexToHslTriplet(event.target.value)
                   if (next) onChange(next)
                 }}
-                className="w-full rounded-lg border border-border/40 bg-card px-2 py-2 text-[11px] font-mono outline-none focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed"
+                className="w-full rounded-lg border border-border/40 bg-card p-2 text-[11px] font-mono outline-none focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed"
               />
             </div>
           </label>
@@ -1875,7 +1875,7 @@ function ChartPaletteEditor({
           <div key={`${index}-${stop}`} className="rounded-xl border border-border/30 bg-background/70 p-3">
             <div className="mb-2 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <div className="h-5 w-5 rounded-full border border-black/10" style={{ background: `hsl(${stop})` }} />
+                <div className="size-5 rounded-full border border-black/10" style={{ background: `hsl(${stop})` }} />
                 <span className="text-[11px] font-bold">Slot {index + 1}</span>
               </div>
               <span className="text-[10px] font-mono text-muted-foreground">{stop}</span>
@@ -1888,7 +1888,7 @@ function ChartPaletteEditor({
                   const next = hexToHslTriplet(event.target.value)
                   if (next) onChange(index, next)
                 }}
-                className="h-8 w-8 shrink-0 cursor-pointer rounded-md border border-border/40 bg-card p-0.5"
+                className="size-8 shrink-0 cursor-pointer rounded-md border border-border/40 bg-card p-0.5"
               />
               <input
                 value={hslTripletToHex(stop)}
@@ -1896,7 +1896,7 @@ function ChartPaletteEditor({
                   const next = hexToHslTriplet(event.target.value)
                   if (next) onChange(index, next)
                 }}
-                className="w-full rounded-lg border border-border/40 bg-card px-2 py-2 text-[11px] font-mono outline-none focus:ring-2 focus:ring-primary/20"
+                className="w-full rounded-lg border border-border/40 bg-card p-2 text-[11px] font-mono outline-none focus:ring-2 focus:ring-primary/20"
               />
             </div>
           </div>
@@ -2012,7 +2012,7 @@ function ToggleField({
         }`}
       >
         <span
-          className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+          className={`absolute top-0.5 size-5 rounded-full bg-white transition-transform ${
             checked ? 'translate-x-5' : 'translate-x-0.5'
           }`}
         />
@@ -2046,7 +2046,7 @@ function ThemeStudioPreviewPane({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="border-b border-border/40 px-4 py-4">
+      <div className="border-b border-border/40 p-4">
         <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary/80">Preview</p>
         <p className="mt-1 text-[11px] text-muted-foreground">Live readout of the current draft in {previewMode} mode.</p>
       </div>
@@ -2235,9 +2235,9 @@ function ThemeSwatchCard({
       {/* Mini preview */}
       <div className="p-2.5 flex flex-col gap-1.5" style={{ background: bg }}>
         <div className="flex gap-1.5">
-          <div className="h-2 w-2 rounded-full" style={{ background: accent }} />
-          <div className="h-2 w-2 rounded-full opacity-60" style={{ background: text }} />
-          <div className="h-2 w-2 rounded-full opacity-30" style={{ background: text }} />
+          <div className="size-2 rounded-full" style={{ background: accent }} />
+          <div className="size-2 rounded-full opacity-60" style={{ background: text }} />
+          <div className="size-2 rounded-full opacity-30" style={{ background: text }} />
         </div>
         <div
           className="h-6 rounded-md flex items-center px-1.5 gap-1"
@@ -2254,7 +2254,7 @@ function ThemeSwatchCard({
       {/* Label */}
       <div className="px-2.5 py-2 flex items-center justify-between gap-2 bg-card/60 backdrop-blur border-t border-border/30">
         <span className="text-[11px] font-bold tracking-tight truncate">{theme.name}</span>
-        {active && <Check className="h-3 w-3 text-white shrink-0" />}
+        {active && <Check className="size-3 text-white shrink-0" />}
       </div>
     </button>
   )
@@ -2522,7 +2522,7 @@ function IntegrationsPane({ config }: { config: BackendConfig | null }) {
       {addingType && (
         <div className="rounded-xl border border-border/50 bg-card p-4">
           <div className="flex items-center gap-2 mb-3">
-            <span className={`h-2 w-2 rounded-full ${providerDot(addingType)}`} />
+            <span className={`size-2 rounded-full ${providerDot(addingType)}`} />
             <span className="text-[12px] font-semibold">{PROVIDER_META[addingType]?.label}</span>
             <span className="text-[11px] text-muted-foreground/50">new connection</span>
           </div>
@@ -2549,7 +2549,7 @@ function IntegrationsPane({ config }: { config: BackendConfig | null }) {
             return (
               <div key={tc.id} className="p-3">
                 <div className="flex items-center gap-3">
-                  <span className={`h-2 w-2 rounded-full shrink-0 ${providerDot(tc.type)}`} />
+                  <span className={`size-2 rounded-full shrink-0 ${providerDot(tc.type)}`} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-[12px] font-semibold truncate">{tc.display_name}</span>
@@ -2706,7 +2706,7 @@ function GitConnectionsPane({ config }: { config: BackendConfig | null }) {
           <span className="text-[12px] font-semibold tracking-tight">GitHub project links</span>
         </div>
         <p className="text-[11px] text-muted-foreground/60 mb-4">
-          Projects linked to a GitHub repo — connect from the Git tab inside a project.
+          Projects linked to a GitHub repo: connect from the Git tab inside a project.
         </p>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
@@ -2785,7 +2785,7 @@ function GitConnectionsPane({ config }: { config: BackendConfig | null }) {
                 key={project.id}
                 className={`flex items-center gap-3 px-3.5 py-2.5 ${idx > 0 ? 'border-t border-border/20' : ''}`}
               >
-                <span className="w-2 h-2 rounded-full bg-muted-foreground/20 shrink-0" />
+                <span className="size-2 rounded-full bg-muted-foreground/20 shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="text-[12.5px] font-medium tracking-tight text-foreground/85 truncate">
                     {project.name}
@@ -2844,7 +2844,7 @@ function NotificationsPane({
             }}
             className={`h-8 w-14 rounded-full transition-colors ${notifMuted ? 'bg-muted' : 'bg-white'} relative`}
           >
-            <div className={`absolute top-1 h-6 w-6 rounded-full ${notifMuted ? 'bg-white' : 'bg-black'} shadow transition-transform ${notifMuted ? 'left-7' : 'left-1'}`} />
+            <div className={`absolute top-1 size-6 rounded-full ${notifMuted ? 'bg-white' : 'bg-black'} shadow transition-transform ${notifMuted ? 'left-7' : 'left-1'}`} />
           </button>
           <span className={`text-[9px] font-bold uppercase tracking-widest ${notifMuted ? 'text-red-400' : 'text-muted-foreground/30'}`}>Mute</span>
         </div>
@@ -3048,7 +3048,7 @@ function BackendConfigForm({
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between pb-2 border-b border-border/20">
         <div className="flex items-center gap-2">
-          <Database className="h-4 w-4 text-primary" />
+          <Database className="size-4 text-primary" />
           <h3 className="text-sm font-black uppercase tracking-wider">Connection Profiles</h3>
         </div>
       </div>
@@ -3056,7 +3056,7 @@ function BackendConfigForm({
       <div className="grid gap-6 sm:grid-cols-2">
         <div className="space-y-4">
           <div className="flex items-center gap-2">
-            <Users className="h-3.5 w-3.5 text-primary" />
+            <Users className="size-3.5 text-primary" />
             <h4 className="text-[10px] font-black uppercase tracking-widest text-foreground/80">Profile Management</h4>
           </div>
 
@@ -3068,13 +3068,13 @@ function BackendConfigForm({
                   <CustomDropdown
                     className="w-full"
                     value={activeProfileId}
-                    options={backendProfiles.map((p) => ({ label: p.name, value: p.id, icon: <ShieldCheck className="h-3 w-3" /> }))}
+                    options={backendProfiles.map((p) => ({ label: p.name, value: p.id, icon: <ShieldCheck className="size-3" /> }))}
                     onChange={(val) => void onSetActiveProfile(val)}
                     disabled={disabled || backendProfiles.length === 0}
                   />
                   {profilesPending && (
                     <div className="absolute right-8 top-1/2 -translate-y-1/2">
-                      <Loader2 className="h-3 w-3 animate-spin-smooth text-primary" />
+                      <Loader2 className="size-3 animate-spin-smooth text-primary" />
                     </div>
                   )}
                 </div>
@@ -3093,7 +3093,7 @@ function BackendConfigForm({
                     }
                   }}
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <Trash2 className="size-3.5" />
                 </Button>
               </div>
             </label>
@@ -3119,7 +3119,7 @@ function BackendConfigForm({
                     setNewProfileName('')
                   }}
                 >
-                  <Plus className="h-3.5 w-3.5" />
+                  <Plus className="size-3.5" />
                 </Button>
               </div>
             </label>
@@ -3128,7 +3128,7 @@ function BackendConfigForm({
 
         <div className="space-y-4">
           <div className="flex items-center gap-2">
-            <SignalHigh className="h-3.5 w-3.5 text-primary" />
+            <SignalHigh className="size-3.5 text-primary" />
             <h4 className="text-[10px] font-black uppercase tracking-widest text-foreground/80">Connection Parameters</h4>
           </div>
 
@@ -3137,7 +3137,7 @@ function BackendConfigForm({
               <span className="block text-[9px] font-black uppercase tracking-wider text-muted-foreground px-1">Endpoint URL</span>
               <div className="relative">
                 <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/40">
-                  <Globe className="h-3 w-3" />
+                  <Globe className="size-3" />
                 </div>
                 <input
                   className={`h-9 w-full rounded-lg border bg-background pl-8 pr-3 text-xs font-mono focus:ring-2 transition-all shadow-sm ${baseUrlInvalid ? 'border-destructive/60 focus:ring-destructive/20 focus:border-destructive' : 'border-border focus:ring-primary/20 focus:border-primary'}`}
@@ -3157,7 +3157,7 @@ function BackendConfigForm({
               <span className="block text-[9px] font-black uppercase tracking-wider text-muted-foreground px-1">Access Token</span>
               <div className="relative group/token">
                 <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/40 group-focus-within/token:text-primary/60 transition-colors">
-                  <ShieldCheck className="h-3 w-3" />
+                  <ShieldCheck className="size-3" />
                 </div>
                 <input
                   type={showToken ? 'text' : 'password'}
@@ -3173,7 +3173,7 @@ function BackendConfigForm({
                   className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-muted transition-all"
                   title={showToken ? 'Hide token' : 'Reveal token'}
                 >
-                  {showToken ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                  {showToken ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
                 </button>
               </div>
             </label>
@@ -3190,11 +3190,11 @@ function BackendConfigForm({
             onClick={syncFromConfig}
             disabled={disabled}
           >
-            <RefreshCcw className="h-3 w-3 mr-2" />
+            <RefreshCcw className="size-3 mr-2" />
             Revert
           </Button>
           <div className="hidden sm:flex items-center gap-2 text-primary/40 px-3 border-l border-border/20">
-            <Info className="h-3 w-3" />
+            <Info className="size-3" />
             <span className="text-[9px] font-medium italic">Base URL changes trigger reconnect.</span>
           </div>
         </div>
@@ -3203,7 +3203,7 @@ function BackendConfigForm({
           disabled={disabled || baseUrlTrimmed === '' || baseUrlInvalid}
           className="px-6 shadow-lg shadow-black/20 font-black uppercase tracking-widest text-[9px] h-9 rounded-lg"
         >
-          {savingConfig ? <Loader2 className="h-3 w-3 animate-spin-smooth" /> : 'Save Backend Config'}
+          {savingConfig ? <Loader2 className="size-3 animate-spin-smooth" /> : 'Save Backend Config'}
         </Button>
       </div>
     </div>
@@ -3265,9 +3265,9 @@ function ModelSearchDropdown({
       <div className="space-y-1">
         <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
           Model
-          {loading && <Loader2 className="ml-1.5 inline h-2.5 w-2.5 animate-spin-smooth" />}
+          {loading && <Loader2 className="ml-1.5 inline size-2.5 animate-spin-smooth" />}
         </label>
-        <p className="text-[11px] text-muted-foreground/60">Loading models...</p>
+        <p className="text-[11px] text-muted-foreground/60">Loading models…</p>
       </div>
     )
   }
@@ -3276,7 +3276,7 @@ function ModelSearchDropdown({
     <div className="space-y-1 relative">
       <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
         Model
-        {loading && <Loader2 className="ml-1.5 inline h-2.5 w-2.5 animate-spin-smooth" />}
+        {loading && <Loader2 className="ml-1.5 inline size-2.5 animate-spin-smooth" />}
         <span className="ml-2 text-muted-foreground/40 normal-case tracking-normal font-normal">{models.length} available</span>
       </label>
 
@@ -3326,7 +3326,7 @@ function ModelSearchDropdown({
           )}
           {filtered.length > 100 && (
             <div className="px-3 py-1.5 text-[10px] text-muted-foreground/40 border-t border-border/20">
-              Showing first 100 of {filtered.length} — type to filter
+              Showing first 100 of {filtered.length}; type to filter
             </div>
           )}
         </div>
@@ -3499,7 +3499,7 @@ function EmbeddedAgentConfigForm({ config, disabled }: { config: BackendConfig |
             API Key
             {hasKey && (
               <span className="ml-2 inline-flex items-center gap-1 text-emerald-500">
-                <CheckCircle2 className="h-2.5 w-2.5" />
+                <CheckCircle2 className="size-2.5" />
                 Configured
               </span>
             )}
@@ -3519,7 +3519,7 @@ function EmbeddedAgentConfigForm({ config, disabled }: { config: BackendConfig |
                 onClick={() => setShowKey(!showKey)}
                 className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-muted transition-all"
               >
-                {showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                {showKey ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
               </button>
             </div>
             <button
@@ -3527,7 +3527,7 @@ function EmbeddedAgentConfigForm({ config, disabled }: { config: BackendConfig |
               disabled={disabled || saving || !apiKey.trim()}
               className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-black hover:bg-white/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {saving ? <Loader2 className="h-3 w-3 animate-spin-smooth" /> : <Check className="h-3 w-3" />}
+              {saving ? <Loader2 className="size-3 animate-spin-smooth" /> : <Check className="size-3" />}
               Save
             </button>
           </div>
@@ -3551,7 +3551,7 @@ function EmbeddedAgentConfigForm({ config, disabled }: { config: BackendConfig |
             disabled={disabled || testing || !modelId || (!hasKey && !apiKey.trim())}
             className="flex items-center gap-1.5 rounded-lg border border-border/40 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground hover:text-foreground hover:border-border disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {testing ? <Loader2 className="h-3 w-3 animate-spin-smooth" /> : <ShieldCheck className="h-3 w-3" />}
+            {testing ? <Loader2 className="size-3 animate-spin-smooth" /> : <ShieldCheck className="size-3" />}
             Test Connection
           </button>
         </div>
@@ -3670,7 +3670,7 @@ function UnsandboxConfigForm({ config, disabled }: { config: BackendConfig | nul
                 title="Open unsandbox.com"
               >
                 unsandbox.com
-                <ExternalLink className="h-2.5 w-2.5" />
+                <ExternalLink className="size-2.5" />
               </button>
             </div>
             <p className="text-[10px] text-muted-foreground">Remote code execution across 42+ languages</p>
@@ -3678,12 +3678,12 @@ function UnsandboxConfigForm({ config, disabled }: { config: BackendConfig | nul
           <div className="flex items-center gap-2">
             {isConfigured ? (
               <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-emerald-500">
-                <CheckCircle2 className="h-3.5 w-3.5" />
+                <CheckCircle2 className="size-3.5" />
                 Configured
               </span>
             ) : (
               <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                <CircleDashed className="h-3.5 w-3.5" />
+                <CircleDashed className="size-3.5" />
                 Not configured
               </span>
             )}
@@ -3721,7 +3721,7 @@ function UnsandboxConfigForm({ config, disabled }: { config: BackendConfig | nul
                 className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-muted transition-all"
                 title={showSecret ? 'Hide key' : 'Reveal key'}
               >
-                {showSecret ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                {showSecret ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
               </button>
             </div>
           </div>
@@ -3733,7 +3733,7 @@ function UnsandboxConfigForm({ config, disabled }: { config: BackendConfig | nul
             disabled={disabled || saving || !publicKey.trim() || (!secretKey.trim() && !isConfigured)}
             className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-black hover:bg-white/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {saving ? <Loader2 className="h-3 w-3 animate-spin-smooth" /> : <Check className="h-3 w-3" />}
+            {saving ? <Loader2 className="size-3 animate-spin-smooth" /> : <Check className="size-3" />}
             Save Keys
           </button>
           <button
@@ -3741,7 +3741,7 @@ function UnsandboxConfigForm({ config, disabled }: { config: BackendConfig | nul
             disabled={disabled || checking || !isConfigured}
             className="flex items-center gap-1.5 rounded-lg border border-border/40 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground hover:text-foreground hover:border-border disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {checking ? <Loader2 className="h-3 w-3 animate-spin-smooth" /> : <ShieldCheck className="h-3 w-3" />}
+            {checking ? <Loader2 className="size-3 animate-spin-smooth" /> : <ShieldCheck className="size-3" />}
             Test Connection
           </button>
           {isConfigured && (
@@ -3750,7 +3750,7 @@ function UnsandboxConfigForm({ config, disabled }: { config: BackendConfig | nul
               disabled={disabled || saving}
               className="flex items-center gap-1.5 rounded-lg border border-red-500/20 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-red-500 hover:bg-red-500/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              <Trash2 className="h-3 w-3" />
+              <Trash2 className="size-3" />
               Remove
             </button>
           )}
@@ -3782,7 +3782,7 @@ function UnsandboxConfigForm({ config, disabled }: { config: BackendConfig | nul
           onClick={() => openInBrowser('https://unsandbox.com/docs')}
           className="inline-flex items-center gap-0.5 text-primary hover:underline"
         >
-          API docs <ExternalLink className="h-2.5 w-2.5" />
+          API docs <ExternalLink className="size-2.5" />
         </button>
       </p>
     </div>

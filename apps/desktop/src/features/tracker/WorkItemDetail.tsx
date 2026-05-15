@@ -144,7 +144,7 @@ export function WorkItemDetail({ item }: Props) {
                 onClick={() => openUrl(item.url)}
                 className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
               >
-                <ExternalLink className="h-3.5 w-3.5" />
+                <ExternalLink className="size-3.5" />
                 <span className="truncate">View in {item.source}</span>
               </button>
             )}
@@ -153,7 +153,7 @@ export function WorkItemDetail({ item }: Props) {
                 onClick={() => openUrl(item.pr_url!)}
                 className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
               >
-                <GitPullRequest className="h-3.5 w-3.5" />
+                <GitPullRequest className="size-3.5" />
                 <span className="truncate">{item.pr_url}</span>
               </button>
             )}

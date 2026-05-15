@@ -55,24 +55,24 @@ export function ToolFeedback({ toolCalls, toolResults, isStreaming }: ToolFeedba
         className="flex w-full items-center gap-2 px-3 py-2 text-muted-foreground transition-colors hover:text-foreground"
       >
         {expanded ? (
-          <ChevronDown className="h-3 w-3 shrink-0" />
+          <ChevronDown className="size-3 shrink-0" />
         ) : (
-          <ChevronRight className="h-3 w-3 shrink-0" />
+          <ChevronRight className="size-3 shrink-0" />
         )}
-        <Zap className="h-3 w-3 shrink-0 text-primary/60" />
+        <Zap className="size-3 shrink-0 text-primary/60" />
         <span className="font-bold uppercase tracking-wider">
           {isMultiStep
             ? `${completedSteps}/${totalSteps} steps · ${toolCalls.length} tool${toolCalls.length !== 1 ? 's' : ''}`
             : `${toolCalls.length} tool${toolCalls.length !== 1 ? 's' : ''} used`}
         </span>
         {isStreaming && completedSteps < totalSteps && (
-          <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary/60" />
+          <Loader2 className="size-3 shrink-0 animate-spin text-primary/60" />
         )}
         {!isStreaming && !hasErrors && toolResults.length > 0 && (
-          <Check className="h-3 w-3 shrink-0 text-emerald-500" />
+          <Check className="size-3 shrink-0 text-emerald-500" />
         )}
         {hasErrors && (
-          <AlertTriangle className="h-3 w-3 shrink-0 text-amber-500" />
+          <AlertTriangle className="size-3 shrink-0 text-amber-500" />
         )}
       </button>
 
@@ -108,10 +108,10 @@ export function ToolFeedback({ toolCalls, toolResults, isStreaming }: ToolFeedba
                     Step {step.stepIndex + 1}
                   </span>
                   {step.results.length >= step.calls.length && !step.results.some((r) => r.isError) && (
-                    <Check className="h-2.5 w-2.5 text-emerald-500" />
+                    <Check className="size-2.5 text-emerald-500" />
                   )}
                   {step.results.some((r) => r.isError) && (
-                    <AlertTriangle className="h-2.5 w-2.5 text-amber-500" />
+                    <AlertTriangle className="size-2.5 text-amber-500" />
                   )}
                 </div>
               )}

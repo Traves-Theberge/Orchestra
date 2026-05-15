@@ -322,7 +322,7 @@ export function KanbanBoard({
 
   if (loadingState && enrichedIssues.length === 0) {
     return (
-      <div className="flex-1 flex flex-col min-h-0 space-y-6">
+      <div className="flex-1 flex flex-col min-h-0 gap-y-6">
         <div className="flex items-center gap-3 border-b border-border/40 pb-4 shrink-0">
           <Skeleton className="h-8 w-40 rounded-md" />
           <Skeleton className="h-8 w-40 rounded-md" />
@@ -331,10 +331,10 @@ export function KanbanBoard({
         <div className="flex-1 overflow-x-auto overflow-y-hidden px-4 min-h-0">
         <div className="h-full grid gap-3 min-w-[640px]" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
           {['backlog', 'todo', 'progress', 'review', 'done'].map((column) => (
-            <div key={column} className="flex flex-col min-h-0 space-y-4">
+            <div key={column} className="flex flex-col min-h-0 gap-y-4">
               <div className="flex items-center justify-between px-2 shrink-0">
                 <div className="flex items-center gap-2">
-                  <Skeleton className="h-2 w-2 rounded-full" />
+                  <Skeleton className="size-2 rounded-full" />
                   <Skeleton className="h-4 w-20 rounded" />
                 </div>
                 <Skeleton className="h-4 w-6 rounded-full" />
@@ -344,7 +344,7 @@ export function KanbanBoard({
                   <div key={item} className="bg-card/40 border border-border/50 rounded-xl p-4 space-y-3">
                     <div className="flex justify-between items-start">
                       <Skeleton className="h-4 w-16 rounded" />
-                      <Skeleton className="h-4 w-4 rounded-full" />
+                      <Skeleton className="size-4 rounded-full" />
                     </div>
                     <Skeleton className="h-3 w-full rounded" />
                     <Skeleton className="h-3 w-2/3 rounded" />
@@ -366,7 +366,7 @@ export function KanbanBoard({
   const activeProject = projects.find(p => p.id === selectedProjectID) ?? null
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 space-y-5">
+    <div className="flex-1 flex flex-col min-h-0 gap-y-5">
       <div className="flex items-center gap-1 px-5 pt-4 shrink-0">
         <button
           onClick={() => setActiveTab('board')}
@@ -400,7 +400,7 @@ export function KanbanBoard({
                     onClick={() => { setSelectedProjectID(p.id); setProjectPickerOpen(false) }}
                     className={`w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-foreground/[0.04] transition-colors ${idx > 0 ? 'border-t border-border/20' : ''} ${p.id === selectedProjectID ? 'bg-foreground/[0.06]' : ''}`}
                   >
-                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${p.id === selectedProjectID ? 'bg-primary' : 'bg-muted-foreground/30'}`} />
+                    <span className={`size-1.5 rounded-full shrink-0 ${p.id === selectedProjectID ? 'bg-primary' : 'bg-muted-foreground/30'}`} />
                     <span className="text-[12px] font-medium text-foreground/85 truncate flex-1">{p.name}</span>
                     {p.issue_source_type && (
                       <span className="text-[10px] text-muted-foreground/50 shrink-0 font-mono">{p.issue_source_type}</span>
@@ -455,12 +455,12 @@ export function KanbanBoard({
               className="w-40"
               value={stateFilter}
               options={[
-                { label: 'All States', value: 'all', icon: <CircleDashed className="h-3 w-3" /> },
-                { label: 'Backlog', value: 'Backlog', icon: <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" /> },
-                { label: 'Todo', value: 'Todo', icon: <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground" /> },
-                { label: 'In Progress', value: 'In Progress', icon: <div className="h-1.5 w-1.5 rounded-full bg-amber-500" /> },
-                { label: 'Review', value: 'Review', icon: <div className="h-1.5 w-1.5 rounded-full bg-blue-500" /> },
-                { label: 'Done', value: 'Done', icon: <div className="h-1.5 w-1.5 rounded-full bg-primary" /> },
+                { label: 'All States', value: 'all', icon: <CircleDashed className="size-3" /> },
+                { label: 'Backlog', value: 'Backlog', icon: <div className="size-1.5 rounded-full bg-muted-foreground/40" /> },
+                { label: 'Todo', value: 'Todo', icon: <div className="size-1.5 rounded-full bg-muted-foreground" /> },
+                { label: 'In Progress', value: 'In Progress', icon: <div className="size-1.5 rounded-full bg-amber-500" /> },
+                { label: 'Review', value: 'Review', icon: <div className="size-1.5 rounded-full bg-blue-500" /> },
+                { label: 'Done', value: 'Done', icon: <div className="size-1.5 rounded-full bg-primary" /> },
               ]}
               onChange={setStateFilter}
             />
@@ -473,8 +473,8 @@ export function KanbanBoard({
               className="w-56"
               value={projectFilter}
               options={[
-                { label: 'All Projects', value: 'all', icon: <FolderTree className="h-3 w-3" /> },
-                ...projects.map((project) => ({ label: project.name, value: project.id, icon: <Folder className="h-3 w-3" /> })),
+                { label: 'All Projects', value: 'all', icon: <FolderTree className="size-3" /> },
+                ...projects.map((project) => ({ label: project.name, value: project.id, icon: <Folder className="size-3" /> })),
               ]}
               onChange={setProjectFilter}
             />
@@ -485,7 +485,7 @@ export function KanbanBoard({
                 onClick={() => setViewMode('board')}
                 className={`grid h-7 w-8 place-items-center rounded transition-colors ${viewMode === 'board' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground/60 hover:text-foreground'}`}
               >
-                <Layout className="h-3.5 w-3.5" />
+                <Layout className="size-3.5" />
               </button>
             </AppTooltip>
             <AppTooltip content="List view">
@@ -493,7 +493,7 @@ export function KanbanBoard({
                 onClick={() => setViewMode('list')}
                 className={`grid h-7 w-8 place-items-center rounded transition-colors ${viewMode === 'list' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground/60 hover:text-foreground'}`}
               >
-                <Rows className="h-3.5 w-3.5" />
+                <Rows className="size-3.5" />
               </button>
             </AppTooltip>
           </div>
@@ -519,11 +519,11 @@ export function KanbanBoard({
             >
               {/* Column header */}
               <div
-                className="flex cursor-grab items-center gap-2 px-3 py-3 active:cursor-grabbing shrink-0"
+                className="flex cursor-grab items-center gap-2 p-3 active:cursor-grabbing shrink-0"
                 draggable
                 onDragStart={(e) => handleColumnDragStart(e, column.id)}
               >
-                <span className={`block h-2 w-2 rounded-full shrink-0 ${column.dot}`} />
+                <span className={`block size-2 rounded-full shrink-0 ${column.dot}`} />
                 <span className="text-[9px] font-semibold uppercase tracking-widest text-foreground/40 flex-1 truncate">{column.title}</span>
                 {column.items.length > 0 && (
                   <span className="text-[10px] font-medium tabular-nums text-muted-foreground/35 bg-muted/50 px-1.5 py-0.5 rounded-full leading-none">{column.items.length}</span>
@@ -546,8 +546,8 @@ export function KanbanBoard({
                         className="w-full min-h-full flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border/30 hover:border-border/60 hover:bg-foreground/[0.02] transition-all group/empty"
                         onClick={() => handleCreateClick(column.id)}
                       >
-                        <div className="h-6 w-6 rounded-full bg-muted/50 grid place-items-center group-hover/empty:bg-primary/10 transition-colors">
-                          <Plus className="h-3 w-3 text-muted-foreground/40 group-hover/empty:text-primary transition-colors" />
+                        <div className="size-6 rounded-full bg-muted/50 grid place-items-center group-hover/empty:bg-primary/10 transition-colors">
+                          <Plus className="size-3 text-muted-foreground/40 group-hover/empty:text-primary transition-colors" />
                         </div>
                         <p className="text-[10.5px] font-medium text-muted-foreground/40 group-hover/empty:text-muted-foreground/70 transition-colors">Add task</p>
                       </button>
@@ -597,21 +597,21 @@ export function KanbanBoard({
                               {item.state === 'Todo' && item.assignee_id && item.assignee_id !== 'Unassigned' && onIssueUpdate && (
                                 <AppTooltip content="Launch agent session">
                                   <button type="button" data-no-drag="true" className="p-0.5 rounded hover:text-emerald-500 hover:bg-emerald-500/10 text-muted-foreground/40 transition-colors" onClick={(e) => { e.stopPropagation(); void onIssueUpdate(getActionIssueRef(item), { state: 'In Progress' }) }}>
-                                    <Play className="h-2.5 w-2.5 fill-current" />
+                                    <Play className="size-2.5 fill-current" />
                                   </button>
                                 </AppTooltip>
                               )}
                               {item.state === 'In Progress' && onStopSession && (
                                 <AppTooltip content="Stop session">
                                   <button type="button" data-no-drag="true" className="p-0.5 rounded hover:text-amber-500 hover:bg-amber-500/10 text-muted-foreground/40 transition-colors" onClick={(e) => { e.stopPropagation(); void onStopSession(getActionIssueRef(item)) }}>
-                                    <Square className="h-2 w-2 fill-current" />
+                                    <Square className="size-2 fill-current" />
                                   </button>
                                 </AppTooltip>
                               )}
                               {onIssueDelete && (
                                 <AppTooltip content="Delete">
                                   <button type="button" data-no-drag="true" aria-label={`Delete task ${item.issue_identifier}`} className="p-0.5 rounded hover:text-destructive hover:bg-destructive/10 text-muted-foreground/40 transition-colors" onClick={(e) => { e.stopPropagation(); setDeleteTaskError(''); setIssueToDelete({ identifier: getActionIssueRef(item), title: item.title }); setDeleteDialogOpen(true) }}>
-                                    <Trash2 className="h-2.5 w-2.5" />
+                                    <Trash2 className="size-2.5" />
                                   </button>
                                 </AppTooltip>
                               )}
@@ -626,19 +626,19 @@ export function KanbanBoard({
                           {/* Status ticker */}
                           {item.lane === 'running' && (
                             <div className="flex items-center gap-1.5 mb-2 overflow-hidden">
-                              <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                              <div className="size-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
                               <p className="text-[9px] text-emerald-600 dark:text-emerald-400 truncate font-medium">{item.detail}</p>
                             </div>
                           )}
                           {item.lane === 'retrying' && (
                             <div className="flex items-center gap-1.5 mb-2 overflow-hidden">
-                              <div className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
+                              <div className="size-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
                               <p className="text-[9px] text-amber-600 dark:text-amber-400 truncate font-medium">{item.detail}</p>
                             </div>
                           )}
                           {item.state === 'In Progress' && !item.lane && (
                             <div className="flex items-center gap-1.5 mb-2">
-                              <div className="h-1.5 w-1.5 rounded-full bg-blue-400 shrink-0" />
+                              <div className="size-1.5 rounded-full bg-blue-400 shrink-0" />
                               <p className="text-[9px] text-blue-400/60 font-medium">Queued</p>
                             </div>
                           )}
@@ -650,7 +650,7 @@ export function KanbanBoard({
                             return (
                               <AppTooltip content={`Needs before queuing: ${missing.join(', ')}`}>
                                 <div className="flex items-center gap-1 mb-2 cursor-default" data-no-drag="true">
-                                  <AlertCircle className="h-2.5 w-2.5 text-amber-500/60 shrink-0" />
+                                  <AlertCircle className="size-2.5 text-amber-500/60 shrink-0" />
                                   <span className="text-[8.5px] text-amber-500/60 font-medium truncate">Needs {missing.join(', ')}</span>
                                 </div>
                               </AppTooltip>
@@ -692,7 +692,7 @@ export function KanbanBoard({
         <div className="flex-1 rounded-xl border bg-card/50 shadow-lg overflow-hidden min-h-0 flex flex-col mx-4">
           {filteredList.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center p-12 text-center text-muted-foreground/40">
-              <ClipboardList className="h-12 w-12 mb-4 opacity-20" />
+              <ClipboardList className="size-12 mb-4 opacity-20" />
               <p className="text-sm italic uppercase tracking-widest font-bold">No tasks match current filters</p>
             </div>
           ) : (
@@ -714,22 +714,22 @@ export function KanbanBoard({
                       className="group hover:bg-muted/30 transition-colors cursor-pointer"
                       onClick={() => void onInspectIssue(getActionIssueRef(item))}
                     >
-                      <td className="px-4 py-4 whitespace-nowrap">
+                      <td className="p-4 whitespace-nowrap">
                         <span className="font-mono text-xs font-bold text-primary">{item.issue_identifier}</span>
                       </td>
-                      <td className="px-4 py-4">
+                      <td className="p-4">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
                             {item.title || item.detail || 'No Title'}
                           </span>
                           {item.lane === 'running' && (
                             <AppTooltip content="Live session">
-                              <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                              <div className="size-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
                             </AppTooltip>
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-4">
+                      <td className="p-4">
                         <AgentSelector
                           value={item.assignee_id || ''}
                           agents={availableAgents}
@@ -741,9 +741,9 @@ export function KanbanBoard({
                           }}
                         />
                       </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
+                      <td className="p-4 whitespace-nowrap">
                         <div className="flex items-center gap-2">
-                          <div className={`h-1.5 w-1.5 rounded-full ${item.state === 'Done' ? 'bg-primary' : item.state === 'In Progress' ? 'bg-amber-500 animate-pulse' : 'bg-muted-foreground/40'}`} />
+                          <div className={`size-1.5 rounded-full ${item.state === 'Done' ? 'bg-primary' : item.state === 'In Progress' ? 'bg-amber-500 animate-pulse' : 'bg-muted-foreground/40'}`} />
                           <span className="text-xs font-medium text-muted-foreground">{item.state}</span>
                         </div>
                       </td>
@@ -758,7 +758,7 @@ export function KanbanBoard({
                                 void onIssueUpdate(getActionIssueRef(item), { state: 'In Progress' })
                               }}
                             >
-                              <Play className="h-3.5 w-3.5 fill-current" />
+                              <Play className="size-3.5 fill-current" />
                             </button>
                           )}
                           {item.state === 'In Progress' && onStopSession && (
@@ -770,7 +770,7 @@ export function KanbanBoard({
                                 void onStopSession(getActionIssueRef(item))
                               }}
                             >
-                              <Square className="h-3 w-3 fill-current" />
+                              <Square className="size-3 fill-current" />
                             </button>
                           )}
                           {onIssueDelete && (
@@ -785,7 +785,7 @@ export function KanbanBoard({
                                 setDeleteDialogOpen(true)
                               }}
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              <Trash2 className="size-3.5" />
                             </button>
                           )}
                         </div>
@@ -848,7 +848,7 @@ export function KanbanBoard({
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-500">
-              <Trash2 className="h-5 w-5" />
+              <Trash2 className="size-5" />
               Delete Task
             </DialogTitle>
             <DialogDescription>
@@ -906,8 +906,8 @@ export function KanbanBoard({
               }}
               disabled={deleteTaskPending}
             >
-              <Trash2 className="h-4 w-4 mr-2" />
-              {deleteTaskPending ? 'Deleting...' : 'Delete'}
+              <Trash2 className="size-4 mr-2" />
+              {deleteTaskPending ? 'Deleting…' : 'Delete'}
             </Button>
           </DialogFooter>
         </DialogContent>

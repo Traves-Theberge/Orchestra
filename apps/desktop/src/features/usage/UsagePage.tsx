@@ -30,7 +30,7 @@ export function UsagePage({ config }: { config: BackendConfig | null }) {
 
   return (
     <div className="h-full overflow-auto bg-background">
-      <div className="w-full px-6 py-6 space-y-4">
+      <div className="w-full p-6 space-y-4">
         <div>
           <h1 className="text-base font-semibold text-foreground">Usage</h1>
           <p className="mt-0.5 text-xs text-muted-foreground">
@@ -69,7 +69,7 @@ function RateLimitsCard({ rateLimits }: { rateLimits: ReturnType<typeof useUsage
       </div>
       {!anyHasData && (
         <p className="text-xs text-muted-foreground">
-          No live rate-limit data available yet — backend probes are not wired in.
+          No live rate-limit data available yet; backend probes are not wired in.
         </p>
       )}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -131,7 +131,7 @@ function RateLimitTileBody({ limits }: { limits: ProviderRateLimits | null }) {
       {limits.status === 'error' && (limits.session || limits.weekly) && (
         <div className="flex items-center gap-1.5 text-[10.5px] text-muted-foreground/70">
           <AlertTriangle size={10} className="shrink-0" />
-          <span>Showing cached data — auto-refresh paused</span>
+          <span>Showing cached data; auto-refresh paused</span>
         </div>
       )}
     </div>
@@ -212,7 +212,7 @@ function ProviderPane({
             disabled={isScanning || loading}
             aria-label={`Refresh ${providerLabel(provider)} usage`}
             title="Refresh"
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-50"
+            className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`size-3.5 ${isScanning || loading ? 'animate-spin' : ''}`} />
           </button>
@@ -386,14 +386,14 @@ function RecentSessionsSection({
           <table className="min-w-full text-sm">
             <thead>
               <tr className="border-b border-border/60 text-left text-xs text-muted-foreground">
-                <th className="px-2 py-2 font-medium">Last active</th>
-                <th className="px-2 py-2 font-medium">Project</th>
-                <th className="px-2 py-2 font-medium">Model</th>
-                <th className="px-2 py-2 font-medium">Turns</th>
-                <th className="px-2 py-2 font-medium">Input</th>
-                <th className="px-2 py-2 font-medium">Output</th>
-                <th className="px-2 py-2 font-medium">Cache</th>
-                <th className="px-2 py-2 font-medium">Cost</th>
+                <th className="p-2 font-medium">Last active</th>
+                <th className="p-2 font-medium">Project</th>
+                <th className="p-2 font-medium">Model</th>
+                <th className="p-2 font-medium">Turns</th>
+                <th className="p-2 font-medium">Input</th>
+                <th className="p-2 font-medium">Output</th>
+                <th className="p-2 font-medium">Cache</th>
+                <th className="p-2 font-medium">Cost</th>
               </tr>
             </thead>
             <tbody>
@@ -402,10 +402,10 @@ function RecentSessionsSection({
                   key={`${row.provider}::${row.session_id}`}
                   className="border-b border-border/40 last:border-b-0"
                 >
-                  <td className="px-2 py-2 text-muted-foreground tabular-nums">
+                  <td className="p-2 text-muted-foreground tabular-nums">
                     {formatSessionTime(row.last_active_at)}
                   </td>
-                  <td className="px-2 py-2 text-foreground">
+                  <td className="p-2 text-foreground">
                     <span className="truncate" title={row.project_label}>
                       {row.project_label || row.session_id.slice(0, 8)}
                     </span>
@@ -415,20 +415,20 @@ function RecentSessionsSection({
                       </span>
                     )}
                   </td>
-                  <td className="px-2 py-2 font-mono text-[12px] text-muted-foreground">
+                  <td className="p-2 font-mono text-[12px] text-muted-foreground">
                     {row.model ?? 'Unknown'}
                   </td>
-                  <td className="px-2 py-2 text-muted-foreground tabular-nums">{row.turns}</td>
-                  <td className="px-2 py-2 text-muted-foreground tabular-nums">
+                  <td className="p-2 text-muted-foreground tabular-nums">{row.turns}</td>
+                  <td className="p-2 text-muted-foreground tabular-nums">
                     {formatTokens(row.input_tokens)}
                   </td>
-                  <td className="px-2 py-2 text-muted-foreground tabular-nums">
+                  <td className="p-2 text-muted-foreground tabular-nums">
                     {formatTokens(row.output_tokens)}
                   </td>
-                  <td className="px-2 py-2 text-muted-foreground tabular-nums">
+                  <td className="p-2 text-muted-foreground tabular-nums">
                     {formatTokens(row.cache_read_tokens + row.cache_write_tokens)}
                   </td>
-                  <td className="px-2 py-2 text-foreground tabular-nums">
+                  <td className="p-2 text-foreground tabular-nums">
                     {formatCost(row.estimated_cost_usd ?? null)}
                   </td>
                 </tr>

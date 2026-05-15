@@ -204,11 +204,11 @@ export function OverviewTab({
                   className="h-7 w-48 border-border bg-card text-[10px]"
                   value={localAssignee.startsWith('agent-') ? localAssignee : availableAgents.includes(localAssignee) ? `agent-${localAssignee}` : localAssignee}
                   options={[
-                    { label: 'Unassigned', value: 'Unassigned', icon: <Users className="h-3 w-3 text-muted-foreground" /> },
+                    { label: 'Unassigned', value: 'Unassigned', icon: <Users className="size-3 text-muted-foreground" /> },
                     ...availableAgents.map((agent) => ({
                       label: `Agent: ${agent.charAt(0).toUpperCase() + agent.slice(1)}`,
                       value: `agent-${agent}`,
-                      icon: <Bot className="h-3 w-3 text-primary/70" />,
+                      icon: <Bot className="size-3 text-primary/70" />,
                     })),
                   ]}
                   onChange={(value) => void handleAssigneeChange(String(value))}
@@ -284,9 +284,9 @@ export function OverviewTab({
               </div>
             )}
 
-            <div className="relative overflow-hidden border-b border-border/20 bg-gradient-to-br from-primary/10 via-primary/5 to-background/90 px-3 py-3">
-              <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-primary/10 blur-2xl" />
-              <div className="pointer-events-none absolute -bottom-10 left-10 h-20 w-20 rounded-full bg-emerald-400/10 blur-2xl" />
+            <div className="relative overflow-hidden border-b border-border/20 bg-gradient-to-br from-primary/10 via-primary/5 to-background/90 p-3">
+              <div className="pointer-events-none absolute -right-8 -top-8 size-24 rounded-full bg-primary/10 blur-2xl" />
+              <div className="pointer-events-none absolute -bottom-10 left-10 size-20 rounded-full bg-emerald-400/10 blur-2xl" />
 
               <div className="relative mb-3 flex items-center justify-between">
                 <div>
@@ -341,7 +341,7 @@ export function OverviewTab({
 
               <div className="relative max-h-56 space-y-1.5 overflow-auto custom-scrollbar pr-1">
                 {planItems.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-primary/20 bg-background/50 px-2.5 py-2.5">
+                  <div className="rounded-lg border border-dashed border-primary/20 bg-background/50 p-2.5">
                     <div className="mb-2 flex items-center gap-1.5 text-[8px] font-black uppercase tracking-widest text-primary/60">
                       <Sparkles size={9} className="animate-pulse" /> plan pending
                     </div>
@@ -350,7 +350,7 @@ export function OverviewTab({
                       <div className="h-2 w-4/6 rounded bg-muted/40 animate-pulse" />
                       <div className="h-2 w-3/6 rounded bg-muted/30 animate-pulse" />
                     </div>
-                    <div className="mt-2 text-[10px] text-muted-foreground/55 italic">Waiting for agent to formulate a plan...</div>
+                    <div className="mt-2 text-[10px] text-muted-foreground/55 italic">Waiting for agent to formulate a plan…</div>
                   </div>
                 ) : (
                   planItems.map((item, idx) => {
@@ -364,7 +364,7 @@ export function OverviewTab({
                       style={{ transitionDelay: `${Math.min(idx * 40, 220)}ms` }}
                     >
                       <span className={`mt-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full border px-1 text-[8px] font-black tabular-nums ${item.done ? 'border-primary/30 bg-primary/15 text-primary/70' : 'border-border/70 bg-card text-muted-foreground/55'}`}>{idx + 1}</span>
-                      <div className={`mt-0.5 grid h-3.5 w-3.5 shrink-0 place-items-center rounded-sm border transition-colors ${item.done ? 'bg-primary border-primary text-primary-foreground shadow-[0_0_10px_rgba(var(--primary),0.5)]' : 'border-border bg-card group-hover:border-primary/30'}`}>
+                      <div className={`mt-0.5 grid size-3.5 shrink-0 place-items-center rounded-sm border transition-colors ${item.done ? 'bg-primary border-primary text-primary-foreground shadow-[0_0_10px_rgba(var(--primary),0.5)]' : 'border-border bg-card group-hover:border-primary/30'}`}>
                         {item.done && <Check size={8} strokeWidth={4} />}
                       </div>
                       <span className={`text-[10px] font-semibold leading-tight transition-colors ${item.done ? 'text-foreground/50 line-through' : 'text-foreground/85'}`}>
@@ -425,7 +425,7 @@ export function OverviewTab({
                 <div className="text-[8px] font-black uppercase tracking-widest text-muted-foreground mb-1">Status</div>
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-2 text-[11px] font-bold text-foreground/90">
-                    <div className={`h-1.5 w-1.5 rounded-full ${localState === 'In Progress' ? 'bg-amber-500 animate-pulse' : 'bg-primary'}`} />
+                    <div className={`size-1.5 rounded-full ${localState === 'In Progress' ? 'bg-amber-500 animate-pulse' : 'bg-primary'}`} />
                     {localState}
                   </div>
                 </div>

@@ -49,7 +49,7 @@ export function CodexApprovalsPanel({ permissions, scope, projectName, saving, o
   }
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="Approvals"
@@ -60,7 +60,7 @@ export function CodexApprovalsPanel({ permissions, scope, projectName, saving, o
       <div className="flex-1 min-h-0 overflow-y-auto pr-1">
         <div className="max-w-2xl mx-auto w-full flex flex-col gap-6">
           <section className="space-y-2">
-            <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Approval Policy</h4>
+            <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Approval Policy</h4>
             <select
               value={mode}
               onChange={(event) => setMode(event.target.value)}
@@ -73,7 +73,7 @@ export function CodexApprovalsPanel({ permissions, scope, projectName, saving, o
           </section>
 
           <section className="space-y-2">
-            <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">Sandbox Mode</h4>
+            <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Sandbox Mode</h4>
             <select
               value={sandbox}
               onChange={(event) => setSandbox(event.target.value)}

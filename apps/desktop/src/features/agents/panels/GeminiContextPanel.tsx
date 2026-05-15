@@ -58,7 +58,7 @@ export function GeminiContextPanel({ items, scope, projectName, saving, onSave, 
   }
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="GEMINI.md"

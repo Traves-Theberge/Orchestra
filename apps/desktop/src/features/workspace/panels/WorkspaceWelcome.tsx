@@ -94,7 +94,7 @@ export function WorkspaceWelcome({ onAddTerminal }: WorkspaceWelcomeProps) {
                 icon={<FileText size={13} />}
                 title={f.relativePath.split('/').pop() ?? ''}
                 meta={f.relativePath}
-                trailing={f.isDirty ? <span className="w-1.5 h-1.5 rounded-full bg-blue-400" /> : null}
+                trailing={f.isDirty ? <span className="size-1.5 rounded-full bg-blue-400" /> : null}
                 onClick={() => openFile(f.filePath, f.relativePath, undefined, activeProjectId)}
               />
             ))}

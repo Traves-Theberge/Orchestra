@@ -287,7 +287,7 @@ function DetailPopover({
 
       <div className="h-px bg-border/60" />
 
-      <div className="space-y-3 px-3 py-3">
+      <div className="space-y-3 p-3">
         {!limits || limits.status === 'idle' || limits.status === 'fetching' ? (
           <p className="text-[12px] text-muted-foreground">Loading rate limits…</p>
         ) : limits.session || limits.weekly ? (
@@ -306,7 +306,7 @@ function DetailPopover({
 
       {/* Account / configuration footer — mirrors Orca */}
       <div className="h-px bg-border/60" />
-      <div className="px-1 py-1">
+      <div className="p-1">
         <p className="px-2 pt-1.5 pb-1 text-[9px] font-bold uppercase tracking-[0.15em] text-muted-foreground/60">
           {providerLabel(provider)} Account
         </p>

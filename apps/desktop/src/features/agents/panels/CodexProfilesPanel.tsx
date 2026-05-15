@@ -112,7 +112,7 @@ export function CodexProfilesPanel({ items, scope, projectName, saving, onSave }
 
   if (profiles.length === 0) {
     return (
-      <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+      <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
         <PanelHeader
           eyebrow={eyebrow}
           title="Codex profiles"
@@ -136,7 +136,7 @@ export function CodexProfilesPanel({ items, scope, projectName, saving, onSave }
   }
 
   return (
-    <div className="flex flex-col h-full p-[18px] space-y-[14px]">
+    <div className="flex flex-col h-full p-[18px] gap-y-[14px]">
       <PanelHeader
         eyebrow={eyebrow}
         title="Codex profiles"
@@ -238,7 +238,7 @@ export function CodexProfilesPanel({ items, scope, projectName, saving, onSave }
 function ProfileField({ label, value, onChange }: { label: string, value: string, onChange: (value: string) => void }) {
   return (
     <section className="space-y-2">
-      <h4 className="text-[10px] font-bold uppercase tracking-widest text-foreground/45">{label}</h4>
+      <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">{label}</h4>
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}

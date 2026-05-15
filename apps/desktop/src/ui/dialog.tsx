@@ -45,7 +45,7 @@ const DialogContent = React.forwardRef<
       {children}
       {showCloseButton ? (
         <DialogClose className="absolute right-6 top-[18px] rounded-lg p-1.5 text-muted-foreground/30 hover:text-foreground hover:bg-muted/20 transition-all z-50">
-          <X className="h-5 w-5" />
+          <X className="size-5" />
         </DialogClose>
       ) : null}
     </DialogPrimitive.Content>
@@ -55,12 +55,12 @@ DialogContent.displayName = DialogPrimitive.Content.displayName
 
 /** Stacked layout container for dialog title and description. */
 function DialogHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('flex flex-col space-y-1.5 text-left', className)} {...props} />
+  return <div className={cn('flex flex-col gap-y-1.5 text-left', className)} {...props} />
 }
 
 /** Right-aligned action bar at the bottom of a dialog. */
 function DialogFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2', className)} {...props} />
+  return <div className={cn('flex flex-col-reverse sm:flex-row sm:justify-end sm:gap-x-2', className)} {...props} />
 }
 
 /** Styled heading for dialog content. */

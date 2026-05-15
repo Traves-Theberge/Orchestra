@@ -223,11 +223,11 @@ export function JsonRenderBlock({ spec, onAction }: JsonRenderBlockProps) {
         return (
           <div key={key} className="space-y-1">
             {items.map((item, i) => (
-              <div key={i} className="flex gap-2.5 text-[11px] py-1 px-1 rounded-md hover:bg-muted/10 transition-colors">
+              <div key={i} className="flex gap-2.5 text-[11px] p-1 rounded-md hover:bg-muted/10 transition-colors">
                 <span className="text-primary/60 mt-0.5 shrink-0">{p.ordered ? `${i + 1}.` : '•'}</span>
                 <div>
                   <span className="font-medium text-foreground">{item.label}</span>
-                  {item.description && <span className="text-muted-foreground/70 ml-1">— {item.description}</span>}
+                  {item.description && <span className="text-muted-foreground/70 ml-1">: {item.description}</span>}
                 </div>
               </div>
             ))}

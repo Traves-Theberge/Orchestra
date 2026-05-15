@@ -64,7 +64,7 @@ export function ChangesTab({
                 <GitBranch size={14} className="text-primary/60" />
                 <span className="truncate font-mono text-[11px] text-foreground/90 font-bold">{activeDiffFile}</span>
               </div>
-              {diffLoading && <Loader2 className="h-3.5 w-3.5 animate-spin-smooth text-primary" />}
+              {diffLoading && <Loader2 className="size-3.5 animate-spin-smooth text-primary" />}
             </div>
             <div className="flex-1 overflow-auto custom-scrollbar">
               <SyntaxHighlighter
@@ -131,7 +131,7 @@ export function LogsTab({
       <div className="flex items-center justify-between border-b border-border bg-muted/10 px-3 py-2 shrink-0">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 text-muted-foreground">
-            <Terminal className="h-3.5 w-3.5 text-primary" />
+            <Terminal className="size-3.5 text-primary" />
             <span className="font-bold text-[10px] uppercase tracking-widest text-primary/70">{localProvider || 'main'}.log</span>
           </div>
           {localState === 'In Progress' && (
@@ -141,7 +141,7 @@ export function LogsTab({
         <div className="flex items-center gap-2">
           {localState !== 'In Progress' && (
             <div className="relative">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-2.5 w-2.5 text-muted-foreground/40" />
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-2.5 text-muted-foreground/40" />
               <input
                 type="text"
                 placeholder="Filter logs..."
@@ -159,12 +159,12 @@ export function LogsTab({
                 className={`h-6 gap-1.5 px-2 text-[9px] font-bold uppercase tracking-wider transition-all ${followLogs ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted/10'}`}
                 onClick={() => setFollowLogs(!followLogs)}
               >
-                <div className={`h-1 w-1 rounded-full ${followLogs ? 'bg-primary animate-pulse' : 'bg-muted-foreground/30'}`} />
+                <div className={`size-1 rounded-full ${followLogs ? 'bg-primary animate-pulse' : 'bg-muted-foreground/30'}`} />
                 Follow
               </Button>
             </AppTooltip>
           )}
-          {logsLoading && <Loader2 className="h-3 w-3 animate-spin-smooth text-primary" />}
+          {logsLoading && <Loader2 className="size-3 animate-spin-smooth text-primary" />}
         </div>
       </div>
 
@@ -196,12 +196,12 @@ export function LogsTab({
               </div>
             ) : logs ? (
               <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground opacity-40">
-                <Search className="h-8 w-8 mb-3" />
+                <Search className="size-8 mb-3" />
                 <p className="text-xs tracking-tight uppercase font-black">No matching logs found</p>
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
-                <Terminal className="h-8 w-8 opacity-10 mb-3" />
+                <Terminal className="size-8 opacity-10 mb-3" />
                 <p className="text-xs tracking-tight">No logs documented for this issue session.</p>
               </div>
             )}
@@ -270,7 +270,7 @@ export function ArtifactsTab({
                 <FileText size={14} className="text-primary/60" />
                 <span className="truncate font-mono text-[11px] text-foreground/90 font-bold">{selectedArtifact}</span>
               </div>
-              {contentLoading && <Loader2 className="h-3.5 w-3.5 animate-spin-smooth text-primary" />}
+              {contentLoading && <Loader2 className="size-3.5 animate-spin-smooth text-primary" />}
             </div>
             <div className="flex-1 overflow-auto custom-scrollbar">
               {contentLoading && !artifactContent ? (
@@ -322,13 +322,13 @@ export function ActivityTab({
       <div className="rounded-xl border border-border bg-muted/10 p-6 min-h-full">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
-              <History className="h-4 w-4 text-primary" />
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <History className="size-4 text-primary" />
               Full Event Audit
             </h3>
             <p className="text-xs text-muted-foreground text-left">Chronological narrative of all system interactions for this issue.</p>
           </div>
-          {historyLoading && <Loader2 className="h-4 w-4 animate-spin-smooth text-primary" />}
+          {historyLoading && <Loader2 className="size-4 animate-spin-smooth text-primary" />}
         </div>
 
         {issueHistory.length === 0 && !historyLoading ? (
@@ -340,7 +340,7 @@ export function ActivityTab({
           <div className="relative space-y-6 before:absolute before:left-[11px] before:top-2 before:h-[calc(100%-16px)] before:w-[1px] before:bg-border/40 text-left">
             {issueHistory.map((item, idx) => (
               <div key={`${item.id || idx}`} className="relative pl-10 group text-left">
-                <div className="absolute left-0 top-0 z-10 grid h-6 w-6 place-items-center rounded-full border border-border bg-card shadow-sm group-hover:border-primary/40 transition-colors">
+                <div className="absolute left-0 top-0 z-10 grid size-6 place-items-center rounded-full border border-border bg-card shadow-sm group-hover:border-primary/40 transition-colors">
                   {getEventIcon(item.kind)}
                 </div>
                 <div className="flex flex-col gap-1 bg-muted/10 p-3 rounded-xl border border-transparent group-hover:border-border group-hover:bg-muted/30 transition-all text-left">

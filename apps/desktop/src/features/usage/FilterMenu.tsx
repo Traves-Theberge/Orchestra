@@ -52,7 +52,7 @@ export function FilterMenu({
         onClick={() => setOpen((v) => !v)}
         aria-label="Usage filters"
         title="Filters"
-        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+        className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
       >
         <SlidersHorizontal className="size-3.5" />
       </button>

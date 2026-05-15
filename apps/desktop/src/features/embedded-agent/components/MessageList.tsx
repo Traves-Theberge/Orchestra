@@ -40,7 +40,7 @@ export function MessageList({ messages, isStreaming, onAction, hasApiKey, onOpen
                   onClick={onOpenSettings}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-1.5 text-[11px] font-bold uppercase tracking-wider text-primary-foreground hover:bg-primary/90 transition-colors"
                 >
-                  <Settings2 className="h-3 w-3" />
+                  <Settings2 className="size-3" />
                   Open Settings
                 </button>
               )}
@@ -68,7 +68,7 @@ export function MessageList({ messages, isStreaming, onAction, hasApiKey, onOpen
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">
-      <div className="flex-1 space-y-2 px-3 py-3">
+      <div className="flex-1 space-y-2 p-3">
         {messages.map((msg, i) => (
           <div key={msg.id} className="agent-message-enter">
             <MessageBubble
@@ -82,9 +82,9 @@ export function MessageList({ messages, isStreaming, onAction, hasApiKey, onOpen
         {isStreaming && (
           <div className="agent-message-enter flex justify-start">
             <div className="flex items-center gap-1.5 rounded-2xl rounded-tl-md border border-border/20 bg-muted/20 px-4 py-2.5">
-              <span className="agent-typing-dot h-1.5 w-1.5 rounded-full bg-primary/60" style={{ animationDelay: '0ms' }} />
-              <span className="agent-typing-dot h-1.5 w-1.5 rounded-full bg-primary/60" style={{ animationDelay: '200ms' }} />
-              <span className="agent-typing-dot h-1.5 w-1.5 rounded-full bg-primary/60" style={{ animationDelay: '400ms' }} />
+              <span className="agent-typing-dot size-1.5 rounded-full bg-primary/60" style={{ animationDelay: '0ms' }} />
+              <span className="agent-typing-dot size-1.5 rounded-full bg-primary/60" style={{ animationDelay: '200ms' }} />
+              <span className="agent-typing-dot size-1.5 rounded-full bg-primary/60" style={{ animationDelay: '400ms' }} />
             </div>
           </div>
         )}

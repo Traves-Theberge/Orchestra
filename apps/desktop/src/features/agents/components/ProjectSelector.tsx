@@ -47,7 +47,7 @@ export function ProjectSelector({ projects, selectedId, onChange }: ProjectSelec
             className={`w-full flex items-center gap-2 px-3 py-2 text-left text-[11px] hover:bg-foreground/[0.04] ${selectedId === null ? 'bg-foreground/[0.06]' : ''}`}
           >
             <Globe size={11} className="text-foreground/50 shrink-0" />
-            <span className="flex-1 truncate">Global only — hide project column</span>
+            <span className="flex-1 truncate">Global only: hide project column</span>
           </button>
           {projects.length > 0 && <div className="h-px bg-border/40" />}
           {projects.map(p => (
