@@ -563,7 +563,7 @@ export const DocsDashboard: React.FC<DocsDashboardProps> = ({ config, theme }) =
                 {/* Right Sidebar (Table of Contents) */}
                 <div className="w-64 border-l border-border/40 flex flex-col min-h-0">
                     <div className="px-5 pt-7 pb-3">
-                        <h2 className="text-[15px] font-black tracking-tight leading-none">On this page</h2>
+                        <h2 className="text-[15px] font-semibold tracking-tight leading-none">On this page</h2>
                     </div>
 
                     <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">

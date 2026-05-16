@@ -207,6 +207,7 @@ export function DiagramFullscreenOverlay() {
                 <div
                     className="transition-transform duration-200 w-full h-full flex items-center justify-center [&_svg]:max-w-full [&_svg]:max-h-full [&_svg]:object-contain"
                     style={{ transform: `scale(${state.scale})`, transformOrigin: 'center center' }}
+                    // eslint-disable-next-line react/no-danger -- SVG produced by Mermaid library, no user input rendered as HTML
                     dangerouslySetInnerHTML={{ __html: state.svg }}
                 />
             </div>
@@ -330,6 +331,7 @@ export const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart, theme }) 
             <div
                 ref={containerRef}
                 className="p-8 flex items-center justify-center [&_svg]:max-w-full overflow-x-auto"
+                // eslint-disable-next-line react/no-danger -- SVG produced by Mermaid library, no user input rendered as HTML
                 dangerouslySetInnerHTML={{ __html: svg }}
             />
         </div>

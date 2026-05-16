@@ -34,7 +34,7 @@ const DEFAULT_CHART_LIGHT: ChartPalette = [
   '30 80% 55%',
 ]
 
-export const DEFAULT_THEME_TYPOGRAPHY: ThemeTypography = {
+const DEFAULT_THEME_TYPOGRAPHY: ThemeTypography = {
   fontSans: '"IBM Plex Sans", "Inter", "Segoe UI", sans-serif',
   fontMono: '"JetBrains Mono", "Fira Code", "SFMono-Regular", monospace',
   baseSizePx: 14,
@@ -54,7 +54,7 @@ export const DEFAULT_THEME_TYPOGRAPHY: ThemeTypography = {
   },
 }
 
-export const DEFAULT_THEME_DENSITY: ThemeDensity = {
+const DEFAULT_THEME_DENSITY: ThemeDensity = {
   preset: 'cozy',
   spacingScale: 1,
   controlHeight: {
@@ -65,7 +65,7 @@ export const DEFAULT_THEME_DENSITY: ThemeDensity = {
   borderWidthPx: 1,
 }
 
-export const DEFAULT_THEME_RADII: ThemeRadii = {
+const DEFAULT_THEME_RADII: ThemeRadii = {
   scale: 'default',
   smRem: 0.375,
   mdRem: 0.5,
@@ -73,13 +73,13 @@ export const DEFAULT_THEME_RADII: ThemeRadii = {
   xlRem: 1,
 }
 
-export const DEFAULT_THEME_SHADOWS: ThemeShadows = {
+const DEFAULT_THEME_SHADOWS: ThemeShadows = {
   strength: 'default',
   surface: '0 8px 24px rgba(0, 0, 0, 0.08)',
   overlay: '0 18px 48px rgba(0, 0, 0, 0.18)',
 }
 
-export const DEFAULT_THEME_MOTION: ThemeMotion = {
+const DEFAULT_THEME_MOTION: ThemeMotion = {
   scale: 1,
   reduceMotion: false,
   backdropBlurPx: 16,

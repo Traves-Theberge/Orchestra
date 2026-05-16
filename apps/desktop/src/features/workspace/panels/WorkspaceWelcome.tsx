@@ -31,7 +31,7 @@ export function WorkspaceWelcome({ onAddTerminal }: WorkspaceWelcomeProps) {
         <div className="space-y-12">
           <header className="space-y-2">
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50">Workspace</p>
-            <h1 className="text-4xl font-black tracking-tight">Welcome back</h1>
+            <h1 className="text-4xl font-semibold tracking-tight">Welcome back</h1>
             <p className="text-sm text-muted-foreground">Open a project to begin.</p>
           </header>
 
@@ -73,7 +73,7 @@ export function WorkspaceWelcome({ onAddTerminal }: WorkspaceWelcomeProps) {
       <div className="space-y-12">
         <header className="space-y-2">
           <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50">Project</p>
-          <h1 className="text-4xl font-black tracking-tight truncate">{activeProject?.name ?? 'Workspace'}</h1>
+          <h1 className="text-4xl font-semibold tracking-tight truncate">{activeProject?.name ?? 'Workspace'}</h1>
           {activeProject?.root_path && (
             <p className="text-[11px] font-mono text-muted-foreground/60 truncate">{activeProject.root_path}</p>
           )}

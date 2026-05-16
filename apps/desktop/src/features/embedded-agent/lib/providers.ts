@@ -75,10 +75,19 @@ async function fetchOpenAIModels(baseUrl: string, apiKey: string): Promise<Model
   if (!res.ok) throw new Error(httpErrorMessage(res.status))
   const data = await res.json() as { data: { id: string; owned_by?: string }[] }
   const filtered: ModelInfo[] = []
+  const excludedTokens = new Set(['instruct', 'realtime', 'audio', 'tts', 'dall-e', 'whisper', 'embedding'])
   for (const m of data.data) {
-    if (!(m.id.startsWith('gpt-') || m.id.startsWith('o'))) continue
-    if (m.id.includes('instruct') || m.id.includes('realtime') || m.id.includes('audio') || m.id.includes('tts') || m.id.includes('dall-e') || m.id.includes('whisper') || m.id.includes('embedding')) continue
-    filtered.push({ id: m.id, name: m.id })
+    const id = m.id
+    if (!(id.startsWith('gpt-') || id.startsWith('o'))) continue
+    let skip = false
+    for (const tok of excludedTokens) {
+      if (id.includes(tok)) {
+        skip = true
+        break
+      }
+    }
+    if (skip) continue
+    filtered.push({ id, name: id })
   }
   return filtered.toSorted((a, b) => a.id.localeCompare(b.id))
 }

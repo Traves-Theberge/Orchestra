@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import type { SidebarItem } from '@layout/types'
 
-export function SandboxIcon({ className, size }: { className?: string; size?: number }) {
+function SandboxIcon({ className, size }: { className?: string; size?: number }) {
   const s = size || 24
   return (
     <svg className={className} width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

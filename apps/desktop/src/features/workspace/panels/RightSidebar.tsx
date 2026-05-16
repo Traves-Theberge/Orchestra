@@ -20,7 +20,7 @@ export function RightSidebar({ children }: RightSidebarProps) {
       {/* Resize handle on left edge */}
       <ResizeHandle
         direction="horizontal"
-        onResize={(delta) => setRightSidebarWidth(rightSidebarWidth - delta)}
+        onResize={(delta) => setRightSidebarWidth(useAppStore.getState().rightSidebarWidth - delta)}
       />
 
       {/* Sidebar content */}

@@ -273,14 +273,21 @@ export function SettingsPage({
   const duplicateTheme = useAppStore(s => s.duplicateTheme)
   const deleteCustomTheme = useAppStore(s => s.deleteCustomTheme)
   const reapply = useAppStore(s => s.reapply)
-  const [homepageDraft, setHomepageDraft] = useState(browserHomepage)
+  // Reset draft when the external homepage value changes — sync during render instead of in an effect.
+  const [homepageState, setHomepageDraftRaw] = useState<{ draft: string; lastProp: string }>(() => ({ draft: browserHomepage, lastProp: browserHomepage }))
+  const homepageDraft = homepageState.lastProp === browserHomepage ? homepageState.draft : browserHomepage
+  if (homepageState.lastProp !== browserHomepage) {
+    setHomepageDraftRaw({ draft: browserHomepage, lastProp: browserHomepage })
+  }
+  const setHomepageDraft = useCallback((draft: string) => {
+    setHomepageDraftRaw((prev) => ({ draft, lastProp: prev.lastProp }))
+  }, [])
   const [themeStudioOpen, setThemeStudioOpen] = useState(false)
   const [themeStudioDraft, setThemeStudioDraft] = useState<Theme | null>(null)
   const [themeStudioSourceId, setThemeStudioSourceId] = useState(activeThemeId)
   const [themeStudioPreviewMode, setThemeStudioPreviewMode] = useState<'light' | 'dark'>(
     modeOverride === 'auto' ? resolveMode('auto') : modeOverride,
   )
-  useEffect(() => { setHomepageDraft(browserHomepage) }, [browserHomepage])
 
   useEffect(() => {
     if (!themeStudioOpen) return
@@ -379,7 +386,7 @@ export function SettingsPage({
           {/* Page hero */}
           <header className="space-y-2 pb-2">
             <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-primary/80">Workspace</p>
-            <h1 className="text-3xl font-black tracking-tight">Settings</h1>
+            <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
             <p className="text-[12px] text-muted-foreground max-w-md">
               Tune Orchestra to your workflow. Changes save automatically.
             </p>
@@ -779,7 +786,7 @@ function SectionHeading({ icon: Icon, title, description }: { icon: React.Compon
         <Icon className="size-4" />
       </div>
       <div className="flex-1 min-w-0 pb-3">
-        <h2 className="text-base font-black tracking-tight leading-tight">{title}</h2>
+        <h2 className="text-base font-semibold tracking-tight leading-tight">{title}</h2>
         <p className="text-[11px] text-muted-foreground/80 mt-0.5">{description}</p>
       </div>
     </div>
@@ -1272,7 +1279,7 @@ function ThemeStudioEditorPane({
         <div className="surface p-4 lg:col-span-2">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h3 className="text-sm font-black tracking-tight">Color Roles</h3>
+              <h3 className="text-sm font-semibold tracking-tight">Color Roles</h3>
               <p className="mt-1 text-[11px] text-muted-foreground">
                 Edit the {previewMode} palette directly or drive both palettes from a tone seed.
               </p>
@@ -1306,7 +1313,7 @@ function ThemeStudioEditorPane({
               {ROLE_SECTIONS.map((section) => (
                 <div key={section.title} className="rounded-2xl border border-border/40 bg-card/60 p-4">
                   <div className="mb-3">
-                    <h4 className="text-[12px] font-black tracking-tight">{section.title}</h4>
+                    <h4 className="text-[12px] font-semibold tracking-tight">{section.title}</h4>
                   </div>
                   <div className="space-y-4">
                     {section.roles.map((role) => (
@@ -1367,7 +1374,7 @@ function TypographyEditor({
           <Type className="size-4" />
         </div>
         <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-black tracking-tight">Typography</h3>
+          <h3 className="text-sm font-semibold tracking-tight">Typography</h3>
           <p className="mt-1 text-[11px] text-muted-foreground">Fonts, size scale, line-height, and weight tuning.</p>
         </div>
       </div>
@@ -1463,7 +1470,7 @@ function DensityShapeEditor({
           <PanelLeft className="size-4" />
         </div>
         <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-black tracking-tight">Density & Shape</h3>
+          <h3 className="text-sm font-semibold tracking-tight">Density & Shape</h3>
           <p className="mt-1 text-[11px] text-muted-foreground">Spacing cadence, control heights, border width, and radii.</p>
         </div>
       </div>
@@ -1586,7 +1593,7 @@ function SurfaceMotionEditor({
           <Eye className="size-4" />
         </div>
         <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-black tracking-tight">Surface & Motion</h3>
+          <h3 className="text-sm font-semibold tracking-tight">Surface & Motion</h3>
           <p className="mt-1 text-[11px] text-muted-foreground">Shadow character, blur, motion scale, and reduced-motion tuning.</p>
         </div>
       </div>
@@ -1667,7 +1674,7 @@ function SurfaceMotionEditor({
 function ThemeSummaryCard({ draft }: { draft: ReturnType<typeof normalizeTheme> }) {
   return (
     <div className="surface p-4">
-      <h3 className="text-sm font-black tracking-tight">Current Draft Readout</h3>
+      <h3 className="text-sm font-semibold tracking-tight">Current Draft Readout</h3>
       <div className="mt-4 space-y-2">
         {[
           `Sans: ${draft.typography.fontSans}`,
@@ -1699,7 +1706,7 @@ function ToneSeedEditor({
     <div className="rounded-2xl border border-border/40 bg-card/60 p-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h4 className="text-[12px] font-black tracking-tight">Tone Seed</h4>
+          <h4 className="text-[12px] font-semibold tracking-tight">Tone Seed</h4>
           <p className="mt-1 text-[11px] text-muted-foreground">
             Regenerate both light and dark role sets from a shared hue and saturation axis.
           </p>
@@ -1828,7 +1835,7 @@ function ContrastPanel({ roleSet }: { roleSet: RoleSet }) {
   return (
     <div className="rounded-2xl border border-border/40 bg-card/60 p-4">
       <div className="mb-3">
-        <h4 className="text-[12px] font-black tracking-tight">Contrast</h4>
+        <h4 className="text-[12px] font-semibold tracking-tight">Contrast</h4>
         <p className="mt-1 text-[11px] text-muted-foreground">Quick WCAG readout for the key foreground/background pairs.</p>
       </div>
       <div className="space-y-2">
@@ -1868,7 +1875,7 @@ function ChartPaletteEditor({
   return (
     <div className="rounded-2xl border border-border/40 bg-card/60 p-4">
       <div className="mb-3">
-        <h4 className="text-[12px] font-black tracking-tight">Chart Palette</h4>
+        <h4 className="text-[12px] font-semibold tracking-tight">Chart Palette</h4>
         <p className="mt-1 text-[11px] text-muted-foreground">Edit the five chart stops used by shared data visualizations.</p>
       </div>
       <div className="space-y-3">
@@ -1925,7 +1932,7 @@ function RangeField({
   onChange: (value: number) => void
 }) {
   return (
-    <label className="block">
+    <label className="block" aria-label={label}>
       <div className="mb-1 flex items-center justify-between gap-3">
         <span className="text-[9px] font-black uppercase tracking-[0.16em] text-muted-foreground">{label}</span>
         <span className="text-[10px] font-mono text-muted-foreground">{Number.isInteger(value) ? value : value.toFixed(step < 0.1 ? 3 : step < 1 ? 2 : 0)}</span>
@@ -1937,6 +1944,7 @@ function RangeField({
         step={step}
         value={value}
         disabled={disabled}
+        aria-label={label}
         onChange={(event) => onChange(Number(event.target.value))}
         className="w-full accent-primary disabled:cursor-not-allowed"
       />
@@ -2058,7 +2066,7 @@ function ThemeStudioPreviewPane({
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-[10px] uppercase tracking-[0.18em]" style={{ color: `hsl(${roles.textMuted})` }}>Workspace</p>
-                <h3 className="mt-1 text-lg font-black tracking-tight">{draft.name}</h3>
+                <h3 className="mt-1 text-lg font-semibold tracking-tight">{draft.name}</h3>
               </div>
               <div
                 className="rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em]"
@@ -2094,7 +2102,7 @@ function ThemeStudioPreviewPane({
 
           <div style={cardStyle} className="p-4">
             <div className="mb-3 flex items-center justify-between">
-              <h4 className="text-sm font-black tracking-tight">Chart Palette</h4>
+              <h4 className="text-sm font-semibold tracking-tight">Chart Palette</h4>
               <span className="text-[10px]" style={{ color: `hsl(${roles.textMuted})` }}>5 slots</span>
             </div>
             <div className="flex gap-2">
@@ -3255,7 +3263,7 @@ function BackendConfigForm({
       <div className="flex items-center justify-between pb-2 border-b border-border/20">
         <div className="flex items-center gap-2">
           <Database className="size-4 text-primary" />
-          <h3 className="text-sm font-black uppercase tracking-wider">Connection Profiles</h3>
+          <h3 className="text-sm font-semibold uppercase tracking-wider">Connection Profiles</h3>
         </div>
       </div>
 
@@ -3263,7 +3271,7 @@ function BackendConfigForm({
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <Users className="size-3.5 text-primary" />
-            <h4 className="text-[10px] font-black uppercase tracking-widest text-foreground/80">Profile Management</h4>
+            <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/80">Profile Management</h4>
           </div>
 
           <div className="space-y-4 p-4 rounded-xl bg-muted/20 border border-border/40">
@@ -3288,7 +3296,7 @@ function BackendConfigForm({
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <SignalHigh className="size-3.5 text-primary" />
-            <h4 className="text-[10px] font-black uppercase tracking-widest text-foreground/80">Connection Parameters</h4>
+            <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/80">Connection Parameters</h4>
           </div>
 
           <div className="space-y-4 p-4 rounded-xl bg-muted/20 border border-border/40">
@@ -3479,10 +3487,15 @@ function ModelSearchDropdown({
 // EmbeddedAgentConfigForm (migrated from SettingsCard)
 // ---------------------------------------------------------------------------
 
+const AGENT_PROVIDER_PREFS_KEY = 'orchestra-agent-provider-prefs'
+function readAgentProviderPrefs(): { providerId?: string; modelId?: string } {
+  try { return JSON.parse(localStorage.getItem(AGENT_PROVIDER_PREFS_KEY) ?? '{}') } catch { return {} }
+}
+
 function EmbeddedAgentConfigForm({ config, disabled }: { config: BackendConfig | null; disabled: boolean }) {
   const providerLabelId = useId()
   const apiKeyId = useId()
-  const savedPrefs = (() => { try { return JSON.parse(localStorage.getItem('orchestra-agent-provider-prefs') ?? '{}') } catch { return {} } })()
+  const savedPrefs = readAgentProviderPrefs()
   const [providerId, setProviderId] = useState<string>(savedPrefs.providerId ?? CHAT_PROVIDERS[0].id)
   const [modelId, setModelId] = useState<string>(savedPrefs.modelId ?? '')
   const [models, setModels] = useState<{ id: string; name: string }[]>([])
@@ -3500,7 +3513,7 @@ function EmbeddedAgentConfigForm({ config, disabled }: { config: BackendConfig |
     if (!config) return
     fetchAgentProviderKeys(config)
       .then((result) => {
-        const prefs = (() => { try { return JSON.parse(localStorage.getItem('orchestra-agent-provider-prefs') ?? '{}') } catch { return {} } })()
+        const prefs = readAgentProviderPrefs()
         const target = prefs.providerId && result.providers[prefs.providerId]?.configured
           ? prefs.providerId
           : CHAT_PROVIDERS.find(p => result.providers[p.id]?.configured)?.id
@@ -3535,9 +3548,10 @@ function EmbeddedAgentConfigForm({ config, disabled }: { config: BackendConfig |
         if (fetched.length > 0) {
           setModelId((prev) => {
             if (prev && fetched.find((m: { id: string }) => m.id === prev)) return prev
-            const prefs = (() => { try { return JSON.parse(localStorage.getItem('orchestra-agent-provider-prefs') ?? '{}') } catch { return {} } })()
-            const match = prefs.modelId && fetched.find((m: { id: string }) => m.id === prefs.modelId)
-            return match ? prefs.modelId : fetched[0].id
+            const prefs = readAgentProviderPrefs()
+            const prefModelId = prefs.modelId
+            if (prefModelId && fetched.find((m: { id: string }) => m.id === prefModelId)) return prefModelId
+            return fetched[0].id
           })
         }
       })

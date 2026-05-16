@@ -28,13 +28,6 @@ export type PlanItem = {
   done: boolean
 }
 
-/** Registry of known lifecycle hooks displayed in the issue detail view. */
-export const ISSUE_HOOKS: IssueHook[] = [
-  { id: 'after_create', label: 'Workspace Setup', description: 'Provisioning environment and dependencies' },
-  { id: 'before_run', label: 'Pre-run Hook', description: 'Preparing context for agent execution' },
-  { id: 'after_run', label: 'Post-run Hook', description: 'Capturing artifacts and cleaning up' },
-]
-
 function asEventData(event: TimelineItem): Record<string, unknown> {
   return (event.data && typeof event.data === 'object') ? (event.data as Record<string, unknown>) : {}
 }

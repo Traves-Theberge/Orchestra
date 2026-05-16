@@ -197,7 +197,7 @@ export function OverviewTab({
               <Badge variant="outline" className="font-mono text-[9px] h-4 uppercase bg-primary/10 text-primary border-primary/20 px-1">
                 {identifier}
               </Badge>
-              <h3 className="truncate text-base font-black tracking-tight text-foreground">{title}</h3>
+              <h3 className="truncate text-base font-semibold tracking-tight text-foreground">{title}</h3>
             </div>
             <div className="flex items-center gap-2">
               <AppTooltip content="Task State">

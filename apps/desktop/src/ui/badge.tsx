@@ -17,11 +17,11 @@ const badgeVariants = cva('inline-flex items-center rounded-full border px-2.5 p
 })
 
 /** Props for the {@link Badge} component, extending HTML div attributes with variant support. */
-export interface BadgeProps extends React.HTMLAttributes<HTMLDivElement>, VariantProps<typeof badgeVariants> {}
+interface BadgeProps extends React.HTMLAttributes<HTMLDivElement>, VariantProps<typeof badgeVariants> {}
 
 /** Pill-shaped label component with variant-based styling (default, secondary, outline). */
 function Badge({ className, variant, ...props }: BadgeProps) {
   return <div className={cn(badgeVariants({ variant }), className)} {...props} />
 }
 
-export { Badge, badgeVariants }
+export { Badge }

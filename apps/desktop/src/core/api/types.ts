@@ -9,7 +9,7 @@ export type BackendConfig = {
 }
 
 /** A named backend connection profile persisted by the desktop bridge. */
-export type BackendProfile = {
+type BackendProfile = {
   /** Unique identifier for this profile. */
   id: string
   /** Human-readable profile name. */
@@ -29,7 +29,7 @@ export type BridgeProfilesPayload = {
 }
 
 /** Aggregate counts included in a runtime snapshot. */
-export type SnapshotCounts = {
+type SnapshotCounts = {
   /** Number of issues currently being executed by agents. */
   running: number
   /** Number of issues waiting for a retry attempt. */
@@ -93,7 +93,7 @@ export type RetryEntry = {
 }
 
 /** Cumulative token usage and runtime totals across all codex sessions. */
-export type CodexTotals = {
+type CodexTotals = {
   /** Total input (prompt) tokens consumed. */
   input_tokens: number
   /** Total output (completion) tokens produced. */
@@ -142,26 +142,6 @@ export type APIErrorEnvelope = {
   }
 }
 
-/** Detailed server-side payload for a single issue, including runtime and log data. */
-export type IssueDetailPayload = {
-  issue_identifier: string
-  issue_id: string
-  status: string
-  attempts: {
-    restart_count: number
-    current_retry_attempt: number
-  }
-  workspace: {
-    path: string
-  }
-  running: RunningEntry | null
-  retry: RetryEntry | null
-  logs: { codex_session_logs: Array<{ label: string; path: string; url?: string }> }
-  recent_events: Array<Record<string, unknown>>
-  last_error: string | null
-  tracked: Record<string, unknown>
-}
-
 /** A registered project (local workspace) managed by the orchestrator.
  *
  * `github_token` is redacted by the backend: it is either an empty string
@@ -194,7 +174,7 @@ export type ProjectStats = {
 }
 
 /** Platform-wide token usage and session statistics (warehouse). */
-export type ProviderTokens = {
+type ProviderTokens = {
   total: number
   input: number
   output: number
@@ -204,7 +184,7 @@ export type ProviderTokens = {
 }
 
 /** Per-provider session counts and success rates. */
-export type ProviderSessionStats = {
+type ProviderSessionStats = {
   total: number
   completed: number
   failed: number
@@ -287,7 +267,7 @@ export type SessionDetail = {
 }
 
 /** A reference to an issue that blocks another issue. */
-export type Blocker = {
+type Blocker = {
   id: string
   identifier?: string
   state?: string

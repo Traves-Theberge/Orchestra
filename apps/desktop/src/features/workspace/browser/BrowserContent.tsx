@@ -142,8 +142,10 @@ export function BrowserContent({ tab }: BrowserContentProps) {
         <form
           className="flex-1 mx-1"
           onSubmit={(e) => {
-            e.preventDefault()
-            navigate(urlInput)
+            if (urlInput) {
+              e.preventDefault()
+              navigate(urlInput)
+            }
           }}
         >
           <input
@@ -157,6 +159,7 @@ export function BrowserContent({ tab }: BrowserContentProps) {
 
       {/* Webview */}
       <div className="flex-1 min-h-0 relative">
+        {/* eslint-disable-next-line react/no-unknown-property -- Electron <webview> attributes */}
         <webview
           ref={webviewRef as React.RefObject<never>}
           src={tab.url}

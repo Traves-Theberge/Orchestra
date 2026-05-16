@@ -798,17 +798,6 @@ export async function fetchProjectTree(config: BackendConfig, projectId: string,
 }
 
 /**
- * Fetches the text content of a single file within a project workspace.
- * @param config - Backend connection configuration.
- * @param projectId - The project UUID.
- * @param path - Relative file path within the project.
- * @returns The file content as a string.
- */
-export async function fetchProjectFileContent(config: BackendConfig, projectId: string, path: string): Promise<string> {
-  return requestText(config, `/api/v1/projects/${encodeURIComponent(projectId)}/file?path=${encodeURIComponent(path)}`)
-}
-
-/**
  * Fetches the git commit history for a project.
  * @param config - Backend connection configuration.
  * @param projectId - The project UUID.
@@ -994,21 +983,6 @@ export async function fetchMCPTools(config: BackendConfig): Promise<MCPTool[]> {
 export async function fetchMCPServers(config: BackendConfig): Promise<MCPServer[]> {
   const data = await requestJSON<{ servers: MCPServer[] }>(config, '/api/v1/mcp/servers')
   return data.servers || []
-}
-
-/**
- * Registers a new MCP server with the orchestrator.
- * @param config - Backend connection configuration.
- * @param name - Display name for the server.
- * @param command - Shell command to launch the server process.
- * @returns The created MCP server record.
- */
-export async function createMCPServer(config: BackendConfig, name: string, command: string): Promise<MCPServer> {
-  return requestJSON<MCPServer>(config, '/api/v1/mcp/servers', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, command }),
-  })
 }
 
 /**
@@ -1248,27 +1222,6 @@ export type ProviderFileEntry = {
   path: string
 }
 
-export type CodexBundleResponse = {
-  config: ProviderFileEntry[]
-  instructions: ProviderFileEntry[]
-  subagents: ProviderFileEntry[]
-  skills: ProviderFileEntry[]
-  rules: ProviderFileEntry[]
-}
-
-export type GeminiBundleResponse = {
-  settings: ProviderFileEntry[]
-  context: ProviderFileEntry[]
-  commands: ProviderFileEntry[]
-}
-
-export type OpenCodeBundleResponse = {
-  config: ProviderFileEntry[]
-  agents: ProviderFileEntry[]
-  commands: ProviderFileEntry[]
-  skills: ProviderFileEntry[]
-}
-
 export type ProviderFileListResponse = {
   items: ProviderFileEntry[]
   dir: string
@@ -1324,32 +1277,6 @@ export async function toggleProviderMCPServer(config: BackendConfig, provider: s
 
 export async function deleteProviderMCPServer(config: BackendConfig, provider: string, name: string): Promise<void> {
     await requestJSON(config, `/api/v1/agents/${encodeURIComponent(provider)}/mcp/${encodeURIComponent(name)}`, { method: 'DELETE' })
-}
-
-export async function fetchCodexBundle(config: BackendConfig, scope: string, projectId?: string): Promise<CodexBundleResponse> {
-  const params = new URLSearchParams({ scope })
-  if (projectId) params.set('project_id', projectId)
-  return requestJSON<CodexBundleResponse>(config, `/api/v1/agents/codex/bundle?${params}`)
-}
-
-export async function fetchGeminiBundle(config: BackendConfig, scope: string, projectId?: string): Promise<GeminiBundleResponse> {
-  const params = new URLSearchParams({ scope })
-  if (projectId) params.set('project_id', projectId)
-  return requestJSON<GeminiBundleResponse>(config, `/api/v1/agents/gemini/bundle?${params}`)
-}
-
-export async function fetchOpenCodeBundle(config: BackendConfig, scope: string, projectId?: string): Promise<OpenCodeBundleResponse> {
-  const params = new URLSearchParams({ scope })
-  if (projectId) params.set('project_id', projectId)
-  return requestJSON<OpenCodeBundleResponse>(config, `/api/v1/agents/opencode/bundle?${params}`)
-}
-
-export async function saveProviderBundleFile(config: BackendConfig, path: string, content: string): Promise<void> {
-  await requestJSON(config, '/api/v1/agents/bundle/file', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path, content }),
-  })
 }
 
 export async function fetchCodexConfigFiles(config: BackendConfig, scope: string, projectId?: string): Promise<ProviderFileListResponse> {
@@ -2069,17 +1996,6 @@ export async function mergePR(config: BackendConfig, projectId: string, prNumber
   await requestJSON(config, `/api/v1/projects/${encodeURIComponent(projectId)}/github/pulls/${prNumber}/merge`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ method }) })
 }
 
-/**
- * Fetches comments on a GitHub pull request.
- * @param config - Backend connection configuration.
- * @param projectId - The project UUID.
- * @param prNumber - The PR number.
- * @returns Array of comment objects.
- */
-export async function fetchPRComments(config: BackendConfig, projectId: string, prNumber: number): Promise<unknown[]> {
-  return requestJSON(config, `/api/v1/projects/${encodeURIComponent(projectId)}/github/pulls/${prNumber}/comments`)
-}
-
 // --- Unsandbox Configuration ---
 
 /** Configuration state for the Unsandbox remote execution integration. */
@@ -2471,12 +2387,6 @@ export async function refreshRateLimits(config: BackendConfig): Promise<RateLimi
 }
 
 // ─── Tracker work item types ─────────────────────────────────────────────────
-
-export type {
-  WorkItem,
-  WorkItemSource,
-  WorkItemFilter,
-} from '@/entities/tracker/types'
 
 import type { WorkItem } from '@/entities/tracker/types'
 

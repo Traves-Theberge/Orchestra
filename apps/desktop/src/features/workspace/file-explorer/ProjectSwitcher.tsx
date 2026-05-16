@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useAppStore } from '@core/store'
 import { GLOBAL_PROJECT_ID } from '@core/store/types'
 import { Folder, ChevronDown, X, Plus, Check } from 'lucide-react'
@@ -18,18 +18,16 @@ export function ProjectSwitcher({ projects }: ProjectSwitcherProps) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
-  const handleClickOutside = useCallback((e: MouseEvent) => {
-    if (ref.current && !ref.current.contains(e.target as Node)) {
-      setOpen(false)
-    }
-  }, [])
-
   useEffect(() => {
-    if (open) {
-      document.addEventListener('mousedown', handleClickOutside)
-      return () => document.removeEventListener('mousedown', handleClickOutside)
+    if (!open) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
     }
-  }, [open, handleClickOutside])
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [open])
 
   const activeProject = projects.find((p) => p.id === activeProjectId)
   const isGlobal = activeProjectId === GLOBAL_PROJECT_ID

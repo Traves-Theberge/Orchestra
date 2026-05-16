@@ -1,4 +1,5 @@
 import type { RateLimitWindow } from '@core/api/client'
+import { useNow } from '@/hooks'
 
 export function windowLabel(w: RateLimitWindow): string {
   if (w.window_minutes <= 360) return '5h'
@@ -12,21 +13,15 @@ export function remainingPct(w: RateLimitWindow): number {
 }
 
 // Color-code by remaining capacity: green >40%, yellow 20-40%, red <20%.
-export function barColor(leftPct: number): string {
+function barColor(leftPct: number): string {
   if (leftPct > 40) return 'bg-emerald-500'
   if (leftPct > 20) return 'bg-yellow-500'
   return 'bg-red-500'
 }
 
-export function textColor(leftPct: number): string {
-  if (leftPct > 40) return 'text-emerald-500'
-  if (leftPct > 20) return 'text-yellow-500'
-  return 'text-red-500'
-}
-
-export function formatResetCountdown(resetsAt: number | undefined): string | null {
-  if (!resetsAt) return null
-  const ms = resetsAt - Date.now()
+function formatResetCountdown(resetsAt: number | undefined, now: number): string | null {
+  if (!resetsAt || !now) return null
+  const ms = resetsAt - now
   if (ms <= 0) return 'now'
   const totalMins = Math.floor(ms / 60_000)
   if (totalMins < 60) return `${totalMins}m`
@@ -40,8 +35,9 @@ export function formatResetCountdown(resetsAt: number | undefined): string | nul
   return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`
 }
 
-export function timeAgo(ms: number): string {
-  const diff = Date.now() - ms
+export function timeAgo(ms: number, now: number): string {
+  if (!now) return ''
+  const diff = now - ms
   if (diff < 60_000) return 'just now'
   const mins = Math.floor(diff / 60_000)
   if (mins < 60) return `${mins}m ago`
@@ -72,8 +68,9 @@ export function WindowSection({
   label: string
   variant?: 'panel' | 'inverted'
 }) {
+  const now = useNow(60_000)
   const leftPct = remainingPct(w)
-  const reset = formatResetCountdown(w.resets_at) ?? w.reset_description ?? null
+  const reset = formatResetCountdown(w.resets_at, now) ?? w.reset_description ?? null
   const baseText = variant === 'inverted' ? 'text-background' : 'text-foreground'
   const mutedText = variant === 'inverted' ? 'text-background/60' : 'text-muted-foreground'
   const trackBg = variant === 'inverted' ? 'bg-background/20' : 'bg-muted'

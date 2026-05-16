@@ -40,14 +40,16 @@ function parseDiff(rawInput: string): Hunk[] {
 
     if (!current) continue
 
-    if (line.startsWith('+')) {
-      current.lines.push({ type: 'add', content: line.slice(1), oldNum: null, newNum: newLine })
+    const { lines: currentLines } = current
+    const first = line.charAt(0)
+    if (first === '+') {
+      currentLines.push({ type: 'add', content: line.slice(1), oldNum: null, newNum: newLine })
       newLine++
-    } else if (line.startsWith('-')) {
-      current.lines.push({ type: 'del', content: line.slice(1), oldNum: oldLine, newNum: null })
+    } else if (first === '-') {
+      currentLines.push({ type: 'del', content: line.slice(1), oldNum: oldLine, newNum: null })
       oldLine++
-    } else if (line.startsWith(' ') || line === '') {
-      current.lines.push({ type: 'ctx', content: line.startsWith(' ') ? line.slice(1) : line, oldNum: oldLine, newNum: newLine })
+    } else if (first === ' ' || line === '') {
+      currentLines.push({ type: 'ctx', content: first === ' ' ? line.slice(1) : line, oldNum: oldLine, newNum: newLine })
       oldLine++
       newLine++
     }

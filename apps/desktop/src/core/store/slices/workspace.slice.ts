@@ -323,7 +323,7 @@ export const createWorkspaceSlice: StateCreator<AppState, [], [], WorkspaceSlice
     // When moving forward, the splice above shifts subsequent indices left by one.
     const insertAt = toIndex > fromIndex ? toIndex - 1 : toIndex
     next.splice(insertAt, 0, moved)
-    if (next.every((t, i) => t.id === group.tabs[i]?.id)) return
+    if (next.length === group.tabs.length && next.every((t, i) => t.id === group.tabs[i]?.id)) return
     set({
       projectGroups: {
         ...state.projectGroups,

@@ -18,8 +18,9 @@ const PREFERRED_DEFAULTS: Record<string, string[]> = {
 function pickDefaultModel(providerId: string, models: ModelInfo[]): string {
   const preferred = PREFERRED_DEFAULTS[providerId]
   if (preferred) {
+    const modelById = new Map(models.map((m) => [m.id, m]))
     for (const id of preferred) {
-      if (models.find(m => m.id === id)) return id
+      if (modelById.has(id)) return id
     }
   }
   return models[0].id

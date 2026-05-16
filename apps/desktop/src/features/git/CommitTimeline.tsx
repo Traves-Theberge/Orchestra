@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react'
 import { Search } from 'lucide-react'
 import type { GitCommit } from '@core/api/client'
+import { useNow } from '@/hooks'
 
-function relativeTime(dateStr: string): string {
-  const now = Date.now()
+function relativeTime(dateStr: string, now: number): string {
+  if (!now) return ''
   // Handle Unix timestamp (seconds) or ISO date string
   const parsed = /^\d+$/.test(dateStr) ? Number(dateStr) * 1000 : new Date(dateStr).getTime()
   if (Number.isNaN(parsed)) return dateStr
@@ -29,6 +30,7 @@ export function CommitTimeline({
   onSelectCommit: (hash: string) => void
 }) {
   const [search, setSearch] = useState('')
+  const now = useNow()
 
   const filtered = useMemo(() => {
     if (!search.trim()) return commits
@@ -91,7 +93,7 @@ export function CommitTimeline({
                     <span className="text-[10.5px] text-muted-foreground/60 truncate">{commit.author}</span>
                   )}
                   <span className="text-[10px] text-muted-foreground/50 ml-auto shrink-0">
-                    {relativeTime(commit.date)}
+                    {relativeTime(commit.date, now)}
                   </span>
                 </div>
               </div>

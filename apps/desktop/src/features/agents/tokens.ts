@@ -32,4 +32,3 @@ export const TOKENS = {
   rowGap:        'space-y-2',         // between form rows
 } as const
 
-export type Tokens = typeof TOKENS

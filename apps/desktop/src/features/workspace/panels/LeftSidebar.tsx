@@ -91,7 +91,7 @@ export function LeftSidebar() {
 
       <ResizeHandle
         direction="horizontal"
-        onResize={(delta) => setLeftSidebarWidth(leftSidebarWidth + delta)}
+        onResize={(delta) => setLeftSidebarWidth(useAppStore.getState().leftSidebarWidth + delta)}
       />
     </div>
   )

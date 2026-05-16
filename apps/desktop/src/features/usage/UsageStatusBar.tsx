@@ -18,6 +18,7 @@ import {
   timeAgo,
   windowLabel,
 } from './rate-limit-ui'
+import { useNow } from '@/hooks'
 
 // Orca's status bar tracks only the providers that actually have plan windows.
 // Gemini and OpenCode have no comparable rate-limit concept, so they don't
@@ -267,6 +268,7 @@ function DetailPopover({
 }) {
   const setActiveSection = useAppStore((s) => s.setActiveSection)
   const setSettingsInitialTab = useAppStore((s) => s.setSettingsInitialTab)
+  const now = useNow(60_000)
   const openAccountSettings = () => {
     setSettingsInitialTab('agents')
     setActiveSection('SETTINGS')
@@ -280,7 +282,7 @@ function DetailPopover({
         </div>
         {limits && limits.updated_at > 0 && (
           <span className="text-[10.5px] tabular-nums text-muted-foreground">
-            {timeAgo(limits.updated_at)}
+            {timeAgo(limits.updated_at, now)}
           </span>
         )}
       </div>

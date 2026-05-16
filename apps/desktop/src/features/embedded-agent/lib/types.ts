@@ -36,14 +36,7 @@ export type ChatProviderConfig = {
   apiKey: string
 }
 
-export type AgentProviderKeys = {
-  providers: Record<string, {
-    configured: boolean
-    api_key?: string
-  }>
-}
-
-export type WatchModeState = {
+type WatchModeState = {
   enabled: boolean
   toggle: () => void
   notifications: { id: string; type: 'completion' | 'failure' | 'retry' | 'stall' | 'info'; title: string; message: string; timestamp: Date; dismissed: boolean; issueIdentifier?: string; actions?: { label: string; action: string; params?: Record<string, unknown> }[] }[]
@@ -52,12 +45,12 @@ export type WatchModeState = {
   dismissAll: () => void
 }
 
-export type SchedulerState = {
+type SchedulerState = {
   activeItems: { id: string; type: 'reminder' | 'action'; message?: string; toolName?: string; firesAt: Date; delayMinutes: number; createdAt: Date; fired: boolean; cancelled: boolean }[]
   cancel: (id: string) => void
 }
 
-export type SuggestionsState = {
+type SuggestionsState = {
   suggestions: { id: string; text: string; action: string; params?: Record<string, unknown>; dismissed: boolean }[]
   enabled: boolean
   toggle: () => void

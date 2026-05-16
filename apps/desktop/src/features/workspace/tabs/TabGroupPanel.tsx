@@ -402,7 +402,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
               const initialCommand = cwd ? `cd ${shellQuote(cwd)} && clear` : undefined
               const title = proj ? `${proj.name} Shell` : 'Shell'
               setOpenTerminals([
-                ...openTerminals,
+                ...useAppStore.getState().openTerminals,
                 { id, title, projectId: proj ? projectId : undefined, cwd, initialCommand },
               ])
               addTabToGroup(projectId, { type: 'terminal', id }, group.id)
@@ -473,7 +473,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
                 const cmd = `cd ${cdArg} && clear && ${agent}`
                 const title = `${agentLabel(agent)}${proj ? ` · ${proj.name}` : ''}`
                 setOpenTerminals([
-                  ...openTerminals,
+                  ...useAppStore.getState().openTerminals,
                   { id, title, projectId: proj ? projectId : undefined, cwd, initialCommand: cmd },
                 ])
                 addTabToGroup(projectId, { type: 'terminal', id }, group.id)

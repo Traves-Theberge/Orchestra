@@ -567,6 +567,8 @@ export function KanbanBoard({
                       <div
                         key={item.issue_id}
                         draggable
+                        role="button"
+                        tabIndex={0}
                         onDragStart={(e) => handleDragStart(e, getActionIssueRef(item))}
                         className={`group relative cursor-grab rounded-lg border active:cursor-grabbing transition-all overflow-hidden ${
                           item.lane === 'running'
@@ -578,6 +580,12 @@ export function KanbanBoard({
                             : 'border-border/30 bg-card hover:border-border/60 hover:shadow-sm'
                         }`}
                         onClick={() => void onInspectIssue(getActionIssueRef(item))}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            void onInspectIssue(getActionIssueRef(item))
+                          }
+                        }}
                       >
                         {/* Left accent */}
                         <div className={`absolute left-0 top-0 bottom-0 w-[2px] ${

@@ -228,8 +228,10 @@ export function BrowserPane() {
         <form
           className="flex-1 mx-1"
           onSubmit={(e) => {
-            e.preventDefault()
-            navigate(urlInput)
+            if (urlInput) {
+              e.preventDefault()
+              navigate(urlInput)
+            }
           }}
         >
           <div className="relative flex items-center h-8 rounded-full bg-muted/40 border border-border/40 hover:bg-muted/60 focus-within:bg-background focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15 transition-all">
@@ -347,6 +349,7 @@ export function BrowserPane() {
       {/* Webview */}
       <div className="flex-1 min-h-0 relative">
         {activeTab && (
+          // eslint-disable-next-line react/no-unknown-property -- Electron <webview> attributes
           <webview
             ref={webviewRef as React.RefObject<never>}
             src={activeTab.url}

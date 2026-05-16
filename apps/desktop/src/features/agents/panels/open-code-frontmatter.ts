@@ -21,9 +21,12 @@ export function parseOpenCodeMarkdown(content: string): { frontmatter: OpenCodeF
 }
 
 export function buildOpenCodeMarkdown(frontmatter: OpenCodeFrontmatter, body: string): string {
-  const lines = Object.entries(frontmatter)
-    .filter(([, value]) => value.trim() !== '')
-    .map(([key, value]) => `${key}: ${value.trim()}`)
+  const lines: string[] = []
+  for (const [key, value] of Object.entries(frontmatter)) {
+    const trimmed = value.trim()
+    if (trimmed === '') continue
+    lines.push(`${key}: ${trimmed}`)
+  }
 
   const normalizedBody = body.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
   return `---\n${lines.join('\n')}\n---\n\n${normalizedBody.trimEnd()}\n`

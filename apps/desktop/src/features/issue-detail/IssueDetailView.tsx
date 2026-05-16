@@ -1,9 +1,9 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
-import { CheckCircle2, ChevronDown, FileText, GitPullRequest, Github, Info, Loader2, Pencil, Terminal, X } from 'lucide-react'
+import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState, type Reducer } from 'react'
+import { CheckCircle2, FileText, GitPullRequest, Github, Info, Loader2, Pencil, Terminal, X } from 'lucide-react'
 import { MarkdownRenderer } from '@ui/MarkdownRenderer'
 
-import type { BackendConfig, IssueUpdatePayload, IssueHistoryEntry } from '@core/api/client'
-import { fetchIssueHistory, fetchIssueDiff, fetchIssueLogs, updateProjectGitHubIssue, stopIssue, createGitHubPR } from '@core/api/client'
+import type { BackendConfig, IssueUpdatePayload } from '@core/api/client'
+import { fetchIssueHistory, fetchIssueDiff, fetchIssueLogs, stopIssue, createGitHubPR } from '@core/api/client'
 import type { SnapshotPayload } from '@core/api/types'
 import type { TimelineItem } from '@layout/types'
 import { AgentSelector } from '@layout/shared/controls'
@@ -11,10 +11,14 @@ import { AppTooltip } from '@ui/tooltip-wrapper'
 import type { IssueDetailResult } from './types'
 import { FeedbackDialog } from './FeedbackDialog'
 import { PRCreateDialog } from './PRCreateDialog'
-import { extractOperationalPlanItems, extractPlanFromText, parseDiff, type DiffFile, type PlanItem } from './IssueDetailUtils'
-import { getCachedPlan, setCachedPlan, clearCachedPlan } from './plan-cache'
+import { extractPlanFromText, parseDiff, type DiffFile, type PlanItem } from './IssueDetailUtils'
+import { setCachedPlan, clearCachedPlan } from './plan-cache'
 import { SessionTimeline } from './SessionTimeline'
+import { DescriptionEditor } from './DescriptionEditor'
 import { useAppStore } from '@core/store'
+
+const EMPTY_AGENTS: readonly string[] = []
+const EMPTY_TIMELINE: readonly TimelineItem[] = []
 
 function SidebarRow({ label, content }: { label: string; content: React.ReactNode }) {
   const labelId = useId()
@@ -26,91 +30,106 @@ function SidebarRow({ label, content }: { label: string; content: React.ReactNod
   )
 }
 
-function DescriptionEditor({ value, onChange, onBlur, theme, projectId }: {
-  value: string
-  onChange: (v: string) => void
-  onBlur: () => void
-  theme?: 'light' | 'dark'
-  projectId?: string
-}) {
-  const [editing, setEditing] = useState(false)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+type SessionState = {
+  logs: string
+  logsLoading: boolean
+  diffFiles: DiffFile[]
+  diffLoading: boolean
+  activeDiffFile: string | null
+}
 
-  useEffect(() => {
-    if (editing && textareaRef.current) {
-      textareaRef.current.focus()
-      textareaRef.current.selectionStart = textareaRef.current.value.length
-    }
-  }, [editing])
+type SessionAction =
+  | { type: 'logs-loading'; value: boolean }
+  | { type: 'logs'; value: string }
+  | { type: 'diff-loading'; value: boolean }
+  | { type: 'diff-files'; files: DiffFile[] }
+  | { type: 'active-diff'; path: string | null }
+  | { type: 'reset' }
 
-  if (editing) {
-    return (
-      <div className="flex-1 flex flex-col min-h-0 rounded-lg border border-primary/30 bg-muted/10 overflow-hidden">
-        <div className="flex items-center justify-between px-3 py-1.5 border-b border-border/30 bg-muted/20 shrink-0">
-          <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50">Editing Markdown</span>
-          <button
-            className="text-[9px] font-bold uppercase tracking-widest text-primary/60 hover:text-primary transition-colors"
-            onClick={() => setEditing(false)}
-          >
-            Preview
-          </button>
-        </div>
-        <textarea
-          ref={textareaRef}
-          className="w-full flex-1 bg-transparent text-sm text-foreground font-mono outline-none focus:outline-none placeholder:text-muted-foreground/15 leading-relaxed resize-none p-4"
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          onBlur={() => { onBlur(); setEditing(false) }}
-          placeholder="Describe what this task should accomplish...&#10;&#10;Supports **Markdown** formatting."
-        />
-      </div>
-    )
+const sessionReducer: Reducer<SessionState, SessionAction> = (state, action) => {
+  switch (action.type) {
+    case 'logs-loading':
+      return { ...state, logsLoading: action.value }
+    case 'logs':
+      return { ...state, logs: action.value }
+    case 'diff-loading':
+      return { ...state, diffLoading: action.value }
+    case 'diff-files':
+      return {
+        ...state,
+        diffFiles: action.files,
+        activeDiffFile: action.files.length > 0 ? action.files[0].path : state.activeDiffFile,
+      }
+    case 'active-diff':
+      return { ...state, activeDiffFile: action.path }
+    case 'reset':
+      return { logs: '', logsLoading: false, diffFiles: [], diffLoading: false, activeDiffFile: null }
+    default:
+      return state
   }
+}
 
-  if (!value.trim()) {
-    return (
-      <button
-        className="flex-1 flex flex-col items-center justify-center rounded-lg border border-dashed border-border/40 hover:border-primary/30 hover:bg-primary/5 transition-all cursor-text group"
-        onClick={() => setEditing(true)}
-      >
-        <Pencil className="size-5 text-muted-foreground/15 group-hover:text-primary/30 transition-colors mb-2" />
-        <span className="text-sm text-muted-foreground/20 group-hover:text-muted-foreground/40 transition-colors">Click to add a description…</span>
-      </button>
-    )
+type WorkflowState = {
+  state: string
+  assignee: string
+  title: string
+  description: string
+  prUrl: string | null
+}
+
+type WorkflowAction =
+  | { type: 'set-state'; value: string }
+  | { type: 'set-assignee'; value: string }
+  | { type: 'set-title'; value: string }
+  | { type: 'set-description'; value: string }
+  | { type: 'set-pr-url'; value: string | null }
+  | { type: 'sync-from-result'; value: WorkflowState }
+
+const workflowReducer: Reducer<WorkflowState, WorkflowAction> = (state, action) => {
+  switch (action.type) {
+    case 'set-state':
+      return { ...state, state: action.value }
+    case 'set-assignee':
+      return { ...state, assignee: action.value }
+    case 'set-title':
+      return { ...state, title: action.value }
+    case 'set-description':
+      return { ...state, description: action.value }
+    case 'set-pr-url':
+      return { ...state, prUrl: action.value }
+    case 'sync-from-result':
+      return action.value
+    default:
+      return state
   }
+}
 
-  return (
-    <div
-      className="flex-1 min-h-0 rounded-lg cursor-text transition-all group/md relative overflow-auto"
-      onClick={() => setEditing(true)}
-    >
-      <div className="absolute top-2 right-2 opacity-0 group-hover/md:opacity-100 transition-opacity">
-        <div className="flex items-center gap-1 rounded-md bg-muted/80 backdrop-blur px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50 border border-border/30">
-          <Pencil className="size-2.5" />
-          Edit
-        </div>
-      </div>
-      <div className={`prose ${theme === 'dark' ? 'prose-invert' : ''} prose-sm max-w-none text-foreground/70 leading-relaxed
-        prose-headings:text-foreground prose-headings:font-bold prose-headings:tracking-tight
-        prose-h1:text-lg prose-h1:border-b prose-h1:border-border/20 prose-h1:pb-2 prose-h1:mb-3
-        prose-h2:text-base prose-h2:mb-2
-        prose-h3:text-sm prose-h3:mb-1
-        prose-p:mb-2 prose-p:text-foreground/60
-        prose-a:text-primary prose-a:no-underline hover:prose-a:underline
-        prose-strong:text-foreground/80 prose-strong:font-bold
-        prose-code:text-[12px] prose-code:font-mono prose-code:bg-muted/40 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:border prose-code:border-border/20 prose-code:before:content-none prose-code:after:content-none
-        prose-pre:bg-card dark:bg-card prose-pre:border prose-pre:border-border/20 prose-pre:rounded-lg
-        prose-ul:my-2 prose-ol:my-2 prose-li:my-0.5 prose-li:text-foreground/60
-        prose-li:marker:text-muted-foreground/30
-        prose-blockquote:border-l-primary/30 prose-blockquote:text-muted-foreground/50 prose-blockquote:italic prose-blockquote:not-italic prose-blockquote:font-normal
-        prose-hr:border-border/20
-        prose-img:rounded-lg prose-img:border prose-img:border-border/20
-        prose-table:text-sm prose-th:text-foreground/70 prose-td:text-foreground/50
-      `}>
-        <MarkdownRenderer content={value} linkProjectId={projectId} />
-      </div>
-    </div>
-  )
+type UIState = {
+  bottomTab: 'details' | 'plan' | 'output' | 'changes'
+  showStopConfirm: boolean
+  showFeedback: boolean
+  prDialogOpen: boolean
+}
+
+type UIAction =
+  | { type: 'set-tab'; value: UIState['bottomTab'] }
+  | { type: 'set-stop-confirm'; value: boolean }
+  | { type: 'set-feedback'; value: boolean }
+  | { type: 'set-pr-dialog'; value: boolean }
+
+const uiReducer: Reducer<UIState, UIAction> = (state, action) => {
+  switch (action.type) {
+    case 'set-tab':
+      return { ...state, bottomTab: action.value }
+    case 'set-stop-confirm':
+      return { ...state, showStopConfirm: action.value }
+    case 'set-feedback':
+      return { ...state, showFeedback: action.value }
+    case 'set-pr-dialog':
+      return { ...state, prDialogOpen: action.value }
+    default:
+      return state
+  }
 }
 
 export function IssueDetailView({
@@ -119,8 +138,8 @@ export function IssueDetailView({
   onStopSession,
   config,
   snapshot,
-  timeline = [],
-  availableAgents = [],
+  timeline: _timeline = EMPTY_TIMELINE,
+  availableAgents = EMPTY_AGENTS,
   theme,
 }: {
   result: IssueDetailResult | null
@@ -128,11 +147,11 @@ export function IssueDetailView({
   onStopSession?: (provider?: string) => Promise<void>
   config: BackendConfig | null
   snapshot: SnapshotPayload | null
-  timeline?: TimelineItem[]
-  availableAgents?: string[]
+  timeline?: readonly TimelineItem[]
+  availableAgents?: readonly string[]
   theme?: 'light' | 'dark'
 }) {
-
+  void _timeline
   const typed = (result ?? {})
   const identifier = (typed.identifier as string) || (typed.issue_identifier as string) || ''
   const issueId = (typed.id as string) || (typed.issue_id as string) || ''
@@ -142,41 +161,57 @@ export function IssueDetailView({
   const projectName = (typed.project_name as string) || ''
   const provider = (typed.provider as string) || ''
 
+  const resultId = (typed.id as string) || (typed.issue_id as string) || ''
+  const initialState = (typed.state as string) || 'Todo'
+
   const openBrowserTab = useAppStore((s) => s.openBrowserTab)
   const setActiveSection = useAppStore((s) => s.setActiveSection)
-  const openInInternalBrowser = (url: string) => {
+  const openInInternalBrowser = useCallback((url: string) => {
     setActiveSection('CONSOLE')
     openBrowserTab(url, projectId || undefined)
-  }
+  }, [openBrowserTab, projectId, setActiveSection])
 
-  const [localState, setLocalState] = useState((typed.state as string) || 'Todo')
-  const [localAssignee, setLocalAssignee] = useState((typed.assignee_id as string) || '')
-  const [localTitle, setLocalTitle] = useState(title)
-  const [localDescription, setLocalDescription] = useState(description)
-  const [bottomTab, setBottomTab] = useState<'details' | 'plan' | 'output' | 'changes'>('details')
-  const [showStopConfirm, setShowStopConfirm] = useState(false)
-  const [showFeedback, setShowFeedback] = useState(false)
-  const [prDialogOpen, setPRDialogOpen] = useState(false)
-  const [prUrl, setPrUrl] = useState<string | null>((typed.pr_url as string) || null)
-
+  const [workflow, dispatchWorkflow] = useReducer(workflowReducer, {
+    state: initialState,
+    assignee: (typed.assignee_id as string) || '',
+    title,
+    description,
+    prUrl: (typed.pr_url as string) || null,
+  })
+  const { state: localState, assignee: localAssignee, title: localTitle, description: localDescription, prUrl } = workflow
   const isEditable = localState === 'Backlog'
 
-  const [issueHistory, setIssueHistory] = useState<IssueHistoryEntry[]>([])
-  const [logs, setLogs] = useState('')
-  const [logsLoading, setLogsLoading] = useState(localState !== 'Backlog')
-  const [diffFiles, setDiffFiles] = useState<DiffFile[]>([])
-  const [diffLoading, setDiffLoading] = useState(false)
-  const [activeDiffFile, setActiveDiffFile] = useState<string | null>(null)
+  const [ui, dispatchUI] = useReducer(uiReducer, {
+    bottomTab: 'details',
+    showStopConfirm: false,
+    showFeedback: false,
+    prDialogOpen: false,
+  })
+  const { bottomTab, showStopConfirm, showFeedback, prDialogOpen } = ui
 
+  const [session, dispatchSession] = useReducer(sessionReducer, undefined, () => ({
+    logs: '',
+    logsLoading: initialState !== 'Backlog',
+    diffFiles: [],
+    diffLoading: false,
+    activeDiffFile: null,
+  }))
+  const { logs, logsLoading, diffFiles, diffLoading, activeDiffFile } = session
 
-  // Only sync state/assignee from result (these are set by dropdowns, not typed input)
-  // Title and description are user-editable text - only set on initial load, not on re-fetches
-  const resultId = (typed.id as string) || (typed.issue_id as string) || ''
+  // issueHistory was fetched but never rendered — kept in a ref so the fetch is preserved without re-renders.
+  const issueHistoryRef = useRef<unknown[]>([])
+
   useEffect(() => {
-    setLocalState((typed.state as string) || 'Todo')
-    setLocalAssignee((typed.assignee_id as string) || '')
-    setLocalTitle((typed.title as string) || 'No Title')
-    setLocalDescription((typed.description as string) || '')
+    dispatchWorkflow({
+      type: 'sync-from-result',
+      value: {
+        state: (typed.state as string) || 'Todo',
+        assignee: (typed.assignee_id as string) || '',
+        title: (typed.title as string) || 'No Title',
+        description: (typed.description as string) || '',
+        prUrl: (typed.pr_url as string) || null,
+      },
+    })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resultId])
 
@@ -208,66 +243,57 @@ export function IssueDetailView({
   const completedCount = planItems.filter(i => i.done).length
   const isRunning = snapshot?.running?.some(r => r.issue_id === issueId || r.issue_identifier === identifier) ?? false
 
-  // Fetch history on mount + poll while running (for live operational plan updates)
-  // Skip fetching when in Backlog/Todo — no agent data to show
   useEffect(() => {
     if (!config || !identifier) return
     if (localState === 'Backlog') {
-      setIssueHistory([])
+      issueHistoryRef.current = []
       return
     }
     fetchIssueHistory(config, identifier)
-      .then(setIssueHistory)
-      .catch(() => setIssueHistory([]))
+      .then((entries) => { issueHistoryRef.current = entries })
+      .catch(() => { issueHistoryRef.current = [] })
   }, [config, identifier, localState])
 
-  // Refresh history when orchestrator data changes (SSE-driven, no polling)
   useEffect(() => {
     const handler = () => {
       if (!config || !identifier || localState === 'Backlog') return
       fetchIssueHistory(config, identifier)
-        .then(setIssueHistory)
+        .then((entries) => { issueHistoryRef.current = entries })
         .catch(() => {})
     }
     window.addEventListener('orchestra-data-changed', handler)
     return () => window.removeEventListener('orchestra-data-changed', handler)
   }, [config, identifier, localState])
 
-  // Fetch tab-specific data
   useEffect(() => {
     if (!config || !identifier) return
     if (localState !== 'Backlog') {
-      setLogsLoading(true)
+      dispatchSession({ type: 'logs-loading', value: true })
       fetchIssueLogs(config, identifier, provider)
-        .then(setLogs)
-        .catch(() => setLogs(''))
-        .finally(() => setLogsLoading(false))
+        .then((value) => dispatchSession({ type: 'logs', value }))
+        .catch(() => dispatchSession({ type: 'logs', value: '' }))
+        .finally(() => dispatchSession({ type: 'logs-loading', value: false }))
     }
     if (bottomTab === 'changes' && (isRunning || localState === 'In Progress' || localState === 'Review' || localState === 'Done')) {
-      setDiffLoading(true)
+      dispatchSession({ type: 'diff-loading', value: true })
       fetchIssueDiff(config, identifier, provider)
         .then(raw => {
           const files = parseDiff(raw)
-          setDiffFiles(files)
-          if (files.length > 0) setActiveDiffFile(files[0].path)
+          dispatchSession({ type: 'diff-files', files })
         })
-        .catch(() => setDiffFiles([]))
-        .finally(() => setDiffLoading(false))
+        .catch(() => dispatchSession({ type: 'diff-files', files: [] }))
+        .finally(() => dispatchSession({ type: 'diff-loading', value: false }))
     }
   }, [bottomTab, config, identifier, provider, localState, isRunning])
 
   const handleStateChange = async (newState: string) => {
-    setLocalState(newState)
-    // Moving to Done or Todo while running → stop the agent session first
+    dispatchWorkflow({ type: 'set-state', value: newState })
     if (newState !== 'In Progress' && isRunning && onStopSession) {
       await onStopSession(provider)
     }
-    // Reset plan/activity/output when moving back to Backlog or Todo
     if (newState === 'Backlog' || newState === 'Todo') {
-      setIssueHistory([])
-      setLogs('')
-      setDiffFiles([])
-      setActiveDiffFile(null)
+      issueHistoryRef.current = []
+      dispatchSession({ type: 'reset' })
     }
     if (newState === 'Backlog') {
       clearCachedPlan(identifier)
@@ -276,7 +302,7 @@ export function IssueDetailView({
   }
 
   const handleAssigneeChange = async (newAssignee: string) => {
-    setLocalAssignee(newAssignee)
+    dispatchWorkflow({ type: 'set-assignee', value: newAssignee })
     const agentName = newAssignee.replace('agent-', '')
     if (onUpdate) await onUpdate({ assignee_id: newAssignee, provider: agentName })
   }
@@ -285,13 +311,10 @@ export function IssueDetailView({
     if (!config) return
     try {
       await stopIssue(config, identifier)
-      setShowStopConfirm(false)
-      setLocalState('Backlog')
-      // Clear all session artifacts
-      setIssueHistory([])
-      setLogs('')
-      setDiffFiles([])
-      setActiveDiffFile(null)
+      dispatchUI({ type: 'set-stop-confirm', value: false })
+      dispatchWorkflow({ type: 'set-state', value: 'Backlog' })
+      issueHistoryRef.current = []
+      dispatchSession({ type: 'reset' })
       clearCachedPlan(issueId || identifier)
       onUpdate?.({ state: 'Backlog', feedback: '' })
     } catch (err) {
@@ -300,30 +323,25 @@ export function IssueDetailView({
   }
 
   const handleReject = async (feedback: string) => {
-    setShowFeedback(false)
+    dispatchUI({ type: 'set-feedback', value: false })
     if (prUrl) {
-      // PR exists — go straight to execution, no re-planning
-      setLocalState('In Progress')
+      dispatchWorkflow({ type: 'set-state', value: 'In Progress' })
       onUpdate?.({ state: 'In Progress', feedback })
     } else {
-      // No PR — re-plan with feedback context
-      setLocalState('Todo')
+      dispatchWorkflow({ type: 'set-state', value: 'Todo' })
       onUpdate?.({ state: 'Todo', feedback })
     }
   }
-
-  if (!result) {
-    return <div className="h-full flex items-center justify-center text-muted-foreground/30 text-sm italic">No issue data.</div>
-  }
-
-  const _stateColor = localState === 'Done' ? 'text-primary' : localState === 'In Progress' ? 'text-amber-500' : 'text-muted-foreground'
-  const _stateDot = localState === 'Done' ? 'bg-primary' : localState === 'In Progress' ? 'bg-amber-500 animate-pulse' : 'bg-muted-foreground/40'
 
   const createdAtIso = typeof typed.created_at === 'string' ? (typed.created_at as string) : ''
   const formattedCreatedAt = useMemo(
     () => (createdAtIso ? new Date(createdAtIso).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '—'),
     [createdAtIso],
   )
+
+  if (!result) {
+    return <div className="h-full flex items-center justify-center text-muted-foreground/30 text-sm italic">No issue data.</div>
+  }
 
   const tabItems = [
     { id: 'details' as const, label: 'Details', icon: Info, count: undefined },
@@ -356,7 +374,7 @@ export function IssueDetailView({
                 <AppTooltip content="Push branch and create a GitHub pull request" side="bottom">
                   <button
                     className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[11px] font-bold uppercase tracking-widest bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all"
-                    onClick={() => setPRDialogOpen(true)}
+                    onClick={() => dispatchUI({ type: 'set-pr-dialog', value: true })}
                   >
                     <GitPullRequest size={14} />
                     Create PR
@@ -366,7 +384,7 @@ export function IssueDetailView({
               <AppTooltip content="Send feedback and re-dispatch the agent to make changes" side="bottom">
                 <button
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest bg-muted/20 text-muted-foreground border border-border/30 hover:bg-muted/40 transition-colors"
-                  onClick={() => setShowFeedback(true)}
+                  onClick={() => dispatchUI({ type: 'set-feedback', value: true })}
                 >
                   <Pencil size={12} />
                   Request Changes
@@ -375,7 +393,7 @@ export function IssueDetailView({
               <AppTooltip content="Close this task and clean up the worktree" side="bottom">
                 <button
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest text-red-500 border border-red-500/30 hover:bg-red-500/10 transition-colors"
-                  onClick={async () => { await onUpdate({ state: 'Done' }); setLocalState('Done') }}
+                  onClick={async () => { await onUpdate({ state: 'Done' }); dispatchWorkflow({ type: 'set-state', value: 'Done' }) }}
                 >
                   <X size={12} />
                   Close
@@ -395,7 +413,7 @@ export function IssueDetailView({
         {tabItems.map((tab, idx) => (
           <button
             key={tab.id}
-            onClick={() => setBottomTab(tab.id)}
+            onClick={() => dispatchUI({ type: 'set-tab', value: tab.id })}
             className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-[10px] font-bold uppercase tracking-[0.15em] transition-all border-b-2 ${
               idx < tabItems.length - 1 ? 'border-r border-border/20' : ''
             } ${
@@ -425,7 +443,7 @@ export function IssueDetailView({
                 <input
                   className="w-full bg-transparent text-xl font-bold text-foreground outline-none focus:outline-none placeholder:text-muted-foreground/20 mb-1"
                   value={localTitle}
-                  onChange={e => setLocalTitle(e.target.value)}
+                  onChange={e => dispatchWorkflow({ type: 'set-title', value: e.target.value })}
                   onBlur={() => { if (localTitle !== title && onUpdate) void onUpdate({ title: localTitle }) }}
                   placeholder="Task title..."
                 />
@@ -436,7 +454,7 @@ export function IssueDetailView({
               {isEditable ? (
                 <DescriptionEditor
                   value={localDescription}
-                  onChange={setLocalDescription}
+                  onChange={(value) => dispatchWorkflow({ type: 'set-description', value })}
                   onBlur={() => { if (localDescription !== description && onUpdate) void onUpdate({ description: localDescription }) }}
                   theme={theme}
                   projectId={projectId}
@@ -485,7 +503,7 @@ export function IssueDetailView({
                       <button
                         onClick={async () => {
                           if (!canMove) return
-                          setLocalState('Todo')
+                          dispatchWorkflow({ type: 'set-state', value: 'Todo' })
                           if (onUpdate) await onUpdate({ state: 'Todo' })
                         }}
                         disabled={!canMove}
@@ -512,14 +530,14 @@ export function IssueDetailView({
                       </div>
                       <button
                         onClick={async () => {
-                          setLocalState('In Progress')
+                          dispatchWorkflow({ type: 'set-state', value: 'In Progress' })
                           if (onUpdate) await onUpdate({ state: 'In Progress' })
                         }}
                         className="w-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-all"
                       >
                         Start Execution
                       </button>
-                      <button onClick={() => setShowStopConfirm(true)} className="w-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all">
+                      <button onClick={() => dispatchUI({ type: 'set-stop-confirm', value: true })} className="w-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all">
                         Stop &amp; Reset
                       </button>
                     </div>
@@ -531,7 +549,7 @@ export function IssueDetailView({
                         <span className="size-2 rounded-full bg-amber-500 animate-pulse" />
                         <span className="text-[11px] text-amber-400">Executing</span>
                       </div>
-                      <button onClick={() => setShowStopConfirm(true)} className="w-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all">
+                      <button onClick={() => dispatchUI({ type: 'set-stop-confirm', value: true })} className="w-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all">
                         Stop &amp; Reset
                       </button>
                     </div>
@@ -566,7 +584,7 @@ export function IssueDetailView({
               {[
                 ...(isEditable ? [
                   { label: 'Agent', content: (
-                    <AgentSelector value={localAssignee} agents={availableAgents} onChange={handleAssigneeChange} direction="down" />
+                    <AgentSelector value={localAssignee} agents={availableAgents as string[]} onChange={handleAssigneeChange} direction="down" />
                   )},
                   { label: 'Project', content: (
                     <span className="text-[11px] font-bold text-foreground/80">{projectName || 'Unlinked'}</span>
@@ -663,7 +681,7 @@ export function IssueDetailView({
                   {diffFiles.map(f => (
                     <button
                       key={f.path}
-                      onClick={() => setActiveDiffFile(f.path)}
+                      onClick={() => dispatchSession({ type: 'active-diff', path: f.path })}
                       className={`w-full text-left px-3 py-2 text-[11px] truncate transition-colors ${
                         activeDiffFile === f.path ? 'bg-primary/10 text-primary font-medium border-l-2 border-primary' : 'text-muted-foreground hover:bg-muted/20'
                       }`}
@@ -690,7 +708,7 @@ export function IssueDetailView({
                         color = '#484f58'
                       }
                       return (
-                        <div key={i} style={{ background: bg }} className="px-3 -mx-4">
+                        <div key={`${i}:${line}`} style={{ background: bg }} className="px-3 -mx-4">
                           <span className="inline-block w-8 text-right mr-3 select-none" style={{ color: '#484f58' }}>{i + 1}</span>
                           <span style={{ color }}>{line}</span>
                         </div>
@@ -712,7 +730,7 @@ export function IssueDetailView({
               This will clear the plan and all changes. The task will return to Backlog for editing.
             </p>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setShowStopConfirm(false)} className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg text-muted-foreground hover:text-foreground transition-all">
+              <button onClick={() => dispatchUI({ type: 'set-stop-confirm', value: false })} className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg text-muted-foreground hover:text-foreground transition-all">
                 Cancel
               </button>
               <button onClick={confirmStop} className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all">
@@ -726,7 +744,7 @@ export function IssueDetailView({
       {showFeedback && (
         <FeedbackDialog
           onSubmit={handleReject}
-          onCancel={() => setShowFeedback(false)}
+          onCancel={() => dispatchUI({ type: 'set-feedback', value: false })}
           hasPR={!!prUrl}
         />
       )}
@@ -734,16 +752,15 @@ export function IssueDetailView({
       {config && projectId && (
         <PRCreateDialog
           open={prDialogOpen}
-          onClose={() => setPRDialogOpen(false)}
+          onClose={() => dispatchUI({ type: 'set-pr-dialog', value: false })}
           onSubmit={async ({ title: prTitle, body, base, head, draft }) => {
             const result = await createGitHubPR(config, identifier, { title: prTitle, body, base, head })
             void draft
-            const url = (result as any).html_url || result.url || ''
-            setPrUrl(url)
-            setPRDialogOpen(false)
-            // Auto-advance to Done after PR creation
+            const url = (result as { html_url?: string; url?: string }).html_url || result.url || ''
+            dispatchWorkflow({ type: 'set-pr-url', value: url })
+            dispatchUI({ type: 'set-pr-dialog', value: false })
             if (onUpdate) await onUpdate({ pr_url: url, state: 'Done' })
-            setLocalState('Done')
+            dispatchWorkflow({ type: 'set-state', value: 'Done' })
           }}
           issueTitle={localTitle}
           issueDescription={description}

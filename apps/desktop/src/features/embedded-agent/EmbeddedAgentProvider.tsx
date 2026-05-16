@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, useCallback, useRef, type ReactNode } from 'react'
+import { createContext, use, useEffect, useMemo, useState, useCallback, useRef, type ReactNode } from 'react'
 import type { BackendConfig } from '@core/api/client'
 import type { EmbeddedAgentContextValue } from './lib/types'
 import { useProviderConfig } from './hooks/use-provider-config'
@@ -175,7 +175,7 @@ export function EmbeddedAgentProvider({ config, onNavigate, activeSection, selec
 
  
 export function useEmbeddedAgent(): EmbeddedAgentContextValue {
-  const ctx = useContext(EmbeddedAgentContext)
+  const ctx = use(EmbeddedAgentContext)
   if (!ctx) {
     throw new Error('useEmbeddedAgent must be used within EmbeddedAgentProvider')
   }

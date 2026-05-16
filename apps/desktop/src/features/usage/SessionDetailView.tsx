@@ -51,7 +51,7 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({ session })
             </div>
 
             <div className="space-y-4">
-                <h3 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2">
+                <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2">
                     <Terminal size={14} />
                     Execution Timeline
                 </h3>

@@ -19,10 +19,12 @@ export function parseOpenCodeSkill(content: string): { frontmatter: OpenCodeSkil
     if (separator === -1) continue
     const key = trimmed.slice(0, separator).trim()
     const value = trimmed.slice(separator + 1).trim()
-    if (key === 'name') frontmatter.name = value
-    if (key === 'description') frontmatter.description = value
-    if (key === 'license') frontmatter.license = value
-    if (key === 'compatibility') frontmatter.compatibility = value
+    switch (key) {
+      case 'name': frontmatter.name = value; break
+      case 'description': frontmatter.description = value; break
+      case 'license': frontmatter.license = value; break
+      case 'compatibility': frontmatter.compatibility = value; break
+    }
   }
 
   return { frontmatter, body: match[2] ?? '' }

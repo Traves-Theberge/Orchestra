@@ -48,15 +48,13 @@ function useChart() {
  * Responsive chart wrapper that provides theme-aware CSS custom properties
  * and a ChartConfig context for tooltip and legend components.
  */
-const ChartContainer = React.forwardRef<
-  HTMLDivElement,
-  React.ComponentProps<"div"> & {
-    config: ChartConfig
-    children: React.ComponentProps<
-      typeof RechartsPrimitive.ResponsiveContainer
-    >["children"]
-  }
->(({ id, className, children, config, ...props }, ref) => {
+type ChartContainerProps = React.ComponentProps<"div"> & {
+  config: ChartConfig
+  children: React.ComponentProps<typeof RechartsPrimitive.ResponsiveContainer>["children"]
+  ref?: React.Ref<HTMLDivElement>
+}
+
+const ChartContainer = ({ id, className, children, config, ref, ...props }: ChartContainerProps) => {
   const uniqueId = React.useId()
   const chartId = `chart-${id || uniqueId.replace(/:/g, "")}`
 
@@ -80,7 +78,7 @@ const ChartContainer = React.forwardRef<
       </div>
     </ChartContext.Provider>
   )
-})
+}
 ChartContainer.displayName = "Chart"
 
 /** Injects CSS custom properties for chart colors based on the active theme. */
@@ -95,6 +93,7 @@ const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
 
   return (
     <style
+      // eslint-disable-next-line react/no-danger -- CSS built from internal config only, no user input
       dangerouslySetInnerHTML={{
         __html: Object.entries(THEMES)
           .map(
@@ -124,25 +123,24 @@ const ChartTooltip = (props: React.ComponentProps<typeof RechartsPrimitive.Toolt
   </React.Suspense>
 )
 
+type ChartTooltipContentProps = React.ComponentProps<"div"> & {
+  active?: boolean
+  payload?: Array<Record<string, any>>
+  label?: string
+  labelFormatter?: (value: any, payload: any[]) => React.ReactNode
+  formatter?: (value: any, name: any, item: any, index: number, payload: any) => React.ReactNode
+  color?: string
+  labelClassName?: string
+  hideLabel?: boolean
+  hideIndicator?: boolean
+  indicator?: "line" | "dot" | "dashed"
+  nameKey?: string
+  labelKey?: string
+  ref?: React.Ref<HTMLDivElement>
+}
+
 /** Styled tooltip content component that reads from ChartConfig context for labels and colors. */
-const ChartTooltipContent = React.forwardRef<
-  HTMLDivElement,
-  React.ComponentProps<"div"> & {
-      active?: boolean
-      payload?: Array<Record<string, any>>
-      label?: string
-      labelFormatter?: (value: any, payload: any[]) => React.ReactNode
-      formatter?: (value: any, name: any, item: any, index: number, payload: any) => React.ReactNode
-      color?: string
-      labelClassName?: string
-      hideLabel?: boolean
-      hideIndicator?: boolean
-      indicator?: "line" | "dot" | "dashed"
-      nameKey?: string
-      labelKey?: string
-    }
->(
-  (
+const ChartTooltipContent = (
     {
       active,
       payload,
@@ -157,8 +155,8 @@ const ChartTooltipContent = React.forwardRef<
       color,
       nameKey,
       labelKey,
-    },
-    ref
+      ref,
+    }: ChartTooltipContentProps
   ) => {
     const { config } = useChart()
 
@@ -283,7 +281,6 @@ const ChartTooltipContent = React.forwardRef<
       </div>
     )
   }
-)
 ChartTooltipContent.displayName = "ChartTooltip"
 
 /** Lazy-loaded Recharts Legend wrapper. */
@@ -293,19 +290,17 @@ const ChartLegend = (props: React.ComponentProps<typeof RechartsPrimitive.Legend
   </React.Suspense>
 )
 
+type ChartLegendContentProps = React.ComponentProps<"div"> & {
+  payload?: Array<Record<string, any>>
+  verticalAlign?: "top" | "bottom"
+  hideIcon?: boolean
+  nameKey?: string
+  ref?: React.Ref<HTMLDivElement>
+}
+
 /** Styled legend content component that reads from ChartConfig context for labels and icons. */
-const ChartLegendContent = React.forwardRef<
-  HTMLDivElement,
-  React.ComponentProps<"div"> & {
-      payload?: Array<Record<string, any>>
-      verticalAlign?: "top" | "bottom"
-      hideIcon?: boolean
-      nameKey?: string
-    }
->(
-  (
-    { className, hideIcon = false, payload, verticalAlign = "bottom", nameKey },
-    ref
+const ChartLegendContent = (
+    { className, hideIcon = false, payload, verticalAlign = "bottom", nameKey, ref }: ChartLegendContentProps
   ) => {
     const { config } = useChart()
 
@@ -351,7 +346,6 @@ const ChartLegendContent = React.forwardRef<
       </div>
     )
   }
-)
 ChartLegendContent.displayName = "ChartLegend"
 
 function getPayloadConfigFromPayload(

@@ -82,6 +82,10 @@ function FileRow({
     <div
       ref={setNodeRef}
       style={style}
+      {...attributes}
+      {...listeners}
+      role="button"
+      tabIndex={0}
       data-testid={`file-row-${isStaged ? 'staged' : 'unstaged'}-${entry.path}`}
       data-selected={isSelected ? 'true' : undefined}
       onClick={onSelect}
@@ -97,8 +101,6 @@ function FileRow({
           : 'text-foreground/85 hover:bg-foreground/[0.03]'
       }`}
       title={entry.path}
-      {...attributes}
-      {...listeners}
     >
       <span data-file-path={entry.path} className={`min-w-0 flex-1 truncate text-[12px] font-mono leading-none ${isDeleted ? 'line-through text-muted-foreground/60' : ''}`}>
         {filename}

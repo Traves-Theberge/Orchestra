@@ -64,24 +64,6 @@ export function removeLeaf(
   return { ...node, first, second }
 }
 
-/**
- * Find a node by string path of 'first'/'second' steps from the root.
- * Returns null if the path doesn't resolve to a split node.
- */
-export function findNodeAtPath(
-  node: TabGroupLayoutNode,
-  path: string,
-): TabGroupLayoutNode | null {
-  if (path === '') return node
-  const steps = path.split('.')
-  let cur: TabGroupLayoutNode = node
-  for (const step of steps) {
-    if (cur.kind !== 'split') return null
-    cur = step === 'first' ? cur.first : step === 'second' ? cur.second : cur
-  }
-  return cur
-}
-
 /** Return a new tree with the node at `path` updated. */
 export function updateNodeAtPath(
   node: TabGroupLayoutNode,

@@ -6,6 +6,7 @@ import {
 import type { Project, ProjectStats } from '@core/api/types'
 import { Skeleton } from '@ui/skeleton'
 import { Button } from '@ui/button'
+import { useNow } from '@/hooks'
 
 import {
   Dialog,
@@ -28,9 +29,10 @@ function formatTokens(n: number): string {
   return String(n)
 }
 
-function relativeTime(iso: string): string {
+function relativeTime(iso: string, now: number): string {
   if (!iso) return '—'
-  const diff = Date.now() - new Date(iso).getTime()
+  if (!now) return ''
+  const diff = now - new Date(iso).getTime()
   const mins = Math.floor(diff / 60000)
   if (mins < 1) return 'just now'
   if (mins < 60) return `${mins}m ago`
@@ -99,6 +101,7 @@ export const ProjectGrid: React.FC<ProjectGridProps> = ({
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null)
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const now = useNow()
 
   const handleSort = useCallback((key: SortKey) => {
     if (key === sortKey) {
@@ -165,7 +168,7 @@ export const ProjectGrid: React.FC<ProjectGridProps> = ({
     <div className="flex flex-col h-full bg-background">
       {/* Header */}
       <div className="px-8 pt-10 pb-6">
-        <h1 className="text-3xl font-black tracking-tight">Projects</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">Projects</h1>
         <p className="text-sm text-muted-foreground mt-1">
           {sorted.length} {sorted.length === 1 ? 'project' : 'projects'}
         </p>
@@ -270,7 +273,7 @@ export const ProjectGrid: React.FC<ProjectGridProps> = ({
                     </div>
 
                     <div className="w-20 text-right">
-                      <span className="text-[11px] text-muted-foreground/50">{relativeTime(s?.last_active || '')}</span>
+                      <span className="text-[11px] text-muted-foreground/50">{relativeTime(s?.last_active || '', now)}</span>
                     </div>
 
                     <div className="w-7 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">

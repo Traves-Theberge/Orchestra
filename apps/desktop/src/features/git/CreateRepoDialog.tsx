@@ -47,7 +47,7 @@ export function CreateRepoDialog({ projectName, onCancel, onCreate }: CreateRepo
             <Github size={14} className="text-muted-foreground/60" strokeWidth={2.25} />
             <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50">GitHub</span>
           </div>
-          <h2 className="text-2xl font-black tracking-tight text-foreground">New repository</h2>
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground">New repository</h2>
           <p className="text-[12px] text-muted-foreground/70 mt-1.5">Push this project to GitHub.</p>
         </div>
 

@@ -15,6 +15,7 @@ import { providerLabel, ProviderIcon } from './provider-meta'
 import { FilterMenu, scopeLabel, rangeLabel } from './FilterMenu'
 import { StatCard } from './StatCard'
 import { WindowSection, timeAgo } from './rate-limit-ui'
+import { useNow } from '@/hooks'
 import {
   formatCost,
   formatNumber,
@@ -88,6 +89,7 @@ function RateLimitTile({
   provider: typeof USAGE_PROVIDERS[number]
   limits: ProviderRateLimits | null
 }) {
+  const now = useNow(60_000)
   return (
     <div className="surface p-3 space-y-3">
       <div className="flex items-center justify-between gap-2">
@@ -97,7 +99,7 @@ function RateLimitTile({
         </div>
         {limits && limits.updated_at > 0 && (
           <span className="text-[10.5px] tabular-nums text-muted-foreground">
-            {timeAgo(limits.updated_at)}
+            {timeAgo(limits.updated_at, now)}
           </span>
         )}
       </div>

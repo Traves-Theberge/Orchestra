@@ -31,32 +31,32 @@ export type TreeNode = {
   depth: number
 }
 
-export type DirCache = {
+type DirCache = {
   children: TreeNode[]
   loading: boolean
 }
 
-export type ToolSummary = {
+type ToolSummary = {
   name: string
   description?: string
 }
 
-export type AgentConfig = {
+type AgentConfig = {
   commands: Record<string, string>
   agent_provider: string
   max_turns: number
 }
 
-export type SettingsTab = 'agents' | 'backend' | 'integrations' | 'shortcuts' | 'notifications'
+type SettingsTab = 'agents' | 'backend' | 'integrations' | 'shortcuts' | 'notifications'
 
 /** Initial column/state for the create-task dialog. The dialog reads `state`
  * to preselect the column the new task lands in. Add fields here only when
  * the dialog actually consumes them. */
-export type CreateTaskInitialState = {
+type CreateTaskInitialState = {
   state: string
 }
 
-export type SearchMatch = { line: number; text: string }
+type SearchMatch = { line: number; text: string }
 export type SearchResultGroup = { file: string; relativePath: string; matches: SearchMatch[] }
 
 // ---------------------------------------------------------------------------
@@ -279,7 +279,7 @@ export interface TerminalsSlice {
 // Workspace Slice
 // ---------------------------------------------------------------------------
 
-export type ActiveWorkspaceTab = { type: 'terminal' | 'editor' | 'browser'; id: string } | null
+type ActiveWorkspaceTab = { type: 'terminal' | 'editor' | 'browser'; id: string } | null
 
 export interface WorkspaceSlice {
   // State

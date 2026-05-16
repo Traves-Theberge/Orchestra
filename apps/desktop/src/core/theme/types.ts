@@ -4,9 +4,9 @@
  */
 
 export type ThemeMode = 'light' | 'dark' | 'auto'
-export type ThemeDensityPreset = 'compact' | 'cozy' | 'comfortable'
-export type ThemeRadiusScale = 'sharp' | 'default' | 'rounded' | 'pill'
-export type ThemeShadowStrength = 'none' | 'subtle' | 'default' | 'strong'
+type ThemeDensityPreset = 'compact' | 'cozy' | 'comfortable'
+type ThemeRadiusScale = 'sharp' | 'default' | 'rounded' | 'pill'
+type ThemeShadowStrength = 'none' | 'subtle' | 'default' | 'strong'
 
 /**
  * Each value is an HSL triple "H S% L%" so it can be dropped into

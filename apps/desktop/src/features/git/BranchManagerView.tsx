@@ -22,6 +22,7 @@ import {
   gitMerge,
   gitFetch,
 } from '@core/api/client'
+import { useNow } from '@/hooks'
 
 interface BranchManagerViewProps {
   config: BackendConfig
@@ -30,9 +31,8 @@ interface BranchManagerViewProps {
 
 type FilterMode = 'all' | 'local' | 'remote' | 'stale'
 
-function relativeTime(dateStr: string): string {
-  if (!dateStr) return ''
-  const now = Date.now()
+function relativeTime(dateStr: string, now: number): string {
+  if (!dateStr || !now) return ''
   const then = new Date(dateStr).getTime()
   const diffMs = now - then
   if (diffMs < 0) return 'just now'
@@ -47,9 +47,9 @@ function relativeTime(dateStr: string): string {
   return `${months}mo ago`
 }
 
-function ageDays(dateStr: string): number {
-  if (!dateStr) return 0
-  return (Date.now() - new Date(dateStr).getTime()) / 86400000
+function ageDays(dateStr: string, now: number): number {
+  if (!dateStr || !now) return 0
+  return (now - new Date(dateStr).getTime()) / 86400000
 }
 
 export function BranchManagerView({ config, projectId }: BranchManagerViewProps) {
@@ -64,6 +64,7 @@ export function BranchManagerView({ config, projectId }: BranchManagerViewProps)
   const [newBranchName, setNewBranchName] = useState('')
   const [baseBranch, setBaseBranch] = useState('')
   const [currentBranch, setCurrentBranch] = useState('')
+  const now = useNow()
 
   const loadBranches = useCallback(async () => {
     setLoading(true); setError('')
@@ -136,8 +137,8 @@ export function BranchManagerView({ config, projectId }: BranchManagerViewProps)
   const localBranches = useMemo(() => branches.filter((b) => !b.is_remote), [branches])
   const remoteBranches = useMemo(() => branches.filter((b) => b.is_remote), [branches])
   const staleBranches = useMemo(
-    () => branches.filter((b) => !b.is_remote && !b.is_current && !b.is_default && ageDays(b.last_commit_date) > 30),
-    [branches],
+    () => branches.filter((b) => !b.is_remote && !b.is_current && !b.is_default && ageDays(b.last_commit_date, now) > 30),
+    [branches, now],
   )
 
   const localBranchNames = useMemo(() => localBranches.map((b) => b.name), [localBranches])
@@ -191,7 +192,7 @@ export function BranchManagerView({ config, projectId }: BranchManagerViewProps)
         {current && (
           <header className="space-y-2">
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50">On branch</p>
-            <h1 className="text-4xl font-black tracking-tight font-mono truncate">{current.name}</h1>
+            <h1 className="text-4xl font-semibold tracking-tight font-mono truncate">{current.name}</h1>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] text-muted-foreground/70">
               {current.is_default && (
                 <span className="inline-flex items-center gap-1 text-primary font-medium">
@@ -218,7 +219,7 @@ export function BranchManagerView({ config, projectId }: BranchManagerViewProps)
                 <span>Up to date</span>
               )}
               {current.last_commit_date && (
-                <span className="tabular-nums">{relativeTime(current.last_commit_date)}</span>
+                <span className="tabular-nums">{relativeTime(current.last_commit_date, now)}</span>
               )}
             </div>
             {current.last_commit_message && (
@@ -340,6 +341,7 @@ export function BranchManagerView({ config, projectId }: BranchManagerViewProps)
                 deleteConfirm={deleteConfirm}
                 mergeConfirm={mergeConfirm}
                 loading={loading}
+                now={now}
                 onCheckout={handleCheckout}
                 onDelete={handleDelete}
                 onMerge={handleMerge}
@@ -383,6 +385,7 @@ function BranchRow({
   deleteConfirm,
   mergeConfirm,
   loading,
+  now,
   onCheckout,
   onDelete,
   onMerge,
@@ -394,6 +397,7 @@ function BranchRow({
   deleteConfirm: string | null
   mergeConfirm: string | null
   loading: boolean
+  now: number
   onCheckout: (name: string) => void
   onDelete: (name: string) => void
   onMerge: (name: string) => void
@@ -402,7 +406,7 @@ function BranchRow({
 }) {
   const isDefault = branch.is_default
   const canDelete = !branch.is_current && !isDefault
-  const isStale = !branch.is_remote && !branch.is_current && !isDefault && ageDays(branch.last_commit_date) > 30
+  const isStale = !branch.is_remote && !branch.is_current && !isDefault && ageDays(branch.last_commit_date, now) > 30
 
   if (deleteConfirm === branch.name) {
     return (
@@ -500,7 +504,7 @@ function BranchRow({
           <span className="block text-[10.5px] text-muted-foreground/55 truncate mt-0.5">
             {branch.last_commit_message}
             {branch.last_commit_date && (
-              <span className="text-muted-foreground/40 tabular-nums"> · {relativeTime(branch.last_commit_date)}</span>
+              <span className="text-muted-foreground/40 tabular-nums"> · {relativeTime(branch.last_commit_date, now)}</span>
             )}
           </span>
         )}

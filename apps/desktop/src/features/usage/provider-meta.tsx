@@ -28,20 +28,6 @@ function providerIconMeta(provider: UsageProvider): ProviderIconMeta {
   }
 }
 
-// Used by UsageStatusBar for stacked bar segment color.
-export function providerBg(provider: UsageProvider): string {
-  switch (provider) {
-    case 'claude':
-      return 'bg-orange-500'
-    case 'codex':
-      return 'bg-emerald-500'
-    case 'gemini':
-      return 'bg-blue-500'
-    case 'opencode':
-      return 'bg-fuchsia-500'
-  }
-}
-
 export function ProviderIcon({ provider, size = 14 }: { provider: UsageProvider; size?: number }) {
   const { src, invert } = providerIconMeta(provider)
   return (

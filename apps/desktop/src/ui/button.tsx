@@ -31,18 +31,19 @@ const buttonVariants = cva(
 )
 
 /** Props for the {@link Button} component, extending HTML button attributes with variant, size, and tooltip support. */
-export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {
+interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {
   /** When true, renders as a Radix Slot, passing props to its child element. */
   asChild?: boolean
   /** Optional tooltip text displayed on hover. */
   tooltip?: string
+  ref?: React.Ref<HTMLButtonElement>
 }
 
 /**
  * Multi-variant button component with optional tooltip wrapping.
  * Supports default, secondary, outline, ghost, and destructive visual variants.
  */
-const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(({ className, variant, size, asChild = false, tooltip, type, ...props }, ref) => {
+const Button = ({ className, variant, size, asChild = false, tooltip, type, ref, ...props }: ButtonProps) => {
   const Comp = asChild ? Slot : 'button'
   const buttonType = asChild ? undefined : (type ?? 'button')
   const buttonContent = <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} type={buttonType} {...props} />
@@ -52,7 +53,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(({ className, va
   }
 
   return buttonContent
-})
+}
 Button.displayName = 'Button'
 
-export { Button, buttonVariants }
+export { Button }
