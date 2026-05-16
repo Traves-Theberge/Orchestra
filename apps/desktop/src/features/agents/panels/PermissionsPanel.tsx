@@ -73,6 +73,83 @@ function initForm(perms: ProviderPermissions): FormState {
   }
 }
 
+interface PermissionListProps {
+  label: string
+  description: string
+  field: Field
+  items: string[]
+  newValue: string
+  setNewValue: (v: string) => void
+  inputId: string
+  inherited: boolean
+  inheritedValue: string
+  onSetHere: () => void
+  onAdd: (field: Field, value: string) => void
+  onRemove: (field: Field, index: number) => void
+}
+
+function PermissionList({
+  label,
+  description,
+  field,
+  items,
+  newValue,
+  setNewValue,
+  inputId,
+  inherited,
+  inheritedValue,
+  onSetHere,
+  onAdd,
+  onRemove,
+}: PermissionListProps) {
+  return (
+    <div className="space-y-1.5">
+      <label htmlFor={inputId} className="text-[10px] uppercase tracking-wider text-foreground/45">{label}</label>
+      <p className="text-[10px] text-muted-foreground/50">{description}</p>
+      <InheritedField
+        inherited={inherited}
+        inheritedValue={inheritedValue}
+        onSetHere={onSetHere}
+      >
+        <div>
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {items.map((item, i) => (
+              <span key={`${item}#${i}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/30 border border-border/30 text-[11px] font-mono">
+                {item}
+                <button onClick={() => onRemove(field, i)} className="text-muted-foreground/40 hover:text-red-400">
+                  <X size={10} />
+                </button>
+              </span>
+            ))}
+            {items.length === 0 && <span className="text-[10px] text-muted-foreground/30 italic">None</span>}
+          </div>
+          <div className="flex gap-1.5">
+            <input
+              id={inputId}
+              value={newValue}
+              onChange={e => setNewValue(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  onAdd(field, newValue)
+                  setNewValue('')
+                }
+              }}
+              placeholder="e.g. Bash(npm run build)"
+              className="flex-1 px-2 py-1 rounded-md bg-muted/10 border border-border/30 text-[11px] font-mono focus:outline-none focus:border-primary/30"
+            />
+            <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={() => {
+              onAdd(field, newValue)
+              setNewValue('')
+            }}>
+              <Plus size={10} />
+            </Button>
+          </div>
+        </div>
+      </InheritedField>
+    </div>
+  )
+}
+
 export function PermissionsPanel(props: PermissionsPanelProps) {
   const signature = JSON.stringify(props.permissions)
   return <PermissionsPanelInner key={`${props.scope ?? 'GLOBAL'}:${signature}`} {...props} />
@@ -138,60 +215,13 @@ function PermissionsPanelInner({
     ? 'Writes to .claude/settings.json :: permissions'
     : 'Control which tools this provider can use'
 
-  const renderList = (
-    label: string,
-    description: string,
-    field: Field,
-    items: string[],
-    newValue: string,
-    setNewValue: (v: string) => void,
-    inputId: string,
-  ) => (
-    <div className="space-y-1.5">
-      <label htmlFor={inputId} className="text-[10px] uppercase tracking-wider text-foreground/45">{label}</label>
-      <p className="text-[10px] text-muted-foreground/50">{description}</p>
-      <InheritedField
-        inherited={fieldInheritedArray(field)}
-        inheritedValue={(inheritedPerms[field] ?? []).join(', ') || '—'}
-        onSetHere={() => setFromGlobalArray(field)}
-      >
-        <div>
-          <div className="flex flex-wrap gap-1.5 mb-2">
-            {items.map((item, i) => (
-              <span key={`${item}#${i}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/30 border border-border/30 text-[11px] font-mono">
-                {item}
-                <button onClick={() => dispatch({ type: 'remove_at', field, index: i })} className="text-muted-foreground/40 hover:text-red-400">
-                  <X size={10} />
-                </button>
-              </span>
-            ))}
-            {items.length === 0 && <span className="text-[10px] text-muted-foreground/30 italic">None</span>}
-          </div>
-          <div className="flex gap-1.5">
-            <input
-              id={inputId}
-              value={newValue}
-              onChange={e => setNewValue(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') {
-                  dispatch({ type: 'add_to', field, value: newValue })
-                  setNewValue('')
-                }
-              }}
-              placeholder="e.g. Bash(npm run build)"
-              className="flex-1 px-2 py-1 rounded-md bg-muted/10 border border-border/30 text-[11px] font-mono focus:outline-none focus:border-primary/30"
-            />
-            <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={() => {
-              dispatch({ type: 'add_to', field, value: newValue })
-              setNewValue('')
-            }}>
-              <Plus size={10} />
-            </Button>
-          </div>
-        </div>
-      </InheritedField>
-    </div>
-  )
+  const handleAdd = useCallback((field: Field, value: string) => {
+    dispatch({ type: 'add_to', field, value })
+  }, [])
+
+  const handleRemove = useCallback((field: Field, index: number) => {
+    dispatch({ type: 'remove_at', field, index })
+  }, [])
 
   const modeOptions = APPROVAL_MODES[provider] ?? APPROVAL_MODES.claude
 
@@ -225,9 +255,48 @@ function PermissionsPanelInner({
             </InheritedField>
           </div>
 
-          {renderList('Allow', 'Tools that are auto-approved without prompting', 'allow', form.allow, newAllow, setNewAllow, allowInputId)}
-          {renderList('Deny', 'Tools that are always blocked (takes precedence over allow)', 'deny', form.deny, newDeny, setNewDeny, denyInputId)}
-          {renderList('Ask', 'Tools that always prompt for confirmation', 'ask', form.ask, newAsk, setNewAsk, askInputId)}
+          <PermissionList
+            label="Allow"
+            description="Tools that are auto-approved without prompting"
+            field="allow"
+            items={form.allow}
+            newValue={newAllow}
+            setNewValue={setNewAllow}
+            inputId={allowInputId}
+            inherited={fieldInheritedArray('allow')}
+            inheritedValue={(inheritedPerms.allow ?? []).join(', ') || '—'}
+            onSetHere={() => setFromGlobalArray('allow')}
+            onAdd={handleAdd}
+            onRemove={handleRemove}
+          />
+          <PermissionList
+            label="Deny"
+            description="Tools that are always blocked (takes precedence over allow)"
+            field="deny"
+            items={form.deny}
+            newValue={newDeny}
+            setNewValue={setNewDeny}
+            inputId={denyInputId}
+            inherited={fieldInheritedArray('deny')}
+            inheritedValue={(inheritedPerms.deny ?? []).join(', ') || '—'}
+            onSetHere={() => setFromGlobalArray('deny')}
+            onAdd={handleAdd}
+            onRemove={handleRemove}
+          />
+          <PermissionList
+            label="Ask"
+            description="Tools that always prompt for confirmation"
+            field="ask"
+            items={form.ask}
+            newValue={newAsk}
+            setNewValue={setNewAsk}
+            inputId={askInputId}
+            inherited={fieldInheritedArray('ask')}
+            inheritedValue={(inheritedPerms.ask ?? []).join(', ') || '—'}
+            onSetHere={() => setFromGlobalArray('ask')}
+            onAdd={handleAdd}
+            onRemove={handleRemove}
+          />
         </div>
       </div>
 

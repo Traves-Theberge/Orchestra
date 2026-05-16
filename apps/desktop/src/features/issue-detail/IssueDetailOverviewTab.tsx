@@ -101,6 +101,15 @@ export function OverviewTab({
   setSelectedHookLog: (value: { id: string; label: string; output: string } | null) => void
 }) {
   const planItems = extractOperationalPlanItems(timeline, issueId, identifier, description)
+  const recentHistorySlice = issueHistory.slice(0, 2)
+  const recentHistoryTimes = useMemo(
+    () => recentHistorySlice.map((item) => new Date(item.timestamp).toLocaleTimeString()),
+    [recentHistorySlice],
+  )
+  const formattedUpdatedAt = useMemo(
+    () => (updatedAt ? new Date(updatedAt).toLocaleDateString() : 'N/A'),
+    [updatedAt],
+  )
   const completedPlanItems = planItems.filter((item) => item.done).length
   const totalPlanItems = planItems.length
   const remainingPlanItems = totalPlanItems - completedPlanItems
@@ -408,11 +417,11 @@ export function OverviewTab({
                 </div>
               </div>
               <div className="space-y-1">
-                {issueHistory.slice(0, 2).map((item, idx) => (
+                {recentHistorySlice.map((item, idx) => (
                   <div key={item.id || `${item.timestamp}-${idx}`} className="flex items-center gap-2 px-2 py-1 rounded bg-muted/30 border border-border">
                     <div className="shrink-0 scale-75">{getEventIcon(item.kind)}</div>
                     <p className="text-[9px] font-bold text-muted-foreground/80 truncate flex-1">{item.message || item.kind}</p>
-                    <span className="text-[7px] font-mono text-muted-foreground/40 tabular-nums">{new Date(item.timestamp).toLocaleTimeString()}</span>
+                    <span className="text-[7px] font-mono text-muted-foreground/40 tabular-nums">{recentHistoryTimes[idx]}</span>
                   </div>
                 ))}
               </div>
@@ -439,7 +448,7 @@ export function OverviewTab({
                   </div>
                   <div className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground/60">
                     <Clock size={10} />
-                    <span>{updatedAt ? new Date(updatedAt).toLocaleDateString() : 'N/A'}</span>
+                    <span>{formattedUpdatedAt}</span>
                   </div>
                 </div>
               </div>

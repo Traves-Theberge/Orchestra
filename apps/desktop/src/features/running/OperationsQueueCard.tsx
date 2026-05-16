@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Activity, AppWindow, Circle, CircleDashed, Cpu, RefreshCcw } from 'lucide-react'
 
 import { CustomDropdown } from '@layout/shared/controls'
@@ -74,6 +74,11 @@ export function OperationsQueueCard({
     const stateMatch = stateFilter === 'all' || row.state === stateFilter
     return laneMatch && stateMatch
   })
+
+  const formattedTimes = useMemo(
+    () => rows.map((row) => new Date(row.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),
+    [rows],
+  )
 
 
   return (
@@ -163,7 +168,7 @@ export function OperationsQueueCard({
                       </TableCell>
                     </TableRow>
                     )
-                  : rows.map((row) => (
+                  : rows.map((row, rowIdx) => (
                     <TableRow key={`${row.lane}-${row.issue_id}-${row.provider}`} className="group transition-colors hover:bg-muted/30">
                       <TableCell className="font-bold font-mono text-xs">
                         <button
@@ -205,7 +210,7 @@ export function OperationsQueueCard({
                         </AppTooltip>
                       </TableCell>
                       <TableCell className="text-right text-[10px] text-muted-foreground/60 font-medium whitespace-nowrap">
-                        {new Date(row.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {formattedTimes[rowIdx]}
                       </TableCell>
                     </TableRow>
                   ))}

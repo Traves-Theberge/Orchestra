@@ -319,6 +319,12 @@ export function IssueDetailView({
   const _stateColor = localState === 'Done' ? 'text-primary' : localState === 'In Progress' ? 'text-amber-500' : 'text-muted-foreground'
   const _stateDot = localState === 'Done' ? 'bg-primary' : localState === 'In Progress' ? 'bg-amber-500 animate-pulse' : 'bg-muted-foreground/40'
 
+  const createdAtIso = typeof typed.created_at === 'string' ? (typed.created_at as string) : ''
+  const formattedCreatedAt = useMemo(
+    () => (createdAtIso ? new Date(createdAtIso).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '—'),
+    [createdAtIso],
+  )
+
   const tabItems = [
     { id: 'details' as const, label: 'Details', icon: Info, count: undefined },
     { id: 'plan' as const, label: 'Plan', icon: CheckCircle2, count: planItems.length > 0 ? planItems.length : undefined },
@@ -571,7 +577,7 @@ export function IssueDetailView({
                 )},
                 { label: 'Created', content: (
                   <span className="text-[11px] text-muted-foreground/50">
-                    {(typed.created_at as string) ? new Date(typed.created_at as string).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                    {formattedCreatedAt}
                   </span>
                 )},
               ].map(({ label, content }) => (

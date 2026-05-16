@@ -1,4 +1,4 @@
-import type { RefObject } from 'react'
+import { useMemo, type RefObject } from 'react'
 import Ansi from 'ansi-to-react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -320,6 +320,10 @@ export function ActivityTab({
   issueHistory: IssueHistoryEntry[]
   getEventIcon: (kind: string) => React.ReactNode
 }) {
+  const formattedTimestamps = useMemo(
+    () => issueHistory.map((item) => new Date(item.timestamp).toLocaleString()),
+    [issueHistory],
+  )
   return (
     <div className="space-y-6 text-left flex-1 min-h-0 overflow-auto custom-scrollbar pr-1">
       <div className="rounded-xl border border-border bg-muted/10 p-6 min-h-full">
@@ -356,7 +360,7 @@ export function ActivityTab({
                         </Badge>
                       )}
                     </div>
-                    <span className="text-[9px] font-medium text-muted-foreground/40 font-mono">{new Date(item.timestamp).toLocaleString()}</span>
+                    <span className="text-[9px] font-medium text-muted-foreground/40 font-mono">{formattedTimestamps[idx]}</span>
                   </div>
                   <p className="text-[11px] text-muted-foreground leading-relaxed text-left">
                     {item.message || 'System event recorded without message details.'}

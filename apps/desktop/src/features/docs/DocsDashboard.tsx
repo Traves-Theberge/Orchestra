@@ -50,6 +50,95 @@ function AuthImage({ docPath, alt, config, ...props }: { docPath: string; alt: s
     return <img src={blobUrl} alt={alt} className="rounded-xl border border-border shadow-lg max-w-full" {...(props as React.ImgHTMLAttributes<HTMLImageElement>)} />
 }
 
+interface DocTreeProps {
+    items: DocItem[]
+    level?: number
+    parentDir?: string
+    expandedFolders: Set<string>
+    selectedPath: string | null
+    onToggleFolder: (path: string) => void
+    onSelectDoc: (path: string) => void
+    sortItems: (items: DocItem[], parentDir?: string) => DocItem[]
+    getDisplayName: (item: DocItem) => string
+}
+
+function DocTree({
+    items,
+    level = 0,
+    parentDir,
+    expandedFolders,
+    selectedPath,
+    onToggleFolder,
+    onSelectDoc,
+    sortItems,
+    getDisplayName,
+}: DocTreeProps) {
+    return (
+        <>
+            {sortItems(items, parentDir).map(item => {
+                if (item.is_folder) {
+                    const isExpanded = expandedFolders.has(item.path)
+                    return (
+                        <div key={item.path}>
+                            <button
+                                onClick={() => onToggleFolder(item.path)}
+                                className="group w-full flex items-center gap-2.5 h-9 rounded-md text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.03] transition-colors text-left"
+                                style={{ paddingLeft: `${level * 12 + 10}px`, paddingRight: '10px' }}
+                            >
+                                {isExpanded
+                                    ? <FolderOpen size={15} strokeWidth={1.75} className="shrink-0 text-muted-foreground/60 group-hover:text-foreground transition-colors" />
+                                    : <Folder size={15} strokeWidth={1.75} className="shrink-0 text-muted-foreground/60 group-hover:text-foreground transition-colors" />
+                                }
+                                <span className="flex-1 truncate text-[12.5px] font-medium tracking-tight capitalize">{item.name}</span>
+                                <ChevronRight size={12} className={`shrink-0 transition-transform duration-150 text-muted-foreground/40 ${isExpanded ? 'rotate-90' : ''}`} />
+                            </button>
+                            {isExpanded && item.children && (
+                                <div className="mt-0.5">
+                                    <DocTree
+                                        items={item.children}
+                                        level={level + 1}
+                                        parentDir={item.name}
+                                        expandedFolders={expandedFolders}
+                                        selectedPath={selectedPath}
+                                        onToggleFolder={onToggleFolder}
+                                        onSelectDoc={onSelectDoc}
+                                        sortItems={sortItems}
+                                        getDisplayName={getDisplayName}
+                                    />
+                                </div>
+                            )}
+                        </div>
+                    )
+                }
+
+                const isActive = selectedPath === item.path
+                return (
+                    <button
+                        key={item.path}
+                        onClick={() => onSelectDoc(item.path)}
+                        className={`group relative w-full flex items-center gap-2.5 h-9 rounded-md transition-all duration-150 text-left ${
+                            isActive
+                                ? 'bg-foreground/[0.06] text-foreground'
+                                : 'text-muted-foreground/80 hover:text-foreground hover:bg-foreground/[0.03]'
+                        }`}
+                        style={{ paddingLeft: `${level * 12 + 10}px`, paddingRight: '10px' }}
+                    >
+                        {isActive && <span className="absolute left-0 top-2 bottom-2 w-[2px] rounded-full bg-primary" />}
+                        <FileText
+                            size={15}
+                            strokeWidth={isActive ? 2.25 : 1.75}
+                            className={`shrink-0 transition-colors ${isActive ? 'text-primary' : 'text-muted-foreground/60 group-hover:text-foreground'}`}
+                        />
+                        <span className="flex-1 truncate text-[12.5px] font-medium tracking-tight capitalize">
+                            {getDisplayName(item)}
+                        </span>
+                    </button>
+                )
+            })}
+        </>
+    )
+}
+
 export const DocsDashboard: React.FC<DocsDashboardProps> = ({ config, theme }) => {
     const openBrowserTab = useAppStore((s) => s.openBrowserTab)
     const setActiveSection = useAppStore((s) => s.setActiveSection)

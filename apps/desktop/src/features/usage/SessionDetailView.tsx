@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useMemo } from 'react'
 import { Zap, Activity, Clock, Layout, Terminal } from 'lucide-react'
 import { Badge } from '@ui/badge'
 import type { SessionDetail, SessionEvent } from '@core/api/types'
@@ -8,6 +8,11 @@ interface SessionDetailViewProps {
 }
 
 export const SessionDetailView: React.FC<SessionDetailViewProps> = ({ session }) => {
+    const formattedCreatedAt = useMemo(() => new Date(session.created_at).toLocaleString(), [session.created_at])
+    const eventTimes = useMemo(
+        () => (session.events ?? []).map((event) => new Date(event.timestamp).toLocaleTimeString()),
+        [session.events],
+    )
     return (
         <div className="flex flex-col gap-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -33,7 +38,7 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({ session })
                         <Clock size={12} />
                         Timestamp
                     </div>
-                    <div className="text-sm font-medium">{new Date(session.created_at).toLocaleString()}</div>
+                    <div className="text-sm font-medium">{formattedCreatedAt}</div>
                 </div>
                 <div className="group relative bg-gradient-to-b from-card via-card to-muted/20 p-3 rounded-lg border border-border/40 overflow-hidden">
                     <div className="pointer-events-none absolute inset-0 rounded-lg bg-gradient-to-br from-primary/[0.03] via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
@@ -60,7 +65,7 @@ export const SessionDetailView: React.FC<SessionDetailViewProps> = ({ session })
                                             {event.kind}
                                         </Badge>
                                         <span className="text-[10px] font-mono text-muted-foreground opacity-60">
-                                            {new Date(event.timestamp).toLocaleTimeString()}
+                                            {eventTimes[idx]}
                                         </span>
                                     </div>
                                     <div className="text-[9px] font-mono text-muted-foreground flex gap-2">
