@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Mosaic, MosaicWindow, MosaicNode } from 'react-mosaic-component'
+import { Mosaic, MosaicWindow, MosaicNode, MosaicSplitNode } from 'react-mosaic-component'
 import { TerminalView, clearInitialCommandTracking } from './TerminalView'
 import { Plus, X, Terminal as TerminalIcon, Columns2, Square, Zap, Folder, FolderTree } from 'lucide-react'
 import { ProjectSelector } from '@layout/shared/controls'
@@ -55,7 +55,8 @@ export const TerminalMultiplexer: React.FC<TerminalMultiplexerProps> = ({
 
     const getIdsFromNode = (node: MosaicNode<string>): string[] => {
         if (typeof node === 'string') return [node]
-        return [...getIdsFromNode(node.first), ...getIdsFromNode(node.second)]
+        if (node.type === 'split') return node.children.flatMap(getIdsFromNode)
+        return node.tabs
     }
 
     // Keep activeTabId in sync with active terminals
@@ -82,10 +83,13 @@ export const TerminalMultiplexer: React.FC<TerminalMultiplexerProps> = ({
             if (nodeIds.length === 1) return nodeIds[0]
             const half = Math.ceil(nodeIds.length / 2)
             return {
+                type: 'split',
                 direction,
-                first: buildBalancedTree(nodeIds.slice(0, half), direction === 'row' ? 'column' : 'row'),
-                second: buildBalancedTree(nodeIds.slice(half), direction === 'row' ? 'column' : 'row')
-            }
+                children: [
+                    buildBalancedTree(nodeIds.slice(0, half), direction === 'row' ? 'column' : 'row'),
+                    buildBalancedTree(nodeIds.slice(half), direction === 'row' ? 'column' : 'row'),
+                ],
+            } satisfies MosaicSplitNode<string>
         }
 
         const currentIdsList = currentNode ? getIdsFromNode(currentNode) : []

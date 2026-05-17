@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { X, ChevronUp, ChevronDown, CaseSensitive, Regex } from 'lucide-react'
-import type { SearchAddon } from 'xterm-addon-search'
+import type { SearchAddon } from '@xterm/addon-search'
 
 interface TerminalSearchProps {
   searchAddon: SearchAddon | null
