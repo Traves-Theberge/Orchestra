@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,7 +23,6 @@ type AgentRegistry interface {
 // worktrees and runs CLI agent turns through the existing agent registry.
 type StudioSpawner struct {
 	reg         AgentRegistry
-	repoPath    string
 	daemonBin   string
 	socketPath  string
 	turnTimeout time.Duration
@@ -41,13 +41,11 @@ type spawnedSession struct {
 // NewStudioSpawner constructs a spawner.
 //
 //   - reg:        agent registry (real one in production).
-//   - repoPath:   project root; the scratch worktree is created from this repo.
 //   - daemonBin:  absolute path to the orchestrad binary (for mcp-bridge subprocess).
 //   - socketPath: path to the studio listener socket (StartBridgeListener bound this).
-func NewStudioSpawner(reg AgentRegistry, repoPath, daemonBin, socketPath string) *StudioSpawner {
+func NewStudioSpawner(reg AgentRegistry, daemonBin, socketPath string) *StudioSpawner {
 	return &StudioSpawner{
 		reg:         reg,
-		repoPath:    repoPath,
 		daemonBin:   daemonBin,
 		socketPath:  socketPath,
 		turnTimeout: 5 * time.Minute,
@@ -57,7 +55,7 @@ func NewStudioSpawner(reg AgentRegistry, repoPath, daemonBin, socketPath string)
 
 // Spawn provisions a worktree + .mcp.json for the session. Does not run any turn.
 func (s *StudioSpawner) Spawn(_ context.Context, sess Session, onEvent func(Event)) error {
-	wt, err := CreateReadOnlyWorktree(s.repoPath)
+	wt, err := CreateReadOnlyWorktree(sess.RepoPath)
 	if err != nil {
 		return fmt.Errorf("studio spawner: worktree: %w", err)
 	}
@@ -108,17 +106,43 @@ func (s *StudioSpawner) SendMessage(ctx context.Context, sessionID, message stri
 		Prompt:        message,
 		Timeout:       s.turnTimeout,
 	}
+
+	// resultText is set when the agent emits a final result event with complete text.
+	// accumulated collects streaming deltas as fallback.
+	var resultText string
+	var accumulated strings.Builder
+
 	_, err := s.reg.RunTurn(turnCtx, st.provider, req, func(ev agents.Event) {
-		// Forward agent events as studio chat tokens.
+		// Forward raw agent events for any streaming consumers.
 		st.onEvent(Event{
 			SessionID: sessionID,
 			Kind:      EventChatToken,
 			Payload:   ev,
 		})
+		// Track text for the final chat.message.
+		// Prefer result/* events (complete text) over accumulated deltas.
+		if strings.HasPrefix(ev.Kind, "result/") && ev.Message != "" {
+			resultText = ev.Message
+		} else if ev.Message != "" && !strings.Contains(ev.Kind, "tool") {
+			accumulated.WriteString(ev.Message)
+		}
 	})
 	if err != nil {
 		st.onEvent(Event{SessionID: sessionID, Kind: EventError, Payload: err.Error()})
 		return err
+	}
+
+	// Emit the complete agent response as a chat.message event.
+	text := resultText
+	if text == "" {
+		text = accumulated.String()
+	}
+	if text != "" {
+		st.onEvent(Event{
+			SessionID: sessionID,
+			Kind:      EventChatMessage,
+			Payload:   map[string]string{"role": "agent", "text": text},
+		})
 	}
 	return nil
 }

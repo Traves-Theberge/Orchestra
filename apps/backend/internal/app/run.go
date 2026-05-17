@@ -192,7 +192,7 @@ func Run(logger zerolog.Logger) error {
 
 	var studioSpawner studio.RunnerSpawner
 	if agentRegistry != nil && daemonBin != "" {
-		studioSpawner = studio.NewStudioSpawner(agentRegistry, cfg.WorkspaceRoot, daemonBin, socketPath)
+		studioSpawner = studio.NewStudioSpawner(agentRegistry, daemonBin, socketPath)
 	}
 
 	studioMgr := studio.NewManager(warehouseDB.DB, pubsub, studioSpawner)

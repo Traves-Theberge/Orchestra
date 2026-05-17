@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/google/uuid"
@@ -108,7 +109,11 @@ func (m *Manager) StartSession(ctx context.Context, req StartSessionRequest) (Se
 	if err := db.CreateDraft(m.d, id); err != nil {
 		return Session{}, fmt.Errorf("create draft: %w", err)
 	}
-	sess := Session{ID: id, ProjectID: req.ProjectID, Runner: req.Runner, Status: StatusActive}
+	var repoPath string
+	if req.ProjectID != "" {
+		_ = m.d.QueryRowContext(ctx, `SELECT root_path FROM projects WHERE id = ?`, req.ProjectID).Scan(&repoPath)
+	}
+	sess := Session{ID: id, ProjectID: req.ProjectID, Runner: req.Runner, RepoPath: repoPath, Status: StatusActive}
 	if req.Template != "" {
 		if err := m.ApplyTemplate(id, req.Template, req.TemplateVars); err != nil {
 			_ = db.DeleteDraft(m.d, id)
@@ -127,11 +132,15 @@ func (m *Manager) StartSession(ctx context.Context, req StartSessionRequest) (Se
 }
 
 // SendMessage forwards a user message to the runner attached to this session.
+// It prepends a task-authoring system prompt so the agent knows its role and
+// the MCP tools available to it via the orchestra-studio server.
 func (m *Manager) SendMessage(ctx context.Context, sessionID, msg string) error {
 	if m.spawner == nil {
 		return fmt.Errorf("studio: no runner attached")
 	}
-	return m.spawner.SendMessage(ctx, sessionID, msg)
+	draft, _ := m.GetDraft(sessionID)
+	full := buildStudioPrompt(draft, msg)
+	return m.spawner.SendMessage(ctx, sessionID, full)
 }
 
 // ApplyDraftPatch applies a map of field updates to the draft for a session.
@@ -380,6 +389,62 @@ func (m *Manager) publishDraftUpdate(sessionID string) {
 		return
 	}
 	m.dispatch(Event{SessionID: sessionID, Kind: EventDraftUpdated, Payload: snap})
+}
+
+// buildStudioPrompt wraps the user's message with task-authoring context so the
+// agent understands its role and the MCP tools it can use to update the draft.
+func buildStudioPrompt(draft DraftSnapshot, userMsg string) string {
+	var b strings.Builder
+
+	b.WriteString(`You are a task-authoring assistant embedded in Orchestra, a multi-agent software development platform.
+
+Your job is to help the user write a clear, well-scoped backlog task. You have read-only access to the project codebase so you can ground your suggestions in the actual code.
+
+## Your MCP tools (orchestra-studio server)
+
+Use these to update the task draft in real time as you learn what the user wants:
+- mcp__orchestra-studio__set_title         — set a short, clear task title
+- mcp__orchestra-studio__set_description   — write a detailed markdown description
+- mcp__orchestra-studio__add_acceptance_criterion   — add a specific, testable AC
+- mcp__orchestra-studio__remove_acceptance_criterion — remove an AC by index (0-based)
+
+Update the draft progressively as the conversation develops. The user sees the draft panel update live.
+
+## How to behave
+
+1. Ask one clarifying question at a time if the request is vague.
+2. Read relevant source files to understand the codebase before writing descriptions.
+3. Write the title first, then description, then ACs as your understanding solidifies.
+4. Keep descriptions concrete — include file paths, function names, and technical detail where known.
+5. Acceptance criteria should be independently verifiable (e.g. "Given X, when Y, then Z").
+
+`)
+
+	// Include current draft state so the agent knows what's already set.
+	b.WriteString("## Current draft state\n\n")
+	if draft.Title != "" {
+		b.WriteString("Title: " + draft.Title + "\n")
+	} else {
+		b.WriteString("Title: (not set)\n")
+	}
+	if draft.Description != "" {
+		b.WriteString("Description:\n" + draft.Description + "\n")
+	} else {
+		b.WriteString("Description: (not set)\n")
+	}
+	if len(draft.AcceptanceCriteria) > 0 {
+		b.WriteString("Acceptance criteria:\n")
+		for i, ac := range draft.AcceptanceCriteria {
+			b.WriteString(fmt.Sprintf("  [%d] %s\n", i, ac))
+		}
+	} else {
+		b.WriteString("Acceptance criteria: (none yet)\n")
+	}
+
+	b.WriteString("\n## User message\n\n")
+	b.WriteString(userMsg)
+
+	return b.String()
 }
 
 func toSnapshot(d2 db.IssueDraft) (DraftSnapshot, error) {

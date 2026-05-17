@@ -54,6 +54,7 @@ type Session struct {
 	ID        string
 	ProjectID string
 	Runner    string
+	RepoPath  string // absolute path to the project's git repository
 	Status    Status
 }
 

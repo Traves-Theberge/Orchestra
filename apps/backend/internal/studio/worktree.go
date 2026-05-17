@@ -62,10 +62,16 @@ func (w *ScratchWorktree) Cleanup() error {
 func setReadOnly(root string) error {
 	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return err
+			// Skip broken symlinks and other inaccessible paths.
+			return nil
 		}
 		if info.IsDir() && filepath.Base(path) == ".git" {
 			return filepath.SkipDir
+		}
+		// Symlink permissions cannot be changed on Linux; os.Chmod follows the
+		// link and returns ENOENT for broken symlinks. Skip them entirely.
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil
 		}
 		if info.IsDir() {
 			return os.Chmod(path, 0555)
