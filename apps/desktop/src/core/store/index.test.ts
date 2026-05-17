@@ -40,9 +40,9 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('Composed store — UI slice', () => {
-  it('exposes activeSection initialized to ISSUES', () => {
+  it('exposes activeSection initialized to CONSOLE', () => {
     const { activeSection } = useAppStore.getState()
-    expect(activeSection).toBe('ISSUES')
+    expect(activeSection).toBe('CONSOLE')
   })
 
   it('exposes setActiveSection as a function', () => {
@@ -58,6 +58,16 @@ describe('Composed store — UI slice', () => {
   it('exposes togglePalette as a function', () => {
     const { togglePalette } = useAppStore.getState()
     expect(typeof togglePalette).toBe('function')
+  })
+
+  it('exposes studioModalOpen initialized to false', () => {
+    const { studioModalOpen } = useAppStore.getState()
+    expect(studioModalOpen).toBe(false)
+  })
+
+  it('exposes setStudioModalOpen as a function', () => {
+    const { setStudioModalOpen } = useAppStore.getState()
+    expect(typeof setStudioModalOpen).toBe('function')
   })
 })
 
