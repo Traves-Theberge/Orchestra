@@ -20,26 +20,26 @@ export function StudioChat({
 
   return (
     <div className="h-full flex flex-col">
-      <div className="px-4 py-3 border-b border-white/10 flex items-center gap-3">
+      <div className="px-4 py-3 border-b border-border flex items-center gap-3">
         <h2 className="text-sm font-medium">Studio</h2>
-        <span className="text-xs opacity-60">via {runner}</span>
+        <span className="text-xs text-muted-foreground">via {runner}</span>
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 && (
-          <div className="text-sm opacity-60">
+          <div className="text-sm text-muted-foreground">
             Tell the agent what task you want to author. It can read your repo while it helps.
           </div>
         )}
         {messages.map((m, i) => (
           <div key={i} className={m.role === 'user' ? 'text-right' : 'text-left'}>
             {m.tool ? (
-              <div className="inline-block text-xs bg-white/5 border border-white/10 rounded px-2 py-1">
-                <span className="opacity-60">tool:</span> {m.tool.name}
+              <div className="inline-block text-xs bg-muted border border-border rounded px-2 py-1">
+                <span className="text-muted-foreground">tool:</span> {m.tool.name}
               </div>
             ) : (
               <div
-                className={`inline-block max-w-[80%] rounded p-2 text-sm whitespace-pre-wrap ${
-                  m.role === 'user' ? 'bg-sky-600/20' : 'bg-white/5'
+                className={`inline-block max-w-[80%] rounded-md p-2 text-sm whitespace-pre-wrap ${
+                  m.role === 'user' ? 'bg-primary/10 text-foreground' : 'bg-muted text-foreground'
                 }`}
               >
                 {m.text}

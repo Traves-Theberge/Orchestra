@@ -1,3 +1,4 @@
+import { Button } from '@ui/button'
 import type { StudioDraft } from '@core/api/client'
 import { AcceptanceCriteria } from './fields/AcceptanceCriteria'
 import { AgentGuidance } from './fields/AgentGuidance'
@@ -18,13 +19,13 @@ export interface DraftPanelProps {
 
 export function DraftPanel({ draft, onChange, onPush, onDiscard, onBrowseTemplates, pushing, pushDisabledReason }: DraftPanelProps) {
   return (
-    <div className="h-full flex flex-col border-l border-white/10">
-      <div className="px-4 py-3 border-b border-white/10 flex items-center gap-3">
+    <div className="h-full flex flex-col border-l border-border">
+      <div className="px-4 py-3 border-b border-border flex items-center gap-3">
         <h2 className="text-sm font-medium">Task draft</h2>
         <TemplatePicker draft={draft} onChange={onChange} onBrowse={onBrowseTemplates} />
-        <button type="button" onClick={onDiscard} className="ml-auto text-xs opacity-60 hover:opacity-100">
+        <Button type="button" onClick={onDiscard} variant="ghost" size="sm" className="ml-auto text-xs">
           Discard
-        </button>
+        </Button>
       </div>
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-5">
         <BasicsFields draft={draft} onChange={onChange} />
@@ -33,16 +34,16 @@ export function DraftPanel({ draft, onChange, onPush, onDiscard, onBrowseTemplat
         <ProviderPicker draft={draft} onChange={onChange} />
         <AgentGuidance draft={draft} onChange={onChange} />
       </div>
-      <div className="px-4 py-3 border-t border-white/10 flex flex-col gap-1">
-        {pushDisabledReason && <div className="text-xs text-yellow-400">{pushDisabledReason}</div>}
-        <button
+      <div className="px-4 py-3 border-t border-border flex flex-col gap-1">
+        {pushDisabledReason && <div className="text-xs text-yellow-500">{pushDisabledReason}</div>}
+        <Button
           type="button"
           onClick={onPush}
           disabled={pushing || !!pushDisabledReason}
-          className="w-full py-2 rounded bg-sky-500 text-black font-medium hover:bg-sky-400 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="w-full"
         >
           {pushing ? 'Pushing…' : '→ Push to backlog'}
-        </button>
+        </Button>
       </div>
     </div>
   )
