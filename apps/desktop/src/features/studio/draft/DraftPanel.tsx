@@ -35,7 +35,7 @@ export function DraftPanel({ draft, onChange, onPush, onDiscard, onBrowseTemplat
         <AgentGuidance draft={draft} onChange={onChange} />
       </div>
       <div className="px-4 py-3 border-t border-border flex flex-col gap-1">
-        {pushDisabledReason && <div className="text-xs text-yellow-500">{pushDisabledReason}</div>}
+        {pushDisabledReason && <div className="text-xs text-amber-500">{pushDisabledReason}</div>}
         <Button
           type="button"
           onClick={onPush}
