@@ -37,6 +37,7 @@ export interface UseStudioSessionResult {
   draft: StudioDraft | null
   messages: ChatMessage[]
   connected: boolean
+  sending: boolean
   sendMessage: (text: string) => Promise<void>
   editDraft: (patch: Partial<StudioDraft>) => Promise<void>
   push: () => Promise<{ issue_id: string }>
@@ -55,6 +56,7 @@ export function useStudioSession(
   const { draft, applyServerSnapshot, setLocal } = useDraft(sessionId)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [connected, setConnected] = useState(false)
+  const [sending, setSending] = useState(false)
   const esRef = useRef<EventSource | null>(null)
   const createRef = useRef(options.createEventSource ?? defaultCreateEventSource)
   createRef.current = options.createEventSource ?? defaultCreateEventSource
@@ -93,11 +95,18 @@ export function useStudioSession(
         case 'chat.message': {
           const p = inner.payload as { role: ChatMessage['role']; text: string }
           setMessages((prev) => [...prev, { role: p.role, text: p.text, ts: Date.now() }])
+          setSending(false)
           break
         }
         case 'tool.call': {
           const p = inner.payload as { name: string; args: unknown }
           setMessages((prev) => [...prev, { role: 'agent', text: '', tool: p, ts: Date.now() }])
+          break
+        }
+        case 'error': {
+          const msg = typeof inner.payload === 'string' ? inner.payload : 'Agent error'
+          setMessages((prev) => [...prev, { role: 'agent', text: `⚠ ${msg}`, ts: Date.now() }])
+          setSending(false)
           break
         }
       }
@@ -111,7 +120,12 @@ export function useStudioSession(
   const sendMessage = useCallback(
     async (text: string) => {
       setMessages((prev) => [...prev, { role: 'user', text, ts: Date.now() }])
-      await client.sendStudioMessage(sessionId, text)
+      setSending(true)
+      try {
+        await client.sendStudioMessage(sessionId, text)
+      } finally {
+        setSending(false)
+      }
     },
     [sessionId, client],
   )
@@ -127,5 +141,5 @@ export function useStudioSession(
   const push = useCallback(() => client.pushStudioToBacklog(sessionId), [sessionId, client])
   const discard = useCallback(() => client.discardStudioSession(sessionId), [sessionId, client])
 
-  return { draft, messages, connected, sendMessage, editDraft, push, discard }
+  return { draft, messages, connected, sending, sendMessage, editDraft, push, discard }
 }

@@ -47,6 +47,15 @@ export function StudioChat({
             )}
           </div>
         ))}
+        {sendDisabled && (
+          <div className="text-left">
+            <div className="inline-flex items-center gap-1.5 bg-muted rounded-md px-3 py-2 text-sm text-muted-foreground">
+              <span className="animate-pulse">●</span>
+              <span className="animate-pulse" style={{ animationDelay: '150ms' }}>●</span>
+              <span className="animate-pulse" style={{ animationDelay: '300ms' }}>●</span>
+            </div>
+          </div>
+        )}
         <div ref={endRef} />
       </div>
       <ChatComposer onSend={onSend} disabled={sendDisabled} />

@@ -113,7 +113,7 @@ function StudioBody({
   toast: string | null
   clearToast: () => void
 }) {
-  const { draft, messages, sendMessage, editDraft, push, discard } = useStudioSession(sessionId, client)
+  const { draft, messages, sending, sendMessage, editDraft, push, discard } = useStudioSession(sessionId, client)
   const { templates, save: saveTemplate, remove: removeTemplate } = useTemplates(config)
   const [libraryOpen, setLibraryOpen] = useState(false)
   const [templateError, setTemplateError] = useState<string | null>(null)
@@ -164,7 +164,7 @@ function StudioBody({
           />
         </div>
         <div className="flex-1 min-h-0">
-          <StudioChat messages={messages} onSend={sendMessage} runner={runner} />
+          <StudioChat messages={messages} onSend={sendMessage} sendDisabled={sending} runner={runner} />
         </div>
       </div>
       <div className="flex-1 min-w-0">

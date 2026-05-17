@@ -404,7 +404,11 @@ function createWindow() {
   const isDev = !!process.env.VITE_DEV_SERVER_URL
   win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
     // In dev mode, Vite injects inline scripts for React fast refresh preamble
-    const scriptSrc = isDev ? "'self' 'unsafe-inline'" : "'self'"
+    // cdn.jsdelivr.net is needed for ONNX Runtime JSEP modules loaded dynamically
+    // by @huggingface/transformers in the Whisper voice worker.
+    const scriptSrc = isDev
+      ? "'self' 'unsafe-inline' https://cdn.jsdelivr.net"
+      : "'self' https://cdn.jsdelivr.net"
     // Allow connections to backend (loopback) and LLM provider APIs for
     // the embedded agent model listing and inference.
     const providerAPIs = [
@@ -416,6 +420,8 @@ function createWindow() {
       'https://huggingface.co',
       'https://cdn-lfs.huggingface.co',
       'https://cas-bridge.xethub.hf.co',
+      // ONNX Runtime WASM/JSEP modules loaded dynamically by @huggingface/transformers
+      'https://cdn.jsdelivr.net',
       // react-grab dev tool version manifest (dev only)
       'https://www.react-grab.com',
     ].join(' ')

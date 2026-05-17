@@ -2570,7 +2570,11 @@ export async function discardStudioSession(config: BackendConfig, sessionId: str
 }
 
 export function studioEventsURL(config: BackendConfig, sessionId: string): string {
-  return new URL(`/api/v1/studio/sessions/${encodeURIComponent(sessionId)}/events`, config.baseUrl).toString()
+  const url = new URL(`/api/v1/studio/sessions/${encodeURIComponent(sessionId)}/events`, config.baseUrl)
+  if (config.apiToken.trim()) {
+    url.searchParams.set('token', config.apiToken.trim())
+  }
+  return url.toString()
 }
 
 export interface StudioTemplate {
