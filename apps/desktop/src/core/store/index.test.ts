@@ -40,9 +40,9 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('Composed store — UI slice', () => {
-  it('exposes activeSection initialized to ISSUES', () => {
+  it('exposes activeSection initialized to CONSOLE', () => {
     const { activeSection } = useAppStore.getState()
-    expect(activeSection).toBe('ISSUES')
+    expect(activeSection).toBe('CONSOLE')
   })
 
   it('exposes setActiveSection as a function', () => {

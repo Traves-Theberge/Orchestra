@@ -280,8 +280,7 @@ async function requestJSON<T>(config: BackendConfig, path: string, init?: Reques
       if (parsed?.error?.code && parsed?.error?.message) {
         throw new APIError(parsed.error.code, parsed.error.message)
       }
-      // Use statusText as the primary detail for non-JSON responses
-      const detail = response.statusText || bodyText.trim() || 'Unknown error'
+      const detail = bodyText.trim() || response.statusText
       throw new APIError('request_failed', `${response.status} ${detail}`)
     }
 
@@ -327,8 +326,7 @@ async function requestText(config: BackendConfig, path: string, init?: RequestIn
       if (parsed?.error?.code && parsed?.error?.message) {
         throw new APIError(parsed.error.code, parsed.error.message)
       }
-      // Use statusText as the primary detail for non-JSON responses
-      const detail = response.statusText || bodyText.trim() || 'Unknown error'
+      const detail = bodyText.trim() || response.statusText
       throw new APIError('request_failed', `${response.status} ${detail}`)
     }
 

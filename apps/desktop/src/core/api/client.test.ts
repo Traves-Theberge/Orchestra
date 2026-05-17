@@ -242,7 +242,7 @@ describe('operator flow client calls', () => {
       await postRefresh(config)
       throw new Error('expected postRefresh to fail')
     } catch (error) {
-      expect(toDisplayError(error)).toBe('request_failed: 500 Internal Server Error')
+      expect(toDisplayError(error)).toBe('request_failed: 500 not-json-error')
     }
   })
 

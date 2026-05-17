@@ -36,9 +36,9 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('UISlice — default initialization', () => {
-  it('initializes activeSection to ISSUES', () => {
+  it('initializes activeSection to CONSOLE', () => {
     const { state } = createTestSlice()
-    expect(state.activeSection).toBe('ISSUES')
+    expect(state.activeSection).toBe('CONSOLE')
   })
 
   it('initializes sidebarCollapsed to false', () => {

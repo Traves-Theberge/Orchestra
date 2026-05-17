@@ -62,7 +62,7 @@ function getInitialHomepage(): string {
 
 export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get) => ({
   // ---- State ----------------------------------------------------------------
-  activeSection: 'ISSUES',
+  activeSection: 'CONSOLE',
   sidebarCollapsed: false,
   theme: getInitialTheme(),
   activePeriod: 'Week',
