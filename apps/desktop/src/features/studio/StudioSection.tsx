@@ -11,7 +11,7 @@ import {
   type BackendConfig,
 } from '@core/api/client'
 import { Button } from '@ui/button'
-import { CustomDropdown } from '@layout/shared/controls'
+import { CustomDropdown, getAgentIcon } from '@layout/shared/controls'
 import { StudioChat } from './chat/StudioChat'
 import { useStudioSession, type StudioSessionClient } from './chat/useStudioSession'
 import { DraftPanel } from './draft/DraftPanel'
@@ -24,7 +24,7 @@ export interface StudioSectionProps {
 }
 
 const RUNNERS = ['claude-code', 'codex', 'opencode', 'gemini']
-const RUNNER_OPTIONS = RUNNERS.map((r) => ({ label: r, value: r }))
+const RUNNER_OPTIONS = RUNNERS.map((r) => ({ label: r, value: r, icon: getAgentIcon(r) }))
 
 export function StudioSection({ config, projectId }: StudioSectionProps) {
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -154,18 +154,13 @@ function StudioBody({
   return (
     <div className="h-full flex relative">
       <div className="flex-[1.4] min-w-0 flex flex-col">
-        <div className="px-2 py-1 border-b border-border flex items-center">
+        <div className="px-4 py-2 border-b border-border flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Runner</span>
           <CustomDropdown
-            className="bg-transparent border-none hover:bg-muted/20 !h-10 !px-3 rounded-lg transition-colors shadow-none"
             value={runner}
             options={RUNNER_OPTIONS}
             onChange={onRunnerChange}
             direction="down"
-            triggerContent={
-              <div className="flex items-center gap-2 text-xs font-bold text-muted-foreground/70 uppercase">
-                <span className="truncate max-w-[120px]">{runner}</span>
-              </div>
-            }
           />
         </div>
         <div className="flex-1 min-h-0">
