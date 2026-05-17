@@ -46,7 +46,7 @@ export function StudioModal({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="!fixed !inset-0 !translate-x-0 !translate-y-0 !left-0 !top-0 !max-w-none w-full h-full overflow-hidden flex flex-col p-0 rounded-none border-none">
+      <DialogContent showCloseButton={false} className="!fixed !inset-0 !translate-x-0 !translate-y-0 !left-0 !top-0 !max-w-none w-full h-full overflow-hidden flex flex-col p-0 rounded-none border-none">
         <DialogHeader className="sr-only">
           <DialogTitle>Studio — Author a task with AI</DialogTitle>
           <DialogDescription>
