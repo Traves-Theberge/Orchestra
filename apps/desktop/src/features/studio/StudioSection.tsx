@@ -154,15 +154,19 @@ function StudioBody({
   return (
     <div className="h-full flex relative">
       <div className="flex-[1.4] min-w-0 flex flex-col">
-        <div className="px-4 py-2 border-b border-border flex items-center gap-2 text-xs">
-          <span className="text-muted-foreground">Runner</span>
-          <div className="w-36">
-            <CustomDropdown
-              value={runner}
-              options={RUNNER_OPTIONS}
-              onChange={onRunnerChange}
-            />
-          </div>
+        <div className="px-2 py-1 border-b border-border flex items-center">
+          <CustomDropdown
+            className="bg-transparent border-none hover:bg-muted/20 !h-10 !px-3 rounded-lg transition-colors shadow-none"
+            value={runner}
+            options={RUNNER_OPTIONS}
+            onChange={onRunnerChange}
+            direction="down"
+            triggerContent={
+              <div className="flex items-center gap-2 text-xs font-bold text-muted-foreground/70 uppercase">
+                <span className="truncate max-w-[120px]">{runner}</span>
+              </div>
+            }
+          />
         </div>
         <div className="flex-1 min-h-0">
           <StudioChat messages={messages} onSend={sendMessage} runner={runner} />

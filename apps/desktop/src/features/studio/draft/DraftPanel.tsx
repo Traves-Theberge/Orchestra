@@ -1,10 +1,8 @@
 import { Button } from '@ui/button'
 import type { StudioDraft } from '@core/api/client'
 import { AcceptanceCriteria } from './fields/AcceptanceCriteria'
-import { AgentGuidance } from './fields/AgentGuidance'
 import { Attachments } from './fields/Attachments'
 import { BasicsFields } from './fields/BasicsFields'
-import { ProviderPicker } from './fields/ProviderPicker'
 import { TemplatePicker } from './fields/TemplatePicker'
 
 export interface DraftPanelProps {
@@ -31,8 +29,6 @@ export function DraftPanel({ draft, onChange, onPush, onDiscard, onBrowseTemplat
         <BasicsFields draft={draft} onChange={onChange} />
         <AcceptanceCriteria draft={draft} onChange={onChange} />
         <Attachments draft={draft} onChange={onChange} />
-        <ProviderPicker draft={draft} onChange={onChange} />
-        <AgentGuidance draft={draft} onChange={onChange} />
       </div>
       <div className="px-4 py-3 border-t border-border flex flex-col gap-1">
         {pushDisabledReason && <div className="text-xs text-amber-500">{pushDisabledReason}</div>}
