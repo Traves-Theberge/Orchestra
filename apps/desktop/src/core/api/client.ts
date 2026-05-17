@@ -270,15 +270,19 @@ async function requestJSON<T>(config: BackendConfig, path: string, init?: Reques
 
     if (!response.ok) {
       let parsed: APIErrorEnvelope | null = null
+      let bodyText = ''
       try {
-        parsed = (await response.json()) as APIErrorEnvelope
+        bodyText = await response.text()
+        parsed = JSON.parse(bodyText) as APIErrorEnvelope
       } catch {
         parsed = null
       }
       if (parsed?.error?.code && parsed?.error?.message) {
         throw new APIError(parsed.error.code, parsed.error.message)
       }
-      throw new APIError('request_failed', `${response.status} ${response.statusText}`)
+      // Use statusText as the primary detail for non-JSON responses
+      const detail = response.statusText || bodyText.trim() || 'Unknown error'
+      throw new APIError('request_failed', `${response.status} ${detail}`)
     }
 
     // Handle cases where response might be empty (204 No Content) or other non-JSON but successful responses
@@ -313,15 +317,19 @@ async function requestText(config: BackendConfig, path: string, init?: RequestIn
 
     if (!response.ok) {
       let parsed: APIErrorEnvelope | null = null
+      let bodyText = ''
       try {
-        parsed = (await response.json()) as APIErrorEnvelope
+        bodyText = await response.text()
+        parsed = JSON.parse(bodyText) as APIErrorEnvelope
       } catch {
         parsed = null
       }
       if (parsed?.error?.code && parsed?.error?.message) {
         throw new APIError(parsed.error.code, parsed.error.message)
       }
-      throw new APIError('request_failed', `${response.status} ${response.statusText}`)
+      // Use statusText as the primary detail for non-JSON responses
+      const detail = response.statusText || bodyText.trim() || 'Unknown error'
+      throw new APIError('request_failed', `${response.status} ${detail}`)
     }
 
     return response.text()
