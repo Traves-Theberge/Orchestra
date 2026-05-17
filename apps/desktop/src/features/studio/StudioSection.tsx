@@ -10,6 +10,8 @@ import {
   studioEventsURL,
   type BackendConfig,
 } from '@core/api/client'
+import { Button } from '@ui/button'
+import { CustomDropdown } from '@layout/shared/controls'
 import { StudioChat } from './chat/StudioChat'
 import { useStudioSession, type StudioSessionClient } from './chat/useStudioSession'
 import { DraftPanel } from './draft/DraftPanel'
@@ -22,6 +24,7 @@ export interface StudioSectionProps {
 }
 
 const RUNNERS = ['claude-code', 'codex', 'opencode', 'gemini']
+const RUNNER_OPTIONS = RUNNERS.map((r) => ({ label: r, value: r }))
 
 export function StudioSection({ config, projectId }: StudioSectionProps) {
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -58,28 +61,26 @@ export function StudioSection({ config, projectId }: StudioSectionProps) {
   }, [config, projectId, runner, sessionId])
 
   if (startError) {
-    return <div className="p-6 text-sm text-red-400">Failed to start studio session: {startError}</div>
+    return (
+      <div className="p-6 text-sm text-destructive">
+        Failed to start studio session: {startError}
+      </div>
+    )
   }
   if (!sessionId) {
-    return <div className="p-6 text-sm opacity-60">Starting studio session…</div>
+    return <div className="p-6 text-sm text-muted-foreground">Starting studio session…</div>
   }
 
   return (
     <StudioBody
       sessionId={sessionId}
       runner={runner}
-      onRunnerChange={(r) => {
-        setRunner(r)
-        setSessionId(null)
-      }}
+      onRunnerChange={(r) => { setRunner(r); setSessionId(null) }}
       client={client}
       config={config}
       pushing={pushing}
       setPushing={setPushing}
-      onPushed={(issueId) => {
-        setToast(`Pushed to backlog: ${issueId}`)
-        setSessionId(null)
-      }}
+      onPushed={(issueId) => { setToast(`Pushed to backlog: ${issueId}`); setSessionId(null) }}
       onDiscarded={() => setSessionId(null)}
       toast={toast}
       clearToast={() => setToast(null)}
@@ -153,19 +154,15 @@ function StudioBody({
   return (
     <div className="h-full flex relative">
       <div className="flex-[1.4] min-w-0 flex flex-col">
-        <div className="px-4 py-2 border-b border-white/10 flex items-center gap-2 text-xs">
-          <span className="opacity-60">Runner</span>
-          <select
-            className="bg-transparent border border-white/20 rounded px-1 py-0.5"
-            value={runner}
-            onChange={(e) => onRunnerChange(e.target.value)}
-          >
-            {RUNNERS.map((r) => (
-              <option key={r} value={r}>
-                {r}
-              </option>
-            ))}
-          </select>
+        <div className="px-4 py-2 border-b border-border flex items-center gap-2 text-xs">
+          <span className="text-muted-foreground">Runner</span>
+          <div className="w-36">
+            <CustomDropdown
+              value={runner}
+              options={RUNNER_OPTIONS}
+              onChange={onRunnerChange}
+            />
+          </div>
         </div>
         <div className="flex-1 min-h-0">
           <StudioChat messages={messages} onSend={sendMessage} runner={runner} />
@@ -194,18 +191,19 @@ function StudioBody({
         />
       )}
       {templateError && (
-        <div className="absolute bottom-16 right-4 bg-red-700 text-white text-xs px-3 py-2 rounded shadow max-w-sm">
+        <div className="absolute bottom-16 right-4 bg-destructive text-destructive-foreground text-xs px-3 py-2 rounded shadow max-w-sm">
           {templateError}
         </div>
       )}
       {toast && (
-        <button
+        <Button
           type="button"
           onClick={clearToast}
-          className="absolute bottom-4 right-4 bg-sky-600 text-white text-sm px-3 py-2 rounded shadow"
+          className="absolute bottom-4 right-4 shadow"
+          size="sm"
         >
           {toast}
-        </button>
+        </Button>
       )}
     </div>
   )
