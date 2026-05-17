@@ -22,7 +22,7 @@ export function StudioChat({
     <div className="h-full flex flex-col">
       <div className="px-4 py-3 border-b border-border flex items-center gap-3">
         <h2 className="text-sm font-medium">Studio</h2>
-        <span className="text-xs text-muted-foreground">via {runner}</span>
+        <span className="text-xs text-muted-foreground">via {runner} agent</span>
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 && (
