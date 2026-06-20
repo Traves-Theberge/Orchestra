@@ -10,7 +10,7 @@ require (
 	github.com/google/go-github/v69 v69.2.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
-	github.com/pelletier/go-toml/v2 v2.3.0
+	github.com/pelletier/go-toml/v2 v2.3.1
 	github.com/rs/zerolog v1.35.1
 	github.com/xeipuuv/gojsonschema v1.2.0
 	golang.org/x/crypto v0.50.0
