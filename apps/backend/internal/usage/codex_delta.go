@@ -8,12 +8,8 @@ func codexDelta(total, last, previous *codexTokenSnapshot) (*codexTokenSnapshot,
 			return nil, previous
 		}
 		if last != nil {
-			if previous != nil && !codexMonotonic(*total, *previous) {
-				old, current, response := codexMagnitude(*previous), codexMagnitude(*total), codexMagnitude(*last)
-				if old > 0 && current > 0 && response > 0 && (float64(current) >= float64(old)*0.98 || current+response*2 >= old) {
-					return nil, previous
-				}
-			}
+			// Measured responses remain billable when compaction resets totals.
+			// The scanner rejects stale records by time, not token magnitude.
 			return last, total
 		}
 		if previous == nil {
@@ -34,9 +30,6 @@ func codexDelta(total, last, previous *codexTokenSnapshot) (*codexTokenSnapshot,
 
 func codexMonotonic(a, b codexTokenSnapshot) bool {
 	return a.InputTokens >= b.InputTokens && a.CachedInputTokens >= b.CachedInputTokens && a.OutputTokens >= b.OutputTokens && a.ReasoningOutputTokens >= b.ReasoningOutputTokens
-}
-func codexMagnitude(v codexTokenSnapshot) int64 {
-	return v.InputTokens + v.CachedInputTokens + v.OutputTokens + v.ReasoningOutputTokens
 }
 func normalizeCodexSnapshot(v *codexTokenSnapshot) *codexTokenSnapshot {
 	if v == nil {

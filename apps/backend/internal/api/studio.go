@@ -1,8 +1,8 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 
@@ -50,13 +50,19 @@ func (s *Server) PostStudioSessionMessage(w http.ResponseWriter, r *http.Request
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	// Run the agent turn in the background so the HTTP request returns
-	// immediately (202). The agent can take several minutes; tying it to the
-	// request context would kill it when the 30 s router timeout fires.
-	// Results arrive via SSE (chat.message / error events).
-	go func() {
-		_ = s.studioMgr.SendMessage(context.Background(), id, req.Message)
-	}()
+	if err := s.studioMgr.SubmitMessage(id, req.Message); err != nil {
+		status := http.StatusInternalServerError
+		switch {
+		case errors.Is(err, studio.ErrSessionNotFound):
+			status = http.StatusNotFound
+		case errors.Is(err, studio.ErrSessionInactive), errors.Is(err, studio.ErrTurnBusy):
+			status = http.StatusConflict
+		case errors.Is(err, studio.ErrRunnerUnavailable):
+			status = http.StatusServiceUnavailable
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
 	w.WriteHeader(http.StatusAccepted)
 }
 

@@ -3,6 +3,7 @@ import type { StudioDraft } from '@core/api/client'
 import { AcceptanceCriteria } from './fields/AcceptanceCriteria'
 import { BasicsFields } from './fields/BasicsFields'
 import { TemplatePicker } from './fields/TemplatePicker'
+import { AgentGuidance } from './fields/AgentGuidance'
 
 export interface DraftPanelProps {
   draft: StudioDraft
@@ -27,6 +28,7 @@ export function DraftPanel({ draft, onChange, onPush, onDiscard, onBrowseTemplat
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-5">
         <BasicsFields draft={draft} onChange={onChange} />
         <AcceptanceCriteria draft={draft} onChange={onChange} />
+        <AgentGuidance draft={draft} onChange={onChange} />
       </div>
       <div className="px-4 py-3 border-t border-border flex flex-col gap-1">
         {pushDisabledReason && <div className="text-xs text-amber-500">{pushDisabledReason}</div>}

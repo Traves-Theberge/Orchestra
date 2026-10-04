@@ -31,6 +31,11 @@ export function AgentGuidance({
           onChange={(e) => onChange({ max_turns: e.target.value ? Number(e.target.value) : null })}
         />
       </label>
+      {draft.max_turns != null && (
+        <p className="text-xs text-amber-500">
+          Explicit turn budgets are not supported by the registered harnesses. Clear Max turns before dispatching this task.
+        </p>
+      )}
     </div>
   )
 }

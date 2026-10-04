@@ -5,14 +5,14 @@ import path from 'node:path'
 import os from 'node:os'
 import net from 'node:net'
 import { fileURLToPath } from 'node:url'
+import { fixtureEnvironment } from './fixture-environment.mjs'
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..')
 const root = path.join(os.tmpdir(), 'orchestra-native-chat-ui-fixture')
 const server = net.createServer()
 await new Promise((resolve, reject) => { server.once('error', reject); server.listen(4010, '127.0.0.1', () => server.close(resolve)) })
 for (const directory of ['home', 'appdata', 'localappdata', 'tmp', 'project', 'state']) await mkdir(path.join(root, directory), { recursive: true })
 await writeFile(path.join(root, 'WORKFLOW.md'), 'Protocol fixture only. No scheduled task execution.\n')
-const env = { ...process.env }
-for (const key of Object.keys(env)) if (/^(ORCHESTRA_|CODEX_|CLAUDE_|GEMINI_|GOOGLE_|ANTHROPIC_|OPENAI_|XDG_)/.test(key)) delete env[key]
+const env = fixtureEnvironment(root)
 Object.assign(env, {
   HOME: path.join(root, 'home'), USERPROFILE: path.join(root, 'home'), APPDATA: path.join(root, 'appdata'), LOCALAPPDATA: path.join(root, 'localappdata'),
   TEMP: path.join(root, 'tmp'), TMP: path.join(root, 'tmp'), CODEX_HOME: path.join(root, 'home', '.codex'), CLAUDE_CONFIG_DIR: path.join(root, 'home', '.claude'),

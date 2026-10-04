@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -35,11 +36,13 @@ type Manager struct {
 	spawner       RunnerSpawner
 	tracker       Tracker
 	templateStore *templates.Store
-	mu            sync.Mutex // guards read-modify-write draft operations
+	mu            sync.Mutex // guards draft operations and message admission
+	attached      map[string]bool
+	pending       map[string]bool
 }
 
 func NewManager(d *sql.DB, bus *observability.PubSub, spawner RunnerSpawner) *Manager {
-	return &Manager{d: d, bus: bus, spawner: spawner}
+	return &Manager{d: d, bus: bus, spawner: spawner, attached: map[string]bool{}, pending: map[string]bool{}}
 }
 
 // SetTracker configures the tracker backend used by Push.
@@ -128,20 +131,84 @@ func (m *Manager) StartSession(ctx context.Context, req StartSessionRequest) (Se
 			return Session{}, fmt.Errorf("spawn runner: %w", err)
 		}
 	}
+	if m.spawner != nil {
+		m.mu.Lock()
+		m.attached[id] = true
+		m.mu.Unlock()
+	}
 	return sess, nil
 }
 
-// SendMessage forwards a user message to the runner attached to this session.
-// It prepends a task-authoring system prompt so the agent knows its role and
-// the MCP tools available to it via the orchestra-studio server.
-func (m *Manager) SendMessage(ctx context.Context, sessionID, msg string) error {
-	if m.spawner == nil {
-		return fmt.Errorf("studio: no runner attached")
+var (
+	ErrSessionNotFound   = errors.New("studio: session not found")
+	ErrSessionInactive   = errors.New("studio: session is closed")
+	ErrRunnerUnavailable = errors.New("studio: session runner unavailable; reopen the authoring session")
+	ErrTurnBusy          = errors.New("studio: turn already in progress")
+)
+
+// admitMessage reserves a live turn before HTTP acceptance. Persisted rows
+// alone do not establish a live runner after a backend restart.
+func (m *Manager) admitMessage(sessionID string) (DraftSnapshot, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	sess, err := db.GetStudioSession(m.d, sessionID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return DraftSnapshot{}, ErrSessionNotFound
 	}
-	defer m.dispatch(Event{SessionID: sessionID, Kind: EventSessionStatus, Payload: map[string]string{"status": "turn_completed"}})
-	draft, _ := m.GetDraft(sessionID)
-	full := buildStudioPrompt(draft, msg)
-	return m.spawner.SendMessage(ctx, sessionID, full)
+	if err != nil {
+		return DraftSnapshot{}, err
+	}
+	if sess.EndedAt != nil {
+		return DraftSnapshot{}, ErrSessionInactive
+	}
+	if m.spawner == nil || !m.attached[sessionID] {
+		return DraftSnapshot{}, ErrRunnerUnavailable
+	}
+	if live, ok := m.spawner.(interface{ HasSession(string) bool }); ok && !live.HasSession(sessionID) {
+		return DraftSnapshot{}, ErrRunnerUnavailable
+	}
+	if m.pending[sessionID] {
+		return DraftSnapshot{}, ErrTurnBusy
+	}
+	draft, err := m.GetDraft(sessionID)
+	if err != nil {
+		return DraftSnapshot{}, err
+	}
+	m.pending[sessionID] = true
+	return draft, nil
+}
+
+// SubmitMessage validates synchronously, then executes independently of the
+// HTTP request lifetime. All failures after acceptance are published.
+func (m *Manager) SubmitMessage(sessionID, msg string) error {
+	draft, err := m.admitMessage(sessionID)
+	if err != nil {
+		return err
+	}
+	go func() { _ = m.runMessage(context.Background(), sessionID, buildStudioPrompt(draft, msg)) }()
+	return nil
+}
+
+func (m *Manager) SendMessage(ctx context.Context, sessionID, msg string) error {
+	draft, err := m.admitMessage(sessionID)
+	if err != nil {
+		return err
+	}
+	return m.runMessage(ctx, sessionID, buildStudioPrompt(draft, msg))
+}
+
+func (m *Manager) runMessage(ctx context.Context, sessionID, prompt string) error {
+	defer func() {
+		m.mu.Lock()
+		m.dispatch(Event{SessionID: sessionID, Kind: EventSessionStatus, Payload: map[string]string{"status": "turn_completed"}})
+		delete(m.pending, sessionID)
+		m.mu.Unlock()
+	}()
+	err := m.spawner.SendMessage(ctx, sessionID, prompt)
+	if err != nil {
+		m.dispatch(Event{SessionID: sessionID, Kind: EventError, Payload: err.Error()})
+	}
+	return err
 }
 
 // ApplyDraftPatch validates the complete request before one atomic storage update.
@@ -160,6 +227,9 @@ func (m *Manager) ApplyDraftPatch(sessionID string, patch map[string]interface{}
 	return nil
 }
 func (m *Manager) Discard(sessionID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.attached, sessionID)
 	if m.spawner != nil {
 		_ = m.spawner.Stop(sessionID)
 	}
@@ -228,6 +298,7 @@ func (m *Manager) Push(ctx context.Context, sessionID string) (string, error) {
 
 	_ = db.DeleteDraft(m.d, sessionID)
 	_ = db.EndStudioSession(m.d, sessionID, string(StatusPushed))
+	delete(m.attached, sessionID)
 	if m.spawner != nil {
 		_ = m.spawner.Stop(sessionID)
 	}

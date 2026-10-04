@@ -34,18 +34,38 @@ export function StudioModal({
   const setOpen = useAppStore((s) => s.setStudioModalOpen)
   const storeProjectId = useAppStore((s) => s.selectedProjectID)
 
-  // Local project override — lets the user switch project inside the modal
-  // without touching the globally selected project.
-  const [localProjectId, setLocalProjectId] = useState<string | null>(null)
-  const projectId = localProjectId ?? storeProjectId ?? ''
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      {open && <StudioModalContent config={config} projects={projects} storeProjectId={storeProjectId} onClose={() => setOpen(false)} />}
+    </Dialog>
+  )
+}
 
-  const handleOpenChange = (next: boolean) => {
-    if (!next) setLocalProjectId(null)
-    setOpen(next)
+function StudioModalContent({ config, projects, storeProjectId, onClose }: {
+  config: BackendConfig | null
+  projects: Project[]
+  storeProjectId: string | null
+  onClose: () => void
+}) {
+
+  // A draft belongs to the project and backend that created its session.
+  // Retain that ownership even if global selection or backend settings change.
+  const [localProjectId, setLocalProjectId] = useState<string | null>(null)
+  const [sessionOwner, setSessionOwner] = useState<{
+    projectId: string
+    config: BackendConfig
+    projects: Project[]
+  } | null>(null)
+  const selectedProjectId = localProjectId ?? storeProjectId ?? ''
+  const projectId = sessionOwner?.projectId ?? selectedProjectId
+
+  // Bind once before rendering the session. The open content unmounts on close,
+  // so another modal invocation can select another target without deleting data.
+  if (!sessionOwner && config && selectedProjectId) {
+    setSessionOwner({ projectId: selectedProjectId, config: { ...config }, projects })
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent showCloseButton={false} className="!fixed !inset-0 !translate-x-0 !translate-y-0 !left-0 !top-0 !max-w-none w-full h-full overflow-hidden flex flex-col p-0 rounded-none border-none">
         <DialogHeader className="sr-only">
           <DialogTitle>Studio — Author a task with AI</DialogTitle>
@@ -57,20 +77,26 @@ export function StudioModal({
         {/* Modal toolbar */}
         <div className="shrink-0 flex items-center gap-3 px-4 py-2 border-b border-border bg-background">
           <span className="text-sm font-semibold">Studio</span>
-          <div className="w-52">
+          <fieldset
+            className="w-52"
+            disabled={!!sessionOwner}
+            aria-label="Studio project"
+            title={sessionOwner ? 'This draft belongs to this project. Close Studio to choose another project.' : undefined}
+          >
             <ProjectSelector
               value={projectId}
-              projects={projects}
-              onChange={setLocalProjectId}
+              projects={sessionOwner?.projects ?? projects}
+              onChange={(id) => { if (!sessionOwner) setLocalProjectId(id) }}
               direction="down"
             />
-          </div>
+          </fieldset>
+          {sessionOwner && <span className="text-xs text-muted-foreground">Project fixed for this draft</span>}
           <Button
             type="button"
             variant="ghost"
             size="icon"
             className="ml-auto"
-            onClick={() => handleOpenChange(false)}
+            onClick={onClose}
             aria-label="Close Studio"
           >
             <X className="size-4" />
@@ -79,7 +105,7 @@ export function StudioModal({
 
         {/* Content */}
         <div className="flex-1 min-h-0">
-          {!config ? (
+          {!config && !sessionOwner ? (
             <div className="h-full flex items-center justify-center text-sm text-muted-foreground p-8">
               No backend configured. Connect to a backend in Settings first.
             </div>
@@ -87,13 +113,12 @@ export function StudioModal({
             <div className="h-full flex items-center justify-center text-sm text-muted-foreground p-8">
               Select a project above to begin.
             </div>
-          ) : (
+          ) : sessionOwner ? (
             <Suspense fallback={<SectionLoader />}>
-              <StudioSection config={config} projectId={projectId} />
+              <StudioSection config={sessionOwner.config} projectId={sessionOwner.projectId} />
             </Suspense>
-          )}
+          ) : <SectionLoader />}
         </div>
       </DialogContent>
-    </Dialog>
   )
 }

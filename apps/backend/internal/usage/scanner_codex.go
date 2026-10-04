@@ -122,10 +122,11 @@ func scanCodex(
 
 		// File-local state — Codex deltas are cumulative within a session.
 		var (
-			fileSessionID string
-			fileCwd       string
-			fileModel     string
-			prevTotals    *codexTokenSnapshot
+			fileSessionID   string
+			fileCwd         string
+			fileModel       string
+			prevTotals      *codexTokenSnapshot
+			latestTokenTime time.Time
 		)
 
 		scanner := bufio.NewScanner(f)
@@ -179,6 +180,15 @@ func scanCodex(
 					usage = ev.Info
 				}
 				total, last := normalizeCodexSnapshot(usage.TotalTokenUsage), normalizeCodexSnapshot(usage.LastTokenUsage)
+				if total == nil && last == nil {
+					continue
+				}
+				// Late older records must not roll back the cumulative baseline.
+				// Equal timestamps may contain distinct measured responses.
+				if ts.Before(latestTokenTime) {
+					continue
+				}
+				latestTokenTime = ts
 				resolved, next := codexDelta(total, last, prevTotals)
 				prevTotals = next
 				if resolved == nil {

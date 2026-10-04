@@ -6,6 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
+import { fixtureEnvironment } from './fixture-environment.mjs'
 
 const desktop = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const children = new Set()
@@ -61,11 +62,7 @@ async function backendBinary() {
 }
 
 function isolatedEnvironment(root) {
-  const env = { ...process.env }
-  delete env.ORCHESTRA_AUDIT_CURRENT_PROVIDER_CONTEXT
-  for (const key of Object.keys(env)) {
-    if (/(API_KEY|AUTH_TOKEN|ACCESS_TOKEN|SECRET_ACCESS_KEY)$/.test(key) || ['GH_TOKEN', 'GITHUB_TOKEN', 'GOOGLE_APPLICATION_CREDENTIALS', 'AWS_PROFILE', 'AWS_SHARED_CREDENTIALS_FILE', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'ELECTRON_RUN_AS_NODE', 'ORCHESTRA_TOKEN_KEY', 'ORCHESTRA_BASE_URL', 'ORCHESTRA_API_TOKEN'].includes(key)) delete env[key]
-  }
+  const env = fixtureEnvironment(root)
   Object.assign(env, {
     ORCHESTRA_AUDIT_ROOT: root,
     HOME: path.join(root, 'home'), USERPROFILE: path.join(root, 'home'),

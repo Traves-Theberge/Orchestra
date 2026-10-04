@@ -18,6 +18,13 @@ func NewFakeRunner() *FakeRunner {
 	return &FakeRunner{sessions: map[string]func(Event){}, Messages: map[string][]string{}}
 }
 
+func (f *FakeRunner) HasSession(sessionID string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	_, ok := f.sessions[sessionID]
+	return ok
+}
+
 func (f *FakeRunner) Spawn(ctx context.Context, sess Session, onEvent func(Event)) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

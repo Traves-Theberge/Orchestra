@@ -105,6 +105,38 @@ func TestStudioCreateSession(t *testing.T) {
 	}
 }
 
+func TestStudioMessageRejectsUnavailableSessionsBeforeAcceptance(t *testing.T) {
+	f := spinUpStudioAPI(t)
+	sess, err := f.mgr.StartSession(context.Background(), studio.StartSessionRequest{Runner: "fake"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	post := func(id string, want int) {
+		t.Helper()
+		resp, err := http.Post(f.server.URL+"/api/v1/studio/sessions/"+id+"/message", "application/json", bytes.NewBufferString(`{"message":"hello"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != want {
+			t.Fatalf("status=%d want=%d", resp.StatusCode, want)
+		}
+	}
+	post("missing", http.StatusNotFound)
+	// Simulate loss of the runner while its durable draft remains available.
+	if err := f.runner.Stop(sess.ID); err != nil {
+		t.Fatal(err)
+	}
+	post(sess.ID, http.StatusServiceUnavailable)
+	if _, err := f.mgr.GetDraft(sess.ID); err != nil {
+		t.Fatalf("unavailable admission deleted draft: %v", err)
+	}
+	if err := f.mgr.Discard(sess.ID); err != nil {
+		t.Fatal(err)
+	}
+	post(sess.ID, http.StatusConflict)
+}
+
 func TestStudioDraftHTTPPatchValidationAndClear(t *testing.T) {
 	f := spinUpStudioAPI(t)
 	sess, err := f.mgr.StartSession(context.Background(), studio.StartSessionRequest{Runner: "fake"})

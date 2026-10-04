@@ -27,9 +27,10 @@ func TestCodexModernImportResumeCopiesAndResponseDeltas(t *testing.T) {
 	add(tokens(1000, 100, 200, 50), tokens(100, 20, 20, 10))
 	events = append(events, events[0])
 	add(tokens(1150, 130, 230, 65), tokens(150, 30, 30, 15))
-	add(tokens(1110, 129, 229, 64), tokens(20, 5, 2, 1)) // stale regression
-	add(tokens(50, 10, 10, 4), tokens(50, 10, 10, 4))    // compaction reset
-	add(tokens(40, 8, 8, 3), nil)                        // rebaseline without a measured response
+	add(tokens(1110, 129, 229, 64), tokens(20, 5, 2, 1))
+	events[len(events)-1]["timestamp"] = stamp.Add(-2 * time.Second).Format(time.RFC3339Nano) // explicitly older record
+	add(tokens(50, 10, 10, 4), tokens(50, 10, 10, 4))                                         // compaction reset
+	add(tokens(40, 8, 8, 3), nil)                                                             // rebaseline without a measured response
 	add(tokens(60, 12, 12, 5), nil)
 	add(nil, tokens(10, 2, 2, 1))
 	add(nil, tokens(10, 2, 2, 1)) // two equal independent responses both count
@@ -95,6 +96,28 @@ func TestCodexUnknownPricingAndReasoningSubset(t *testing.T) {
 	b, _ := estimateCost(ProviderCodex, "gpt-5.4", 100, 20, 30, 0, 0, 10)
 	if a == nil || b == nil || *a != *b {
 		t.Fatal("reasoning changed billed output")
+	}
+}
+
+func TestCodexScannerCountsMeasuredResetAndIgnoresLateOlderRecord(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("CODEX_HOME", home)
+	root := filepath.Join(home, "sessions")
+	if err := os.Mkdir(root, 0755); err != nil {
+		t.Fatal(err)
+	}
+	data := `{"type":"session_meta","timestamp":"2026-10-04T12:00:00Z","payload":{"id":"reset-session"}}
+{"type":"event_msg","timestamp":"2026-10-04T12:00:01Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"output_tokens":20}}}}
+{"type":"event_msg","timestamp":"2026-10-04T12:00:02Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":60,"output_tokens":10},"last_token_usage":{"input_tokens":60,"output_tokens":10}}}}
+{"type":"event_msg","timestamp":"2026-10-04T12:00:01.5Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":40,"output_tokens":8},"last_token_usage":{"input_tokens":40,"output_tokens":8}}}}
+{"type":"event_msg","timestamp":"2026-10-04T12:00:03Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":80,"output_tokens":15}}}}
+`
+	if err := os.WriteFile(filepath.Join(root, "reset.jsonl"), []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, sessions, _, exists, err := scanCodex(time.Now(), nil, nil, nil, newWorktreeIndex(nil))
+	if err != nil || !exists || len(sessions) != 1 || sessions[0].InputTokens != 180 || sessions[0].OutputTokens != 35 || sessions[0].TurnCount != 3 {
+		t.Fatalf("reset/stale accounting: %+v exists=%v err=%v", sessions, exists, err)
 	}
 }
 

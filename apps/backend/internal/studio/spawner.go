@@ -88,17 +88,24 @@ func (s *StudioSpawner) Spawn(_ context.Context, sess Session, onEvent func(Even
 	return nil
 }
 
+// HasSession reports whether the runner owns a live session binding.
+func (s *StudioSpawner) HasSession(sessionID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.sessions[sessionID]
+	return ok
+}
+
 // SendMessage runs one agent turn with the provided text as prompt.
 func (s *StudioSpawner) SendMessage(ctx context.Context, sessionID, message string) error {
 	s.mu.Lock()
 	st, ok := s.sessions[sessionID]
-	s.mu.Unlock()
 	if !ok {
+		s.mu.Unlock()
 		return fmt.Errorf("studio: no spawned session %s", sessionID)
 	}
 
 	turnCtx, cancel := context.WithTimeout(ctx, s.turnTimeout)
-	s.mu.Lock()
 	st.cancel = cancel
 	s.mu.Unlock()
 	defer cancel()
@@ -132,7 +139,6 @@ func (s *StudioSpawner) SendMessage(ctx context.Context, sessionID, message stri
 		}
 	})
 	if err != nil {
-		st.onEvent(Event{SessionID: sessionID, Kind: EventError, Payload: err.Error()})
 		return err
 	}
 
@@ -156,12 +162,12 @@ func (s *StudioSpawner) Stop(sessionID string) error {
 	s.mu.Lock()
 	st, ok := s.sessions[sessionID]
 	delete(s.sessions, sessionID)
+	if ok && st.cancel != nil {
+		st.cancel()
+	}
 	s.mu.Unlock()
 	if !ok {
 		return nil
-	}
-	if st.cancel != nil {
-		st.cancel()
 	}
 	return st.worktree.Cleanup()
 }
