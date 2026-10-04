@@ -79,7 +79,11 @@ func TestProducesPersistedEvidenceAndDeliberateFailure(t *testing.T) {
 			if _, err := os.Stat(ownership.Root); !os.IsNotExist(err) {
 				t.Fatal("producer left fixture root")
 			}
-			if strings.TrimSpace(stdout.String()) != filepath.Join(output, "report.json") {
+			reportPath, err := filepath.EvalSymlinks(filepath.Join(output, "report.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.TrimSpace(stdout.String()) != reportPath {
 				t.Fatalf("report path output %q", stdout.String())
 			}
 		})

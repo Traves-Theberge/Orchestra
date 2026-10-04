@@ -120,6 +120,10 @@ func TestWorkspaceChatScopeHistoryAndReplay(t *testing.T) {
 	awaitIdle(t, s, pid, sess.ID)
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	repo, err = filepath.EvalSymlinks(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(r.calls) != 2 || r.calls[0].Workspace != repo || r.calls[0].WorkspaceRoot != repo || !r.calls[0].ProjectRootWorkspace || !strings.Contains(r.calls[1].Prompt, "Hello") || r.calls[0].SessionID == r.calls[1].SessionID {
 		t.Fatalf("dispatch: %#v", r.calls)
 	}
