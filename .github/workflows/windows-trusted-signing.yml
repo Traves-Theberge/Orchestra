@@ -1,0 +1,88 @@
+name: windows-trusted-signing
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-sign:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-2025
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Require configured public-trust signer
+        shell: pwsh
+        env:
+          AZURE_SIGNING_CLIENT_ID: ${{ vars.AZURE_SIGNING_CLIENT_ID }}
+          AZURE_SIGNING_TENANT_ID: ${{ vars.AZURE_SIGNING_TENANT_ID }}
+          AZURE_SIGNING_SUBSCRIPTION_ID: ${{ vars.AZURE_SIGNING_SUBSCRIPTION_ID }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+        run: |
+          foreach ($key in 'AZURE_SIGNING_CLIENT_ID','AZURE_SIGNING_TENANT_ID','AZURE_SIGNING_SUBSCRIPTION_ID','AZURE_SIGNING_ENDPOINT','AZURE_SIGNING_ACCOUNT','AZURE_SIGNING_PROFILE') {
+            if (![Environment]::GetEnvironmentVariable($key)) { throw "Configure repository variable $key before signing. See docs/ops/windows-trusted-signing.md." }
+          }
+      - uses: ./.github/actions/setup-node-cached
+        with:
+          cache-dependency-path: apps/desktop/package-lock.json
+      - uses: ./.github/actions/setup-go-cached
+        with:
+          go-mod-path: apps/backend/go.mod
+          go-sum-path: apps/backend/go.sum
+      - run: npm ci
+        working-directory: apps/desktop
+      - run: npm audit --audit-level=low
+        working-directory: apps/desktop
+      - run: npm run typecheck
+        working-directory: apps/desktop
+      - name: Build native backend and task CLI
+        shell: pwsh
+        working-directory: apps/backend
+        run: |
+          New-Item -ItemType Directory -Force ../desktop/resources/backend/win32-x64 | Out-Null
+          go build -o ../desktop/resources/backend/win32-x64/orchestrad.exe ./cmd/orchestrad
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go build -o ../desktop/resources/backend/win32-x64/orchestra.exe ./cmd/orchestra
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Package portable Windows application
+        run: npm run dist:dir
+        working-directory: apps/desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Authenticate with a main-only federated identity
+        uses: Azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
+        with:
+          client-id: ${{ vars.AZURE_SIGNING_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_SIGNING_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SIGNING_SUBSCRIPTION_ID }}
+      - name: Sign packaged executables and native libraries
+        uses: Azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\apps\desktop\release\win-unpacked
+          files-folder-filter: exe,dll,node
+          files-folder-recurse: true
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          exclude-environment-credential: true
+          exclude-azure-cli-credential: false
+      - name: Verify signatures and record artifact hashes
+        shell: pwsh
+        run: ./scripts/verify-windows-signatures.ps1 -Directory ./apps/desktop/release/win-unpacked -ReportPath ./apps/desktop/release/signatures.csv
+      - name: Upload verified portable application
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: orchestra-windows-signed-${{ github.sha }}
+          path: |
+            apps/desktop/release/win-unpacked/**
+            apps/desktop/release/signatures.csv
+          if-no-files-found: error
