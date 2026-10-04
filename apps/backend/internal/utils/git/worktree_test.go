@@ -147,6 +147,14 @@ func TestWorktreeList(t *testing.T) {
 	}
 
 	found1, found2 := false, false
+	wt1, err = filepath.EvalSymlinks(wt1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt2, err = filepath.EvalSymlinks(wt2)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, p := range paths {
 		if p == wt1 {
 			found1 = true

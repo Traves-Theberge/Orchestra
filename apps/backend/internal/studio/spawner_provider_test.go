@@ -14,8 +14,8 @@ func TestSpawnRejectsUnknownRunnerBeforeWorkspace(t *testing.T) {
 		t.Run(runner, func(t *testing.T) {
 			reg := &fakeRegistryForSpawn{}
 			// An invalid repository would fail differently if provisioning ran.
-			sp := NewStudioSpawner(reg, filepath.Join(t.TempDir(), "absent"), "", "")
-			err := sp.Spawn(context.Background(), Session{ID: "invalid", Runner: runner}, func(Event) {})
+			sp := NewStudioSpawner(reg, "", "")
+			err := sp.Spawn(context.Background(), Session{ID: "invalid", Runner: runner, RepoPath: filepath.Join(t.TempDir(), "absent")}, func(Event) {})
 			if err == nil || !strings.Contains(err.Error(), "unsupported runner") {
 				t.Fatalf("expected runner validation before provisioning, got %v", err)
 			}

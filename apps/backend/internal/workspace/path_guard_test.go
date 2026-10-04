@@ -55,3 +55,22 @@ func TestValidateWorkspacePath_RejectsSymlinkEscape(t *testing.T) {
 		t.Fatalf("expected symlink escape rejection")
 	}
 }
+
+func TestPathGuardsResolveAncestorForMissingChildren(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	alias := filepath.Join(root, "escape")
+	if err := os.Symlink(outside, alias); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	candidate := filepath.Join(alias, "not-created")
+	if err := ValidateWorkspacePath(root, candidate); err == nil {
+		t.Fatal("future workspace escaped through ancestor link")
+	}
+	if err := ValidateProjectPath(candidate, []string{root}); err == nil {
+		t.Fatal("project escaped through ancestor link")
+	}
+	if err := ValidateWorkspacePath(root, filepath.Join(root, "..valid-child")); err != nil {
+		t.Fatalf("contained dot-prefix name rejected: %v", err)
+	}
+}

@@ -62,7 +62,7 @@ function getInitialHomepage(): string {
 
 export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get) => ({
   // ---- State ----------------------------------------------------------------
-  activeSection: 'ISSUES',
+  activeSection: 'CONSOLE',
   sidebarCollapsed: false,
   theme: getInitialTheme(),
   activePeriod: 'Week',
@@ -90,6 +90,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   agentHubScope: 'GLOBAL',
   agentHubDirty: false,
   agentHubPendingNav: null,
+  studioModalOpen: false,
 
   // ---- Actions --------------------------------------------------------------
   setActiveSection: (section) => set({ activeSection: section }),
@@ -179,4 +180,6 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
       apply()
     }
   },
+
+  setStudioModalOpen: (open) => set({ studioModalOpen: open }),
 })

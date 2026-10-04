@@ -118,6 +118,32 @@ describe('useStudioSession', () => {
     })
     expect(result.current.messages[0]).toMatchObject({ role: 'user', text: 'hello' })
     expect(client.sendStudioMessage).toHaveBeenCalledWith('sess1', 'hello')
+    expect(result.current.sending).toBe(true)
+    act(() => FakeEventSource.instances[0].emit({ session_id: 'sess1', kind: 'session.status', payload: { status: 'turn_completed' } }))
+    expect(result.current.sending).toBe(false)
+  })
+
+  it('clears sending after a rejected request', async () => {
+    const client = makeClient({ sendStudioMessage: vi.fn().mockRejectedValue(new Error('unauthorized')) })
+    const { result } = renderSession(client)
+    await act(async () => { await expect(result.current.sendMessage('hello')).rejects.toThrow('unauthorized') })
+    expect(result.current.sending).toBe(false)
+  })
+
+  it('does not clear a new session submission when an old request fails', async () => {
+    let rejectOld!: (reason: Error) => void
+    const client = makeClient({ sendStudioMessage: vi.fn((id: string) => id === 'sess1'
+      ? new Promise<void>((_, reject) => { rejectOld = reject }) : Promise.resolve()) })
+    const { result, rerender } = renderHook(({ id }) => useStudioSession(id, client, {
+      createEventSource: url => new FakeEventSource(url) as unknown as EventSource,
+    }), { initialProps: { id: 'sess1' } })
+    let oldRequest!: Promise<void>
+    act(() => { oldRequest = result.current.sendMessage('old').catch(() => {}) })
+    rerender({ id: 'sess2' })
+    expect(result.current.sending).toBe(false)
+    await act(async () => { await result.current.sendMessage('new') })
+    await act(async () => { rejectOld(new Error('late error')); await oldRequest })
+    expect(result.current.sending).toBe(true)
   })
 
   it('editDraft applies optimistic local change and calls client', async () => {

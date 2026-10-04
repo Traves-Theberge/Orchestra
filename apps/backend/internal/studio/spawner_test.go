@@ -48,9 +48,9 @@ func (f *fakeRegistryForSpawn) RunTurn(_ context.Context, _ agents.Provider, req
 func TestSpawn_WritesMCPConfigInWorktree(t *testing.T) {
 	repo := initRepoForSpawn(t)
 	reg := &fakeRegistryForSpawn{}
-	sp := NewStudioSpawner(reg, repo, "/usr/bin/orchestrad", "/tmp/studio.sock")
+	sp := NewStudioSpawner(reg, "/usr/bin/orchestrad", "/tmp/studio.sock")
 
-	if err := sp.Spawn(context.Background(), Session{ID: "sess1", Runner: "claude-code"}, func(Event) {}); err != nil {
+	if err := sp.Spawn(context.Background(), Session{ID: "sess1", Runner: "claude-code", RepoPath: repo}, func(Event) {}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 
@@ -99,9 +99,9 @@ func TestSpawn_WritesMCPConfigInWorktree(t *testing.T) {
 func TestSendMessage_InvokesRegistryRunTurn(t *testing.T) {
 	repo := initRepoForSpawn(t)
 	reg := &fakeRegistryForSpawn{}
-	sp := NewStudioSpawner(reg, repo, "/usr/bin/orchestrad", "/tmp/studio.sock")
+	sp := NewStudioSpawner(reg, "/usr/bin/orchestrad", "/tmp/studio.sock")
 
-	if err := sp.Spawn(context.Background(), Session{ID: "sess2", Runner: "claude-code"}, func(Event) {}); err != nil {
+	if err := sp.Spawn(context.Background(), Session{ID: "sess2", Runner: "claude-code", RepoPath: repo}, func(Event) {}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	defer sp.Stop("sess2")
@@ -121,7 +121,7 @@ func TestSendMessage_InvokesRegistryRunTurn(t *testing.T) {
 }
 
 func TestSendMessage_UnknownSession(t *testing.T) {
-	sp := NewStudioSpawner(&fakeRegistryForSpawn{}, "/nope", "/usr/bin/orchestrad", "/tmp/studio.sock")
+	sp := NewStudioSpawner(&fakeRegistryForSpawn{}, "/usr/bin/orchestrad", "/tmp/studio.sock")
 	if err := sp.SendMessage(context.Background(), "unknown", "x"); err == nil {
 		t.Fatalf("expected error")
 	}
@@ -129,8 +129,8 @@ func TestSendMessage_UnknownSession(t *testing.T) {
 
 func TestStop_RemovesWorktree(t *testing.T) {
 	repo := initRepoForSpawn(t)
-	sp := NewStudioSpawner(&fakeRegistryForSpawn{}, repo, "/usr/bin/orchestrad", "/tmp/studio.sock")
-	if err := sp.Spawn(context.Background(), Session{ID: "sess3", Runner: "claude-code"}, func(Event) {}); err != nil {
+	sp := NewStudioSpawner(&fakeRegistryForSpawn{}, "/usr/bin/orchestrad", "/tmp/studio.sock")
+	if err := sp.Spawn(context.Background(), Session{ID: "sess3", Runner: "claude-code", RepoPath: repo}, func(Event) {}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	sp.mu.Lock()

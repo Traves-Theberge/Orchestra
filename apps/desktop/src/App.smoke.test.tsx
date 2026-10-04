@@ -8,7 +8,7 @@ vi.mock('@features/terminal/TerminalView', () => ({
 }))
 
 import App from './App'
-import { resetAppStore } from '@core/store'
+import { resetAppStore, useAppStore } from '@core/store'
 
 // Mock Electron bridge
 const defaultProfiles: BridgeProfilesPayload = {
@@ -246,6 +246,7 @@ function defaultSnapshot(runningCount = 0): SnapshotPayload {
 
 describe('App smoke render', () => {
   beforeEach(() => {
+    useAppStore.setState({ activeSection: 'ISSUES' })
     eventSourceInstances = []
     eventSourceConstructCount = 0
     vi.stubGlobal('EventSource', MockEventSource)

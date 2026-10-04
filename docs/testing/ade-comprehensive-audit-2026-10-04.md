@@ -1,6 +1,6 @@
 # ADE comprehensive audit: active evidence ledger
 
-This ledger covers the eight requested audit areas. It is not an E2E completion certificate. Historical receipts describe earlier executions; their results are not automatically attributed to today's source. Commit and push each reviewed implementation slice, retaining known gaps in the PR.
+This ledger covers the eight requested audit areas. It is not an E2E completion certificate. Historical receipts describe earlier executions; their results are not automatically attributed to today's source. Commit and push each reviewed implementation slice, retaining known gaps in the PR. The [branch integration receipt](ade-branch-integration-2026-10-04.md) supersedes the nine-section navigation inventory below: Studio authoring is now a Kanban Create with AI modal, with eight sidebar sections.
 
 ## Current status and executable gates
 

@@ -36,6 +36,12 @@ func NewFixture(ctx context.Context) (*Fixture, error) {
 	if err != nil {
 		return nil, err
 	}
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		_ = os.RemoveAll(root)
+		return nil, err
+	}
+	root = canonicalRoot
 	id := make([]byte, 16)
 	if _, err := rand.Read(id); err != nil {
 		_ = os.RemoveAll(root)

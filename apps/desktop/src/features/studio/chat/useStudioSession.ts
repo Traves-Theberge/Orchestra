@@ -37,6 +37,7 @@ export interface UseStudioSessionResult {
   draft: StudioDraft | null
   messages: ChatMessage[]
   connected: boolean
+  sending: boolean
   sendMessage: (text: string) => Promise<void>
   editDraft: (patch: Partial<StudioDraft>) => Promise<void>
   push: () => Promise<{ issue_id: string }>
@@ -60,6 +61,8 @@ export function useStudioSession(
   const appendMessage = useCallback((message: ChatMessage) => {
     setChat(previous => ({ sessionId, messages: [...(previous.sessionId === sessionId ? previous.messages : []), message] }))
   }, [sessionId])
+  const [submission, setSubmission] = useState<{ sessionId: string; sending: boolean }>({ sessionId, sending: false })
+  const sending = submission.sessionId === sessionId && submission.sending
   const esRef = useRef<EventSource | null>(null)
   const createRef = useRef(options.createEventSource ?? defaultCreateEventSource)
   useEffect(() => {
@@ -103,6 +106,7 @@ export function useStudioSession(
         case 'chat.message': {
           const p = inner.payload as { role: ChatMessage['role']; text: string }
           appendMessage({ role: p.role, text: p.text, ts: Date.now() })
+          setSubmission({ sessionId, sending: false })
           break
         }
         case 'tool.call': {
@@ -110,6 +114,17 @@ export function useStudioSession(
           appendMessage({ role: 'agent', text: '', tool: p, ts: Date.now() })
           break
         }
+        case 'error': {
+          const msg = typeof inner.payload === 'string' ? inner.payload : 'Agent error'
+          appendMessage({ role: 'agent', text: `⚠ ${msg}`, ts: Date.now() })
+          setSubmission({ sessionId, sending: false })
+          break
+        }
+        case 'session.status':
+          if ((inner.payload as { status?: string } | null)?.status === 'turn_completed') {
+            setSubmission({ sessionId, sending: false })
+          }
+          break
       }
     }
     return () => {
@@ -121,7 +136,13 @@ export function useStudioSession(
   const sendMessage = useCallback(
     async (text: string) => {
       appendMessage({ role: 'user', text, ts: Date.now() })
-      await client.sendStudioMessage(sessionId, text)
+      setSubmission({ sessionId, sending: true })
+      try {
+        await client.sendStudioMessage(sessionId, text)
+      } catch (error) {
+        setSubmission(previous => previous.sessionId === sessionId ? { sessionId, sending: false } : previous)
+        throw error
+      }
     },
     [sessionId, client, appendMessage],
   )
@@ -137,5 +158,5 @@ export function useStudioSession(
   const push = useCallback(() => client.pushStudioToBacklog(sessionId), [sessionId, client])
   const discard = useCallback(() => client.discardStudioSession(sessionId), [sessionId, client])
 
-  return { draft, messages, connected, sendMessage, editDraft, push, discard }
+  return { draft, messages, connected, sending, sendMessage, editDraft, push, discard }
 }

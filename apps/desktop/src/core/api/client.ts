@@ -278,15 +278,18 @@ async function requestJSON<T>(config: BackendConfig, path: string, init?: Reques
 
     if (!response.ok) {
       let parsed: APIErrorEnvelope | null = null
+      let bodyText = ''
       try {
-        parsed = (await response.json()) as APIErrorEnvelope
+        bodyText = await response.text()
+        parsed = JSON.parse(bodyText) as APIErrorEnvelope
       } catch {
         parsed = null
       }
       if (parsed?.error?.code && parsed?.error?.message) {
         throw new APIError(parsed.error.code, parsed.error.message)
       }
-      throw new APIError('request_failed', `${response.status} ${response.statusText}`)
+      const detail = bodyText.trim() || response.statusText
+      throw new APIError('request_failed', `${response.status} ${detail}`)
     }
 
     // Handle cases where response might be empty (204 No Content) or other non-JSON but successful responses
@@ -395,15 +398,18 @@ async function requestText(config: BackendConfig, path: string, init?: RequestIn
 
     if (!response.ok) {
       let parsed: APIErrorEnvelope | null = null
+      let bodyText = ''
       try {
-        parsed = (await response.json()) as APIErrorEnvelope
+        bodyText = await response.text()
+        parsed = JSON.parse(bodyText) as APIErrorEnvelope
       } catch {
         parsed = null
       }
       if (parsed?.error?.code && parsed?.error?.message) {
         throw new APIError(parsed.error.code, parsed.error.message)
       }
-      throw new APIError('request_failed', `${response.status} ${response.statusText}`)
+      const detail = bodyText.trim() || response.statusText
+      throw new APIError('request_failed', `${response.status} ${detail}`)
     }
 
     return response.text()
@@ -2651,7 +2657,11 @@ export async function discardStudioSession(config: BackendConfig, sessionId: str
 }
 
 export function studioEventsURL(config: BackendConfig, sessionId: string): string {
-  return new URL(`/api/v1/studio/sessions/${encodeURIComponent(sessionId)}/events`, config.baseUrl).toString()
+  const url = new URL(`/api/v1/studio/sessions/${encodeURIComponent(sessionId)}/events`, config.baseUrl)
+  if (config.apiToken.trim()) {
+    url.searchParams.set('token', config.apiToken.trim())
+  }
+  return url.toString()
 }
 
 export interface StudioTemplate {
