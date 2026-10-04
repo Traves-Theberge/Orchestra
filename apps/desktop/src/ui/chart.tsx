@@ -93,7 +93,6 @@ const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
 
   return (
     <style
-      // eslint-disable-next-line react/no-danger -- CSS built from internal config only, no user input
       dangerouslySetInnerHTML={{
         __html: Object.entries(THEMES)
           .map(

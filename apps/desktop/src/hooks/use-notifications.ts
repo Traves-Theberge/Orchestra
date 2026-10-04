@@ -88,7 +88,7 @@ export function useNotifications(): NotificationState {
     if ('Notification' in window && Notification.permission === 'granted') {
       new Notification('Agent Completed', {
         body: `${issueIdentifier} has been moved to Review.`,
-        icon: '/favicon.ico',
+        icon: './favicon.ico',
       })
     } else if ('Notification' in window && Notification.permission !== 'denied') {
       void Notification.requestPermission()

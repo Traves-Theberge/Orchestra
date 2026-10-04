@@ -53,10 +53,12 @@ export function BrowserPane() {
     }
   }, [menuOpen])
 
-  // Sync URL input with active tab
-  useEffect(() => {
-    if (activeTab) setUrlInput(activeTab.url)
-  }, [activeTab?.id, activeTab?.url])
+  const urlSource = JSON.stringify([activeTab?.id, activeTab?.url])
+  const [previousUrlSource, setPreviousUrlSource] = useState(urlSource)
+  if (previousUrlSource !== urlSource) {
+    setPreviousUrlSource(urlSource)
+    setUrlInput(activeTab?.url ?? '')
+  }
 
   // Navigate
   const navigate = useCallback(
@@ -86,7 +88,7 @@ export function BrowserPane() {
       canGoBack: wv.canGoBack?.() || false,
       canGoForward: wv.canGoForward?.() || false,
     })
-  }, [activeTab?.id, updateBrowserTab])
+  }, [activeTab, updateBrowserTab])
 
   const handleDidNavigate = useCallback(() => {
     if (!webviewRef.current || !activeTab) return
@@ -98,13 +100,13 @@ export function BrowserPane() {
       canGoBack: wv.canGoBack?.() || false,
       canGoForward: wv.canGoForward?.() || false,
     })
-  }, [activeTab?.id, updateBrowserTab])
+  }, [activeTab, updateBrowserTab])
 
   const handleDidStartLoading = useCallback(() => {
     if (activeTab) {
       updateBrowserTab(activeTab.id, { loading: true })
     }
-  }, [activeTab?.id, updateBrowserTab])
+  }, [activeTab, updateBrowserTab])
 
   // Attach / detach webview listeners
   useEffect(() => {
@@ -349,7 +351,6 @@ export function BrowserPane() {
       {/* Webview */}
       <div className="flex-1 min-h-0 relative">
         {activeTab && (
-          // eslint-disable-next-line react/no-unknown-property -- Electron <webview> attributes
           <webview
             ref={webviewRef as React.RefObject<never>}
             src={activeTab.url}

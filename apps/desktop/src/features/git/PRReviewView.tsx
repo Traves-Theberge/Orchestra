@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { X, Check, AlertTriangle, ChevronDown, GitMerge } from 'lucide-react'
 import type { BackendConfig, GitHubPR } from '@core/api/client'
-import { fetchProjectGitHubPullDiff, fetchPRReviews, submitPRReview, mergePR } from '@core/api/client'
+import { fetchPRSnapshot, fetchPRReviews, submitPRReview, mergePR } from '@core/api/client'
 import { DiffViewer } from './DiffViewer'
 
 type ReviewTab = 'files' | 'reviews'
@@ -30,17 +30,18 @@ function prStatus(pr: GitHubPR): { dot: string; label: string; text: string } {
   return { dot: 'bg-emerald-500', label: 'open', text: 'text-emerald-500' }
 }
 
-export function PRReviewView({
+type PRReviewProps = { projectId: string; config: BackendConfig; pr: GitHubPR; onClose: () => void }
+
+export function PRReviewView(props: PRReviewProps) {
+  return <PRReviewPanel key={`${props.config.baseUrl}:${props.projectId}:${props.pr.number}`} {...props} />
+}
+
+function PRReviewPanel({
   projectId,
   config,
   pr,
   onClose,
-}: {
-  projectId: string
-  config: BackendConfig
-  pr: GitHubPR
-  onClose: () => void
-}) {
+}: PRReviewProps) {
   const [tab, setTab] = useState<ReviewTab>('files')
   const [diffText, setDiffText] = useState('')
   const [diffMode, setDiffMode] = useState<'split' | 'unified'>('unified')
@@ -48,50 +49,74 @@ export function PRReviewView({
   const [reviewBody, setReviewBody] = useState('')
   const [mergeOpen, setMergeOpen] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [dataLoading, setDataLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [snapshotPR, setSnapshotPR] = useState<GitHubPR | null>(null)
+  const generation = useRef(0)
+  const mounted = useRef(false)
 
   const loadData = useCallback(async () => {
+    const current = ++generation.current
+    await Promise.resolve()
+    if (!mounted.current) return
+    setDataLoading(true)
+    setError(null)
     try {
-      const [diff, revs] = await Promise.all([
-        fetchProjectGitHubPullDiff(config, projectId, pr.number),
+      const [snapshot, revs] = await Promise.all([
+        fetchPRSnapshot(config, projectId, pr.number),
         fetchPRReviews(config, projectId, pr.number) as Promise<Review[]>,
       ])
-      setDiffText(diff)
+      if (!mounted.current || current !== generation.current) return
+      if (snapshot.pr.number !== pr.number || !/^[a-f0-9]{40}$/i.test(snapshot.pr.head.sha ?? '')) throw new Error('Review snapshot is missing the PR identity or head commit. Refresh before merging.')
+      setSnapshotPR(snapshot.pr)
+      setDiffText(snapshot.diff)
       setReviews(revs)
     } catch (err) {
-      console.error('PR review data load failed', err)
+      if (mounted.current && current === generation.current) setError(err instanceof Error ? err.message : 'PR review data load failed')
+    } finally {
+      if (mounted.current && current === generation.current) setDataLoading(false)
     }
   }, [config, projectId, pr.number])
 
-  useEffect(() => { loadData() }, [loadData])
+  useEffect(() => {
+    mounted.current = true
+    void loadData()
+    return () => { mounted.current = false }
+  }, [loadData])
+
+  const currentPR = snapshotPR ?? pr
+  const canAct = !loading && !dataLoading && !error && snapshotPR?.state === 'open' && !snapshotPR.merged_at && !snapshotPR.draft
 
   async function handleReview(event: string) {
-    if (loading) return
+    if (!canAct) return
     setLoading(true)
     try {
       await submitPRReview(config, projectId, pr.number, reviewBody, event)
+      if (!mounted.current) return
       setReviewBody('')
       await loadData()
     } catch (err) {
-      console.error('submit review failed', err)
+      if (mounted.current) setError(err instanceof Error ? err.message : 'Review submission failed')
     } finally {
-      setLoading(false)
+      if (mounted.current) setLoading(false)
     }
   }
 
   async function handleMerge(method: MergeMethod) {
+    if (!canAct || !snapshotPR?.head.sha) return
     setMergeOpen(false)
     setLoading(true)
     try {
-      await mergePR(config, projectId, pr.number, method)
-      await loadData()
+      await mergePR(config, projectId, pr.number, method, snapshotPR.head.sha)
+      if (mounted.current) setSnapshotPR({ ...snapshotPR, state: 'closed', merged_at: new Date().toISOString() })
     } catch (err) {
-      console.error('merge failed', err)
+      if (mounted.current) setError(err instanceof Error ? err.message : 'Merge failed. Refresh and review again.')
     } finally {
-      setLoading(false)
+      if (mounted.current) setLoading(false)
     }
   }
 
-  const status = prStatus(pr)
+  const status = prStatus(currentPR)
   const tabClass = (active: boolean) =>
     `relative h-9 px-3 text-[12px] font-medium tracking-tight transition-colors ${
       active ? 'text-foreground' : 'text-muted-foreground/60 hover:text-foreground/80'
@@ -110,14 +135,14 @@ export function PRReviewView({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2.5">
             <span className="font-mono text-[11px] text-muted-foreground/60">#{pr.number}</span>
-            <span className="text-[13px] font-medium tracking-tight text-foreground/90 truncate">{pr.title}</span>
+            <span className="text-[13px] font-medium tracking-tight text-foreground/90 truncate">{currentPR.title}</span>
             <span className="inline-flex items-center gap-1.5 shrink-0">
               <span className={`size-1.5 rounded-full ${status.dot}`} />
               <span className={`text-[10.5px] font-medium tracking-tight ${status.text}`}>{status.label}</span>
             </span>
           </div>
           <div className="font-mono text-[10.5px] text-muted-foreground/50 mt-0.5 truncate">
-            {pr.head.ref} → {pr.base.ref}
+            {currentPR.head.ref} → {currentPR.base.ref}
           </div>
         </div>
       </div>
@@ -135,9 +160,13 @@ export function PRReviewView({
         </button>
       </div>
 
+      <div className="px-4 py-2 text-xs border-b border-border/30">
+        {error ? <span role="alert">{error}</span> : dataLoading ? <span role="status">Loading review snapshot…</span> : <span>Reviewing commit {snapshotPR?.head.sha?.slice(0, 12)}</span>}
+        <button onClick={() => void loadData()} disabled={loading || dataLoading} className="ml-3 underline disabled:opacity-40">Refresh review</button>
+      </div>
       {/* Content */}
       <div className="flex-1 overflow-hidden">
-        {tab === 'files' ? (
+        {dataLoading && !snapshotPR ? null : error && !snapshotPR ? null : tab === 'files' ? (
           <DiffViewer filePath={`PR #${pr.number}: ${pr.title}`} diff={diffText || null} mode={diffMode} onModeChange={setDiffMode} />
         ) : (
           <div className="overflow-y-auto h-full p-4 space-y-3">
@@ -176,7 +205,7 @@ export function PRReviewView({
         />
         <button
           onClick={() => handleReview('APPROVE')}
-          disabled={loading}
+          disabled={!canAct}
           className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[11.5px] font-medium tracking-tight text-emerald-500 hover:bg-emerald-500/10 disabled:opacity-40 transition-colors"
         >
           <Check size={12} strokeWidth={2.5} />
@@ -184,7 +213,7 @@ export function PRReviewView({
         </button>
         <button
           onClick={() => handleReview('REQUEST_CHANGES')}
-          disabled={loading}
+          disabled={!canAct}
           className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[11.5px] font-medium tracking-tight text-amber-500 hover:bg-amber-500/10 disabled:opacity-40 transition-colors"
         >
           <AlertTriangle size={12} strokeWidth={2.5} />
@@ -193,7 +222,7 @@ export function PRReviewView({
         <div className="relative">
           <button
             onClick={() => setMergeOpen((v) => !v)}
-            disabled={loading}
+            disabled={!canAct}
             className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[11.5px] font-medium tracking-tight bg-primary text-primary-foreground shadow-sm shadow-primary/20 hover:bg-primary/90 disabled:opacity-40 transition-colors"
           >
             <GitMerge size={12} strokeWidth={2.5} />

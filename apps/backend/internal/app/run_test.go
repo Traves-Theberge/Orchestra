@@ -44,6 +44,7 @@ func testProjectSetup(t *testing.T) (workspaceRoot string, projectID string, war
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { warehouseDB.Close() })
 	projectID, err = warehouseDB.UpsertProject(context.Background(), repoDir, "")
 	if err != nil {
 		t.Fatal(err)

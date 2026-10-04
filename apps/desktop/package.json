@@ -11,8 +11,10 @@
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
-    "dev": "concurrently -k \"vite --port 5173 --strictPort\" \"wait-on tcp:5173 && cross-env ELECTRON_RUN_AS_NODE= VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
-    "dev:linux": "concurrently -k \"vite --port 5173 --strictPort\" \"wait-on tcp:5173 && cross-env ELECTRON_RUN_AS_NODE= VITE_DEV_SERVER_URL=http://localhost:5173 electron . --no-sandbox\"",
+    "audit:dev": "node scripts/audit-dev.mjs",
+    "audit:chat:fixture": "node scripts/native-chat-ui-fixture.mjs",
+    "dev": "concurrently -k \"vite --port 5173 --strictPort\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 node scripts/launch-electron.mjs .\"",
+    "dev:linux": "concurrently -k \"vite --port 5173 --strictPort\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 node scripts/launch-electron.mjs . --no-sandbox\"",
     "build": "vite build",
     "dist:prep": "npm run build && node scripts/stage-backend-binary.mjs",
     "dist:dir": "npm run dist:prep && electron-builder --dir",
@@ -27,6 +29,7 @@
     "smoke:ops:go": "node scripts/smoke-ops-flow.mjs --spawn-backend --base-url=http://127.0.0.1:4010",
     "smoke:ops:go:debug": "node scripts/smoke-ops-flow.mjs --spawn-backend --base-url=http://127.0.0.1:4010 --verbose",
     "smoke:ops:go:auth": "node scripts/smoke-ops-flow.mjs --spawn-backend --require-auth --token=smoke-token --base-url=http://127.0.0.1:4012",
+    "smoke:electron": "npm run dist:prep && node scripts/launch-electron.mjs scripts/electron-smoke.cjs",
     "release:readiness": "node scripts/release-readiness.mjs",
     "release:gate": "npm run release:readiness"
   },
@@ -51,6 +54,9 @@
     "@testing-library/dom": "^10.4.1",
     "@types/dompurify": "^3.0.5",
     "@types/github-slugger": "^1.3.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-search": "^0.16.0",
+    "@xterm/xterm": "^6.0.0",
     "ai": "^6.0.116",
     "ansi-to-react": "^6.2.6",
     "class-variance-authority": "^0.7.1",
@@ -69,7 +75,7 @@
     "react-dom": "^19.2.4",
     "react-is": "^19.2.4",
     "react-markdown": "^10.1.0",
-    "react-mosaic-component": "^6.1.1",
+    "react-mosaic-component": "^7.0.0-beta0",
     "react-syntax-highlighter": "^16.1.1",
     "recharts": "^3.8.0",
     "rehype-highlight": "^7.0.2",
@@ -80,9 +86,6 @@
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
     "tailwind-merge": "^2.6.0",
-    "xterm": "^5.3.0",
-    "xterm-addon-fit": "^0.8.0",
-    "xterm-addon-search": "^0.13.0",
     "zustand": "^5.0.12"
   },
   "devDependencies": {
@@ -114,7 +117,10 @@
     "wait-on": "^9.0.4"
   },
   "overrides": {
-    "react-dom": "$react-dom"
+    "react-dom": "$react-dom",
+    "monaco-editor": {
+      "dompurify": "^3.4.4"
+    }
   },
   "build": {
     "appId": "com.orchestra.desktop",

@@ -49,7 +49,11 @@ func TestClaudeProjectInstructionsRoundTrip(t *testing.T) {
 	if initial.Exists {
 		t.Errorf("exists should be false for empty project, got true")
 	}
-	if !strings.HasPrefix(initial.Path, root) {
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(initial.Path, canonicalRoot+string(filepath.Separator)) {
 		t.Errorf("path %q should be inside project root %q", initial.Path, root)
 	}
 

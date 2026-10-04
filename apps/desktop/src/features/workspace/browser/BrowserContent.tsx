@@ -33,10 +33,12 @@ export function BrowserContent({ tab }: BrowserContentProps) {
   const [urlInput, setUrlInput] = useState(tab.url)
   const { grabState, lastPayload, armGrab, handleConsoleMessage, resetGrab } = useGrabMode()
 
-  // Sync URL input with tab
-  useEffect(() => {
+  const urlSource = JSON.stringify([tab.id, tab.url])
+  const [previousUrlSource, setPreviousUrlSource] = useState(urlSource)
+  if (previousUrlSource !== urlSource) {
+    setPreviousUrlSource(urlSource)
     setUrlInput(tab.url)
-  }, [tab.id, tab.url])
+  }
 
   // Navigate
   const navigate = useCallback(
@@ -159,7 +161,6 @@ export function BrowserContent({ tab }: BrowserContentProps) {
 
       {/* Webview */}
       <div className="flex-1 min-h-0 relative">
-        {/* eslint-disable-next-line react/no-unknown-property -- Electron <webview> attributes */}
         <webview
           ref={webviewRef as React.RefObject<never>}
           src={tab.url}

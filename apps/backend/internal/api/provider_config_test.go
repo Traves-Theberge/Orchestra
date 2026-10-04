@@ -243,6 +243,7 @@ func TestDeleteProviderMCPServer(t *testing.T) {
 func TestGetCodexBundle(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	router := newTestRouter(t)
 
 	mustWriteTestFile(t, filepath.Join(home, ".codex", "config.toml"), "model = \"gpt-5.3-codex\"\n")
@@ -273,6 +274,7 @@ func TestGetCodexBundle(t *testing.T) {
 func TestGeminiCommandsCRUD(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	router := newTestRouter(t)
 
 	body, _ := json.Marshal(map[string]any{
@@ -313,6 +315,7 @@ func TestGeminiCommandsCRUD(t *testing.T) {
 func TestDeleteGeminiCommandRemovesLegacyMarkdownFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	router := newTestRouter(t)
 
 	legacyPath := filepath.Join(home, ".gemini", "commands", "legacy.md")
@@ -333,6 +336,7 @@ func TestDeleteGeminiCommandRemovesLegacyMarkdownFile(t *testing.T) {
 func TestOpenCodeAgentsCRUD(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	router := newTestRouter(t)
 
 	body, _ := json.Marshal(map[string]any{
@@ -385,6 +389,7 @@ func TestPostCodexSubagentRejectsInvalidJSON(t *testing.T) {
 func TestCodexSubagentsCRUD(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	router := newTestRouter(t)
 
 	body, _ := json.Marshal(map[string]any{
@@ -425,6 +430,7 @@ func TestCodexSubagentsCRUD(t *testing.T) {
 func TestCodexSkillsCRUD(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	router := newTestRouter(t)
 
 	body, _ := json.Marshal(map[string]any{
@@ -465,6 +471,7 @@ func TestCodexSkillsCRUD(t *testing.T) {
 func TestCodexRulesCRUD(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	router := newTestRouter(t)
 
 	body, _ := json.Marshal(map[string]any{
@@ -506,6 +513,7 @@ func TestCodexHooksScopedFile(t *testing.T) {
 	router, projectID, projectRoot := newProviderProjectRouter(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 
 	body, _ := json.Marshal([]map[string]any{
 		{"event": "pre_command", "type": "command", "command": "echo before"},
@@ -539,6 +547,7 @@ func TestCodexPermissionsProjectWritesScopedConfig(t *testing.T) {
 	router, projectID, projectRoot := newProviderProjectRouter(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 
 	body, _ := json.Marshal(map[string]any{
 		"approval_mode": "full-auto",
@@ -569,6 +578,7 @@ func TestCodexModelProjectWritesScopedConfig(t *testing.T) {
 	router, projectID, projectRoot := newProviderProjectRouter(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 
 	body, _ := json.Marshal(map[string]any{
 		"model":  "gpt-5.3-codex",
@@ -619,6 +629,7 @@ func TestPostCodexInstructionsProjectWritesAGENTS(t *testing.T) {
 func TestPostGeminiSettingsWritesConfig(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	router := newTestRouter(t)
 
 	body, _ := json.Marshal(map[string]any{
@@ -670,6 +681,7 @@ func TestGeminiPermissionsProjectWritesScopedSettings(t *testing.T) {
 	router, projectID, projectRoot := newProviderProjectRouter(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 
 	body, _ := json.Marshal(map[string]any{
 		"approval_mode": "interactive",
@@ -699,6 +711,7 @@ func TestGeminiModelProjectWritesScopedSettings(t *testing.T) {
 	router, projectID, projectRoot := newProviderProjectRouter(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 
 	body, _ := json.Marshal(map[string]any{
 		"model":  "gemini-2.5-pro",
@@ -750,6 +763,7 @@ func TestOpenCodePermissionsProjectWritesScopedConfig(t *testing.T) {
 	router, projectID, projectRoot := newProviderProjectRouter(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 
 	body, _ := json.Marshal(map[string]any{
 		"approval_mode": "interactive",
@@ -779,6 +793,7 @@ func TestOpenCodeModelProjectWritesScopedConfig(t *testing.T) {
 	router, projectID, projectRoot := newProviderProjectRouter(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 
 	body, _ := json.Marshal(map[string]any{
 		"model":  "openai/gpt-5.3-codex",
@@ -805,6 +820,7 @@ func TestOpenCodeModelProjectWritesScopedConfig(t *testing.T) {
 func TestOpenCodeCommandsCRUD(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	router := newTestRouter(t)
 
 	body, _ := json.Marshal(map[string]any{
@@ -845,6 +861,7 @@ func TestOpenCodeCommandsCRUD(t *testing.T) {
 func TestOpenCodeSkillsCRUD(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	router := newTestRouter(t)
 
 	body, _ := json.Marshal(map[string]any{

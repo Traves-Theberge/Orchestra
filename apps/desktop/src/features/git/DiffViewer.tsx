@@ -15,7 +15,9 @@ type Hunk = {
 // Strips CSI / OSC ANSI escape sequences so colored `git diff --color` output
 // renders cleanly. Kept inline (no dependency) — the regex covers the common
 // cases (color, cursor, OSC) without parsing the full ANSI grammar.
-const ANSI_PATTERN = /\[[0-9;?]*[A-Za-z]|\][^]*(?:|\\)/g
+const escape = String.fromCharCode(27)
+const bell = String.fromCharCode(7)
+const ANSI_PATTERN = new RegExp(`${escape}\\[[0-9;?]*[A-Za-z]|${escape}\\][^${bell}]*(?:${bell}|${escape}\\\\)`, 'g')
 function stripAnsi(s: string): string {
   return s.replace(ANSI_PATTERN, '')
 }

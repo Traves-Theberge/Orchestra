@@ -110,6 +110,7 @@ func TestListAgentConfigsClassifies8gentResources(t *testing.T) {
 	projectRoot := t.TempDir()
 	workspaceRoot := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 
 	mustWriteFile(t, filepath.Join(home, ".8gent", "config.json"), `{"version":1,"provider":"8gent","model":"eight-1.0-q3:14b"}`)
 	mustWriteFile(t, filepath.Join(projectRoot, ".8gent", "config.json"), `{"version":1,"provider":"ollama","model":"qwen3:14b"}`)

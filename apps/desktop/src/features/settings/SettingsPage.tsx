@@ -54,8 +54,6 @@ import {
   saveUnsandboxConfig,
   deleteUnsandboxConfig,
   fetchUnsandboxStatus,
-  fetchAgentProviderKeys,
-  saveAgentProviderKey,
   fetchProjects,
   disconnectProjectGitHub,
   type UnsandboxConfig,
@@ -69,7 +67,6 @@ import {
 } from '@core/api/client'
 import type { Project } from '@core/api/types'
 import { Github } from 'lucide-react'
-import { CHAT_PROVIDERS } from '@features/embedded-agent/lib/types'
 import { usePlatform } from '@/hooks/use-platform'
 import { CustomDropdown } from '@layout/shared/controls'
 import { useAppStore } from '@core/store'
@@ -161,7 +158,7 @@ const CONTRAST_PAIRS: Array<{ label: string; foreground: ThemeRoleKey; backgroun
 
 const SECTIONS = [
   { id: 'connections', label: 'Connections', icon: Database },
-  { id: 'agents', label: 'Maestro', icon: Cpu },
+  { id: 'agents', label: 'Agents', icon: Cpu },
   { id: 'integrations', label: 'Integrations', icon: Cable },
   { id: 'appearance', label: 'Appearance', icon: Paintbrush },
   { id: 'terminal', label: 'Terminal', icon: Terminal },
@@ -415,9 +412,9 @@ export function SettingsPage({
 
           {/* ── Agents ── */}
           <section data-settings-section="agents" className="rounded-xl transition-colors duration-500 scroll-mt-4">
-            <SectionHeading icon={Cpu} title="Maestro" description="LLM provider and embedded agent configuration" />
+            <SectionHeading icon={Cpu} title="Agents" description="Workspace chat uses local agent providers" />
             <div className="mt-4 space-y-6">
-              <EmbeddedAgentConfigForm config={config} disabled={savingConfig || loadingConfig} />
+              <p className="text-sm text-muted-foreground">Choose a local provider when starting a conversation in your workspace. Provider availability comes from the connected backend.</p>
               <UnsandboxConfigForm config={config} disabled={savingConfig || loadingConfig} />
             </div>
           </section>
@@ -3348,382 +3345,6 @@ function BackendConfigForm({
 }
 
 // ---------------------------------------------------------------------------
-// ModelSearchDropdown (migrated from SettingsCard)
-// ---------------------------------------------------------------------------
-
-function ModelSearchDropdown({
-  models,
-  modelId,
-  loading,
-  error,
-  hasKey,
-  onSelect,
-}: {
-  models: { id: string; name: string }[]
-  modelId: string
-  loading: boolean
-  error: string
-  hasKey: boolean
-  onSelect: (id: string) => void
-}) {
-  const [search, setSearch] = useState('')
-  const [open, setOpen] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
-  const modelInputId = useId()
-
-  const filtered = search
-    ? models.filter(m =>
-        m.id.toLowerCase().includes(search.toLowerCase()) ||
-        m.name.toLowerCase().includes(search.toLowerCase())
-      )
-    : models
-
-  const selectedModel = models.find(m => m.id === modelId)
-
-  if (error) {
-    return (
-      <div className="space-y-1">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Model</span>
-        <p className="text-[11px] text-red-500">{error}</p>
-      </div>
-    )
-  }
-
-  if (!hasKey) {
-    return (
-      <div className="space-y-1">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Model</span>
-        <p className="text-[11px] text-muted-foreground/60">Enter an API key to load models</p>
-      </div>
-    )
-  }
-
-  if (models.length === 0) {
-    return (
-      <div className="space-y-1">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-          Model
-          {loading && <Loader2 className="ml-1.5 inline size-2.5 animate-spin-smooth" />}
-        </span>
-        <p className="text-[11px] text-muted-foreground/60">Loading models…</p>
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-1 relative">
-      <label htmlFor={modelInputId} className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-        Model
-        {loading && <Loader2 className="ml-1.5 inline size-2.5 animate-spin-smooth" />}
-        <span className="ml-2 text-muted-foreground/40 normal-case tracking-normal font-normal">{models.length} available</span>
-      </label>
-
-      <div className="relative">
-        <input
-          id={modelInputId}
-          ref={inputRef}
-          type="text"
-          value={open ? search : (selectedModel?.name || modelId || '')}
-          onChange={(e) => { setSearch(e.target.value); if (!open) setOpen(true) }}
-          onFocus={() => { setOpen(true); setSearch('') }}
-          placeholder="Search models..."
-          className="w-full rounded-lg border border-border/40 bg-background px-3 py-2 text-sm font-mono placeholder:text-muted-foreground/40 focus:border-primary focus:outline-none"
-        />
-        {modelId && !open && (
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground/40">
-            {models.length} models
-          </span>
-        )}
-      </div>
-
-      {open && (
-        <div className="absolute z-50 mt-1 w-full max-h-[240px] overflow-y-auto rounded-lg border border-border/40 bg-card shadow-lg">
-          {filtered.length === 0 ? (
-            <div className="px-3 py-2 text-[11px] text-muted-foreground/60">
-              No models match &ldquo;{search}&rdquo;
-            </div>
-          ) : (
-            filtered.slice(0, 100).map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => {
-                  onSelect(m.id)
-                  setSearch('')
-                  setOpen(false)
-                }}
-                className={`w-full px-3 py-1.5 text-left text-[11px] transition-colors hover:bg-muted/50 ${
-                  m.id === modelId ? 'bg-primary/10 text-primary font-bold' : 'text-foreground'
-                }`}
-              >
-                <span className="block font-mono truncate">{m.id}</span>
-                {m.name !== m.id && (
-                  <span className="block text-[10px] text-muted-foreground/60 truncate">{m.name}</span>
-                )}
-              </button>
-            ))
-          )}
-          {filtered.length > 100 && (
-            <div className="px-3 py-1.5 text-[10px] text-muted-foreground/40 border-t border-border/20">
-              Showing first 100 of {filtered.length}; type to filter
-            </div>
-          )}
-        </div>
-      )}
-
-      {open && (
-        <button
-          type="button"
-          aria-label="Close model picker"
-          className="fixed inset-0 z-40 cursor-default bg-transparent"
-          onClick={() => { setOpen(false); setSearch('') }}
-        />
-      )}
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// EmbeddedAgentConfigForm (migrated from SettingsCard)
-// ---------------------------------------------------------------------------
-
-const AGENT_PROVIDER_PREFS_KEY = 'orchestra-agent-provider-prefs'
-function readAgentProviderPrefs(): { providerId?: string; modelId?: string } {
-  try { return JSON.parse(localStorage.getItem(AGENT_PROVIDER_PREFS_KEY) ?? '{}') } catch { return {} }
-}
-
-function EmbeddedAgentConfigForm({ config, disabled }: { config: BackendConfig | null; disabled: boolean }) {
-  const providerLabelId = useId()
-  const apiKeyId = useId()
-  const savedPrefs = readAgentProviderPrefs()
-  const [providerId, setProviderId] = useState<string>(savedPrefs.providerId ?? CHAT_PROVIDERS[0].id)
-  const [modelId, setModelId] = useState<string>(savedPrefs.modelId ?? '')
-  const [models, setModels] = useState<{ id: string; name: string }[]>([])
-  const [modelsLoading, setModelsLoading] = useState(false)
-  const [modelsError, setModelsError] = useState('')
-  const [apiKey, setApiKey] = useState('')
-  const [showKey, setShowKey] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [testing, setTesting] = useState(false)
-  const [message, setMessage] = useState('')
-  const [hasKey, setHasKey] = useState(false)
-  const [storedKey, setStoredKey] = useState('')
-
-  useEffect(() => {
-    if (!config) return
-    fetchAgentProviderKeys(config)
-      .then((result) => {
-        const prefs = readAgentProviderPrefs()
-        const target = prefs.providerId && result.providers[prefs.providerId]?.configured
-          ? prefs.providerId
-          : CHAT_PROVIDERS.find(p => result.providers[p.id]?.configured)?.id
-        if (target) {
-          const info = result.providers[target]
-          setProviderId(target)
-          setHasKey(true)
-          setStoredKey(info?.api_key ?? '')
-          if (prefs.modelId) setModelId(prefs.modelId)
-        }
-      })
-      .catch(() => {})
-  }, [config])
-
-  useEffect(() => {
-    const key = storedKey || apiKey.trim()
-    if (!key) {
-      setModels([])
-      setModelsError('')
-      return
-    }
-
-    let cancelled = false
-    setModelsLoading(true)
-    setModelsError('')
-
-    import('@features/embedded-agent/lib/providers')
-      .then(({ fetchProviderModels }) => fetchProviderModels(providerId, key))
-      .then((fetched) => {
-        if (cancelled) return
-        setModels(fetched)
-        if (fetched.length > 0) {
-          setModelId((prev) => {
-            if (prev && fetched.find((m: { id: string }) => m.id === prev)) return prev
-            const prefs = readAgentProviderPrefs()
-            const prefModelId = prefs.modelId
-            if (prefModelId && fetched.find((m: { id: string }) => m.id === prefModelId)) return prefModelId
-            return fetched[0].id
-          })
-        }
-      })
-      .catch((err) => {
-        if (cancelled) return
-        setModels([])
-        setModelsError(err instanceof Error ? err.message : 'Failed to fetch models')
-      })
-      .finally(() => {
-        if (!cancelled) setModelsLoading(false)
-      })
-
-    return () => { cancelled = true }
-  }, [providerId, storedKey, apiKey])
-
-  const handleSave = async () => {
-    if (!config || !apiKey.trim()) return
-    setSaving(true)
-    setMessage('')
-    try {
-      await saveAgentProviderKey(config, providerId, apiKey.trim())
-      setHasKey(true)
-      setStoredKey(apiKey.trim())
-      setApiKey('')
-      setMessage('API key saved.')
-    } catch (err) {
-      setMessage(`Save failed: ${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleTest = async () => {
-    const key = storedKey || apiKey.trim()
-    if (!key || !modelId) return
-    setTesting(true)
-    setMessage('')
-    try {
-      const { createProvider } = await import('@features/embedded-agent/lib/providers')
-      const { generateText } = await import('ai')
-      const provider = createProvider(providerId, key)
-      await generateText({
-        model: provider(modelId),
-        prompt: 'Say "ok" and nothing else.',
-      })
-      setMessage('Connection verified.')
-    } catch (err) {
-      setMessage(`Test failed: ${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      setTesting(false)
-    }
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="rounded-xl border border-border/20 bg-muted/10 p-4 space-y-4">
-        <div className="space-y-1">
-          <p className="text-sm font-bold">Embedded Agent</p>
-          <p className="text-[10px] text-muted-foreground">Configure the LLM provider for the chat widget</p>
-        </div>
-
-        <div className="space-y-1" aria-labelledby={providerLabelId}>
-          <span id={providerLabelId} className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Provider</span>
-          <CustomDropdown
-            className="w-full"
-            value={providerId}
-            options={CHAT_PROVIDERS.map(p => ({ label: p.label, value: p.id }))}
-            onChange={(v) => {
-              const nextProvider = v as string
-              setProviderId(nextProvider)
-              setModelId('')
-              setModels([])
-              setModelsError('')
-              try { localStorage.setItem('orchestra-agent-provider-prefs', JSON.stringify({ providerId: nextProvider, modelId: '' })) } catch { /* */ }
-              if (config) {
-                setStoredKey('')
-                setHasKey(false)
-                fetchAgentProviderKeys(config)
-                  .then((result) => {
-                    const info = result.providers[nextProvider]
-                    if (info?.configured) {
-                      setHasKey(true)
-                      setStoredKey(info.api_key ?? '')
-                    }
-                  })
-                  .catch(() => {})
-              } else {
-                setStoredKey('')
-                setHasKey(false)
-              }
-            }}
-          />
-        </div>
-
-        <div className="space-y-1">
-          <label htmlFor={apiKeyId} className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-            API Key
-            {hasKey && (
-              <span className="ml-2 inline-flex items-center gap-1 text-emerald-500">
-                <CheckCircle2 className="size-2.5" />
-                Configured
-              </span>
-            )}
-          </label>
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <input
-                id={apiKeyId}
-                type={showKey ? 'text' : 'password'}
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder={hasKey ? '••••••••' : (providerId === 'openrouter' ? 'sk-or-...' : providerId === 'claude' ? 'sk-ant-...' : 'sk-...')}
-                disabled={disabled || saving}
-                className="w-full rounded-lg border border-border/40 bg-background px-3 pr-9 py-2 text-sm font-mono placeholder:text-muted-foreground/40 focus:border-primary focus:outline-none disabled:opacity-50"
-              />
-              <button
-                type="button"
-                onClick={() => setShowKey(!showKey)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-muted transition-all"
-              >
-                {showKey ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-              </button>
-            </div>
-            <button
-              onClick={handleSave}
-              disabled={disabled || saving || !apiKey.trim()}
-              className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-black hover:bg-white/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {saving ? <Loader2 className="size-3 animate-spin-smooth" /> : <Check className="size-3" />}
-              Save
-            </button>
-          </div>
-        </div>
-
-        <ModelSearchDropdown
-          models={models}
-          modelId={modelId}
-          loading={modelsLoading}
-          error={modelsError}
-          hasKey={hasKey || !!apiKey.trim()}
-          onSelect={(id) => {
-            setModelId(id)
-            try { localStorage.setItem('orchestra-agent-provider-prefs', JSON.stringify({ providerId, modelId: id })) } catch { /* */ }
-          }}
-        />
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleTest}
-            disabled={disabled || testing || !modelId || (!hasKey && !apiKey.trim())}
-            className="flex items-center gap-1.5 rounded-lg border border-border/40 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground hover:text-foreground hover:border-border disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {testing ? <Loader2 className="size-3 animate-spin-smooth" /> : <ShieldCheck className="size-3" />}
-            Test Connection
-          </button>
-        </div>
-
-        {message && (
-          <p className={`text-[11px] font-medium ${message.includes('failed') || message.includes('Failed') ? 'text-red-500' : 'text-emerald-500'}`}>
-            {message}
-          </p>
-        )}
-      </div>
-
-      <p className="text-[10px] text-muted-foreground leading-relaxed">
-        Models are fetched directly from the provider API. API keys stored at <code className="text-[10px] font-mono bg-muted/30 px-1 rounded">~/.orchestra/agent-providers.json</code> (600).
-      </p>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
 // UnsandboxConfigForm (migrated from SettingsCard)
 // ---------------------------------------------------------------------------
 
@@ -3979,4 +3600,3 @@ export function SettingsSideNav() {
     </div>
   )
 }
-

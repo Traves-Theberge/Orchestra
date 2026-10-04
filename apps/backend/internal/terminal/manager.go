@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"sync"
 
 	"github.com/acarl005/stripansi"
@@ -43,6 +44,9 @@ func NewManager() *Manager {
 // CreateSession starts a new pseudo-terminal session running the given command
 // in the specified directory. Returns the existing session if one with the same ID is still open.
 func (m *Manager) CreateSession(id string, dir string, command string, args ...string) (*Session, error) {
+	if runtime.GOOS == "windows" {
+		return nil, fmt.Errorf("interactive PTY terminals are unavailable on Windows: a ConPTY adapter is required; agent subprocess execution remains supported")
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

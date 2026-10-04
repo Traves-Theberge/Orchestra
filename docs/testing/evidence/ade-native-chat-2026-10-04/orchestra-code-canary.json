@@ -1,0 +1,56 @@
+{
+  "scope": "real Orchestra HTTP/SQLite/adapter plus signed-in installed Codex; no Electron interaction",
+  "codex_capability": {
+    "id": "CODEX",
+    "label": "Codex",
+    "enabled": true,
+    "conversation_mode": "native_session",
+    "provider_resume": true
+  },
+  "catalog": {
+    "observation": "provider_catalog",
+    "model_count": 8,
+    "has_canary_model": true,
+    "created_no_conversations": true
+  },
+  "conversation_mode": "native_session",
+  "session_id": "62dd1901-8d05-4973-8a45-25b79b003947",
+  "first_file_test_passed": true,
+  "turns": [
+    {
+      "status": "idle",
+      "message_status": "completed",
+      "response": "I\u2019ll read the two files, fix the addition bug, and run the test inside this repository. I\u2019ll remember marker `ORCHESTRA_CODE_19AB`.\nFixed `sum.cjs` to use `a + b` instead of `a - b`.\n\n`node sum.test.cjs` passed with exit code 0.\n\nMarker remembered: `ORCHESTRA_CODE_19AB`.",
+      "thread_id": "01a108b9-2670-7650-a6e8-9f0090f5d88f",
+      "model": "gpt-6.1-sol",
+      "event_count": 125,
+      "tool_events_observed": true,
+      "usage_observed": true
+    },
+    {
+      "status": "idle",
+      "message_status": "completed",
+      "response": "I\u2019ll read the updated tests, adjust addition to handle numeric strings, and run `node sum.test.cjs`.\nUpdated `sum.cjs` to convert both inputs with `Number()` before adding, so numeric strings produce a sum without concatenation.\n\n`node sum.test.cjs` passed with exit code 0.",
+      "thread_id": "01a108b9-2670-7650-a6e8-9f0090f5d88f",
+      "model": "gpt-6.1-sol",
+      "event_count": 217,
+      "tool_events_observed": true,
+      "usage_observed": true
+    },
+    {
+      "status": "idle",
+      "message_status": "completed",
+      "response": "ORCHESTRA_CODE_19AB",
+      "thread_id": "01a108b9-2670-7650-a6e8-9f0090f5d88f",
+      "model": "gpt-6.1-sol",
+      "event_count": 244,
+      "tool_events_observed": true,
+      "usage_observed": true
+    }
+  ],
+  "second_file_test_passed": true,
+  "actual_file_result": "module.exports = (a, b) => Number(a) + Number(b);\n",
+  "two_turn_memory_verified": true,
+  "restart_resume_verified": true,
+  "settings_unchanged": false
+}

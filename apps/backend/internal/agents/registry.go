@@ -14,11 +14,12 @@ import (
 // turn execution to the appropriate backend. It is the central entry point
 // for the orchestrator to invoke any configured agent.
 type Registry struct {
-	mu          sync.Mutex
-	runners     map[Provider]Runner
-	commands    map[Provider]string
-	transports  map[RuntimeTarget]RuntimeTransport
-	termManager *terminal.Manager
+	mu             sync.Mutex
+	runners        map[Provider]Runner
+	commands       map[Provider]string
+	nativeCommands map[Provider]string
+	transports     map[RuntimeTarget]RuntimeTransport
+	termManager    *terminal.Manager
 }
 
 // NewRegistry creates a Registry with the given provider-to-command mapping
@@ -31,10 +32,11 @@ func NewRegistry(commandByProvider map[string]string) *Registry {
 // mapping and an optional terminal.Manager for PTY-based agent sessions.
 func NewRegistryWithTerminal(commandByProvider map[string]string, tm *terminal.Manager) *Registry {
 	r := &Registry{
-		runners:     map[Provider]Runner{},
-		commands:    map[Provider]string{},
-		transports:  map[RuntimeTarget]RuntimeTransport{},
-		termManager: tm,
+		runners:        map[Provider]Runner{},
+		commands:       map[Provider]string{},
+		nativeCommands: map[Provider]string{},
+		transports:     map[RuntimeTarget]RuntimeTransport{},
+		termManager:    tm,
 	}
 	for provider, command := range commandByProvider {
 		r.SetCommand(Provider(provider), command)
@@ -46,6 +48,7 @@ func NewRegistryWithTerminal(commandByProvider map[string]string, tm *terminal.M
 // provider. If request.RuntimeTarget is set (and not LOCAL), it routes through
 // the registered RuntimeTransport instead of the default runner.
 func (r *Registry) RunTurn(ctx context.Context, provider Provider, request TurnRequest, onEvent EventHandler) (TurnResult, error) {
+	provider = NormalizeProvider(string(provider))
 	r.mu.Lock()
 	runner, ok := r.runners[provider]
 	cmd := r.commands[provider]
@@ -54,6 +57,9 @@ func (r *Registry) RunTurn(ctx context.Context, provider Provider, request TurnR
 
 	if !ok {
 		return TurnResult{}, fmt.Errorf("provider not configured: %s", provider)
+	}
+	if err := validateTurnOptions(provider, runner, transport, request); err != nil {
+		return TurnResult{}, err
 	}
 	if request.RuntimeTarget != "" && request.RuntimeTarget != RuntimeLocal {
 		if transport == nil {
@@ -64,14 +70,60 @@ func (r *Registry) RunTurn(ctx context.Context, provider Provider, request TurnR
 	return runner.RunTurn(ctx, request, onEvent)
 }
 
+// ValidateTurnOptions checks requested options before workspace effects. RunTurn
+// checks again against its selected runner, because registry bindings can change.
+// This is a capability boundary, not a frozen or persisted configuration snapshot.
+func (r *Registry) ValidateTurnOptions(provider Provider, request TurnRequest) error {
+	provider = NormalizeProvider(string(provider))
+	r.mu.Lock()
+	runner, ok := r.runners[provider]
+	transport := r.transports[request.RuntimeTarget]
+	r.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("provider not configured: %s", provider)
+	}
+	return validateTurnOptions(provider, runner, transport, request)
+}
+
+func validateTurnOptions(provider Provider, runner Runner, transport RuntimeTransport, request TurnRequest) error {
+	if runner == nil {
+		return fmt.Errorf("provider runner missing: %s", provider)
+	}
+	if request.RequestedMaxTurns != nil {
+		return fmt.Errorf("requested_max_turns is not supported: task turn-budget semantics are not implemented")
+	}
+	remote := request.RuntimeTarget != "" && request.RuntimeTarget != RuntimeLocal
+	if remote && transport == nil {
+		return fmt.Errorf("runtime target not configured: %s", request.RuntimeTarget)
+	}
+	if request.RequestedModel != "" {
+		if remote {
+			return fmt.Errorf("requested_model is not supported by runtime target %s", request.RuntimeTarget)
+		}
+		validator, supported := runner.(RequestedModelValidator)
+		if !supported {
+			return fmt.Errorf("requested_model is not supported by provider %s", provider)
+		}
+		if err := validator.ValidateRequestedModel(request.RequestedModel); err != nil {
+			return fmt.Errorf("requested_model rejected by provider %s: %w", provider, err)
+		}
+	}
+	return nil
+}
+
 // HasProvider reports whether a runner is registered for the given provider.
 func (r *Registry) HasProvider(provider Provider) bool {
+	provider = NormalizeProvider(string(provider))
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	_, ok := r.runners[provider]
 	return ok
 }
 
 // Providers returns a slice of all currently registered provider identifiers.
 func (r *Registry) Providers() []Provider {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	providers := make([]Provider, 0, len(r.runners))
 	for p := range r.runners {
 		providers = append(providers, p)
@@ -83,6 +135,7 @@ func (r *Registry) Providers() []Provider {
 // bypassing the command-based lookup. This is used by callers that construct
 // their own Runner implementations (e.g. TailscaleRunner, KubernetesRunner).
 func (r *Registry) SetRunner(p Provider, runner Runner) {
+	p = NormalizeProvider(string(p))
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.runners[p] = runner
@@ -91,6 +144,7 @@ func (r *Registry) SetRunner(p Provider, runner Runner) {
 // CommandFor returns the raw command string registered for the given provider,
 // along with a boolean indicating whether one was found.
 func (r *Registry) CommandFor(provider Provider) (string, bool) {
+	provider = NormalizeProvider(string(provider))
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	cmd, ok := r.commands[provider]
@@ -112,8 +166,15 @@ func (r *Registry) SetCommand(provider Provider, command string) {
 	if strings.TrimSpace(command) == "" {
 		return
 	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	p := NormalizeProvider(string(provider))
 	r.commands[p] = command
+	if p == ProviderCodex {
+		if _, configured := r.nativeCommands[p]; !configured {
+			r.nativeCommands[p] = "codex app-server"
+		}
+	}
 	if p == ProviderCodex && strings.Contains(strings.ToLower(command), "app-server") {
 		r.runners[p] = NewCodexAppServerRunner(command)
 		return

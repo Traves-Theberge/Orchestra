@@ -29,7 +29,8 @@ type BackendConfigState = {
  * Handles initial config fetch, profile enumeration, and default profile creation.
  */
 export function useBackendConfig(): BackendConfigState {
-  const [config, setConfig] = useState<BackendConfig | null>(null)
+  const [config, setConfig] = useState<BackendConfig | null>(() =>
+    typeof window !== 'undefined' && typeof window.orchestraDesktop?.getBackendConfig !== 'function' ? readBrowserBackendConfig() : null)
   const [loadingConfig, setLoadingConfig] = useState(false)
   const [savingConfig, setSavingConfig] = useState(false)
   const [profilesPending, setProfilesPending] = useState(false)
@@ -43,10 +44,6 @@ export function useBackendConfig(): BackendConfigState {
     const desktopBridge = window.orchestraDesktop
     if (!desktopBridge || typeof desktopBridge.getBackendConfig !== 'function') {
       // Browser dev mode — fall back to default local backend
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setConfig({ baseUrl: 'http://127.0.0.1:4010', apiToken: 'dev-token' })
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setLoadingConfig(false)
       return () => { mounted = false }
     }
 
@@ -92,4 +89,15 @@ export function useBackendConfig(): BackendConfigState {
     profilesPending, setProfilesPending,
     errorMessage, setErrorMessage,
   }
+}
+
+// Browser development uses a tab-scoped connection. Electron continues to own
+// its profile through the desktop bridge; no account configuration is changed.
+export function readBrowserBackendConfig(): BackendConfig {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem('orchestra:browser-backend:v1') ?? 'null')
+    if (saved && typeof saved.baseUrl === 'string' && typeof saved.apiToken === 'string'
+      && ['http:', 'https:'].includes(new URL(saved.baseUrl).protocol)) return { baseUrl: saved.baseUrl, apiToken: saved.apiToken }
+  } catch { /* Fall back to the development endpoint. */ }
+  return { baseUrl: 'http://127.0.0.1:4010', apiToken: 'dev-token' }
 }

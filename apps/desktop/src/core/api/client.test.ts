@@ -9,6 +9,11 @@ import {
   normalizeEventEnvelope,
   normalizeSnapshotPayload,
   postRefresh,
+  mergePR,
+  createWorkspaceChatSession,
+  sendWorkspaceChatMessage,
+  replyWorkspaceChatRequest,
+  stopWorkspaceChatTurn,
   toDisplayError,
   type BackendConfig,
 } from '@core/api/client'
@@ -20,6 +25,30 @@ const config: BackendConfig = {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+})
+
+it('labels every chat mutation as JSON for the real HTTP content-type guard', async () => {
+  const fetchMock = vi.fn().mockImplementation(async () => new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } }))
+  vi.stubGlobal('fetch', fetchMock)
+  await createWorkspaceChatSession(config, 'project-a', 'CODEX', 'a5639609-2861-4a70-b6a4-5a97c26132c8')
+  await sendWorkspaceChatMessage(config, 'project-a', 'chat-a', 'message-a', 'Inspect this', 'model-a', 'high')
+  await replyWorkspaceChatRequest(config, 'project-a', 'chat-a', 'request-a', 'reply-a', { decision: 'decline' })
+  await stopWorkspaceChatTurn(config, 'project-a', 'chat-a')
+  expect(fetchMock).toHaveBeenCalledTimes(4)
+  for (const [, init] of fetchMock.mock.calls) {
+    // Browsers otherwise infer text/plain for the JSON string body, causing HTTP 415.
+    expect(new Headers(init.headers).get('Content-Type')).toBe('application/json')
+    expect(new Headers(init.headers).get('Authorization')).toBe('Bearer token-123')
+  }
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ client_session_id: 'a5639609-2861-4a70-b6a4-5a97c26132c8' })
+})
+
+it('sends the reviewed head SHA with the merge mutation', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: 'ok' }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+  vi.stubGlobal('fetch', fetchMock)
+  const sha = 'a'.repeat(40)
+  await mergePR(config, 'project/one', 42, 'squash', sha)
+  expect(fetchMock).toHaveBeenCalledWith('http://127.0.0.1:4000/api/v1/projects/project%2Fone/github/pulls/42/merge', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ method: 'squash', expected_head_sha: sha }) }))
 })
 
 describe('normalizeSnapshotPayload', () => {
@@ -242,7 +271,7 @@ describe('operator flow client calls', () => {
       await postRefresh(config)
       throw new Error('expected postRefresh to fail')
     } catch (error) {
-      expect(toDisplayError(error)).toBe('request_failed: 500 Internal Server Error')
+      expect(toDisplayError(error)).toBe('request_failed: 500 not-json-error')
     }
   })
 

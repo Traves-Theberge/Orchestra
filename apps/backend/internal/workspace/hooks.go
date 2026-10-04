@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
+	"github.com/orchestra/orchestra/apps/backend/internal/shellcommand"
 	"time"
 )
 
@@ -23,7 +23,10 @@ func RunHook(name string, script string, cwd string, timeout time.Duration) (Hoo
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "sh", "-lc", script)
+	cmd, err := shellcommand.CommandContext(ctx, script)
+	if err != nil {
+		return HookResult{}, err
+	}
 	cmd.Dir = cwd
 	out, err := cmd.CombinedOutput()
 	result := HookResult{Output: string(out)}

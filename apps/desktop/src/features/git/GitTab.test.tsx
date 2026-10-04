@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { GitTab } from './GitTab'
 
@@ -68,6 +68,20 @@ const mockProject = {
 const mockConfig = { baseUrl: 'http://localhost:4010', apiToken: 'test-token' }
 
 describe('GitTab', () => {
+  it('ignores a late diff response after switching the selected file', async () => {
+    let resolveFirst!: (value: string) => void
+    mockFetchProjectGitDiff.mockImplementationOnce(() => new Promise<string>((resolve) => { resolveFirst = resolve }))
+      .mockResolvedValueOnce('@@ -1 +1 @@\n-current\n+latest selection')
+    render(<GitTab project={mockProject} config={mockConfig} />)
+    await waitFor(() => expect(document.querySelector('[data-file-path="src/app.tsx"]')).toBeTruthy())
+    fireEvent.click(document.querySelector('[data-file-path="src/app.tsx"]')!)
+    await waitFor(() => expect(mockFetchProjectGitDiff).toHaveBeenCalledTimes(1))
+    fireEvent.click(document.querySelector('[data-file-path="README.md"]')!)
+    expect(await screen.findByText(/latest selection/)).toBeTruthy()
+    await act(async () => { resolveFirst('@@ -1 +1 @@\n-old\n+stale response') })
+    expect(screen.getByText(/latest selection/)).toBeTruthy()
+    expect(screen.queryByText(/stale response/)).toBeNull()
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     mockGitGetConflicts.mockResolvedValue({ in_merge: false, files: [] })

@@ -6,12 +6,16 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
 )
+
+// All task reads share the same projection and scan contract.
+const issueColumns = "id, identifier, title, description, state, assignee_id, project_id, priority, branch_name, url, labels, blocked_by, provider, disabled_tools, created_at, updated_at, base_sha, feedback, pr_url, plan, runtime_target, acceptance_criteria, attachments, agent_guidance, source_template, authoring_session_id, requested_model, requested_max_turns"
 
 // Client is a SQLite-backed tracker that persists issues in a local database.
 type Client struct {
@@ -41,7 +45,7 @@ func (c *Client) FetchCandidateIssues(ctx context.Context, activeStates []string
 		return []tracker.Issue{}, nil
 	}
 
-	query := "SELECT id, identifier, title, description, state, assignee_id, project_id, priority, branch_name, url, labels, blocked_by, provider, disabled_tools, created_at, updated_at, base_sha, feedback, pr_url, plan FROM issues WHERE LOWER(TRIM(state)) IN ("
+	query := "SELECT " + issueColumns + " FROM issues WHERE LOWER(TRIM(state)) IN ("
 	args := make([]any, len(activeStates))
 	for i, state := range activeStates {
 		args[i] = strings.ToLower(strings.TrimSpace(state))
@@ -61,7 +65,7 @@ func (c *Client) FetchIssuesByIDs(ctx context.Context, issueIDs []string) ([]tra
 		return []tracker.Issue{}, nil
 	}
 
-	query := "SELECT id, identifier, title, description, state, assignee_id, project_id, priority, branch_name, url, labels, blocked_by, provider, disabled_tools, created_at, updated_at, base_sha, feedback, pr_url, plan FROM issues WHERE id IN ("
+	query := "SELECT " + issueColumns + " FROM issues WHERE id IN ("
 	args := make([]any, len(issueIDs))
 	for i, id := range issueIDs {
 		args[i] = id
@@ -96,7 +100,7 @@ func (c *Client) FetchIssuesByStates(ctx context.Context, states []string) ([]tr
 
 // FetchIssues returns issues matching the given filter criteria including state, project, and assignee.
 func (c *Client) FetchIssues(ctx context.Context, filter tracker.IssueFilter) ([]tracker.Issue, error) {
-	query := "SELECT id, identifier, title, description, state, assignee_id, project_id, priority, branch_name, url, labels, blocked_by, provider, disabled_tools, created_at, updated_at, base_sha, feedback, pr_url, plan FROM issues"
+	query := "SELECT " + issueColumns + " FROM issues"
 	var where []string
 	var args []any
 
@@ -133,7 +137,7 @@ func (c *Client) SearchIssues(ctx context.Context, query string) ([]tracker.Issu
 		return []tracker.Issue{}, nil
 	}
 
-	sqlQuery := "SELECT id, identifier, title, description, state, assignee_id, project_id, priority, branch_name, url, labels, blocked_by, provider, disabled_tools, created_at, updated_at, base_sha, feedback, pr_url, plan FROM issues WHERE title LIKE ? OR identifier LIKE ? OR id LIKE ?;"
+	sqlQuery := "SELECT " + issueColumns + " FROM issues WHERE title LIKE ? OR identifier LIKE ? OR id LIKE ?;"
 	pattern := "%" + query + "%"
 	return c.queryIssues(ctx, sqlQuery, pattern, pattern, pattern)
 }
@@ -190,7 +194,8 @@ func (c *Client) UpdateIssue(ctx context.Context, identifier string, updates map
 		"base_sha": true, "feedback": true, "pr_url": true, "plan": true,
 		// Studio-authored issue fields (added in Task 2 schema migration).
 		"acceptance_criteria": true, "attachments": true, "agent_guidance": true,
-		"source_template": true, "authoring_session_id": true,
+		"source_template": true, "authoring_session_id": true, "runtime_target": true,
+		"requested_model": true, "requested_max_turns": true,
 	}
 
 	query := "UPDATE issues SET "
@@ -199,7 +204,26 @@ func (c *Client) UpdateIssue(ctx context.Context, identifier string, updates map
 	cols := make([]string, 0, len(updates))
 	for col, val := range updates {
 		if !allowedColumns[col] {
-			continue
+			return nil, fmt.Errorf("unsupported issue update field: %s", col)
+		}
+		if col == "requested_model" && val != nil {
+			if _, ok := val.(string); !ok {
+				return nil, fmt.Errorf("invalid requested_model: must be a string or null")
+			}
+		}
+		if col == "requested_max_turns" {
+			normalized, err := normalizeRequestedMaxTurns(val)
+			if err != nil {
+				return nil, err
+			}
+			val = normalized
+		}
+		if col == "acceptance_criteria" || col == "attachments" || col == "agent_guidance" {
+			encoded, err := encodeAuthoringMetadata(col, val)
+			if err != nil {
+				return nil, err
+			}
+			val = encoded
 		}
 		if col == "disabled_tools" {
 			if slice, ok := val.([]any); ok {
@@ -237,6 +261,95 @@ func (c *Client) UpdateIssue(ctx context.Context, identifier string, updates map
 	}
 
 	return c.FetchIssueByIdentifier(ctx, identifier)
+}
+
+// Studio historically passes pre-encoded JSON strings, while API callers pass
+// decoded values. Validate both forms before the single UPDATE executes.
+func encodeAuthoringMetadata(column string, value any) (string, error) {
+	var raw []byte
+	var err error
+	if encoded, ok := value.(string); ok {
+		raw = []byte(encoded)
+	} else {
+		raw, err = json.Marshal(value)
+		if err != nil {
+			return "", fmt.Errorf("encode issue %s: %w", column, err)
+		}
+	}
+	var canonical any
+	switch column {
+	case "acceptance_criteria":
+		var entries []any
+		if err := json.Unmarshal(raw, &entries); err != nil {
+			return "", fmt.Errorf("invalid issue acceptance_criteria: %w", err)
+		}
+		for _, entry := range entries {
+			if _, ok := entry.(string); !ok {
+				return "", fmt.Errorf("invalid issue acceptance_criteria: entries must be strings")
+			}
+		}
+		items := []string{}
+		err = json.Unmarshal(raw, &items)
+		if items == nil {
+			items = []string{}
+		}
+		canonical = items
+	case "attachments":
+		var entries []map[string]any
+		if err := json.Unmarshal(raw, &entries); err != nil {
+			return "", fmt.Errorf("invalid issue attachments: %w", err)
+		}
+		for _, entry := range entries {
+			if entry == nil {
+				return "", fmt.Errorf("invalid issue attachments: entries must be objects")
+			}
+			for field, value := range entry {
+				switch field {
+				case "kind", "path", "url", "label":
+					if _, ok := value.(string); !ok {
+						return "", fmt.Errorf("invalid issue attachments: %s must be a string", field)
+					}
+				default:
+					return "", fmt.Errorf("invalid issue attachments: unknown field %s", field)
+				}
+			}
+		}
+		items := []tracker.Attachment{}
+		err = json.Unmarshal(raw, &items)
+		for _, attachment := range items {
+			switch attachment.Kind {
+			case "file":
+				if strings.TrimSpace(attachment.Path) == "" || attachment.URL != "" {
+					return "", fmt.Errorf("invalid issue attachments: file requires path and no url")
+				}
+			case "link":
+				if strings.TrimSpace(attachment.URL) == "" || attachment.Path != "" {
+					return "", fmt.Errorf("invalid issue attachments: link requires url and no path")
+				}
+			default:
+				return "", fmt.Errorf("invalid issue attachments: kind must be file or link")
+			}
+		}
+		if items == nil {
+			items = []tracker.Attachment{}
+		}
+		canonical = items
+	case "agent_guidance":
+		guidance := map[string]any{}
+		err = json.Unmarshal(raw, &guidance)
+		if guidance == nil {
+			guidance = map[string]any{}
+		}
+		canonical = guidance
+	}
+	if err != nil {
+		return "", fmt.Errorf("invalid issue %s: %w", column, err)
+	}
+	encoded, err := json.Marshal(canonical)
+	if err != nil {
+		return "", fmt.Errorf("encode issue %s: %w", column, err)
+	}
+	return string(encoded), nil
 }
 
 // DeleteIssue removes the issue and its associated runs, history, and session references
@@ -302,7 +415,7 @@ func (c *Client) DeleteIssue(ctx context.Context, identifier string) error {
 // FetchIssueByIdentifier returns a single issue matching the given identifier or ID,
 // or nil if not found.
 func (c *Client) FetchIssueByIdentifier(ctx context.Context, identifier string) (*tracker.Issue, error) {
-	query := "SELECT id, identifier, title, description, state, assignee_id, project_id, priority, branch_name, url, labels, blocked_by, provider, disabled_tools, created_at, updated_at, base_sha, feedback, pr_url, plan FROM issues WHERE id = ? OR identifier = ?;"
+	query := "SELECT " + issueColumns + " FROM issues WHERE id = ? OR identifier = ?;"
 	issues, err := c.queryIssues(ctx, query, identifier, identifier)
 	if err != nil {
 		return nil, err
@@ -324,10 +437,13 @@ func (c *Client) queryIssues(ctx context.Context, query string, args ...any) ([]
 	for rows.Next() {
 		var issue tracker.Issue
 		var title, description, assigneeID, projectID, branchName, url, labelsRaw, blockedByRaw, provider, disabledToolsRaw, createdAt, updatedAt, baseSHA, feedback, prURL, plan sql.NullString
+		var runtimeTarget, criteriaRaw, attachmentsRaw, guidanceRaw, sourceTemplate, authoringSessionID, requestedModel sql.NullString
+		var requestedMaxTurns sql.NullInt64
 
 		if err := rows.Scan(
 			&issue.ID, &issue.Identifier, &title, &description, &issue.State, &assigneeID, &projectID, &issue.Priority,
 			&branchName, &url, &labelsRaw, &blockedByRaw, &provider, &disabledToolsRaw, &createdAt, &updatedAt, &baseSHA, &feedback, &prURL, &plan,
+			&runtimeTarget, &criteriaRaw, &attachmentsRaw, &guidanceRaw, &sourceTemplate, &authoringSessionID, &requestedModel, &requestedMaxTurns,
 		); err != nil {
 			return nil, fmt.Errorf("scan issue: %w", err)
 		}
@@ -387,6 +503,33 @@ func (c *Client) queryIssues(ctx context.Context, query string, args ...any) ([]
 			issue.Plan = plan.String
 		}
 
+		issue.RuntimeTarget = runtimeTarget.String
+		issue.RequestedModel = requestedModel.String
+		if requestedMaxTurns.Valid {
+			if requestedMaxTurns.Int64 < 1 || requestedMaxTurns.Int64 > 100 {
+				return nil, fmt.Errorf("invalid stored requested_max_turns for %s", issue.Identifier)
+			}
+			value := int(requestedMaxTurns.Int64)
+			issue.RequestedMaxTurns = &value
+		}
+		issue.SourceTemplate = sourceTemplate.String
+		issue.AuthoringSessionID = authoringSessionID.String
+		for _, field := range []struct {
+			name, raw string
+			target    any
+		}{
+			{"acceptance_criteria", criteriaRaw.String, &issue.AcceptanceCriteria},
+			{"attachments", attachmentsRaw.String, &issue.Attachments},
+			{"agent_guidance", guidanceRaw.String, &issue.AgentGuidance},
+		} {
+			if strings.TrimSpace(field.raw) == "" {
+				continue
+			}
+			if err := json.Unmarshal([]byte(field.raw), field.target); err != nil {
+				return nil, fmt.Errorf("decode issue %s %s: %w", issue.Identifier, field.name, err)
+			}
+		}
+
 		if len(c.workerAssigneeIDs) == 0 {
 			issue.AssignedToWorker = true
 		} else {
@@ -407,4 +550,30 @@ func (c *Client) queryIssues(ctx context.Context, query string, args ...any) ([]
 	}
 
 	return issues, nil
+}
+
+// Normalize Studio values and decoded JSON numbers before the single SQL update.
+func normalizeRequestedMaxTurns(value any) (any, error) {
+	if value == nil {
+		return nil, nil
+	}
+	if ptr, ok := value.(*int); ok {
+		if ptr == nil {
+			return nil, nil
+		}
+		value = *ptr
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("invalid requested_max_turns: %w", err)
+	}
+	number, ok := new(big.Rat).SetString(string(raw))
+	if !ok || !number.IsInt() || !number.Num().IsInt64() {
+		return nil, fmt.Errorf("invalid requested_max_turns: integer from 1 to 100 or null required")
+	}
+	turns := number.Num().Int64()
+	if turns < 1 || turns > 100 {
+		return nil, fmt.Errorf("invalid requested_max_turns: integer from 1 to 100 required")
+	}
+	return turns, nil
 }

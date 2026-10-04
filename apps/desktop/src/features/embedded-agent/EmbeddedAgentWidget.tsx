@@ -14,7 +14,7 @@ interface EmbeddedAgentWidgetProps {
 function AgentIcon({ className }: { className?: string }) {
   return (
     <img
-      src="/Orchesta.png"
+      src="./Orchesta.png"
       alt="Orchestra"
       className={`${className ?? ''} invert dark:invert-0`}
       aria-hidden="true"

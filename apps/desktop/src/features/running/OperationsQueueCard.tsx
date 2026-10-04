@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Activity, AppWindow, Circle, CircleDashed, Cpu, RefreshCcw } from 'lucide-react'
 
 import { CustomDropdown } from '@layout/shared/controls'
@@ -75,10 +75,7 @@ export function OperationsQueueCard({
     return laneMatch && stateMatch
   })
 
-  const formattedTimes = useMemo(
-    () => rows.map((row) => new Date(row.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),
-    [rows],
-  )
+  const formattedTimes = rows.map((row) => new Date(row.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
 
 
   return (

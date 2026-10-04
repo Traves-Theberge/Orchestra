@@ -3,9 +3,11 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/xeipuuv/gojsonschema"
@@ -16,7 +18,12 @@ func assertResponseMatchesSchema(t *testing.T, responseBody []byte, schemaFile s
 
 	schemaPath := mustProtocolSchemaPath(t, schemaFile)
 
-	schemaLoader := gojsonschema.NewReferenceLoader("file://" + schemaPath)
+	urlPath := filepath.ToSlash(schemaPath)
+	if !strings.HasPrefix(urlPath, "/") {
+		urlPath = "/" + urlPath
+	}
+	schemaURL := url.URL{Scheme: "file", Path: urlPath}
+	schemaLoader := gojsonschema.NewReferenceLoader(schemaURL.String())
 	documentLoader := gojsonschema.NewBytesLoader(responseBody)
 
 	result, err := gojsonschema.Validate(schemaLoader, documentLoader)

@@ -97,7 +97,7 @@ const NavTooltipContent = memo(function NavTooltipContent({ label, description }
 function AppMonogramIcon({ className }: { className?: string }) {
   return (
     <img
-      src="/Orchesta.png"
+      src="./Orchesta.png"
       alt="Orchestra"
       className={`${className ?? ''} dark:invert`}
       aria-hidden="true"

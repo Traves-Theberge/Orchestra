@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/google/uuid"
@@ -108,7 +109,11 @@ func (m *Manager) StartSession(ctx context.Context, req StartSessionRequest) (Se
 	if err := db.CreateDraft(m.d, id); err != nil {
 		return Session{}, fmt.Errorf("create draft: %w", err)
 	}
-	sess := Session{ID: id, ProjectID: req.ProjectID, Runner: req.Runner, Status: StatusActive}
+	var repoPath string
+	if req.ProjectID != "" {
+		_ = m.d.QueryRowContext(ctx, `SELECT root_path FROM projects WHERE id = ?`, req.ProjectID).Scan(&repoPath)
+	}
+	sess := Session{ID: id, ProjectID: req.ProjectID, Runner: req.Runner, RepoPath: repoPath, Status: StatusActive}
 	if req.Template != "" {
 		if err := m.ApplyTemplate(id, req.Template, req.TemplateVars); err != nil {
 			_ = db.DeleteDraft(m.d, id)
@@ -127,58 +132,33 @@ func (m *Manager) StartSession(ctx context.Context, req StartSessionRequest) (Se
 }
 
 // SendMessage forwards a user message to the runner attached to this session.
+// It prepends a task-authoring system prompt so the agent knows its role and
+// the MCP tools available to it via the orchestra-studio server.
 func (m *Manager) SendMessage(ctx context.Context, sessionID, msg string) error {
 	if m.spawner == nil {
 		return fmt.Errorf("studio: no runner attached")
 	}
-	return m.spawner.SendMessage(ctx, sessionID, msg)
+	defer m.dispatch(Event{SessionID: sessionID, Kind: EventSessionStatus, Payload: map[string]string{"status": "turn_completed"}})
+	draft, _ := m.GetDraft(sessionID)
+	full := buildStudioPrompt(draft, msg)
+	return m.spawner.SendMessage(ctx, sessionID, full)
 }
 
-// ApplyDraftPatch applies a map of field updates to the draft for a session.
-// Supported keys: title, description, suggested_provider, suggested_model, max_turns.
+// ApplyDraftPatch validates the complete request before one atomic storage update.
+// Omitted fields are unchanged; max_turns:null clears the requested limit.
 func (m *Manager) ApplyDraftPatch(sessionID string, patch map[string]interface{}) error {
-	for k, v := range patch {
-		switch k {
-		case "title":
-			s, _ := v.(string)
-			if err := m.SetTitle(sessionID, s); err != nil {
-				return err
-			}
-		case "description":
-			s, _ := v.(string)
-			if err := m.SetDescription(sessionID, s); err != nil {
-				return err
-			}
-		case "suggested_provider":
-			s, _ := v.(string)
-			if err := m.SetProvider(sessionID, s); err != nil {
-				return err
-			}
-		case "suggested_model":
-			s, _ := v.(string)
-			if err := m.SetModel(sessionID, s); err != nil {
-				return err
-			}
-		case "max_turns":
-			switch x := v.(type) {
-			case float64:
-				if err := m.SetMaxTurns(sessionID, int(x)); err != nil {
-					return err
-				}
-			case int:
-				if err := m.SetMaxTurns(sessionID, x); err != nil {
-					return err
-				}
-			default:
-				return fmt.Errorf("studio: max_turns must be a number")
-			}
-		default:
-			return fmt.Errorf("studio: field not patchable: %q", k)
-		}
+	fields, err := validateDraftPatch(patch)
+	if err != nil {
+		return err
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := db.UpdateDraftFields(m.d, sessionID, fields); err != nil {
+		return err
+	}
+	m.publishDraftUpdate(sessionID)
 	return nil
 }
-
 func (m *Manager) Discard(sessionID string) error {
 	if m.spawner != nil {
 		_ = m.spawner.Stop(sessionID)
@@ -236,6 +216,8 @@ func (m *Manager) Push(ctx context.Context, sessionID string) (string, error) {
 		"attachments":          string(attJSON),
 		"agent_guidance":       string(guidanceJSON),
 		"authoring_session_id": sessionID,
+		"requested_model":      snap.SuggestedModel,
+		"requested_max_turns":  snap.MaxTurns,
 	}
 	if snap.TemplateName != "" {
 		updates["source_template"] = snap.TemplateName
@@ -367,6 +349,9 @@ func (m *Manager) SetModel(sessionID, model string) error {
 }
 
 func (m *Manager) SetMaxTurns(sessionID string, turns int) error {
+	if turns < 1 || turns > MaxDraftTurns {
+		return fmt.Errorf("studio: max_turns must be an integer between 1 and %d", MaxDraftTurns)
+	}
 	if err := db.UpdateDraftField(m.d, sessionID, "max_turns", turns); err != nil {
 		return err
 	}
@@ -380,6 +365,62 @@ func (m *Manager) publishDraftUpdate(sessionID string) {
 		return
 	}
 	m.dispatch(Event{SessionID: sessionID, Kind: EventDraftUpdated, Payload: snap})
+}
+
+// buildStudioPrompt wraps the user's message with task-authoring context so the
+// agent understands its role and the MCP tools it can use to update the draft.
+func buildStudioPrompt(draft DraftSnapshot, userMsg string) string {
+	var b strings.Builder
+
+	b.WriteString(`You are a task-authoring assistant embedded in Orchestra, a multi-agent software development platform.
+
+Your job is to help the user write a clear, well-scoped backlog task. You have read-only access to the project codebase so you can ground your suggestions in the actual code.
+
+## Your MCP tools (orchestra-studio server)
+
+Use these to update the task draft in real time as you learn what the user wants:
+- mcp__orchestra-studio__set_title         — set a short, clear task title
+- mcp__orchestra-studio__set_description   — write a detailed markdown description
+- mcp__orchestra-studio__add_acceptance_criterion   — add a specific, testable AC
+- mcp__orchestra-studio__remove_acceptance_criterion — remove an AC by index (0-based)
+
+Update the draft progressively as the conversation develops. The user sees the draft panel update live.
+
+## How to behave
+
+1. Ask one clarifying question at a time if the request is vague.
+2. Read relevant source files to understand the codebase before writing descriptions.
+3. Write the title first, then description, then ACs as your understanding solidifies.
+4. Keep descriptions concrete — include file paths, function names, and technical detail where known.
+5. Acceptance criteria should be independently verifiable (e.g. "Given X, when Y, then Z").
+
+`)
+
+	// Include current draft state so the agent knows what's already set.
+	b.WriteString("## Current draft state\n\n")
+	if draft.Title != "" {
+		b.WriteString("Title: " + draft.Title + "\n")
+	} else {
+		b.WriteString("Title: (not set)\n")
+	}
+	if draft.Description != "" {
+		b.WriteString("Description:\n" + draft.Description + "\n")
+	} else {
+		b.WriteString("Description: (not set)\n")
+	}
+	if len(draft.AcceptanceCriteria) > 0 {
+		b.WriteString("Acceptance criteria:\n")
+		for i, ac := range draft.AcceptanceCriteria {
+			b.WriteString(fmt.Sprintf("  [%d] %s\n", i, ac))
+		}
+	} else {
+		b.WriteString("Acceptance criteria: (none yet)\n")
+	}
+
+	b.WriteString("\n## User message\n\n")
+	b.WriteString(userMsg)
+
+	return b.String()
 }
 
 func toSnapshot(d2 db.IssueDraft) (DraftSnapshot, error) {

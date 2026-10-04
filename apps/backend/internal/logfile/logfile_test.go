@@ -48,7 +48,18 @@ func TestResetLatestLogCreatesWorkingSymlink(t *testing.T) {
 
 	target, err := os.Readlink(latestPath)
 	if err != nil {
-		t.Fatalf("readlink latest.log: %v", err)
+		latest, statErr := os.Stat(latestPath)
+		if statErr != nil {
+			t.Fatal(statErr)
+		}
+		session, statErr := os.Stat(filepath.Join(filepath.Dir(latestPath), sessionID+".log"))
+		if statErr != nil {
+			t.Fatal(statErr)
+		}
+		if !os.SameFile(latest, session) {
+			t.Fatal("latest must link to the live session file")
+		}
+		return
 	}
 	if filepath.IsAbs(target) {
 		t.Fatalf("expected relative symlink target, got %q", target)

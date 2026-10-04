@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { X, ChevronUp, ChevronDown, CaseSensitive, Regex } from 'lucide-react'
-import type { SearchAddon } from 'xterm-addon-search'
+import type { SearchAddon } from '@xterm/addon-search'
 
 interface TerminalSearchProps {
   searchAddon: SearchAddon | null
@@ -19,13 +19,13 @@ export function TerminalSearch({ searchAddon, onClose }: TerminalSearchProps) {
   }, [])
 
   useEffect(() => {
-    if (!searchAddon || !query) {
-      setMatchCount('')
-      return
-    }
-    // xterm search addon findNext returns boolean
-    const found = searchAddon.findNext(query, { caseSensitive, regex })
-    setMatchCount(found ? 'Match found' : 'No matches')
+    if (!searchAddon || !query) return
+    // Debounce typing so searching a large terminal buffer does not block each keystroke.
+    const timer = window.setTimeout(() => {
+      const found = searchAddon.findNext(query, { caseSensitive, regex })
+      setMatchCount(found ? 'Match found' : 'No matches')
+    }, 50)
+    return () => window.clearTimeout(timer)
   }, [query, caseSensitive, regex, searchAddon])
 
   const findNext = () => searchAddon?.findNext(query, { caseSensitive, regex })
@@ -53,7 +53,7 @@ export function TerminalSearch({ searchAddon, onClose }: TerminalSearchProps) {
         className="bg-transparent text-sm text-foreground outline-none w-48 placeholder:text-muted-foreground"
       />
       <span className="text-[10px] text-muted-foreground min-w-[70px] text-right">
-        {matchCount}
+        {query && searchAddon ? matchCount : ''}
       </span>
       <button
         onClick={() => setCaseSensitive(!caseSensitive)}

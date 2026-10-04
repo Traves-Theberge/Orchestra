@@ -1,26 +1,61 @@
-FROM golang:1.25 AS build
-WORKDIR /src
+# syntax=docker/dockerfile:1
+ARG GO_VERSION=1.26.8
+FROM golang:${GO_VERSION}-bookworm AS toolchain
+ENV GOTOOLCHAIN=local
+WORKDIR /src/apps/backend
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential ca-certificates curl git \
+    && rm -rf /var/lib/apt/lists/*
+COPY apps/backend/go.mod apps/backend/go.sum ./
+RUN go mod download
+COPY apps/backend ./
 
-COPY apps/backend/go.mod apps/backend/go.sum ./apps/backend/
-RUN cd apps/backend && go mod download
+# Explicit test target; never selected by the existing image publishing path.
+# Source and dependencies are image-owned, not bind-mounted from the host.
+FROM toolchain AS test
+COPY packages/protocol/schemas /src/packages/protocol/schemas
+COPY packages/test-fixtures /src/packages/test-fixtures
+COPY ops/docker/test-backend.sh /usr/local/bin/test-backend
+RUN sed -i 's/\r$//' /usr/local/bin/test-backend \
+    && chmod 0755 /usr/local/bin/test-backend \
+    && groupadd --gid 10001 orchestra \
+    && useradd --uid 10001 --gid orchestra --create-home --home-dir /home/orchestra orchestra \
+    && mkdir /tmp/orchestra-go-cache \
+    && chown 10001:10001 /tmp/orchestra-go-cache
+ENV HOME=/home/orchestra USERPROFILE=/home/orchestra \
+    XDG_CONFIG_HOME=/home/orchestra/.config GH_CONFIG_DIR=/home/orchestra/.config/gh \
+    CGO_ENABLED=1 GOCACHE=/tmp/orchestra-go-cache \
+    GOPROXY=off GOSUMDB=off GOFLAGS=-mod=readonly
+USER 10001:10001
+ENTRYPOINT ["/usr/local/bin/test-backend"]
+CMD ["all"]
 
-COPY apps/backend ./apps/backend
-RUN cd apps/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/orchestrad ./cmd/orchestrad
-RUN cd apps/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/orchestra ./cmd/orchestra
+FROM toolchain AS build
+RUN CGO_ENABLED=0 go build -trimpath -o /out/orchestrad ./cmd/orchestrad \
+    && CGO_ENABLED=0 go build -trimpath -o /out/orchestra ./cmd/orchestra
 
-FROM gcr.io/distroless/static-debian12
-
-# Run as non-root user for security
-USER nonroot:nonroot
+# The default final target remains the backend image used by GHCR publishing.
+# Git/sh enable local workspace operations; provider CLIs and project-specific
+# build tools are deliberately absent and require a separate supported image.
+FROM debian:bookworm-slim AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl git \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 orchestra \
+    && useradd --uid 10001 --gid orchestra --home-dir /data/home orchestra \
+    && mkdir -p /app /data/home /data/workspaces /data/worktrees \
+    && chown -R 10001:10001 /app /data
 WORKDIR /app
 COPY --from=build /out/orchestrad /usr/local/bin/orchestrad
 COPY --from=build /out/orchestra /usr/local/bin/orchestra
-
-ENV ORCHESTRA_SERVER_HOST=0.0.0.0
-ENV ORCHESTRA_SERVER_PORT=4010
+USER 10001:10001
+ENV HOME=/data/home USERPROFILE=/data/home \
+    XDG_CONFIG_HOME=/data/home/.config GH_CONFIG_DIR=/data/home/.config/gh \
+    ORCHESTRA_SERVER_HOST=0.0.0.0 ORCHESTRA_SERVER_PORT=4010 \
+    ORCHESTRA_WORKSPACE_ROOT=/data/workspaces ORCHESTRA_WORKTREE_ROOT=/data/worktrees
+LABEL org.orchestra.execution-capabilities="api,sqlite,git-worktrees,posix-shell" \
+      org.orchestra.execution-limitations="provider-clis-and-project-toolchains-not-included"
 EXPOSE 4010
-
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD ["/usr/local/bin/orchestra", "check"]
-
+HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
+  CMD curl --fail --silent --show-error --max-time 2 "http://127.0.0.1:${ORCHESTRA_SERVER_PORT}/healthz" > /dev/null || exit 1
 ENTRYPOINT ["/usr/local/bin/orchestrad"]

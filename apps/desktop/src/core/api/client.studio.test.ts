@@ -112,6 +112,6 @@ describe('studio client', () => {
 
   it('builds the SSE URL', () => {
     const url = studioEventsURL(config, 'sess1')
-    expect(url).toBe('http://127.0.0.1:4000/api/v1/studio/sessions/sess1/events')
+    expect(url).toBe('http://127.0.0.1:4000/api/v1/studio/sessions/sess1/events?token=token-123')
   })
 })

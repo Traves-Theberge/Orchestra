@@ -3,12 +3,11 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/orchestra/orchestra/apps/backend/internal/fileconfig"
 	"net/http"
 	"os"
-	"os/user"
 	"path/filepath"
 	"strings"
-	"syscall"
 )
 
 // validAgentProviders lists the recognized LLM provider IDs for the embedded
@@ -93,11 +92,11 @@ func (s *Server) HandleSaveAgentProvider(w http.ResponseWriter, r *http.Request)
 // --- helpers ---
 
 func agentProvidersPath() string {
-	u, err := user.Current()
+	home, err := os.UserHomeDir()
 	if err != nil {
 		return filepath.Join(os.Getenv("HOME"), ".orchestra", "agent-providers.json")
 	}
-	return filepath.Join(u.HomeDir, ".orchestra", "agent-providers.json")
+	return filepath.Join(home, ".orchestra", "agent-providers.json")
 }
 
 func loadAgentProviders() map[string]string {
@@ -115,29 +114,9 @@ func loadAgentProviders() map[string]string {
 
 func saveAgentProviders(m map[string]string) error {
 	p := agentProvidersPath()
-	dir := filepath.Dir(p)
-
-	oldUmask := syscall.Umask(0077)
-	defer syscall.Umask(oldUmask)
-
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return fmt.Errorf("mkdir %s: %w", dir, err)
-	}
-	if err := os.Chmod(dir, 0700); err != nil {
-		return fmt.Errorf("chmod dir: %w", err)
-	}
-
 	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
 	}
-
-	if err := os.WriteFile(p, data, 0600); err != nil {
-		return fmt.Errorf("write %s: %w", p, err)
-	}
-	if err := os.Chmod(p, 0600); err != nil {
-		return fmt.Errorf("chmod file: %w", err)
-	}
-
-	return nil
+	return fileconfig.WritePrivate(p, data)
 }

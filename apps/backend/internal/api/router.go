@@ -23,6 +23,7 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/terminal"
 	trackerregistry "github.com/orchestra/orchestra/apps/backend/internal/tracker/registry"
 	"github.com/orchestra/orchestra/apps/backend/internal/usage"
+	"github.com/orchestra/orchestra/apps/backend/internal/workspacechat"
 	"github.com/rs/zerolog"
 )
 
@@ -42,6 +43,7 @@ type Server struct {
 	registry      *trackerregistry.Registry
 	studioMgr     *studio.Manager
 	studioTpls    *templates.Store
+	workspaceChat *workspacechat.Service
 }
 
 // SetStudioTemplateStore wires a template store onto the server for the
@@ -74,6 +76,7 @@ func NewRouterWithPubSub(
 	registry *trackerregistry.Registry,
 	studioMgr *studio.Manager,
 	studioTpls *templates.Store,
+	chat ...*workspacechat.Service,
 ) http.Handler {
 	if termManager == nil {
 		termManager = terminal.NewManager()
@@ -92,6 +95,9 @@ func NewRouterWithPubSub(
 		registry:      registry,
 		studioMgr:     studioMgr,
 		studioTpls:    studioTpls,
+	}
+	if len(chat) > 0 {
+		server.workspaceChat = chat[0]
 	}
 	r := chi.NewRouter()
 
@@ -281,6 +287,7 @@ func NewRouterWithPubSub(
 	protected.Patch("/api/v1/projects/{project_id}/github/issues/{number}", server.UpdateProjectGitHubIssue)
 	protected.Get("/api/v1/projects/{project_id}/github/pulls", server.GetProjectGitHubPulls)
 	protected.Get("/api/v1/projects/{project_id}/github/pulls/{number}/diff", server.GetProjectGitHubPullDiff)
+	protected.Get("/api/v1/projects/{project_id}/github/pulls/{number}/snapshot", server.GetPRSnapshot)
 	protected.Post("/api/v1/projects/{project_id}/github/pulls", server.CreateProjectGitHubPull)
 	protected.Get("/api/v1/projects/{project_id}/github/pulls/{number}/reviews", server.GetPRReviews)
 	protected.Post("/api/v1/projects/{project_id}/github/pulls/{number}/reviews", server.PostPRReview)
@@ -339,6 +346,14 @@ func NewRouterWithPubSub(
 	protected.Delete("/api/v1/issues/{issue_identifier}/session", server.DeleteIssueSession)
 	protected.Post("/api/v1/issues/{issue_identifier}/stop", server.PostIssueStop)
 
+	protected.Get("/api/v1/projects/{project_id}/chat/providers", server.GetWorkspaceChatProviders)
+	protected.Get("/api/v1/projects/{project_id}/chat/providers/{provider}/models", server.GetWorkspaceChatModels)
+	protected.Get("/api/v1/projects/{project_id}/chat/sessions", server.GetWorkspaceChatSessions)
+	protected.Post("/api/v1/projects/{project_id}/chat/sessions", server.PostWorkspaceChatSession)
+	protected.Get("/api/v1/projects/{project_id}/chat/sessions/{session_id}", server.GetWorkspaceChatSession)
+	protected.Post("/api/v1/projects/{project_id}/chat/sessions/{session_id}/messages", server.PostWorkspaceChatMessage)
+	protected.Post("/api/v1/projects/{project_id}/chat/sessions/{session_id}/stop", server.PostWorkspaceChatStop)
+	protected.Post("/api/v1/projects/{project_id}/chat/sessions/{session_id}/requests/{request_id}/reply", server.PostWorkspaceChatReply)
 	// Task Authoring Studio
 	protected.Post("/api/v1/studio/sessions", server.PostStudioSession)
 	protected.Get("/api/v1/studio/sessions/{id}/events", server.GetStudioSessionEvents)

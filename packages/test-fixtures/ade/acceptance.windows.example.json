@@ -1,0 +1,19 @@
+{
+  "environment": {
+    "os": "windows",
+    "arch": "amd64",
+    "runtime_versions": { "go": "go1.26.7" },
+    "provider": "recording_runner",
+    "provider_version": "fixture-v1",
+    "model": "deterministic",
+    "tracker": "none",
+    "runtime_target": "local"
+  },
+  "scenarios": [
+    { "id": "fixture.real_change_and_check", "mode": "simulated", "boundaries": ["recording_runner", "filesystem", "git", "check_subprocess"], "min_artifacts": 4 },
+    { "id": "fixture.environment_isolation", "mode": "simulated", "boundaries": ["child_environment", "git"], "min_artifacts": 2 },
+    { "id": "fixture.cancelled_dispatch", "mode": "simulated", "boundaries": ["recording_runner", "filesystem"], "min_artifacts": 1 },
+    { "id": "fixture.failed_dispatch", "mode": "simulated", "boundaries": ["recording_runner"], "min_artifacts": 1 },
+    { "id": "fixture.cleanup_ownership", "mode": "simulated", "boundaries": ["filesystem"], "min_artifacts": 2 }
+  ]
+}

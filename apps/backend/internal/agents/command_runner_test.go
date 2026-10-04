@@ -3,8 +3,11 @@ package agents
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -174,6 +177,143 @@ func TestCommandRunnerReturnsInputRequiredFromNestedNeedsInputPayload(t *testing
 	}
 	if got := err.Error(); got == "" || !strings.Contains(got, "input required") {
 		t.Fatalf("unexpected input required error: %v", err)
+	}
+}
+
+func TestCommandRunnerDrainsNestedInputEventAfterFastExit(t *testing.T) {
+	// The callback pauses parsing while the command writes its second event
+	// and exits. Wait must not discard that unread event by closing the pipe.
+	runner := NewCommandRunner(ProviderOpenCode, `printf 'warmup\n'; while [ ! -f release ]; do sleep 0.01; done; printf '{"event":"provider.event","meta":{"requires_input":true}}\n'; printf done > finished`)
+	root := t.TempDir()
+	var callbackErr error
+	result, err := runner.RunTurn(context.Background(), TurnRequest{
+		Workspace: root, WorkspaceRoot: root, Prompt: "hello", IssueIdentifier: "drain-regression", Timeout: 5 * time.Second,
+	}, func(event Event) {
+		if event.Message != "warmup" {
+			return
+		}
+		callbackErr = os.WriteFile(filepath.Join(root, "release"), []byte("go"), 0o600)
+		if callbackErr != nil {
+			return
+		}
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			if _, statErr := os.Stat(filepath.Join(root, "finished")); statErr == nil {
+				time.Sleep(50 * time.Millisecond)
+				return
+			}
+			if time.Now().After(deadline) {
+				callbackErr = errors.New("command did not finish while parsing was paused")
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+	})
+	if callbackErr != nil {
+		t.Fatal(callbackErr)
+	}
+	if err == nil || !strings.Contains(err.Error(), "input required") {
+		t.Fatalf("expected drained input-required event, got error %v, output %q", err, result.Output)
+	}
+	if !strings.Contains(result.Output, `"requires_input":true`) {
+		t.Fatalf("missing final event from output: %q", result.Output)
+	}
+}
+
+func TestCommandRunnerBoundsInheritedOutputPipeAfterExit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell descendant pipe inheritance regression")
+	}
+	runner := NewCommandRunner(ProviderOpenCode, `sleep 3 & printf 'parent finished\n'`)
+	root := t.TempDir()
+	started := time.Now()
+	result, err := runner.RunTurn(context.Background(), TurnRequest{
+		Workspace: root, WorkspaceRoot: root, IssueIdentifier: "inherited-pipe", Timeout: 5 * time.Second,
+	}, nil)
+	if !errors.Is(err, exec.ErrWaitDelay) {
+		t.Fatalf("expected bounded inherited pipe error, got %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > 2500*time.Millisecond {
+		t.Fatalf("waited for inherited pipe holder instead of bounded drain: %v", elapsed)
+	}
+	if !strings.Contains(result.Output, "parent finished") {
+		t.Fatalf("lost parent's output: %q", result.Output)
+	}
+}
+
+func TestCommandRunnerSlowCallbackDoesNotTimeoutOutputDrain(t *testing.T) {
+	runner := NewCommandRunner(ProviderOpenCode, `printf 'warmup\n'; while [ ! -f release ]; do sleep 0.01; done; printf 'event: turn.message\ndata: {"message":"hello"}\n'; printf done > finished`)
+	root := t.TempDir()
+	var callbackErr error
+	seen := false
+	result, err := runner.RunTurn(context.Background(), TurnRequest{
+		Workspace: root, WorkspaceRoot: root, IssueIdentifier: "slow-callback", Timeout: 10 * time.Second,
+	}, func(event Event) {
+		if event.Message == "hello" {
+			seen = true
+		}
+		if event.Message != "warmup" {
+			return
+		}
+		callbackErr = os.WriteFile(filepath.Join(root, "release"), []byte("go"), 0o600)
+		if callbackErr != nil {
+			return
+		}
+		deadline := time.Now().Add(3 * time.Second)
+		for {
+			if _, statErr := os.Stat(filepath.Join(root, "finished")); statErr == nil {
+				break
+			}
+			if time.Now().After(deadline) {
+				callbackErr = errors.New("command did not finish while callback was paused")
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+		// Exceeds the unchanged inherited-handle timeout: callback scheduling
+		// must not be charged against the subprocess output copy deadline.
+		time.Sleep(1200 * time.Millisecond)
+	})
+	if callbackErr != nil {
+		t.Fatal(callbackErr)
+	}
+	if err != nil || !seen || !strings.Contains(result.Output, `"message":"hello"`) {
+		t.Fatalf("legitimate callback lost EOF event or timed out: seen=%v error=%v output=%q", seen, err, result.Output)
+	}
+}
+
+func TestCommandOutputStreamsShareBoundedQuotaAndWakeOnAbort(t *testing.T) {
+	cancelled := false
+	budget := &commandOutputBudget{cancel: func() { cancelled = true }}
+	stdout, stderr := newCommandOutputStream(budget), newCommandOutputStream(budget)
+	if _, err := stdout.Write(make([]byte, MaxOutputSize-1)); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := stderr.Write([]byte("ab")); n != 1 || err == nil || !strings.Contains(err.Error(), "maximum output size") {
+		t.Fatalf("shared quota failed: n=%d error=%v", n, err)
+	}
+	if !cancelled || budget.err() == nil {
+		t.Fatal("quota did not cancel/report failure")
+	}
+	stdout.abort()
+	if _, err := stdout.Read(make([]byte, 1)); err != io.EOF {
+		t.Fatalf("abort retained queued bytes: %v", err)
+	}
+	if _, err := stdout.Write([]byte("x")); !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatalf("aborted stream accepted data: %v", err)
+	}
+
+	stream := newCommandOutputStream(&commandOutputBudget{cancel: func() {}})
+	done := make(chan error, 1)
+	go func() { _, err := stream.Read(make([]byte, 1)); done <- err }()
+	stream.abort()
+	select {
+	case err := <-done:
+		if err != io.EOF {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("abort did not release waiting reader")
 	}
 }
 
@@ -394,6 +534,39 @@ func TestCommandRunnerReturnsTimeoutError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("expected timeout message, got %v", err)
+	}
+}
+
+func TestCommandRunnerClassifiesContextBeforeProcessStarts(t *testing.T) {
+	for _, deadline := range []bool{true, false} {
+		name := "canceled"
+		if deadline {
+			name = "deadline"
+		}
+		t.Run(name, func(t *testing.T) {
+			workspacePath := t.TempDir()
+			var ctx context.Context
+			var cancel context.CancelFunc
+			if deadline {
+				ctx, cancel = context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+			} else {
+				ctx, cancel = context.WithCancel(context.Background())
+				cancel()
+			}
+			defer cancel()
+			runner := NewCommandRunner(ProviderOpenCode, "printf started > started.txt")
+			_, err := runner.RunTurn(ctx, TurnRequest{Workspace: workspacePath, WorkspaceRoot: workspacePath}, nil)
+			if deadline {
+				if err == nil || err.Error() != "agent command timed out" {
+					t.Fatalf("expected turn timeout before start, got %v", err)
+				}
+			} else if !errors.Is(err, context.Canceled) {
+				t.Fatalf("expected parent cancellation before start, got %v", err)
+			}
+			if _, statErr := os.Stat(filepath.Join(workspacePath, "started.txt")); !os.IsNotExist(statErr) {
+				t.Fatalf("command ran despite canceled context: %v", statErr)
+			}
+		})
 	}
 }
 

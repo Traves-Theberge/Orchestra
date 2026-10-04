@@ -1,0 +1,30 @@
+﻿[
+    {
+        "path":  "apps/backend/internal/cli/observation.go",
+        "sha256":  "A0C65A086A785D1E3F9F6A51B7B09F8F32839C201F0D272DB974A34D03099145"
+    },
+    {
+        "path":  "apps/backend/cmd/orchestra/main.go",
+        "sha256":  "7CB3C7D3DDAC9DC757E9F10C12A2C726E6CA330893104D8B0264EBDDC4887363"
+    },
+    {
+        "path":  "apps/backend/internal/tracker/work_item.go",
+        "sha256":  "F4A39BCE2120328A85B89D0D8A333024FFF914EDD01EB1B8204417438FDD1934"
+    },
+    {
+        "path":  "apps/backend/internal/api/state.go",
+        "sha256":  "E377D77754187C38264C5C1B9810784CBB8B34E69E6D86981A04F9ADE1B12C82"
+    },
+    {
+        "path":  "apps/backend/internal/presenter/presenter.go",
+        "sha256":  "71D84A637C44DAB67D580367B1EFECA5A9C69ED14602AE2A66DCF1331DF2CD83"
+    },
+    {
+        "path":  ".codex/skills/orchestra-cli/SKILL.md",
+        "sha256":  "43DA149EEF15F8065F76EE2EF19759F1BFE7E51C961FFA41CAE76426CD0CF3E1"
+    },
+    {
+        "path":  ".codex/skills/orchestra-cli/references/task-system.md",
+        "sha256":  "703F53400CDDC8F02159A0CC2E4BDB9C6D190527346AD59E62C1640A9AB6AF66"
+    }
+]

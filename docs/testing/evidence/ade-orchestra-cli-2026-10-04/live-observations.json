@@ -1,0 +1,38 @@
+﻿[
+    {
+        "command":  "status",
+        "schema_version":  1,
+        "scope":  {
+                      "backend_base_url":  "http://127.0.0.1:4014",
+                      "source":  "backend_snapshot"
+                  },
+        "counts":  {
+                       "retrying":  0,
+                       "running":  0
+                   },
+        "projects":  null,
+        "tasks":  null
+    },
+    {
+        "command":  "project list",
+        "schema_version":  1,
+        "scope":  {
+                      "backend_base_url":  "http://127.0.0.1:4014",
+                      "source":  "registered_projects"
+                  },
+        "counts":  null,
+        "projects":  0,
+        "tasks":  null
+    },
+    {
+        "command":  "task list",
+        "schema_version":  1,
+        "scope":  {
+                      "backend_base_url":  "http://127.0.0.1:4014",
+                      "source":  "global_tracker"
+                  },
+        "counts":  null,
+        "projects":  null,
+        "tasks":  0
+    }
+]

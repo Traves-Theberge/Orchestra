@@ -34,6 +34,8 @@ Status legend: ✅ pass · ❌ fail · ⏸ blocked · — not yet run
 
 Last run: _not yet run_ · Last runner: _n/a_
 
+Build and startup verification is tracked separately in [the ADE baseline receipt](ade-baseline-2026-10-03.md). It does not turn any native-provider lifecycle row above green.
+
 ## Detailed checklist (per agent)
 
 Copy this block under each agent heading below as you run it. Tick each box,
@@ -41,11 +43,13 @@ note any deviations, and link back to filed bug issues.
 
 ### 1. Issue creation
 - [ ] Created via Kanban `+` button (or `scripts/e2e-kanban.sh run`)
-- [ ] Lands in **Todo** with the correct provider tagged
+- [ ] Lands in **Backlog** with the correct provider tagged
 - [ ] Project assignment is correct
 - [ ] Issue identifier generated (`PROJ-N`)
 
 ### 2. Dispatch (Todo → In Progress)
+- [ ] Set title, description, project and agent, then explicitly move **Backlog → Todo** to start planning
+- [ ] Planning finishes before execution starts; record any unexpected edits or publication during planning as a defect
 - [ ] Card moves to **In Progress** (auto-claim or manual move)
 - [ ] Worktree created at `${ORCHESTRA_WORKSPACE_ROOT}/<project>/<branch>`
 - [ ] `base_sha` and `branch_name` recorded on the issue

@@ -58,19 +58,34 @@ func NormalizeProvider(s string) Provider {
 // TurnRequest encapsulates all parameters needed to execute a single agent turn,
 // including the prompt, workspace paths, timeout, and optional tool specifications.
 type TurnRequest struct {
-	SessionID       string
-	Workspace       string
-	WorkspaceRoot   string
-	Prompt          string
-	IssueIdentifier string
-	Attempt         int
-	Timeout         time.Duration
-	CommandOverride string
-	AutoApprove     bool
-	ToolExecutor    ToolExecutor
-	ToolSpecs       []map[string]any
-	ResourceSpecs   []map[string]any
-	RuntimeTarget   RuntimeTarget
+	// RequestedModel is authoring intent, not a claim about the observed model.
+	RequestedModel string
+	// RequestedMaxTurns is retained for validation; its budget semantics are not implemented.
+	RequestedMaxTurns *int
+	SessionID         string
+	Workspace         string
+	WorkspaceRoot     string
+	// ProjectRootWorkspace permits the exact authorized project root for chat.
+	// Task/worktree dispatch leaves this false and retains descendant validation.
+	ProjectRootWorkspace bool
+	Prompt               string
+	IssueIdentifier      string
+	Attempt              int
+	Timeout              time.Duration
+	CommandOverride      string
+	AutoApprove          bool
+	ToolExecutor         ToolExecutor
+	ToolSpecs            []map[string]any
+	ResourceSpecs        []map[string]any
+	RuntimeTarget        RuntimeTarget
+}
+
+// RequestedModelValidator is an explicit runner opt-in to applying a requested
+// model. Validation must be free of execution effects and reject unsupported
+// names. A successful check does not establish the model observed at runtime.
+// No production runner currently implements this contract.
+type RequestedModelValidator interface {
+	ValidateRequestedModel(model string) error
 }
 
 // TokenUsage tracks the token consumption for a single agent turn, including

@@ -1,0 +1,225 @@
+﻿{
+    "session":  {
+                    "id":  "78f3122b-7c4d-4d40-b6cb-4bc62d34ab01",
+                    "project_id":  "f2a81950c4adc0be5f4faa2ca87bbc39",
+                    "provider":  "CODEX",
+                    "title":  "New conversation",
+                    "status":  "idle",
+                    "conversation_mode":  "native_session",
+                    "created_at":  "2026-10-04T21:55:43.814028Z",
+                    "updated_at":  "2026-10-04T21:55:53.3249823Z",
+                    "provider_thread_id":  "fixture-b377e4f4-3738-4899-9aa9-154c46eff32e",
+                    "effective_model":  "fixture-model",
+                    "approval_policy":  "on-request",
+                    "sandbox_mode":  "readOnly",
+                    "effective_reasoning_effort":  "medium"
+                },
+    "messages":  [
+                     {
+                         "id":  "5bcf5204-7716-4380-994e-a1365720c70b",
+                         "session_id":  "78f3122b-7c4d-4d40-b6cb-4bc62d34ab01",
+                         "role":  "user",
+                         "text":  "Baseline reply",
+                         "status":  "completed",
+                         "client_message_id":  "94b43032-3ce1-4e86-98ac-2a3582efb68c",
+                         "created_at":  "2026-10-04T21:55:43.8220299Z"
+                     },
+                     {
+                         "id":  "97c5393f-2770-4632-86fd-288e290356b5",
+                         "session_id":  "78f3122b-7c4d-4d40-b6cb-4bc62d34ab01",
+                         "role":  "assistant",
+                         "text":  "Fixture response: the desktop request reached the native protocol.",
+                         "status":  "completed",
+                         "created_at":  "2026-10-04T21:55:44.131258Z"
+                     },
+                     {
+                         "id":  "527986d5-720e-4eed-9c8b-8bf9fd31a973",
+                         "session_id":  "78f3122b-7c4d-4d40-b6cb-4bc62d34ab01",
+                         "role":  "user",
+                         "text":  "Check late usage notification",
+                         "status":  "completed",
+                         "client_message_id":  "7dea7926-e081-4be3-816d-081eaa63b9e0",
+                         "created_at":  "2026-10-04T21:55:53.3223838Z"
+                     },
+                     {
+                         "id":  "213198d5-be4d-442c-bf53-6371ee01f646",
+                         "session_id":  "78f3122b-7c4d-4d40-b6cb-4bc62d34ab01",
+                         "role":  "assistant",
+                         "text":  "Fixture response: the desktop request reached the native protocol.",
+                         "status":  "completed",
+                         "created_at":  "2026-10-04T21:55:53.3249823Z"
+                     }
+                 ],
+    "events":  [
+                   {
+                       "sequence":  19,
+                       "type":  "turn/started",
+                       "thread_id":  "fixture-b377e4f4-3738-4899-9aa9-154c46eff32e",
+                       "turn_id":  "fixture-turn-6f2ef778-2374-44ec-85bc-bbfdf78ecd92-1",
+                       "payload":  {
+                                       "threadId":  "fixture-b377e4f4-3738-4899-9aa9-154c46eff32e",
+                                       "turn":  {
+                                                    "id":  "fixture-turn-6f2ef778-2374-44ec-85bc-bbfdf78ecd92-1"
+                                                }
+                                   },
+                       "created_at":  "2026-10-04T21:55:44.129724Z"
+                   },
+                   {
+                       "sequence":  20,
+                       "type":  "item/agentMessage/delta",
+                       "thread_id":  "fixture-b377e4f4-3738-4899-9aa9-154c46eff32e",
+                       "turn_id":  "fixture-turn-6f2ef778-2374-44ec-85bc-bbfdf78ecd92-1",
+                       "item_id":  "answer-fixture-turn-6f2ef778-2374-44ec-85bc-bbfdf78ecd92-1",
+                       "delta":  "Fixture response: the desktop request reached the native protocol.",
+                       "payload":  {
+                                       "threadId":  "fixture-b377e4f4-3738-4899-9aa9-154c46eff32e",
+                                       "turnId":  "fixture-turn-6f2ef778-2374-44ec-85bc-bbfdf78ecd92-1",
+                                       "itemId":  "answer-fixture-turn-6f2ef778-2374-44ec-85bc-bbfdf78ecd92-1",
+                                       "delta":  "Fixture response: the desktop request reached the native protocol."
+                                   },
+                       "created_at":  "2026-10-04T21:55:44.129724Z"
+                   },
+                   {
+                       "sequence":  21,
+                       "type":  "thread/tokenUsage/updated",
+                       "thread_id":  "fixture-b377e4f4-3738-4899-9aa9-154c46eff32e",
+                       "turn_id":  "fixture-turn-6f2ef778-2374-44ec-85bc-bbfdf78ecd92-1",
+                       "payload":  {
+                                       "threadId":  "fixture-b377e4f4-3738-4899-9aa9-154c46eff32e",
+                                       "turnId":  "fixture-turn-6f2ef778-2374-44ec-85bc-bbfdf78ecd92-1",
+                                       "tokenUsage":  {
+                                                          "last":  {
+                                                                       "inputTokens":  10,
+                                                                       "outputTokens":  12,
+                                                                       "totalTokens":  22,
+                                                                       "cachedInputTokens":  0,
+                                                                       "reasoningOutputTokens":  0
+                                                                   },
+                                                          "total":  {
+                                                                        "inputTokens":  10,
+                                                                        "outputTokens":  12,
+                                                                        "totalTokens":  22,
+                                                                        "cachedInputTokens":  0,
+                                                                        "reasoningOutputTokens":  0
+                                                                    },
+                                                          "modelContextWindow":  10000
+                                                      }
+                                   },
+                       "usage":  {
+                                     "last":  {
+                                                  "input_tokens":  10,
+                                                  "output_tokens":  12,
+                                                  "total_tokens":  22
+                                              },
+                                     "total":  {
+                                                   "input_tokens":  10,
+                                                   "output_tokens":  12,
+                                                   "total_tokens":  22
+                                               },
+                                     "model_context_window":  10000
+                                 },
+                       "created_at":  "2026-10-04T21:55:44.1302512Z"
+                   },
+                   {
+                       "sequence":  22,
+                       "type":  "turn/completed",
+                       "thread_id":  "fixture-b377e4f4-3738-4899-9aa9-154c46eff32e",
+                       "turn_id":  "fixture-turn-6f2ef778-2374-44ec-85bc-bbfdf78ecd92-1",
+                       "payload":  {
+                                       "threadId":  "fixture-b377e4f4-3738-4899-9aa9-154c46eff32e",
+                                       "turn":  {
+                                                    "id":  "fixture-turn-6f2ef778-2374-44ec-85bc-bbfdf78ecd92-1",
+                                                    "status":  "completed"
+                                                }
+                                   },
+                       "created_at":  "2026-10-04T21:55:44.1317658Z"
+                   },
+                   {
+                       "sequence":  23,
+                       "type":  "turn/started",
+                       "thread_id":  "fixture-b377e4f4-3738-4899-9aa9-154c46eff32e",
+                       "turn_id":  "fixture-turn-6f2ef778-2374-44ec-85bc-bbfdf78ecd92-2",
+                       "payload":  {
+                                       "threadId":  "fixture-b377e4f4-3738-4899-9aa9-154c46eff32e",
+                                       "turn":  {
+                                                    "id":  "fixture-turn-6f2ef778-2374-44ec-85bc-bbfdf78ecd92-2"
+                                                }
+                                   },
+                       "created_at":  "2026-10-04T21:55:53.3234304Z"
+                   },
+                   {
+                       "sequence":  24,
+                       "type":  "item/agentMessage/delta",
+                       "thread_id":  "fixture-b377e4f4-3738-4899-9aa9-154c46eff32e",
+                       "turn_id":  "fixture-turn-6f2ef778-2374-44ec-85bc-bbfdf78ecd92-2",
+                       "item_id":  "answer-fixture-turn-6f2ef778-2374-44ec-85bc-bbfdf78ecd92-2",
+                       "delta":  "Fixture response: the desktop request reached the native protocol.",
+                       "payload":  {
+                                       "threadId":  "fixture-b377e4f4-3738-4899-9aa9-154c46eff32e",
+                                       "turnId":  "fixture-turn-6f2ef778-2374-44ec-85bc-bbfdf78ecd92-2",
+                                       "itemId":  "answer-fixture-turn-6f2ef778-2374-44ec-85bc-bbfdf78ecd92-2",
+                                       "delta":  "Fixture response: the desktop request reached the native protocol."
+                                   },
+                       "created_at":  "2026-10-04T21:55:53.3239469Z"
+                   },
+                   {
+                       "sequence":  25,
+                       "type":  "turn/completed",
+                       "thread_id":  "fixture-b377e4f4-3738-4899-9aa9-154c46eff32e",
+                       "turn_id":  "fixture-turn-6f2ef778-2374-44ec-85bc-bbfdf78ecd92-2",
+                       "payload":  {
+                                       "threadId":  "fixture-b377e4f4-3738-4899-9aa9-154c46eff32e",
+                                       "turn":  {
+                                                    "id":  "fixture-turn-6f2ef778-2374-44ec-85bc-bbfdf78ecd92-2",
+                                                    "status":  "completed"
+                                                }
+                                   },
+                       "created_at":  "2026-10-04T21:55:53.3244554Z"
+                   },
+                   {
+                       "sequence":  26,
+                       "type":  "thread/tokenUsage/updated",
+                       "thread_id":  "fixture-b377e4f4-3738-4899-9aa9-154c46eff32e",
+                       "turn_id":  "fixture-turn-6f2ef778-2374-44ec-85bc-bbfdf78ecd92-2",
+                       "payload":  {
+                                       "threadId":  "fixture-b377e4f4-3738-4899-9aa9-154c46eff32e",
+                                       "turnId":  "fixture-turn-6f2ef778-2374-44ec-85bc-bbfdf78ecd92-2",
+                                       "tokenUsage":  {
+                                                          "last":  {
+                                                                       "inputTokens":  10,
+                                                                       "outputTokens":  12,
+                                                                       "totalTokens":  22,
+                                                                       "cachedInputTokens":  0,
+                                                                       "reasoningOutputTokens":  0
+                                                                   },
+                                                          "total":  {
+                                                                        "inputTokens":  20,
+                                                                        "outputTokens":  24,
+                                                                        "totalTokens":  44,
+                                                                        "cachedInputTokens":  0,
+                                                                        "reasoningOutputTokens":  0
+                                                                    },
+                                                          "modelContextWindow":  10000
+                                                      }
+                                   },
+                       "usage":  {
+                                     "last":  {
+                                                  "input_tokens":  10,
+                                                  "output_tokens":  12,
+                                                  "total_tokens":  22
+                                              },
+                                     "total":  {
+                                                   "input_tokens":  20,
+                                                   "output_tokens":  24,
+                                                   "total_tokens":  44
+                                               },
+                                     "model_context_window":  10000
+                                 },
+                       "created_at":  "2026-10-04T21:55:54.8304257Z"
+                   }
+               ],
+    "requests":  [
+
+                 ],
+    "cursor":  26
+}

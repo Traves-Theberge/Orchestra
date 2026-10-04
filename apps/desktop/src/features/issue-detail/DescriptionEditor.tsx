@@ -9,7 +9,6 @@ export function DescriptionEditor({ value, onChange, onBlur, theme, projectId }:
   theme?: 'light' | 'dark'
   projectId?: string
 }) {
-  // eslint-disable-next-line react-doctor/rerender-state-only-in-handlers
   const [editing, setEditing] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 

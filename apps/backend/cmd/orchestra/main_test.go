@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 )
@@ -94,5 +95,30 @@ func TestRunCLICheckPRBodySuccess(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "orchestra check-pr-body: ok") {
 		t.Fatalf("expected check-pr-body success output, got %q", stdout.String())
+	}
+}
+
+func TestRunCLIObservationDispatchPreservesArguments(t *testing.T) {
+	for _, command := range []string{"status", "project", "task"} {
+		var stdout, stderr bytes.Buffer
+		called := false
+		code := runCLI([]string{"orchestra", command, "--json"}, &stdout, &stderr, cliRunner{observe: func(args []string, out, errOut io.Writer) int {
+			called = true
+			if len(args) != 2 || args[0] != command || args[1] != "--json" || out != &stdout || errOut != &stderr {
+				t.Fatalf("observation arguments/streams changed: %v", args)
+			}
+			return 7
+		}})
+		if !called || code != 7 {
+			t.Fatalf("observation result lost: %s %d", command, code)
+		}
+	}
+}
+
+func TestRunCLIHelpDocumentsTaskIdentities(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := runCLI([]string{"orchestra", "--help"}, &stdout, &stderr, cliRunner{})
+	if code != 0 || stderr.Len() != 0 || !strings.Contains(stdout.String(), "--identifier") || !strings.Contains(stdout.String(), "ORCHESTRA_API_TOKEN") {
+		t.Fatalf("incomplete help: %d %s", code, stdout.String())
 	}
 }

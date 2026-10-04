@@ -1,0 +1,2 @@
+AUDIT_BROWSE_ROOT C:\Users\trave
+AUDIT_READY {"mounted":true,"state":true,"baseUrl":"http://127.0.0.1:4014","profile":"C:\\Users\\trave\\AppData\\Local\\Orchestra\\audit-dev","isolatedHome":"C:\\Users\\trave\\AppData\\Local\\Orchestra\\audit-dev\\home"}

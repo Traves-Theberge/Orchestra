@@ -66,6 +66,9 @@ func AppendToSessionLog(workspaceRoot string, issueIdentifier string, sessionID 
 	if _, err := f.WriteString(chunk); err != nil {
 		return "", fmt.Errorf("append to session log: %w", err)
 	}
+	if _, err := os.Stat(filepath.Join(logsDir, "latest.log")); os.IsNotExist(err) {
+		_ = ResetLatestLog(workspaceRoot, issueIdentifier, sessionID)
+	}
 
 	return filePath, nil
 }
@@ -78,7 +81,12 @@ func ResetLatestLog(workspaceRoot string, issueIdentifier string, sessionID stri
 	sessionLogName := Sanitize(sessionID) + ".log"
 
 	_ = os.Remove(latestPath)
-	return os.Symlink(sessionLogName, latestPath)
+	if err := os.Symlink(sessionLogName, latestPath); err == nil {
+		return nil
+	}
+	// Hard links require no symlink privilege on Windows and remain live as the
+	// session file is appended. Both names live on the same filesystem.
+	return os.Link(filepath.Join(logsDir, sessionLogName), latestPath)
 }
 
 // Sanitize replaces filesystem-unsafe characters in the given value with underscores,

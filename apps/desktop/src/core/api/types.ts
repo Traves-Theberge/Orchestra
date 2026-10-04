@@ -274,6 +274,13 @@ type Blocker = {
 }
 
 /** Full issue record as stored by the orchestrator. */
+export type IssueAttachment = {
+  kind: 'file' | 'link'
+  path?: string
+  url?: string
+  label?: string
+}
+
 export type Issue = {
   id: string
   identifier: string
@@ -289,6 +296,14 @@ export type Issue = {
   labels?: string[]
   blocked_by?: Blocker[]
   provider?: string
+  runtime_target?: string
+  requested_model?: string
+  requested_max_turns?: number | null
+  acceptance_criteria?: string[]
+  attachments?: IssueAttachment[]
+  agent_guidance?: Record<string, unknown>
+  source_template?: string
+  authoring_session_id?: string
   disabled_tools?: string[]
   created_at?: string
   updated_at?: string

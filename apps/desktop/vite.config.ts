@@ -3,9 +3,11 @@ import react from '@vitejs/plugin-react'
 import path from 'node:path'
 
 export default defineConfig({
+  base: './',
   plugins: [react()],
   // @ts-ignore
   test: {
+    include: ['src/**/*.test.{ts,tsx}'],
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test-setup.ts'],

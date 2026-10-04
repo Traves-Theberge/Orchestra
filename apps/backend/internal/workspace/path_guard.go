@@ -18,7 +18,7 @@ func WorkspacePath(root string, issueIdentifier string, provider string) (string
 		return "", errors.New("issue identifier is required")
 	}
 
-	absRoot, err := filepath.Abs(root)
+	absRoot, err := canonicalPath(root)
 	if err != nil {
 		return "", fmt.Errorf("resolve workspace root: %w", err)
 	}
@@ -40,12 +40,12 @@ func WorkspacePath(root string, issueIdentifier string, provider string) (string
 // ValidateWorkspacePath ensures the candidate path is a proper subdirectory of the root,
 // checking for directory traversal and symlink escapes.
 func ValidateWorkspacePath(root string, candidate string) error {
-	absRoot, err := filepath.Abs(root)
+	absRoot, err := canonicalPath(root)
 	if err != nil {
 		return fmt.Errorf("resolve workspace root: %w", err)
 	}
 
-	absCandidate, err := filepath.Abs(candidate)
+	absCandidate, err := canonicalPath(candidate)
 	if err != nil {
 		return fmt.Errorf("resolve workspace candidate: %w", err)
 	}
@@ -73,7 +73,7 @@ func ValidateWorkspacePath(root string, candidate string) error {
 // ValidateProjectPath ensures the candidate project path falls within one of the allowed
 // root directories, or within the user's home directory if no roots are configured.
 func ValidateProjectPath(candidate string, allowedRoots []string) error {
-	absCandidate, err := filepath.Abs(candidate)
+	absCandidate, err := canonicalPath(candidate)
 	if err != nil {
 		return fmt.Errorf("resolve project candidate: %w", err)
 	}
@@ -86,7 +86,7 @@ func ValidateProjectPath(candidate string, allowedRoots []string) error {
 		if strings.TrimSpace(root) == "" {
 			continue
 		}
-		absRoot, err := filepath.Abs(root)
+		absRoot, err := canonicalPath(root)
 		if err != nil {
 			continue
 		}
@@ -100,7 +100,7 @@ func ValidateProjectPath(candidate string, allowedRoots []string) error {
 	if len(allowedRoots) == 0 {
 		home, _ := os.UserHomeDir()
 		if home != "" {
-			absHome, _ := filepath.Abs(home)
+			absHome, _ := canonicalPath(home)
 			if isWithinRoot(absHome, absCandidate) || absHome == absCandidate {
 				return nil
 			}
@@ -116,7 +116,35 @@ func isWithinRoot(root string, path string) bool {
 		return false
 	}
 
-	return rel != "." && rel != "" && !strings.HasPrefix(rel, "..") && rel != ".."
+	return rel != "." && rel != "" && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
+}
+
+// Resolve existing ancestors on both sides of a comparison. On Windows this
+// also expands short names; unresolved children may still be provisioned later.
+func canonicalPath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err == nil {
+		return resolved, nil
+	}
+	if !os.IsNotExist(err) {
+		return "", err
+	}
+	if _, statErr := os.Lstat(abs); statErr == nil {
+		return "", err
+	}
+	parent := filepath.Dir(abs)
+	if parent == abs {
+		return "", err
+	}
+	resolvedParent, parentErr := canonicalPath(parent)
+	if parentErr != nil {
+		return "", parentErr
+	}
+	return filepath.Join(resolvedParent, filepath.Base(abs)), nil
 }
 
 func exists(path string) bool {

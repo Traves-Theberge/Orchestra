@@ -1,0 +1,19 @@
+{
+  "catalog_version": 1,
+  "description": "Scenario definitions; this file is not a passing evidence report.",
+  "fixture": "answer-go-local-git",
+  "implemented_boundaries": ["recording_runner", "filesystem", "git", "check_subprocess"],
+  "scenarios": [
+    {"id": "fixture.real_change_and_check", "mode": "simulated", "assertions": ["baseline check fails", "task edit makes check pass", "seed repository and remote unchanged", "exact request and tool response recorded"]},
+    {"id": "fixture.environment_isolation", "mode": "simulated", "assertions": ["HOME and USERPROFILE are owned", "credentials and Git overrides absent from child environment"]},
+    {"id": "fixture.cancelled_dispatch", "mode": "simulated", "assertions": ["delay observes context cancellation", "no later edit or completion", "error recorded"]},
+    {"id": "fixture.failed_dispatch", "mode": "simulated", "assertions": ["scripted failure preserved", "no completion fabricated"]},
+    {"id": "fixture.cleanup_ownership", "mode": "simulated", "assertions": ["manifest mismatch refuses cleanup", "public metadata cannot redirect deletion", "owned cleanup idempotent"]},
+    {"id": "fixture.worktree_write_scope", "mode": "simulated", "assertions": ["outside worktree rejected", "traversal rejected", "symlink escape rejected when OS privilege available"]},
+    {"id": "lifecycle.create_plan_execute", "implementation": "pending", "boundaries": ["desktop", "api", "database", "recording_runner", "git"]},
+    {"id": "lifecycle.review_revise_complete", "implementation": "pending", "boundaries": ["desktop", "api", "database", "github_fixture", "git"]},
+    {"id": "lifecycle.restart_recovery", "implementation": "pending", "boundaries": ["backend_process", "database", "provider_stream"]},
+    {"id": "canary.real_provider", "implementation": "pending", "mode": "real"},
+    {"id": "canary.hosted_review", "implementation": "pending", "mode": "real"}
+  ]
+}

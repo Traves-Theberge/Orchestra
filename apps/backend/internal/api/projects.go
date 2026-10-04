@@ -1873,6 +1873,22 @@ func (s *Server) PostPRMerge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var req struct {
+		Method          string `json:"method"`
+		ExpectedHeadSHA string `json:"expected_head_sha"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid_json", "invalid request body")
+		return
+	}
+	if !ghutil.ValidMergeHeadSHA(req.ExpectedHeadSHA) {
+		writeJSONError(w, http.StatusBadRequest, "invalid_expected_head_sha", "expected_head_sha must be the full 40-character hexadecimal SHA of the reviewed PR head; refresh and review the pull request before merging")
+		return
+	}
+	if req.Method == "" {
+		req.Method = "merge"
+	}
+
 	project, err := s.db.GetProjectByID(r.Context(), projectID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
@@ -1884,25 +1900,21 @@ func (s *Server) PostPRMerge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		Method string `json:"method"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "invalid_json", "invalid request body")
-		return
-	}
-
-	if req.Method == "" {
-		req.Method = "merge"
-	}
-
 	ghToken, err := s.resolveGitHubToken(r.Context(), project)
 	if err != nil {
 		writeJSONError(w, http.StatusUnauthorized, "token_expired", err.Error())
 		return
 	}
-	if err := ghutil.MergePR(r.Context(), project.GitHubOwner, project.GitHubRepo, ghToken, number, req.Method); err != nil {
+	if err := ghutil.MergePR(r.Context(), project.GitHubOwner, project.GitHubRepo, ghToken, number, req.Method, req.ExpectedHeadSHA); err != nil {
 		s.logger.Error().Err(err).Str("project_id", projectID).Int("number", number).Msg("failed to merge PR")
+		if errors.Is(err, ghutil.ErrMergeHeadChanged) {
+			writeJSONError(w, http.StatusConflict, "pr_head_changed", "the pull request head changed after review; refresh the pull request and review the new commits before merging")
+			return
+		}
+		if errors.Is(err, ghutil.ErrMergeNotCompleted) {
+			writeJSONError(w, http.StatusConflict, "pr_not_merged", "GitHub did not merge this pull request; refresh its state and resolve outstanding merge requirements before retrying")
+			return
+		}
 		writeJSONError(w, http.StatusBadGateway, "github_merge_failed", fmt.Sprintf("failed to merge PR: %v", err))
 		return
 	}

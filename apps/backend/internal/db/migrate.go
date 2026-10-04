@@ -99,6 +99,11 @@ func runMigrations(db *sql.DB) error {
 		{"issues", "agent_guidance", "TEXT NOT NULL DEFAULT '{}'"},
 		{"issues", "source_template", "TEXT"},
 		{"issues", "authoring_session_id", "TEXT"},
+		{"issues", "requested_model", "TEXT"},
+		{"runs", "requested_model", "TEXT"},
+		{"runs", "requested_max_turns", "INTEGER CHECK(requested_max_turns IS NULL OR (typeof(requested_max_turns) = 'integer' AND requested_max_turns BETWEEN 1 AND 100))"},
+		{"runs", "disabled_tools", "TEXT DEFAULT '[]'"},
+		{"issues", "requested_max_turns", "INTEGER CHECK(requested_max_turns IS NULL OR (typeof(requested_max_turns) = 'integer' AND requested_max_turns BETWEEN 1 AND 100))"},
 	}
 
 	for _, m := range migrations {

@@ -38,25 +38,27 @@ type CodexTotals struct {
 // RunningEntry represents an issue currently being executed by an agent, including
 // its session metadata, token usage, and the most recent event received.
 type RunningEntry struct {
-	IssueID         string   `json:"issue_id"`
-	IssueIdentifier string   `json:"issue_identifier"`
-	Title           string   `json:"title,omitempty"`
-	Description     string   `json:"description,omitempty"`
-	State           string   `json:"state"`
-	AssigneeID      string   `json:"assignee_id,omitempty"`
-	ProjectID       string   `json:"project_id,omitempty"`
-	SessionID       string   `json:"session_id"`
-	Provider        string   `json:"provider"`
-	RuntimeTarget   string   `json:"runtime_target,omitempty"`
-	SessionLogPath  string   `json:"session_log_path,omitempty"`
-	WorktreePath    string   `json:"worktree_path,omitempty"`
-	DisabledTools   []string `json:"disabled_tools,omitempty"`
-	TurnCount       int64    `json:"turn_count"`
-	LastEvent       string   `json:"last_event"`
-	LastMessage     string   `json:"last_message"`
-	StartedAt       string   `json:"started_at"`
-	LastEventAt     string   `json:"last_event_at"`
-	Tokens          struct {
+	IssueID           string   `json:"issue_id"`
+	IssueIdentifier   string   `json:"issue_identifier"`
+	Title             string   `json:"title,omitempty"`
+	Description       string   `json:"description,omitempty"`
+	State             string   `json:"state"`
+	AssigneeID        string   `json:"assignee_id,omitempty"`
+	ProjectID         string   `json:"project_id,omitempty"`
+	SessionID         string   `json:"session_id"`
+	Provider          string   `json:"provider"`
+	RuntimeTarget     string   `json:"runtime_target,omitempty"`
+	RequestedModel    string   `json:"requested_model,omitempty"`
+	RequestedMaxTurns *int     `json:"requested_max_turns"`
+	SessionLogPath    string   `json:"session_log_path,omitempty"`
+	WorktreePath      string   `json:"worktree_path,omitempty"`
+	DisabledTools     []string `json:"disabled_tools,omitempty"`
+	TurnCount         int64    `json:"turn_count"`
+	LastEvent         string   `json:"last_event"`
+	LastMessage       string   `json:"last_message"`
+	StartedAt         string   `json:"started_at"`
+	LastEventAt       string   `json:"last_event_at"`
+	Tokens            struct {
 		InputTokens  int64 `json:"input_tokens"`
 		OutputTokens int64 `json:"output_tokens"`
 		TotalTokens  int64 `json:"total_tokens"`
@@ -65,16 +67,18 @@ type RunningEntry struct {
 
 // RetryEntry represents a failed run that is scheduled for a future retry attempt.
 type RetryEntry struct {
-	IssueID         string   `json:"issue_id"`
-	IssueIdentifier string   `json:"issue_identifier"`
-	State           string   `json:"state,omitempty"`
-	AssigneeID      string   `json:"assignee_id,omitempty"`
-	Provider        string   `json:"provider,omitempty"`
-	RuntimeTarget   string   `json:"runtime_target,omitempty"`
-	DisabledTools   []string `json:"disabled_tools,omitempty"`
-	Attempt         int64    `json:"attempt"`
-	DueAt           string   `json:"due_at"`
-	Error           string   `json:"error"`
+	IssueID           string   `json:"issue_id"`
+	IssueIdentifier   string   `json:"issue_identifier"`
+	State             string   `json:"state,omitempty"`
+	AssigneeID        string   `json:"assignee_id,omitempty"`
+	Provider          string   `json:"provider,omitempty"`
+	RuntimeTarget     string   `json:"runtime_target,omitempty"`
+	RequestedModel    string   `json:"requested_model,omitempty"`
+	RequestedMaxTurns *int     `json:"requested_max_turns"`
+	DisabledTools     []string `json:"disabled_tools,omitempty"`
+	Attempt           int64    `json:"attempt"`
+	DueAt             string   `json:"due_at"`
+	Error             string   `json:"error"`
 }
 
 // Snapshot is a point-in-time view of the orchestrator state, including all
@@ -213,8 +217,8 @@ func (s *Service) Snapshot() Snapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	running := append([]RunningEntry(nil), s.running...)
-	retrying := append([]RetryEntry(nil), s.retrying...)
+	running := cloneRunningEntries(s.running)
+	retrying := cloneRetryEntries(s.retrying)
 	if running == nil {
 		running = []RunningEntry{}
 	}
@@ -289,7 +293,7 @@ func (s *Service) LookupIssue(issueIdentifier string) (IssueRuntime, bool) {
 	var runtime IssueRuntime
 	for _, entry := range s.running {
 		if entry.IssueIdentifier == identifier {
-			entryCopy := entry
+			entryCopy := cloneRunningEntry(entry)
 			runtime = IssueRuntime{
 				IssueIdentifier: identifier,
 				IssueID:         entry.IssueID,
@@ -301,7 +305,7 @@ func (s *Service) LookupIssue(issueIdentifier string) (IssueRuntime, bool) {
 
 	for _, entry := range s.retrying {
 		if entry.IssueIdentifier == identifier {
-			entryCopy := entry
+			entryCopy := cloneRetryEntry(entry)
 			if runtime.IssueIdentifier == "" {
 				runtime.IssueIdentifier = identifier
 			}
@@ -324,14 +328,14 @@ func (s *Service) LookupIssue(issueIdentifier string) (IssueRuntime, bool) {
 func (s *Service) SetRunningForTest(entries []RunningEntry) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.running = append([]RunningEntry(nil), entries...)
+	s.running = cloneRunningEntries(entries)
 }
 
 // SetRetryingForTest replaces the retrying entries list. Intended for use in tests only.
 func (s *Service) SetRetryingForTest(entries []RetryEntry) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.retrying = append([]RetryEntry(nil), entries...)
+	s.retrying = cloneRetryEntries(entries)
 }
 
 // SetTrackerClient configures the issue tracker client used for fetching and updating issues.
@@ -868,7 +872,14 @@ func (s *Service) CreateIssue(ctx context.Context, title, description, state str
 		return nil, err
 	}
 	if issue != nil && runtimeTarget != "" {
-		issue.RuntimeTarget = runtimeTarget
+		updated, updateErr := client.UpdateIssue(ctx, issue.Identifier, map[string]any{"runtime_target": runtimeTarget})
+		if updateErr != nil {
+			return nil, fmt.Errorf("persist runtime target for created issue %s: %w", issue.Identifier, updateErr)
+		}
+		if updated == nil || updated.RuntimeTarget != runtimeTarget {
+			return nil, fmt.Errorf("tracker did not persist runtime target for created issue %s", issue.Identifier)
+		}
+		issue = updated
 	}
 	return issue, nil
 }
@@ -1089,20 +1100,22 @@ func (s *Service) enqueueCandidates(candidates []tracker.Issue) {
 		}
 
 		entry := RunningEntry{
-			IssueID:         issue.ID,
-			IssueIdentifier: issue.Identifier,
-			Title:           issue.Title,
-			Description:     desc,
-			State:           issue.State,
-			AssigneeID:      issue.AssigneeID,
-			ProjectID:       issue.ProjectID,
-			Provider:        targetProvider,
-			RuntimeTarget:   issue.RuntimeTarget,
-			DisabledTools:   append([]string(nil), issue.DisabledTools...),
-			StartedAt:       now,
-			LastEventAt:     now,
-			LastEvent:       "dispatch_queued",
-			LastMessage:     "Issue queued for agent execution",
+			IssueID:           issue.ID,
+			IssueIdentifier:   issue.Identifier,
+			Title:             issue.Title,
+			Description:       desc,
+			State:             issue.State,
+			AssigneeID:        issue.AssigneeID,
+			ProjectID:         issue.ProjectID,
+			Provider:          targetProvider,
+			RuntimeTarget:     issue.RuntimeTarget,
+			RequestedModel:    issue.RequestedModel,
+			RequestedMaxTurns: cloneInt(issue.RequestedMaxTurns),
+			DisabledTools:     append([]string(nil), issue.DisabledTools...),
+			StartedAt:         now,
+			LastEventAt:       now,
+			LastEvent:         "dispatch_queued",
+			LastMessage:       "Issue queued for agent execution",
 		}
 		s.running = append(s.running, entry)
 	}
@@ -1167,19 +1180,21 @@ func (s *Service) releaseDueRetries() {
 		}
 
 		s.running = append(s.running, RunningEntry{
-			IssueID:         retry.IssueID,
-			IssueIdentifier: retry.IssueIdentifier,
-			Title:           "",
-			State:           state,
-			AssigneeID:      retry.AssigneeID,
-			Provider:        retry.Provider,
-			RuntimeTarget:   retry.RuntimeTarget,
-			DisabledTools:   append([]string(nil), retry.DisabledTools...),
-			StartedAt:       now.Format(time.RFC3339),
-			LastEventAt:     now.Format(time.RFC3339),
-			LastEvent:       "retry_due",
-			LastMessage:     retry.Error,
-			TurnCount:       retry.Attempt,
+			IssueID:           retry.IssueID,
+			IssueIdentifier:   retry.IssueIdentifier,
+			Title:             "",
+			State:             state,
+			AssigneeID:        retry.AssigneeID,
+			Provider:          retry.Provider,
+			RuntimeTarget:     retry.RuntimeTarget,
+			RequestedModel:    retry.RequestedModel,
+			RequestedMaxTurns: cloneInt(retry.RequestedMaxTurns),
+			DisabledTools:     append([]string(nil), retry.DisabledTools...),
+			StartedAt:         now.Format(time.RFC3339),
+			LastEventAt:       now.Format(time.RFC3339),
+			LastEvent:         "retry_due",
+			LastMessage:       retry.Error,
+			TurnCount:         retry.Attempt,
 		})
 	}
 
@@ -1262,6 +1277,8 @@ func (s *Service) RecordRunFailure(issueID string, provider string, issueIdentif
 	lastProvider := ""
 	lastRuntimeTarget := ""
 	var disabledTools []string
+	var requestedModel string
+	var requestedMaxTurns *int
 	found := false
 	for _, entry := range s.running {
 		if entry.IssueID != issueID {
@@ -1272,6 +1289,8 @@ func (s *Service) RecordRunFailure(issueID string, provider string, issueIdentif
 		issueAssigneeID = entry.AssigneeID
 		lastProvider = entry.Provider
 		lastRuntimeTarget = entry.RuntimeTarget
+		requestedModel = entry.RequestedModel
+		requestedMaxTurns = cloneInt(entry.RequestedMaxTurns)
 		disabledTools = append([]string(nil), entry.DisabledTools...)
 		s.accumulateEntryTotalsLocked(entry)
 		found = true
@@ -1314,16 +1333,18 @@ func (s *Service) RecordRunFailure(issueID string, provider string, issueIdentif
 	}
 
 	s.retrying = append(s.retrying, RetryEntry{
-		IssueID:         issueID,
-		IssueIdentifier: issueIdentifier,
-		State:           issueState,
-		AssigneeID:      issueAssigneeID,
-		Provider:        nextProvider,
-		RuntimeTarget:   lastRuntimeTarget,
-		DisabledTools:   disabledTools,
-		Attempt:         attempt,
-		DueAt:           dueAt.UTC().Format(time.RFC3339),
-		Error:           message,
+		IssueID:           issueID,
+		IssueIdentifier:   issueIdentifier,
+		State:             issueState,
+		AssigneeID:        issueAssigneeID,
+		Provider:          nextProvider,
+		RuntimeTarget:     lastRuntimeTarget,
+		RequestedModel:    requestedModel,
+		RequestedMaxTurns: requestedMaxTurns,
+		DisabledTools:     disabledTools,
+		Attempt:           attempt,
+		DueAt:             dueAt.UTC().Format(time.RFC3339),
+		Error:             message,
 	})
 	delete(s.claimed, issueID)
 }
@@ -1363,7 +1384,7 @@ func (s *Service) ClaimNextRunnable() (RunningEntry, bool) {
 		entry.LastEventAt = now
 		entry.LastMessage = "Issue claimed for execution"
 		s.running[idx] = entry
-		return entry, true
+		return cloneRunningEntry(entry), true
 	}
 
 	return RunningEntry{}, false
@@ -1694,12 +1715,18 @@ func (s *Service) reconcileStalledRunningIssues() {
 
 		dueAt := computeRetryDue(entry.IssueID, attempt, s.retryBaseDelay, s.retryMaxDelay)
 		s.retrying = append(s.retrying, RetryEntry{
-			IssueID:         entry.IssueID,
-			IssueIdentifier: entry.IssueIdentifier,
-			State:           entry.State,
-			Attempt:         attempt,
-			DueAt:           dueAt.UTC().Format(time.RFC3339),
-			Error:           "stalled run exceeded timeout",
+			IssueID:           entry.IssueID,
+			IssueIdentifier:   entry.IssueIdentifier,
+			State:             entry.State,
+			Attempt:           attempt,
+			DueAt:             dueAt.UTC().Format(time.RFC3339),
+			Error:             "stalled run exceeded timeout",
+			AssigneeID:        entry.AssigneeID,
+			Provider:          entry.Provider,
+			RuntimeTarget:     entry.RuntimeTarget,
+			DisabledTools:     append([]string(nil), entry.DisabledTools...),
+			RequestedModel:    entry.RequestedModel,
+			RequestedMaxTurns: cloneInt(entry.RequestedMaxTurns),
 		})
 		delete(s.claimed, entry.IssueID)
 	}
@@ -1880,7 +1907,7 @@ func (s *Service) PersistStateToDB(ctx context.Context) error {
 	}
 
 	s.mu.RLock()
-	running := append([]RunningEntry(nil), s.running...)
+	running := cloneRunningEntries(s.running)
 	s.mu.RUnlock()
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -1894,15 +1921,19 @@ func (s *Service) PersistStateToDB(ctx context.Context) error {
 		return err
 	}
 
-	stmt, err := tx.PrepareContext(ctx, `INSERT INTO runs (id, issue_id, issue_identifier, provider, session_id, state, last_event, last_message, turn_count, input_tokens, output_tokens, total_tokens) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	stmt, err := tx.PrepareContext(ctx, `INSERT INTO runs (id, issue_id, issue_identifier, provider, session_id, state, last_event, last_message, turn_count, input_tokens, output_tokens, total_tokens, runtime_target, disabled_tools, requested_model, requested_max_turns) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 
 	for _, entry := range running {
+		disabledToolsJSON, encodeErr := json.Marshal(entry.DisabledTools)
+		if encodeErr != nil {
+			return encodeErr
+		}
 		runID := fmt.Sprintf("run_%s_%s", entry.IssueID, entry.Provider)
-		_, err = stmt.ExecContext(ctx, runID, entry.IssueID, entry.IssueIdentifier, entry.Provider, entry.SessionID, entry.State, entry.LastEvent, entry.LastMessage, entry.TurnCount, entry.Tokens.InputTokens, entry.Tokens.OutputTokens, entry.Tokens.TotalTokens)
+		_, err = stmt.ExecContext(ctx, runID, entry.IssueID, entry.IssueIdentifier, entry.Provider, entry.SessionID, entry.State, entry.LastEvent, entry.LastMessage, entry.TurnCount, entry.Tokens.InputTokens, entry.Tokens.OutputTokens, entry.Tokens.TotalTokens, entry.RuntimeTarget, string(disabledToolsJSON), entry.RequestedModel, entry.RequestedMaxTurns)
 		if err != nil {
 			return err
 		}
@@ -1918,7 +1949,7 @@ func (s *Service) RestoreStateFromDB(ctx context.Context) error {
 		return nil
 	}
 
-	rows, err := s.db.QueryContext(ctx, `SELECT issue_id, issue_identifier, provider, session_id, state, last_event, last_message, turn_count, input_tokens, output_tokens, total_tokens FROM runs`)
+	rows, err := s.db.QueryContext(ctx, `SELECT issue_id, issue_identifier, provider, session_id, state, last_event, last_message, turn_count, input_tokens, output_tokens, total_tokens, runtime_target, disabled_tools, requested_model, requested_max_turns FROM runs`)
 	if err != nil {
 		return err
 	}
@@ -1929,9 +1960,32 @@ func (s *Service) RestoreStateFromDB(ctx context.Context) error {
 
 	for rows.Next() {
 		var entry RunningEntry
-		var identifier sql.NullString
-		if err := rows.Scan(&entry.IssueID, &identifier, &entry.Provider, &entry.SessionID, &entry.State, &entry.LastEvent, &entry.LastMessage, &entry.TurnCount, &entry.Tokens.InputTokens, &entry.Tokens.OutputTokens, &entry.Tokens.TotalTokens); err != nil {
+		var identifier, runtimeTarget, disabledToolsJSON, requestedModel sql.NullString
+		var requestedMaxTurns sql.NullInt64
+		if err := rows.Scan(&entry.IssueID, &identifier, &entry.Provider, &entry.SessionID, &entry.State, &entry.LastEvent, &entry.LastMessage, &entry.TurnCount, &entry.Tokens.InputTokens, &entry.Tokens.OutputTokens, &entry.Tokens.TotalTokens, &runtimeTarget, &disabledToolsJSON, &requestedModel, &requestedMaxTurns); err != nil {
 			return err
+		}
+		entry.RuntimeTarget = runtimeTarget.String
+		entry.RequestedModel = requestedModel.String
+		if requestedMaxTurns.Valid {
+			if requestedMaxTurns.Int64 < 1 || requestedMaxTurns.Int64 > 100 {
+				return fmt.Errorf("invalid restored requested_max_turns for %s", entry.IssueID)
+			}
+			value := int(requestedMaxTurns.Int64)
+			entry.RequestedMaxTurns = &value
+		}
+		if disabledToolsJSON.Valid && disabledToolsJSON.String != "" {
+			var tools []any
+			if err := json.Unmarshal([]byte(disabledToolsJSON.String), &tools); err != nil {
+				return fmt.Errorf("restore disabled tools for %s: %w", entry.IssueID, err)
+			}
+			for _, tool := range tools {
+				name, ok := tool.(string)
+				if !ok {
+					return fmt.Errorf("restore disabled tools for %s: entries must be strings", entry.IssueID)
+				}
+				entry.DisabledTools = append(entry.DisabledTools, name)
+			}
 		}
 		entry.StartedAt = now
 		entry.LastEventAt = now
@@ -2039,4 +2093,42 @@ func (s *Service) ClearIssuePlan(ctx context.Context, identifier string) {
 		}
 	}
 	s.running = newRunning
+}
+
+func cloneInt(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	copied := *value
+	return &copied
+}
+func cloneRunningEntry(entry RunningEntry) RunningEntry {
+	entry.RequestedMaxTurns = cloneInt(entry.RequestedMaxTurns)
+	entry.DisabledTools = append([]string(nil), entry.DisabledTools...)
+	return entry
+}
+func cloneRetryEntry(entry RetryEntry) RetryEntry {
+	entry.RequestedMaxTurns = cloneInt(entry.RequestedMaxTurns)
+	entry.DisabledTools = append([]string(nil), entry.DisabledTools...)
+	return entry
+}
+func cloneRunningEntries(entries []RunningEntry) []RunningEntry {
+	if entries == nil {
+		return nil
+	}
+	copied := make([]RunningEntry, len(entries))
+	for i, entry := range entries {
+		copied[i] = cloneRunningEntry(entry)
+	}
+	return copied
+}
+func cloneRetryEntries(entries []RetryEntry) []RetryEntry {
+	if entries == nil {
+		return nil
+	}
+	copied := make([]RetryEntry, len(entries))
+	for i, entry := range entries {
+		copied[i] = cloneRetryEntry(entry)
+	}
+	return copied
 }

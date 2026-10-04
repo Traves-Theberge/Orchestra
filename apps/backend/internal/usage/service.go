@@ -303,6 +303,7 @@ func (s *Service) Summary(p Provider, scope Scope, r Range) (Summary, error) {
 	byProject := map[string]int64{}
 	var totalCost float64
 	var costKnown bool
+	var costMissing bool
 	for _, d := range daily {
 		out.Turns += d.TurnCount
 		out.ZeroCacheReadTurns += d.ZeroCacheReadTurns
@@ -315,7 +316,7 @@ func (s *Service) Summary(p Provider, scope Scope, r Range) (Summary, error) {
 		if d.HasInferredPricing {
 			out.HasInferredPricing = true
 		}
-		modelTokens := d.InputTokens + d.OutputTokens + d.CacheReadTokens + d.CacheWriteTokens + d.ReasoningTokens
+		modelTokens := usageTotal(p, d.InputTokens, d.OutputTokens, d.CacheReadTokens, d.CacheWriteTokens, d.ReasoningTokens)
 		byModel[d.Model] += modelTokens
 		byProject[d.ProjectLabel] += modelTokens
 
@@ -323,14 +324,20 @@ func (s *Service) Summary(p Provider, scope Scope, r Range) (Summary, error) {
 		if cost != nil {
 			totalCost += *cost
 			costKnown = true
+		} else {
+			costMissing = true
 		}
 	}
-	out.TotalTokens = out.InputTokens + out.OutputTokens + out.CacheReadTokens + out.CacheWriteTokens + out.ReasoningTokens
+	out.TotalTokens = usageTotal(p, out.InputTokens, out.OutputTokens, out.CacheReadTokens, out.CacheWriteTokens, out.ReasoningTokens)
 	if out.InputTokens+out.CacheReadTokens > 0 {
 		v := float64(out.CacheReadTokens) / float64(out.InputTokens+out.CacheReadTokens)
 		out.CacheReuseRate = &v
 	}
-	if costKnown {
+	if p == ProviderCodex && out.InputTokens > 0 {
+		v := float64(out.CachedInputTokens) / float64(out.InputTokens)
+		out.CacheReuseRate = &v
+	}
+	if costKnown && !costMissing {
 		out.EstimatedCostUSD = &totalCost
 	}
 	out.TopModel = topKey(byModel)
@@ -380,7 +387,10 @@ func (s *Service) Breakdown(p Provider, scope Scope, r Range, kind BreakdownKind
 
 	type bucket struct {
 		BreakdownRow
-		sessionIDs map[string]struct{}
+		sessionIDs  map[string]struct{}
+		cost        float64
+		costKnown   bool
+		costMissing bool
 	}
 	keyer := func(d DailyAggregate) (string, string) {
 		if kind == BreakdownByModel {
@@ -394,7 +404,7 @@ func (s *Service) Breakdown(p Provider, scope Scope, r Range, kind BreakdownKind
 	}
 	sessionKeyer := func(sess Session) string {
 		if kind == BreakdownByModel {
-			return sess.PrimaryModel
+			return normalizeModel(p, sess.PrimaryModel)
 		}
 		return sess.ProjectKey
 	}
@@ -416,6 +426,12 @@ func (s *Service) Breakdown(p Provider, scope Scope, r Range, kind BreakdownKind
 		b.CacheReadTokens += d.CacheReadTokens
 		b.CacheWriteTokens += d.CacheWriteTokens
 		b.ReasoningTokens += d.ReasoningTokens
+		if cost, _ := estimateCost(p, d.Model, d.InputTokens, d.CachedInputTokens, d.OutputTokens, d.CacheReadTokens, d.CacheWriteTokens, d.ReasoningTokens); cost != nil {
+			b.cost += *cost
+			b.costKnown = true
+		} else {
+			b.costMissing = true
+		}
 		if d.HasInferredPricing {
 			b.HasInferredPricing = true
 		}
@@ -432,9 +448,9 @@ func (s *Service) Breakdown(p Provider, scope Scope, r Range, kind BreakdownKind
 	out := make([]BreakdownRow, 0, len(buckets))
 	for _, b := range buckets {
 		b.Sessions = len(b.sessionIDs)
-		b.TotalTokens = b.InputTokens + b.OutputTokens + b.CacheReadTokens + b.CacheWriteTokens + b.ReasoningTokens
-		if cost, _ := estimateCost(p, b.Key, b.InputTokens, b.CachedInputTokens, b.OutputTokens, b.CacheReadTokens, b.CacheWriteTokens, b.ReasoningTokens); cost != nil {
-			b.EstimatedCostUSD = cost
+		b.TotalTokens = usageTotal(p, b.InputTokens, b.OutputTokens, b.CacheReadTokens, b.CacheWriteTokens, b.ReasoningTokens)
+		if b.costKnown && !b.costMissing {
+			b.EstimatedCostUSD = &b.cost
 		}
 		out = append(out, b.BreakdownRow)
 	}
@@ -480,12 +496,19 @@ func (s *Service) Sessions(p Provider, scope Scope, r Range, limit int) ([]Sessi
 			ReasoningTokens:    sess.ReasoningTokens,
 			HasInferredPricing: sess.HasInferredPricing,
 		}
-		if cost, _ := estimateCost(p, sess.PrimaryModel, sess.InputTokens, sess.CachedInputTokens, sess.OutputTokens, sess.CacheReadTokens, sess.CacheWriteTokens, sess.ReasoningTokens); cost != nil {
+		if cost, _ := estimateCost(p, sess.PrimaryModel, sess.InputTokens, sess.CachedInputTokens, sess.OutputTokens, sess.CacheReadTokens, sess.CacheWriteTokens, sess.ReasoningTokens); cost != nil && !sess.HasMixedModels {
 			row.EstimatedCostUSD = cost
 		}
 		out = append(out, row)
 	}
 	return out, nil
+}
+
+func usageTotal(p Provider, input, output, cacheRead, cacheWrite, reasoning int64) int64 {
+	if p == ProviderCodex {
+		reasoning = 0
+	}
+	return input + output + cacheRead + cacheWrite + reasoning
 }
 
 // RateLimits returns live quota data for each provider.

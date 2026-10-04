@@ -41,13 +41,8 @@ export function useBackendProfiles(
 ): UseBackendProfilesResult {
   const handleBackendConfigSave = async (nextConfig: BackendConfig) => {
     const desktopBridge = window.orchestraDesktop
-    if (!desktopBridge || typeof desktopBridge.setBackendConfig !== 'function') {
-      opts.setErrorMessage('desktop bridge unavailable: cannot save backend config')
-      return
-    }
-
     try {
-      new URL(nextConfig.baseUrl)
+      if (!['http:', 'https:'].includes(new URL(nextConfig.baseUrl).protocol)) throw new Error('Unsupported URL protocol')
     } catch {
       opts.setErrorMessage('backend config save failed: base URL must be a valid absolute URL')
       return
@@ -56,9 +51,11 @@ export function useBackendProfiles(
     opts.setSavingConfig(true)
     opts.setErrorMessage('')
     try {
-      const saved = await desktopBridge.setBackendConfig(nextConfig)
+      const saved = desktopBridge && typeof desktopBridge.setBackendConfig === 'function'
+        ? await desktopBridge.setBackendConfig(nextConfig)
+        : (() => { sessionStorage.setItem('orchestra:browser-backend:v1', JSON.stringify(nextConfig)); return nextConfig })()
       opts.setConfig(saved)
-      if (typeof desktopBridge.getBackendProfiles === 'function') {
+      if (desktopBridge && typeof desktopBridge.getBackendProfiles === 'function') {
         const payload = await desktopBridge.getBackendProfiles()
         opts.setBackendProfiles(payload.profiles)
         opts.setActiveProfileId(payload.activeProfileId)

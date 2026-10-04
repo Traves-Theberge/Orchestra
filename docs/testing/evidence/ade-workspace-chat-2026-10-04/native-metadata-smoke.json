@@ -1,0 +1,34 @@
+﻿{
+    "backend":  "http://127.0.0.1:4014",
+    "project_id":  "39a7e6acda65060c5e089cad51657f8e",
+    "session_id":  "b69f0028-995e-44bf-ae7d-3c54a74e1271",
+    "status":  "idle",
+    "conversation_mode":  "transcript_replay",
+    "messages":  0,
+    "provider_executed":  false,
+    "providers":  [
+                      {
+                          "id":  "CODEX",
+                          "label":  "Codex",
+                          "enabled":  true,
+                          "conversation_mode":  "transcript_replay",
+                          "provider_resume":  false
+                      },
+                      {
+                          "id":  "CLAUDE",
+                          "label":  "Claude Code",
+                          "enabled":  true,
+                          "conversation_mode":  "transcript_replay",
+                          "provider_resume":  false
+                      },
+                      {
+                          "id":  "OPENCODE",
+                          "label":  "OpenCode",
+                          "enabled":  true,
+                          "conversation_mode":  "transcript_replay",
+                          "provider_resume":  false
+                      }
+                  ],
+    "created_project_registration":  true,
+    "restart_persistence_verified":  true
+}

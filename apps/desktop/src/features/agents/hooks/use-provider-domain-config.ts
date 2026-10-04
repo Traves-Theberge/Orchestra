@@ -20,6 +20,7 @@ import {
   deleteOpenCodeAgentFile, deleteOpenCodeCommandFile, deleteOpenCodeSkillFile,
 } from '@core/api/client'
 import type { Provider, Scope } from '../types'
+import { useConfigReadFence } from './use-config-read-fence'
 
 interface ProviderCommonState {
   projects: Project[]
@@ -31,6 +32,7 @@ interface ProviderCommonState {
   mcpTools: MCPTool[]
   loading: boolean
   error: string
+  readError: string
   saving: string | null
   saveFile: (path: string, content: string) => Promise<void>
   savePermissions: (perms: ProviderPermissions) => Promise<void>
@@ -106,23 +108,27 @@ function useProviderCommon(backendConfig: BackendConfig | null, provider: Provid
   const [hooks, setHooks] = useState<ProviderHook[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [readError, setReadError] = useState('')
   const [saving, setSaving] = useState<string | null>(null)
 
   const projId = scope === 'PROJECT' ? projectId : undefined
+  const readTarget = JSON.stringify([backendConfig?.baseUrl, backendConfig?.apiToken, scope, projId])
+  const beginRead = useConfigReadFence(readTarget)
+  const [readCompletedTarget, setReadCompletedTarget] = useState('')
 
   const loadCommon = useCallback(async () => {
     if (!backendConfig) return
-    const emptyPerms: ProviderPermissions = { approval_mode: 'default', allow: [], deny: [], ask: [] }
-    const safe = <T,>(p: Promise<T>, fallback: T): Promise<T> => p.catch(() => fallback)
+    const isCurrent = beginRead()
     const [projs, tools, orchestraServers, providerServers, perms, model, providerHooks] = await Promise.all([
-      safe(fetchProjects(backendConfig), [] as Project[]),
-      safe(fetchMCPTools(backendConfig), [] as MCPTool[]),
-      safe(fetchMCPServers(backendConfig), [] as MCPServer[]),
-      safe(fetchProviderMCPServers(backendConfig, provider, projId), [] as ProviderMCPServer[]),
-      safe(fetchProviderPermissions(backendConfig, provider, projId, scope.toLowerCase()), emptyPerms),
-      safe(fetchProviderModel(backendConfig, provider, projId, scope.toLowerCase()), { model: '', effort: '', temperature: null } as ProviderModelConfig),
-      safe(fetchProviderHooks(backendConfig, provider, scope.toLowerCase(), projId), [] as ProviderHook[]),
+      fetchProjects(backendConfig),
+      fetchMCPTools(backendConfig),
+      fetchMCPServers(backendConfig),
+      fetchProviderMCPServers(backendConfig, provider, projId),
+      fetchProviderPermissions(backendConfig, provider, projId, scope.toLowerCase()),
+      fetchProviderModel(backendConfig, provider, projId, scope.toLowerCase()),
+      fetchProviderHooks(backendConfig, provider, scope.toLowerCase(), projId),
     ])
+    if (!isCurrent()) return
     setProjects(projs)
     setMcpTools(tools)
     setOrchestraMcpServers(orchestraServers)
@@ -130,7 +136,7 @@ function useProviderCommon(backendConfig: BackendConfig | null, provider: Provid
     setPermissions(perms)
     setModelConfig(model)
     setHooks(providerHooks)
-  }, [backendConfig, provider, projId])
+  }, [backendConfig, provider, projId, scope, beginRead])
 
   const savePermissions = useCallback(async (perms: ProviderPermissions) => {
     if (!backendConfig) return
@@ -186,6 +192,10 @@ function useProviderCommon(backendConfig: BackendConfig | null, provider: Provid
 
   const addMCPServer = useCallback(async (name: string, command: string) => {
     if (!backendConfig) return
+    if (scope === 'PROJECT') {
+      setError('Project MCP editing is unavailable; switch to Global to edit account MCP settings.')
+      return
+    }
     setSaving('mcp')
     try {
       await addProviderMCPServer(backendConfig, provider, { name, command })
@@ -196,10 +206,14 @@ function useProviderCommon(backendConfig: BackendConfig | null, provider: Provid
     } finally {
       setSaving(null)
     }
-  }, [backendConfig, provider, reloadMcp])
+  }, [backendConfig, provider, reloadMcp, scope])
 
   const updateMCPServer = useCallback(async (name: string, server: Partial<ProviderMCPServer>) => {
     if (!backendConfig) return
+    if (scope === 'PROJECT') {
+      setError('Project MCP editing is unavailable; switch to Global to edit account MCP settings.')
+      return
+    }
     setSaving('mcp')
     try {
       await updateProviderMCPServer(backendConfig, provider, name, server)
@@ -210,10 +224,14 @@ function useProviderCommon(backendConfig: BackendConfig | null, provider: Provid
     } finally {
       setSaving(null)
     }
-  }, [backendConfig, provider, reloadMcp])
+  }, [backendConfig, provider, reloadMcp, scope])
 
   const toggleMCPServer = useCallback(async (name: string, enabled: boolean) => {
     if (!backendConfig) return
+    if (scope === 'PROJECT') {
+      setError('Project MCP editing is unavailable; switch to Global to edit account MCP settings.')
+      return
+    }
     setSaving('mcp')
     try {
       await toggleProviderMCPServer(backendConfig, provider, name, enabled)
@@ -224,10 +242,14 @@ function useProviderCommon(backendConfig: BackendConfig | null, provider: Provid
     } finally {
       setSaving(null)
     }
-  }, [backendConfig, provider, reloadMcp])
+  }, [backendConfig, provider, reloadMcp, scope])
 
   const deleteProviderServer = useCallback(async (name: string) => {
     if (!backendConfig) return
+    if (scope === 'PROJECT') {
+      setError('Project MCP editing is unavailable; switch to Global to edit account MCP settings.')
+      return
+    }
     setSaving('mcp')
     try {
       await deleteProviderMCPServer(backendConfig, provider, name)
@@ -238,7 +260,7 @@ function useProviderCommon(backendConfig: BackendConfig | null, provider: Provid
     } finally {
       setSaving(null)
     }
-  }, [backendConfig, provider, reloadMcp])
+  }, [backendConfig, provider, reloadMcp, scope])
 
   const deleteOrchestraMCPServer = useCallback(async (name: string) => {
     if (!backendConfig) return
@@ -265,9 +287,12 @@ function useProviderCommon(backendConfig: BackendConfig | null, provider: Provid
     permissions,
     modelConfig,
     hooks,
-    loading,
+    loading: loading || readCompletedTarget !== readTarget,
     setLoading,
+    setReadCompletedTarget,
     error,
+    readError,
+    setReadError,
     setError,
     saving,
     setSaving,
@@ -289,7 +314,10 @@ function useProviderCommon(backendConfig: BackendConfig | null, provider: Provid
     modelConfig,
     hooks,
     loading,
+    readCompletedTarget,
+    readTarget,
     error,
+    readError,
     saving,
     setSaving,
     loadCommon,
@@ -312,10 +340,13 @@ export function useCodexConfig(backendConfig: BackendConfig | null, scope: Scope
   const [skills, setSkills] = useState<ProviderFileEntry[]>([])
   const [rules, setRules] = useState<ProviderFileEntry[]>([])
   const projId = scope === 'PROJECT' ? projectId : undefined
-  const { loadCommon, setLoading, setError, setSaving } = common
+  const readTarget = JSON.stringify([backendConfig?.baseUrl, backendConfig?.apiToken, scope, projId])
+  const beginRead = useConfigReadFence(readTarget)
+  const { loadCommon, setLoading, setError, setReadError, setSaving, setReadCompletedTarget } = common
 
   const reload = useCallback(async () => {
     if (!backendConfig) return
+    const isCurrent = beginRead()
     setLoading(true)
     try {
       const [bundle] = await Promise.all([
@@ -328,18 +359,24 @@ export function useCodexConfig(backendConfig: BackendConfig | null, scope: Scope
         ]),
         loadCommon(),
       ])
+      if (!isCurrent()) return
       setConfig(bundle[0].items)
       setInstructions(bundle[1].items)
       setSubagents(bundle[2].items)
       setSkills(bundle[3].items)
       setRules(bundle[4].items)
+      setReadError('')
       setError('')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load Codex config')
+      if (!isCurrent()) return
+      setReadError(err instanceof Error ? err.message : 'Failed to load Codex config')
     } finally {
-      setLoading(false)
+      if (isCurrent()) {
+        setReadCompletedTarget(readTarget)
+        setLoading(false)
+      }
     }
-  }, [backendConfig, scope, projId, loadCommon, setError, setLoading])
+  }, [backendConfig, scope, projId, loadCommon, setError, setReadError, setLoading, beginRead, readTarget, setReadCompletedTarget])
 
   useEffect(() => { void reload() }, [reload])
 
@@ -523,6 +560,7 @@ export function useCodexConfig(backendConfig: BackendConfig | null, scope: Scope
     mcpTools: common.mcpTools,
     loading: common.loading,
     error: common.error,
+    readError: common.readError,
     saving: common.saving,
     saveFile: saveConfigFile,
     saveConfigFile,
@@ -556,10 +594,13 @@ export function useGeminiConfig(backendConfig: BackendConfig | null, scope: Scop
   const [context, setContext] = useState<ProviderFileEntry[]>([])
   const [commands, setCommands] = useState<ProviderFileEntry[]>([])
   const projId = scope === 'PROJECT' ? projectId : undefined
-  const { loadCommon, setLoading, setError, setSaving } = common
+  const readTarget = JSON.stringify([backendConfig?.baseUrl, backendConfig?.apiToken, scope, projId])
+  const beginRead = useConfigReadFence(readTarget)
+  const { loadCommon, setLoading, setError, setReadError, setSaving, setReadCompletedTarget } = common
 
   const reload = useCallback(async () => {
     if (!backendConfig) return
+    const isCurrent = beginRead()
     setLoading(true)
     try {
       const [bundle] = await Promise.all([
@@ -570,16 +611,22 @@ export function useGeminiConfig(backendConfig: BackendConfig | null, scope: Scop
         ]),
         loadCommon(),
       ])
+      if (!isCurrent()) return
       setSettings(bundle[0].items)
       setContext(bundle[1].items)
       setCommands(bundle[2].items)
+      setReadError('')
       setError('')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load Gemini config')
+      if (!isCurrent()) return
+      setReadError(err instanceof Error ? err.message : 'Failed to load Gemini config')
     } finally {
-      setLoading(false)
+      if (isCurrent()) {
+        setReadCompletedTarget(readTarget)
+        setLoading(false)
+      }
     }
-  }, [backendConfig, scope, projId, loadCommon, setError, setLoading])
+  }, [backendConfig, scope, projId, loadCommon, setError, setReadError, setLoading, beginRead, readTarget, setReadCompletedTarget])
 
   useEffect(() => { void reload() }, [reload])
 
@@ -692,6 +739,7 @@ export function useGeminiConfig(backendConfig: BackendConfig | null, scope: Scop
     mcpTools: common.mcpTools,
     loading: common.loading,
     error: common.error,
+    readError: common.readError,
     saving: common.saving,
     saveFile: saveSettingsFile,
     saveSettingsFile,
@@ -721,10 +769,13 @@ export function useOpenCodeConfig(backendConfig: BackendConfig | null, scope: Sc
   const [commands, setCommands] = useState<ProviderFileEntry[]>([])
   const [skills, setSkills] = useState<ProviderFileEntry[]>([])
   const projId = scope === 'PROJECT' ? projectId : undefined
-  const { loadCommon, setLoading, setError, setSaving } = common
+  const readTarget = JSON.stringify([backendConfig?.baseUrl, backendConfig?.apiToken, scope, projId])
+  const beginRead = useConfigReadFence(readTarget)
+  const { loadCommon, setLoading, setError, setReadError, setSaving, setReadCompletedTarget } = common
 
   const reload = useCallback(async () => {
     if (!backendConfig) return
+    const isCurrent = beginRead()
     setLoading(true)
     try {
       const [bundle] = await Promise.all([
@@ -736,17 +787,23 @@ export function useOpenCodeConfig(backendConfig: BackendConfig | null, scope: Sc
         ]),
         loadCommon(),
       ])
+      if (!isCurrent()) return
       setConfig(bundle[0].items)
       setAgents(bundle[1].items)
       setCommands(bundle[2].items)
       setSkills(bundle[3].items)
+      setReadError('')
       setError('')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load OpenCode config')
+      if (!isCurrent()) return
+      setReadError(err instanceof Error ? err.message : 'Failed to load OpenCode config')
     } finally {
-      setLoading(false)
+      if (isCurrent()) {
+        setReadCompletedTarget(readTarget)
+        setLoading(false)
+      }
     }
-  }, [backendConfig, scope, projId, loadCommon, setError, setLoading])
+  }, [backendConfig, scope, projId, loadCommon, setError, setReadError, setLoading, beginRead, readTarget, setReadCompletedTarget])
 
   useEffect(() => { void reload() }, [reload])
 
@@ -916,6 +973,7 @@ export function useOpenCodeConfig(backendConfig: BackendConfig | null, scope: Sc
     mcpTools: common.mcpTools,
     loading: common.loading,
     error: common.error,
+    readError: common.readError,
     saving: common.saving,
     saveFile: saveConfigResource,
     saveConfigResource,

@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/GeminiContextPanel.tsx
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 
 const Editor = lazy(() => import('@monaco-editor/react'))
 import { useAppStore } from '@core/store'
@@ -19,14 +19,18 @@ interface GeminiContextPanelProps {
   onCreate: () => Promise<void>
 }
 
-export function GeminiContextPanel({ items, scope, projectName, saving, onSave, onCreate }: GeminiContextPanelProps) {
+export function GeminiContextPanel(props: GeminiContextPanelProps) {
+  const item = props.items[0]
+  return <GeminiContextPanelEditor key={JSON.stringify([item?.path, item?.content])} {...props} />
+}
+
+function GeminiContextPanelEditor({ items, scope, projectName, saving, onSave, onCreate }: GeminiContextPanelProps) {
   const theme = useAppStore(s => s.theme)
   const editorSettings = useAppStore(s => s.editorSettings)
   const selected = items[0] ?? null
   const [content, setContent] = useState(selected?.content ?? '')
   const [error, setError] = useState('')
 
-  useEffect(() => { setContent(selected?.content ?? ''); setError('') }, [selected?.path, selected?.content])
 
   const dirty = selected ? content !== selected.content : false
   const lineCount = content.split('\n').length

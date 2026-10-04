@@ -8,7 +8,7 @@ vi.mock('@features/terminal/TerminalView', () => ({
 }))
 
 import App from './App'
-import { resetAppStore } from '@core/store'
+import { resetAppStore, useAppStore } from '@core/store'
 
 // Mock Electron bridge
 const defaultProfiles: BridgeProfilesPayload = {
@@ -246,6 +246,7 @@ function defaultSnapshot(runningCount = 0): SnapshotPayload {
 
 describe('App smoke render', () => {
   beforeEach(() => {
+    useAppStore.setState({ activeSection: 'ISSUES' })
     eventSourceInstances = []
     eventSourceConstructCount = 0
     vi.stubGlobal('EventSource', MockEventSource)
@@ -674,8 +675,8 @@ describe('App smoke render', () => {
       fireEvent.click(await screen.findByTestId('sidebar-nav-PROJECTS'))
 
       // Wait for the empty state or projects to load
-      await screen.findByText(/No projects yet/i)
-      fireEvent.click(screen.getByRole('button', { name: /Add Project/i }))
+      await screen.findAllByText(/No projects yet/i)
+      fireEvent.click(screen.getByRole('button', { name: /New Project/i }))
 
       // Click the browse button
       const browseButton = screen.getByRole('button', { name: /Browse filesystem/i })
@@ -715,14 +716,14 @@ describe('App smoke render', () => {
       fireEvent.click(await screen.findByTestId('sidebar-nav-PROJECTS'))
 
       await waitFor(() => {
-        expect(screen.getByText('Alpha Project')).toBeTruthy()
+        expect(screen.getAllByText('Alpha Project').length).toBeGreaterThan(0)
       })
 
-      fireEvent.click(screen.getByText('Alpha Project'))
+      fireEvent.click(screen.getByRole('button', { name: 'Alpha Project' }))
 
       await waitFor(() => {
         expect(screen.getAllByText('Alpha Project').length).toBeGreaterThan(0)
-        expect(screen.getByText(/\/home\/user\/alpha/)).toBeTruthy()
+        expect(screen.getAllByText(/\/home\/user\/alpha/).length).toBeGreaterThan(0)
       })
     })
 
@@ -752,17 +753,18 @@ describe('App smoke render', () => {
       fireEvent.click(await screen.findByTestId('sidebar-nav-PROJECTS'))
 
       await waitFor(() => {
-        expect(screen.getByText('Doomed Project')).toBeTruthy()
+        expect(screen.getAllByText('Doomed Project').length).toBeGreaterThan(0)
       })
 
       // The ProjectGrid card has a delete button that calls setProjectToDelete
-      const trashButton = screen.getByTestId('project-delete-btn')
+      fireEvent.click(screen.getByRole('button', { name: 'Doomed Project' }))
+      const trashButton = await screen.findByRole('button', { name: 'Remove project' })
       expect(trashButton).toBeTruthy()
       fireEvent.click(trashButton)
 
       // ProjectGrid delete confirmation dialog
       const dialog = await screen.findByRole('dialog')
-      fireEvent.click(within(dialog).getByRole('button', { name: /Remove Project/i }))
+      fireEvent.click(within(dialog).getByRole('button', { name: /^Remove$/i }))
 
       await waitFor(() => {
         expect(fetchMockRef.mock.calls.some(
@@ -793,10 +795,10 @@ describe('App smoke render', () => {
       fireEvent.click(await screen.findByTestId('sidebar-nav-PROJECTS'))
 
       await waitFor(() => {
-        expect(screen.getByText('Ghost Project')).toBeTruthy()
+        expect(screen.getAllByText('Ghost Project').length).toBeGreaterThan(0)
       })
 
-      fireEvent.click(screen.getByText('Ghost Project'))
+      fireEvent.click(screen.getByRole('button', { name: 'Ghost Project' }))
 
       await waitFor(() => {
         expect(screen.getByText(/Path not found/i)).toBeTruthy()
@@ -890,7 +892,7 @@ describe('App smoke render', () => {
 
       // Trigger dropdown
       const activeProfileLabel = await screen.findByText('Active Profile')
-      const dropdownTrigger = within(activeProfileLabel.closest('label') as HTMLElement).getAllByRole('button')[0]
+      const dropdownTrigger = within(activeProfileLabel.parentElement as HTMLElement).getAllByRole('button')[0]
       fireEvent.click(dropdownTrigger)
 
       // Select option
@@ -929,7 +931,7 @@ describe('App smoke render', () => {
       fireEvent.click(screen.getByTestId('sidebar-nav-SETTINGS'))
 
       const activeProfileLabel = await screen.findByText('Active Profile')
-      const dropdownTrigger = within(activeProfileLabel.closest('label') as HTMLElement).getAllByRole('button')[0]
+      const dropdownTrigger = within(activeProfileLabel.parentElement as HTMLElement).getAllByRole('button')[0]
       fireEvent.click(dropdownTrigger)
 
       await waitFor(async () => {
@@ -964,7 +966,7 @@ describe('App smoke render', () => {
 
       // switch profile first
       const activeProfileLabel = await screen.findByText('Active Profile')
-      const dropdownTrigger = within(activeProfileLabel.closest('label') as HTMLElement).getAllByRole('button')[0]
+      const dropdownTrigger = within(activeProfileLabel.parentElement as HTMLElement).getAllByRole('button')[0]
       fireEvent.click(dropdownTrigger)
 
       await waitFor(async () => {
@@ -1077,7 +1079,8 @@ describe('App smoke render', () => {
 
       render(<App />)
 
-      fireEvent.click(await screen.findByRole('button', { name: /refresh/i }))
+      await screen.findByTestId('sidebar-nav-ISSUES')
+      fireEvent.keyDown(document, { key: 'r', ctrlKey: true })
 
       await waitFor(() => {
         const calls = fetchMock.mock.calls.map(c => String(c[0]))
@@ -1098,7 +1101,8 @@ describe('App smoke render', () => {
 
       render(<App />)
 
-      fireEvent.click(await screen.findByRole('button', { name: /refresh/i }))
+      await screen.findByTestId('sidebar-nav-ISSUES')
+      fireEvent.keyDown(document, { key: 'r', ctrlKey: true })
 
       await waitFor(() => {
         expect(screen.getByText(/refresh failed/i)).toBeTruthy()
@@ -1151,9 +1155,10 @@ describe('App smoke render', () => {
       for (const section of sections) {
         fireEvent.click(screen.getByTestId(section.testId))
         await waitFor(() => {
-          const btn = screen.getByTestId(section.testId)
-          expect(btn.getAttribute('aria-current')).toBe('page')
+          // Drilldown replaces the primary navigation with its section header.
+          expect(screen.getByRole('button', { name: section.label })).toBeTruthy()
         })
+        fireEvent.click(screen.getByRole('button', { name: section.label }))
       }
     })
 
@@ -1168,8 +1173,9 @@ describe('App smoke render', () => {
       fireEvent.keyDown(issuesButton, { key: 'ArrowDown' })
 
       await waitFor(() => {
-        const projectsButton = screen.getByTestId('sidebar-nav-PROJECTS')
-        expect(projectsButton.getAttribute('aria-current')).toBe('page')
+        const nav = screen.getByRole('navigation', { name: 'Primary navigation' })
+        const buttons = within(nav).getAllByTestId(/^sidebar-nav-/)
+        expect(document.activeElement).toBe(buttons[buttons.indexOf(issuesButton) + 1])
       })
     })
 
@@ -1183,15 +1189,13 @@ describe('App smoke render', () => {
 
       fireEvent.keyDown(dashboardButton, { key: 'End' })
       await waitFor(() => {
-        const docsButton = screen.getByTestId('sidebar-nav-DOCS')
-        expect(docsButton.getAttribute('aria-current')).toBe('page')
+        expect(document.activeElement).toBe(screen.getByTestId('sidebar-nav-SETTINGS'))
       })
 
-      const docsButton = screen.getByTestId('sidebar-nav-DOCS')
-      fireEvent.keyDown(docsButton, { key: 'Home' })
+      const lastButton = screen.getByTestId('sidebar-nav-SETTINGS')
+      fireEvent.keyDown(lastButton, { key: 'Home' })
       await waitFor(() => {
-        const firstButton = screen.getByTestId('sidebar-nav-ISSUES')
-        expect(firstButton.getAttribute('aria-current')).toBe('page')
+        expect(document.activeElement).toBe(screen.getByTestId('sidebar-nav-CONSOLE'))
       })
     })
 
@@ -1221,7 +1225,9 @@ describe('App smoke render', () => {
       window.localStorage.setItem('orchestra-theme', 'dark')
       render(<App />)
 
-      const toggleButton = await screen.findByRole('button', { name: /Switch to .* Mode/i })
+      await screen.findByTestId('sidebar-nav-ISSUES')
+      fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
+      const toggleButton = await screen.findByText('Toggle Theme')
       expect(document.documentElement.classList.contains('dark')).toBe(true)
 
       fireEvent.click(toggleButton)

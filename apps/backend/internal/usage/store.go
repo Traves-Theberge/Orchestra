@@ -52,14 +52,10 @@ func (s *store) load(p Provider) (*PersistedState, error) {
 	}
 	var parsed PersistedState
 	if err := json.Unmarshal(raw, &parsed); err != nil {
-		// Corrupt — start fresh rather than crash.
-		s.mem[p] = state
-		return state, nil
+		return nil, fmt.Errorf("usage store decode %s: %w; existing file retained", path, err)
 	}
 	if parsed.SchemaVersion != schemaVersion {
-		// Future migrations land here. For now: reset.
-		s.mem[p] = state
-		return state, nil
+		return nil, fmt.Errorf("usage store %s: unsupported schema version %d (supported %d); existing file retained", path, parsed.SchemaVersion, schemaVersion)
 	}
 	parsed.Provider = p
 	s.mem[p] = &parsed
@@ -72,7 +68,6 @@ func (s *store) save(p Provider, state *PersistedState) error {
 	defer s.mu.Unlock()
 	state.SchemaVersion = schemaVersion
 	state.Provider = p
-	s.mem[p] = state
 
 	raw, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
@@ -87,5 +82,6 @@ func (s *store) save(p Provider, state *PersistedState) error {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("usage store rename: %w", err)
 	}
+	s.mem[p] = state
 	return nil
 }

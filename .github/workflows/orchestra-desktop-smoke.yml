@@ -5,6 +5,8 @@ on:
     paths:
       - 'apps/desktop/**'
       - 'apps/backend/**'
+      - 'packages/protocol/**'
+      - 'packages/test-fixtures/**'
       - '.github/workflows/orchestra-desktop-smoke.yml'
   push:
     branches:
@@ -12,6 +14,8 @@ on:
     paths:
       - 'apps/desktop/**'
       - 'apps/backend/**'
+      - 'packages/protocol/**'
+      - 'packages/test-fixtures/**'
       - '.github/workflows/orchestra-desktop-smoke.yml'
   schedule:
     - cron: '0 7 * * *'
@@ -29,7 +33,10 @@ concurrency:
 
 jobs:
   desktop-smoke:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         working-directory: apps/desktop
@@ -42,6 +49,7 @@ jobs:
         uses: ./.github/actions/setup-node-cached
         with:
           cache-dependency-path: apps/desktop/package-lock.json
+          node-version: 22
 
       - name: Set up Go
         uses: ./.github/actions/setup-go-cached
@@ -52,13 +60,34 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run desktop release gate
-        run: npm run release:gate
+      - name: Typecheck
+        run: npm run typecheck
 
-      - name: Upload release-readiness report artifact
+      - name: Test renderer
+        run: npm run test
+
+      - name: Test evidence gate
+        run: node --test scripts/release-readiness.test.mjs
+
+      - name: Build renderer
+        run: npm run build
+
+      - name: API smoke with backend
+        run: npm run smoke:ops:go
+
+      - name: Build native Windows backend
+        if: runner.os == 'Windows'
+        run: go build -o orchestrad.exe ./cmd/orchestrad/
+        working-directory: apps/backend
+
+      - name: Native Windows Electron smoke
+        if: runner.os == 'Windows'
+        run: npm run smoke:electron
+
+      - name: Upload verification reports when produced
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
         with:
-          name: orchestra-desktop-release-readiness-report
+          name: orchestra-desktop-release-readiness-report-${{ matrix.os }}
           path: apps/desktop/reports
           if-no-files-found: ignore

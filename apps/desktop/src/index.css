@@ -141,6 +141,8 @@ body {
   letter-spacing: var(--app-letter-spacing-body);
 }
 
+/* Heading defaults belong to the base layer so component typography can win. */
+@layer base {
 h1, h2, h3, h4, h5, h6 {
   font-weight: var(--app-font-weight-heading);
   letter-spacing: var(--app-letter-spacing-heading);
@@ -153,6 +155,7 @@ h3 { font-size: calc(1rem * var(--app-heading-scale)); }
 h4 { font-size: 1rem; }
 h5 { font-size: calc(1rem / var(--app-heading-scale)); }
 h6 { font-size: calc(1rem / var(--app-heading-scale) / var(--app-heading-scale)); }
+}
 
 code,
 kbd,
