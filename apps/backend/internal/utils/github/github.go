@@ -6,9 +6,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"golang.org/x/oauth2"
 	githuboauth "golang.org/x/oauth2/github"
@@ -63,10 +65,12 @@ type PullRequest struct {
 	Head    struct {
 		Ref   string `json:"ref"`
 		Label string `json:"label"`
+		SHA   string `json:"sha"`
 	} `json:"head"`
 	Base struct {
 		Ref   string `json:"ref"`
 		Label string `json:"label"`
+		SHA   string `json:"sha"`
 	} `json:"base"`
 	User struct {
 		Login     string `json:"login"`
@@ -330,6 +334,24 @@ type ReviewRequest struct {
 // MergeRequest represents the payload for merging a pull request.
 type MergeRequest struct {
 	MergeMethod string `json:"merge_method"`
+	SHA         string `json:"sha"`
+}
+
+var ErrMergeHeadChanged = errors.New("pull request head changed")
+var ErrMergeNotCompleted = errors.New("pull request was not merged")
+
+// ValidMergeHeadSHA requires a complete SHA-1 object identity rather than a
+// branch name or abbreviated ref that could resolve to different reviewed code.
+func ValidMergeHeadSHA(sha string) bool {
+	if len(sha) != 40 {
+		return false
+	}
+	for _, digit := range sha {
+		if !(digit >= '0' && digit <= '9') && !(digit >= 'a' && digit <= 'f') && !(digit >= 'A' && digit <= 'F') {
+			return false
+		}
+	}
+	return true
 }
 
 // ListPRReviews fetches all reviews for a pull request.
@@ -395,10 +417,13 @@ func SubmitPRReview(ctx context.Context, owner, repo, token string, prNumber int
 }
 
 // MergePR merges a pull request using the specified merge method.
-func MergePR(ctx context.Context, owner, repo, token string, prNumber int, method string) error {
+func MergePR(ctx context.Context, owner, repo, token string, prNumber int, method, expectedHeadSHA string) error {
+	if !ValidMergeHeadSHA(expectedHeadSHA) {
+		return errors.New("expected reviewed head SHA must be 40 hexadecimal characters")
+	}
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/pulls/%d/merge", owner, repo, prNumber)
 
-	payload := MergeRequest{MergeMethod: method}
+	payload := MergeRequest{MergeMethod: method, SHA: strings.ToLower(expectedHeadSHA)}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -419,11 +444,25 @@ func MergePR(ctx context.Context, owner, repo, token string, prNumber int, metho
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("github api returned status %d: %s", resp.StatusCode, string(respBody))
+	if resp.StatusCode == http.StatusConflict {
+		return fmt.Errorf("%w: refresh the pull request and review its current head before retrying", ErrMergeHeadChanged)
 	}
-
+	if resp.StatusCode != http.StatusOK {
+		return apiError(resp)
+	}
+	var result struct {
+		Merged  *bool  `json:"merged"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("decode GitHub merge result: %w", err)
+	}
+	if result.Merged == nil {
+		return errors.New("GitHub merge result omitted merged status")
+	}
+	if !*result.Merged {
+		return fmt.Errorf("%w: %s", ErrMergeNotCompleted, result.Message)
+	}
 	return nil
 }
 

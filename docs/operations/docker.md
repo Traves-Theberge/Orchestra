@@ -1,111 +1,61 @@
-# 6.2 Container Build
+# Backend containers and the Linux verification lane
 
-> **Source files:** `ops/docker/Dockerfile.backend`
+`ops/docker/Dockerfile.backend` has separate `test`, `build`, and final `runtime` targets. Docker is useful for backend Linux verification and an optional isolated API service. Electron, Windows terminal behavior, and native Antigravity integration retain their own verification lanes.
 
-Orchestra's backend is containerized using a multi-stage Docker build that produces a minimal, distroless image published to GitHub Container Registry (GHCR).
+| Target | Included capabilities | Boundaries |
+| --- | --- | --- |
+| `test` | Go 1.26.8, Git, POSIX shell, GCC/build tools, downloaded module dependencies, protocol schemas and test fixtures | Container-owned source/home/temp/cache; CGO race tests available; no native provider credentials or desktop |
+| `build` | Static daemon and CLI compilation | `CGO_ENABLED=0`; target follows the image platform rather than forcing amd64 |
+| `runtime` (default) | Backend API, SQLite storage, Git worktree commands, POSIX shell, curl, CA certificates | Provider CLIs, Antigravity SDK/session setup, project build tools, SSH client and GitHub CLI are absent |
 
-## 6.2.1 Dockerfile Stages
+The module currently declares Go 1.25.3. The container's explicitly selected newer compiler is Go 1.26.8; native Windows verification used Go 1.26.7. Those are separate environments. The official Golang image source lists 1.26.8 with a bookworm variant: [Docker library source](https://github.com/docker-library/golang/blob/master/versions.json). Patch versions can be overridden with `--build-arg GO_VERSION=...`; a different compiler requires its own verification. Image tags and Debian package indexes are not immutable digest pins, so this is a repeatable test recipe, not a byte-for-byte hermetic build.
 
-```mermaid
-flowchart LR
-    subgraph Stage1["Stage 1: build (golang:1.25)"]
-        COPY_MOD[Copy go.mod + go.sum]
-        MOD_DL[go mod download]
-        COPY_SRC[Copy backend source]
-        BUILD_D[Build orchestrad]
-        BUILD_C[Build orchestra CLI]
-    end
+## Linux test commands
 
-    subgraph Stage2["Stage 2: runtime (distroless)"]
-        BIN_D["/usr/local/bin/orchestrad"]
-        BIN_C["/usr/local/bin/orchestra"]
-        ENV[Environment defaults]
-        HC[Healthcheck]
-        EP[ENTRYPOINT orchestrad]
-    end
+Run from the repository root:
 
-    COPY_MOD --> MOD_DL --> COPY_SRC --> BUILD_D --> BUILD_C
-    BUILD_D --> BIN_D
-    BUILD_C --> BIN_C
-    BIN_D --> EP
-    BIN_C --> HC
+```powershell
+docker build --target test -f ops/docker/Dockerfile.backend -t orchestra-backend-test:local .
+docker run --rm --init --network none orchestra-backend-test:local fixture
+docker run --rm --init --network none orchestra-backend-test:local race
+docker run --rm --init --network none orchestra-backend-test:local unit
 ```
 
-### Stage 1: Build
+`fixture` runs `internal/testsupport/...` and `cmd/ade-fixture` tests. `race` runs the complete backend suite with `go test -race ./...`, including agent protocols, Studio, tracker persistence and execution helpers. `unit` runs the complete backend package suite. `all`, the default command, runs unit then race, stopping on failure. All commands return nonzero when a test or required executable fails. The race lane covers every backend package rather than treating focused fixture tests as whole-backend evidence.
 
-| Step | Command | Purpose |
-|------|---------|---------|
-| Base image | `golang:1.25` | Go build toolchain |
-| Copy module files | `COPY apps/backend/go.mod apps/backend/go.sum` | Enable dependency caching |
-| Download deps | `go mod download` | Cache module downloads in a separate layer |
-| Copy source | `COPY apps/backend ./apps/backend` | Copy application source |
-| Build orchestrad | `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/orchestrad ./cmd/orchestrad` | Static daemon binary |
-| Build orchestra | `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/orchestra ./cmd/orchestra` | Static CLI binary |
+The Compose equivalent selects the test target and blocks runtime network access:
 
-### Stage 2: Runtime
-
-| Setting | Value | Purpose |
-|---------|-------|---------|
-| Base image | `gcr.io/distroless/static-debian12` | Minimal attack surface, no shell |
-| User | `nonroot:nonroot` | Non-root execution for security |
-| Working directory | `/app` | Application root |
-| Binaries | `/usr/local/bin/orchestrad`, `/usr/local/bin/orchestra` | Copied from build stage |
-
-## 6.2.2 Build Arguments and Configuration
-
-### Build-time Settings
-
-| Setting | Value | Notes |
-|---------|-------|-------|
-| `CGO_ENABLED` | `0` | Static binary, no C dependencies |
-| `GOOS` | `linux` | Target OS |
-| `GOARCH` | `amd64` | Target architecture |
-
-### Runtime Environment
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ORCHESTRA_SERVER_HOST` | `0.0.0.0` | Bind to all interfaces (required for container networking) |
-| `ORCHESTRA_SERVER_PORT` | `4010` | HTTP API port |
-
-### Health Check
-
-```dockerfile
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD ["/usr/local/bin/orchestra", "check"]
+```powershell
+docker compose -f ops/docker/compose.test.yml build
+docker compose -f ops/docker/compose.test.yml run --rm backend-tests fixture
+docker compose -f ops/docker/compose.test.yml run --rm backend-tests
 ```
 
-The container health check uses the `orchestra check` CLI command, polled every 30 seconds with a 5-second startup grace period.
+Module and image downloads occur during the build. Test execution uses cached modules with `GOPROXY=off`, `GOSUMDB=off`, `GOTOOLCHAIN=local`, `GOFLAGS=-mod=readonly`, and `CGO_ENABLED=1`. No host home, provider configuration, Git checkout, database, Docker socket, or source-directory bind mount is configured. Fixture tests create their own Git repositories and isolated homes inside the container. The Dockerfile-specific ignore file excludes host binaries, databases, logs and credential/config directories from source copies.
 
-## 6.2.3 Registry Publishing
+The image intentionally excludes the host checkout's `.git` metadata. Tests for the evidence producer use their own disposable source repositories. Running `ade-fixture --source-root /src` cannot certify the Orchestra checkout in this image: `/src` is not a Git checkout and no equivalent source-identity claim is supplied. Persisted current-checkout reporting remains the separately documented [ADE evidence lane](../testing/ade-evidence-handoff-2026-10-03.md).
 
-Container images are published to GHCR via the `orchestra-container-publish` workflow (see [Section 6.3](ci-cd.md)):
+## Optional API service
 
-```mermaid
-flowchart LR
-    TAG["Git tag v*"] --> LOGIN[GHCR Login]
-    LOGIN --> META[Extract metadata]
-    META --> BUILD[docker build-push]
-    BUILD --> GHCR["ghcr.io/owner/orchestra-backend"]
+The backend binds `0.0.0.0` inside its container, so it requires an explicitly supplied `ORCHESTRA_API_TOKEN`. The Compose file publishes only to host loopback and uses a Docker-managed named volume for `/data`. On PowerShell, generate a session token without saving it in source:
+
+```powershell
+$env:ORCHESTRA_API_TOKEN = [Guid]::NewGuid().ToString('N') + [Guid]::NewGuid().ToString('N')
+$env:ORCHESTRA_DOCKER_PORT = '49010'
+docker compose -f ops/docker/compose.backend.yml up --build -d --wait
+docker compose -f ops/docker/compose.backend.yml ps
+Invoke-RestMethod http://127.0.0.1:49010/healthz
+docker compose -f ops/docker/compose.backend.yml down
 ```
 
-**Image coordinates:** `ghcr.io/<owner>/orchestra-backend`
+Use the same token when configuring an API client. Do not print or commit a real token. `down` preserves the named data volume; remove a disposable volume only when its deletion is intended. The native desktop's configured backend endpoint remains a separate choice; starting this service does not automatically attach Electron to it.
 
-**Tag strategies:**
+Runtime paths are `HOME=/data/home`, `ORCHESTRA_WORKSPACE_ROOT=/data/workspaces`, and `ORCHESTRA_WORKTREE_ROOT=/data/worktrees`, owned by UID/GID 10001. The warehouse DB is under `/data/workspaces/.orchestra`. Neither the Compose service nor the test service mounts developer provider settings or the host Docker socket. An explicitly enabled provider still needs a compatible runtime image, its supported configuration and authentication, and separate verified launch/chat/cancellation behavior. Git remote access and project verification tools need explicit setup; Git/sh presence alone does not establish a working agent lifecycle.
 
-| Pattern | Example | Use case |
-|---------|---------|----------|
-| Semver full | `1.2.3` | Pin to exact release |
-| Semver minor | `1.2` | Track minor release line |
-| SHA | `sha-abc1234` | Pin to exact commit |
+The health check calls the public live `/healthz` endpoint using the configured port. It proves API responsiveness, not provider readiness or task E2E reliability. The previous `orchestra check` health check validated static configuration and required a workflow file; it did not inspect the running daemon. `orchestrad` starts the service with no positional command, while `orchestra` remains the auxiliary CLI.
 
-### Pulling a Published Image
+## Publishing compatibility and evidence
 
-```bash
-docker pull ghcr.io/<owner>/orchestra-backend:latest
-docker run -d -p 4010:4010 ghcr.io/<owner>/orchestra-backend:latest
-```
+The existing `orchestra-container-publish` workflow continues to use this Dockerfile and its default final runtime target, preserving `ghcr.io/<owner>/orchestra-backend` coordinates and the daemon entrypoint. It does not publish the test image. No registry publishing is part of local setup verification.
 
----
-
-*Cross-references: [CI/CD Pipelines](ci-cd.md) (Section 6.3), [Configuration Guide](../guides/configuration.md) (Section 5.2), [Deployment](deployment.md) (Section 6.1)*
+The [container handoff](../testing/ade-docker-handoff-2026-10-04.md) records reference inspection, actual Docker build/test/startup results, image identities, and any remaining failures. Container results are Linux evidence only; they do not replace Windows native/Electron/provider checks.

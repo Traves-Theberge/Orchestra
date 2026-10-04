@@ -38,7 +38,7 @@ export function UsagePage({ config }: { config: BackendConfig | null }) {
             Per-agent token, model, and session stats from local CLI logs.
           </p>
         </div>
-        <RateLimitsCard rateLimits={rateLimits} />
+        <RateLimitsCard rateLimits={rateLimits} error={usage.rateLimitError} />
         {USAGE_PROVIDERS.map((p) => (
           <ProviderPane
             key={p}
@@ -56,7 +56,7 @@ export function UsagePage({ config }: { config: BackendConfig | null }) {
   )
 }
 
-function RateLimitsCard({ rateLimits }: { rateLimits: ReturnType<typeof useUsage>['rateLimits'] }) {
+function RateLimitsCard({ rateLimits, error }: { rateLimits: ReturnType<typeof useUsage>['rateLimits']; error: string | null }) {
   const entries = USAGE_PROVIDERS.map((p) => ({ provider: p, limits: rateLimits?.[p] ?? null }))
   const anyHasData = entries.some(({ limits }) => limits?.session || limits?.weekly)
 
@@ -65,14 +65,15 @@ function RateLimitsCard({ rateLimits }: { rateLimits: ReturnType<typeof useUsage
       <div>
         <h3 className="text-sm font-semibold text-foreground">Rate limits</h3>
         <p className="mt-1 text-xs text-muted-foreground">
-          Live 5-hour session and weekly window utilization per agent.
+          Provider-reported account windows, where available. These are separate from local token-log totals.
         </p>
       </div>
       {!anyHasData && (
         <p className="text-xs text-muted-foreground">
-          No live rate-limit data available yet; backend probes are not wired in.
+          {error ? `Rate-limit observation failed: ${error}` : 'Rate-limit utilization is not observed yet.'}
         </p>
       )}
+      {anyHasData && error && <p role="status" className="text-xs text-muted-foreground">Showing cached rate-limit observations. {error}</p>}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {entries.map(({ provider, limits }) => (
           <RateLimitTile key={provider} provider={provider} limits={limits} />
@@ -109,7 +110,8 @@ function RateLimitTile({
 }
 
 function RateLimitTileBody({ limits }: { limits: ProviderRateLimits | null }) {
-  if (!limits || limits.status === 'idle' || limits.status === 'fetching') {
+  if (!limits) return <p className="text-[11.5px] text-muted-foreground">Unknown</p>
+  if (limits.status === 'idle' || limits.status === 'fetching') {
     return <p className="text-[11.5px] text-muted-foreground">Loading…</p>
   }
   if (limits.status === 'unavailable') {
@@ -161,9 +163,12 @@ function ProviderPane({
   const enabled = scanState?.enabled ?? false
   const sourceMissing = scanState !== null && !scanState.source_path_exists
 
+  if (!scanState) return <div className="surface p-4"><h3 className="text-sm font-semibold">{providerLabel(provider)} Usage Tracking</h3><p role={error ? 'alert' : 'status'} className="mt-2 text-xs text-muted-foreground">{error ? `Usage state unknown: ${error}` : loading ? 'Loading usage state…' : 'Usage state not observed.'}</p></div>
+
   if (!enabled) {
     return (
       <div className="surface p-4">
+        {error && <p role="alert" className="mb-2 text-xs text-destructive">{error}</p>}
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
             <h3 className="text-sm font-semibold text-foreground">{providerLabel(provider)} Usage Tracking</h3>
@@ -187,9 +192,9 @@ function ProviderPane({
   const hasAnyData = summary?.has_any_data ?? scanState?.has_any_data ?? false
   const isScanning = scanState?.is_scanning ?? false
   const cacheReuseRate = summary?.cache_reuse_rate
-  const turns = summary?.turns ?? 0
-  const zeroCacheTurns = summary?.zero_cache_read_turns ?? 0
-  const zeroCachePct = turns > 0 ? Math.round((zeroCacheTurns / turns) * 100) : null
+  const turns = summary?.turns
+  const zeroCacheTurns = summary?.zero_cache_read_turns
+  const zeroCachePct = turns !== undefined && zeroCacheTurns !== undefined && turns > 0 ? Math.round((zeroCacheTurns / turns) * 100) : null
 
   return (
     <div className="space-y-4 surface p-4">
@@ -233,7 +238,7 @@ function ProviderPane({
         {summary?.has_inferred_pricing && (
           <span className="inline-flex items-center gap-1 text-[11px] text-amber-500">
             <AlertTriangle className="size-3" />
-            Cost includes inferred pricing for unknown models.
+            Pricing is unavailable for one or more models.
           </span>
         )}
       </div>
@@ -253,22 +258,22 @@ function ProviderPane({
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <StatCard
               label="Input tokens"
-              value={formatTokens(summary?.input_tokens ?? 0)}
+              value={formatTokens(summary?.input_tokens)}
               icon={<Sparkles className="size-4" />}
             />
             <StatCard
               label="Output tokens"
-              value={formatTokens(summary?.output_tokens ?? 0)}
+              value={formatTokens(summary?.output_tokens)}
               icon={<Activity className="size-4" />}
             />
             <StatCard
               label="Cache read"
-              value={formatTokens(summary?.cache_read_tokens ?? 0)}
+              value={formatTokens(summary?.cache_read_tokens)}
               icon={<DatabaseZap className="size-4" />}
             />
             <StatCard
               label="Cache write"
-              value={formatTokens(summary?.cache_write_tokens ?? 0)}
+              value={formatTokens(summary?.cache_write_tokens)}
               icon={<Waypoints className="size-4" />}
             />
             <StatCard
@@ -287,7 +292,7 @@ function ProviderPane({
             />
             <StatCard
               label="Sessions / Turns"
-              value={`${formatNumber(summary?.sessions ?? 0)} / ${formatNumber(turns)}`}
+              value={`${formatNumber(summary?.sessions)} / ${formatNumber(turns)}`}
               icon={<FolderKanban className="size-4" />}
             />
             <StatCard
@@ -297,6 +302,7 @@ function ProviderPane({
             />
           </div>
           <p className="px-1 text-xs text-muted-foreground">
+            Costs are estimates of API-equivalent usage, not subscription charges or invoices.
             Cache reuse rate is calculated as cache read tokens / (input tokens + cache read tokens).
           </p>
 
@@ -395,7 +401,7 @@ function RecentSessionsSection({
                 <th className="p-2 font-medium">Input</th>
                 <th className="p-2 font-medium">Output</th>
                 <th className="p-2 font-medium">Cache</th>
-                <th className="p-2 font-medium">Cost</th>
+                <th className="p-2 font-medium">Est. API-equivalent cost</th>
               </tr>
             </thead>
             <tbody>

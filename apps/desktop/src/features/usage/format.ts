@@ -1,10 +1,12 @@
 const NUMBER_FORMAT = new Intl.NumberFormat('en-US')
 
-export function formatNumber(n: number): string {
+export function formatNumber(n: number | null | undefined): string {
+  if (typeof n !== 'number' || !Number.isFinite(n) || n < 0) return 'Unknown'
   return NUMBER_FORMAT.format(n)
 }
 
-export function formatTokens(n: number): string {
+export function formatTokens(n: number | null | undefined): string {
+  if (typeof n !== 'number' || !Number.isFinite(n) || n < 0) return 'Unknown'
   if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B'
   if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M'
   if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k'
@@ -12,7 +14,7 @@ export function formatTokens(n: number): string {
 }
 
 export function formatCost(n: number | null | undefined): string {
-  if (n === null || n === undefined) return 'n/a'
+  if (n === null || n === undefined || !Number.isFinite(n) || n < 0) return 'Unknown'
   if (n < 0.01) return '$' + n.toFixed(4)
   if (n >= 1000) return '$' + n.toLocaleString('en-US', { maximumFractionDigits: 0 })
   return '$' + n.toFixed(2)
@@ -33,4 +35,3 @@ export function formatSessionTime(iso: string): string {
     minute: '2-digit',
   })
 }
-

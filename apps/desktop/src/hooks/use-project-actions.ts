@@ -168,13 +168,15 @@ export function useProjectActions(
   }
 
   const handleAddProject = async (path: string) => {
-    if (!path || !config) return
     try {
+      if (!config) throw new Error('Backend configuration unavailable. Reconnect to the backend and try again.')
+      if (!path.trim()) throw new Error('Enter an absolute project folder path.')
       await createProject(config, path)
       opts.setStatusMessage(`Project at ${path} added successfully.`)
       await refreshProjectsAndStats()
     } catch (err) {
       opts.setErrorMessage(`failed to add project: ${toDisplayError(err)}`)
+      throw err
     }
   }
 

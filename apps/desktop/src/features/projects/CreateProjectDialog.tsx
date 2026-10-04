@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { Folder, Loader2 } from 'lucide-react'
 import { Button } from '@ui/button'
+import { toDisplayError } from '@core/api/client'
 import {
   Dialog,
   DialogContent,
@@ -24,31 +25,44 @@ export function CreateProjectDialog({
 }) {
   const [path, setPath] = useState('')
   const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const pathId = useId()
 
   useEffect(() => {
-    if (open) setPath('')
+    if (open) {
+      setPath('')
+      setError(null)
+    }
   }, [open])
 
   const handleBrowse = async () => {
+    setError(null)
     const desktopBridge = window.orchestraDesktop
-    if (desktopBridge && typeof desktopBridge.selectFolder === 'function') {
+    if (!desktopBridge || typeof desktopBridge.selectFolder !== 'function') {
+      setError('Folder browsing is unavailable. Enter the absolute project folder path below.')
+      return
+    }
+    setPending(true)
+    try {
       const selected = await desktopBridge.selectFolder()
-      if (selected) {
-        setPath(selected)
-      }
+      if (selected) setPath(selected)
+    } catch (error) {
+      setError(`Could not choose a folder: ${toDisplayError(error)}. Enter the absolute path or try browsing again.`)
+    } finally {
+      setPending(false)
     }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!path.trim()) return
+    setError(null)
     setPending(true)
     try {
       await onSubmit(path.trim())
       onOpenChange(false)
     } catch (error) {
-      console.error('Project creation failed', error)
+      setError(`Could not add project: ${toDisplayError(error)}. Check the folder path and backend project access, then try again.`)
     } finally {
       setPending(false)
     }
@@ -75,6 +89,7 @@ export function CreateProjectDialog({
                 value={path}
                 onChange={(e) => setPath(e.target.value)}
                 required
+                disabled={pending}
               />
               <Button
                 type="button"
@@ -83,11 +98,14 @@ export function CreateProjectDialog({
                 className="h-11 rounded-xl border-dashed px-3 text-muted-foreground hover:text-primary hover:border-primary/50"
                 tooltip="Browse filesystem"
                 aria-label="Browse filesystem"
+                disabled={pending}
               >
                 <Folder className="size-4" />
               </Button>
             </div>
           </div>
+
+          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
 
           <div className="flex justify-end gap-3 pt-2">
             <Button

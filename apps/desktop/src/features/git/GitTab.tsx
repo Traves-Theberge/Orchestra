@@ -57,18 +57,13 @@ export function GitTab({
   const git = useGitActions(config, project.id)
 
   useEffect(() => {
-    if (!config) return
-    if (selectedCommit) {
-      fetchProjectGitDiff(config, project.id, { hash: selectedCommit })
-        .then((d) => setDiff(d))
-        .catch(() => setDiff(null))
-    } else if (selectedFile) {
-      fetchProjectGitDiff(config, project.id, { file: selectedFile, staged: selectedFileStaged })
-        .then((d) => setDiff(d))
-        .catch(() => setDiff(null))
-    } else {
-      setDiff(null)
-    }
+    if (!config || (!selectedCommit && !selectedFile)) return
+    let cancelled = false
+    const options = selectedCommit ? { hash: selectedCommit } : { file: selectedFile!, staged: selectedFileStaged }
+    fetchProjectGitDiff(config, project.id, options)
+      .then((value) => { if (!cancelled) setDiff(value) })
+      .catch(() => { if (!cancelled) setDiff(null) })
+    return () => { cancelled = true }
   }, [config, project.id, selectedFile, selectedFileStaged, selectedCommit])
 
   function handleFileSelect(path: string, isStaged: boolean) {
@@ -178,7 +173,7 @@ export function GitTab({
             right={
               <DiffViewer
                 filePath={selectedFile}
-                diff={diff}
+                diff={selectedFile || selectedCommit ? diff : null}
                 mode={diffMode}
                 onModeChange={setDiffMode}
               />
@@ -199,7 +194,7 @@ export function GitTab({
           <div className="flex-1 overflow-hidden">
             <DiffViewer
               filePath={selectedCommit ? `commit ${selectedCommit.slice(0, 7)}` : null}
-              diff={diff}
+              diff={selectedFile || selectedCommit ? diff : null}
               mode={diffMode}
               onModeChange={setDiffMode}
             />

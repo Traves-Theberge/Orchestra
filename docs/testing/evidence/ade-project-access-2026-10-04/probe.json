@@ -1,0 +1,24 @@
+{
+    "fixture":  {
+                    "id":  "6a974247d3a878260669fb1d0310b31c",
+                    "outside":  403,
+                    "root":  "C:\\Users\\trave\\AppData\\Local\\Orchestra\\diagnostics\\project-access-probes\\6b9b3bb0983e4391a9b652349270cee2",
+                    "tree":  200,
+                    "git":  200,
+                    "register":  "passed",
+                    "file":  200
+                },
+    "restart_identity_and_file":  "passed",
+    "profile":  "audit-dev",
+    "temporary_database_row":  "removed",
+    "source_sha256":  {
+                          "apps/desktop/src/features/projects/CreateProjectDialog.tsx":  "54AC2BC70AEA55CEC29328ED6B677B3F295CBA62FD98430D5A5D094A43578854",
+                          "apps/desktop/electron/main.cjs":  "75C2702B8AC5B73FBFB755FBE0C67A7C0F97D427B9112CFCF5FDED949E236B03",
+                          "apps/desktop/scripts/audit-dev.mjs":  "06480876D418E59DB2EC1342144028DF989A6924882357C7B49FA2CBDC4CB0BA",
+                          "apps/desktop/scripts/audit-electron.cjs":  "381A472D851B5748A9215BC463266EF72A1DF0A325589BD4A69245E6414A6D52",
+                          "apps/desktop/src/hooks/use-project-actions.ts":  "97A14591190325B1F176D0EAEA9012DAE354DFA6304E04EEFB3EFF8D32537502"
+                      },
+    "native_picker":  "not independently automated",
+    "backend":  "http://127.0.0.1:4014",
+    "diagnostic_fixture":  "retained after recursive cleanup policy rejection"
+}

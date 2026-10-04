@@ -24,9 +24,11 @@ export function AgentGuidance({
         <input
           type="number"
           min={1}
+          max={100}
+          step={1}
           className="w-24 bg-transparent border border-white/20 rounded px-2 py-1"
           value={draft.max_turns ?? ''}
-          onChange={(e) => onChange({ max_turns: e.target.value ? Number(e.target.value) : undefined })}
+          onChange={(e) => onChange({ max_turns: e.target.value ? Number(e.target.value) : null })}
         />
       </label>
     </div>

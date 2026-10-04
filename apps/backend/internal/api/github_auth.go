@@ -124,6 +124,9 @@ func (s *Server) HandleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updateProjectGitHubToken(ctx context.Context, projectID, token string) error {
+	if s.db == nil {
+		return fmt.Errorf("database unavailable")
+	}
 	encrypted, err := db.EncryptToken(token)
 	if err != nil {
 		return fmt.Errorf("encrypt token: %w", err)

@@ -46,6 +46,7 @@ import (
 	gitutil "github.com/orchestra/orchestra/apps/backend/internal/utils/git"
 	ghutil "github.com/orchestra/orchestra/apps/backend/internal/utils/github"
 	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
+	"github.com/orchestra/orchestra/apps/backend/internal/workspacechat"
 	"github.com/rs/zerolog"
 )
 
@@ -72,11 +73,12 @@ func Run(logger zerolog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("connect to warehouse db: %w", err)
 	}
+	defer warehouseDB.Close()
 
 	orchestratorService := orchestrator.NewService()
 	orchestratorService.SetDB(warehouseDB)
 	if err := orchestratorService.RestoreStateFromDB(context.Background()); err != nil {
-		logger.Warn().Err(err).Msg("failed to restore orchestrator state from DB")
+		return fmt.Errorf("restore orchestrator state from DB: %w", err)
 	}
 
 	orchestratorService.SetStateSets(cfg.ActiveStates, cfg.TerminalStates)
@@ -101,6 +103,9 @@ func Run(logger zerolog.Logger) error {
 	termManager := terminal.NewManager()
 
 	agentRegistry := agents.NewRegistryWithTerminal(cfg.AgentCommands, termManager)
+	for provider, command := range cfg.NativeAgentCommands {
+		agentRegistry.SetNativeCommand(agents.Provider(provider), command)
+	}
 
 	// Register optional remote execution backends if configured.
 	if cfg.TailscaleSSHHost != "" {
@@ -134,7 +139,7 @@ func Run(logger zerolog.Logger) error {
 		}
 	}
 
-	provider := agents.Provider(cfg.AgentProvider)
+	provider := canonicalDispatchProvider(cfg.AgentProvider)
 	if !agentRegistry.HasProvider(provider) {
 		return fmt.Errorf("agent provider %q is not configured", cfg.AgentProvider)
 	}
@@ -204,7 +209,12 @@ func Run(logger zerolog.Logger) error {
 		logger.Warn().Err(err).Str("socket", socketPath).Msg("studio: bridge listener not started")
 	}
 
-	router := api.NewRouterWithPubSub(logger, orchestratorService, &cfg, pubsub, warehouseDB, termManager, usageService, trackerRegistry, studioMgr, studioTpls)
+	chatService, chatErr := workspacechat.New(warehouseDB, agentRegistry, cfg.ProjectRoots)
+	if chatErr != nil {
+		return fmt.Errorf("workspace chat: %w", chatErr)
+	}
+	defer chatService.Close()
+	router := api.NewRouterWithPubSub(logger, orchestratorService, &cfg, pubsub, warehouseDB, termManager, usageService, trackerRegistry, studioMgr, studioTpls, chatService)
 
 	cleanupTerminalWorkspaces(orchestratorService, trackerClient, workspaceService, cfg.WorkspaceHooks, warehouseDB, logger)
 
@@ -456,24 +466,32 @@ func processExecutionTick(
 		}
 	}
 
-	// Resolve provider from entry or configuration
-	activeProvider := provider
-	activeProviderName := providerName
-
-	if entry.Provider != "" {
-		candidate := agents.NormalizeProvider(entry.Provider)
-		if registry.HasProvider(candidate) {
-			activeProvider = candidate
-			activeProviderName = string(candidate)
+	// An explicit task selection must never silently execute on the default provider.
+	activeProvider, selectionErr := resolveDispatchProvider(registry, provider, entry)
+	activeProviderName := string(activeProvider)
+	selectionCause := "provider_not_configured"
+	requestedOptions := dispatchRequestedOptions(entry)
+	if selectionErr == nil {
+		selectionErr = registry.ValidateTurnOptions(activeProvider, requestedOptions)
+		selectionCause = "requested_config_unsupported"
+	}
+	if selectionErr != nil {
+		attempt := entry.TurnCount + 1
+		dueAt := service.NextRetryDue(entry.IssueID, attempt)
+		publishLifecycleEvent(pubsub, "RUN_FAILED", map[string]any{
+			"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier,
+			"provider": activeProviderName, "attempt": attempt, "cause": selectionCause, "error": selectionErr.Error(),
+		})
+		if service.ShouldRetryAttempt(attempt) {
+			publishLifecycleEvent(pubsub, "RETRY_SCHEDULED", map[string]any{
+				"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier,
+				"provider": activeProviderName, "attempt": attempt, "due_at": dueAt.UTC().Format(time.RFC3339), "cause": selectionCause,
+			})
 		}
-	} else if entry.AssigneeID != "" {
-		// Fallback: Resolve provider from assignee if possible
-		p := strings.TrimPrefix(entry.AssigneeID, "agent-")
-		candidate := agents.NormalizeProvider(p)
-		if registry.HasProvider(candidate) {
-			activeProvider = candidate
-			activeProviderName = string(candidate)
-		}
+		service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, attempt, dueAt, selectionErr)
+		logger.Error().Err(selectionErr).Str("issue_id", entry.IssueID).Msg("provider selection rejected before workspace preparation")
+		publishSnapshot(pubsub, service)
+		return
 	}
 
 	// Require a project with a valid git repo to dispatch into a per-issue worktree.
@@ -677,33 +695,14 @@ func processExecutionTick(
 	var eventsBuffer []agents.Event
 
 	// Fetch MCP tools and resources
-	allToolSpecs := make([]map[string]any, 0, len(toolSpecs))
-	disabledSet := make(map[string]struct{})
-	// Fetch issue to get disabled tools if using SQLite or memory tracker
-	// For now, assume trackerClient has populated DisabledTools if applicable
-	for _, dt := range entry.DisabledTools {
-		disabledSet[strings.ToLower(dt)] = struct{}{}
-	}
-
-	for _, ts := range toolSpecs {
-		if name, ok := ts["name"].(string); ok {
-			if _, disabled := disabledSet[strings.ToLower(name)]; !disabled {
-				allToolSpecs = append(allToolSpecs, ts)
-			}
-		}
-	}
+	toolPolicy := newTaskToolPolicy(entry.DisabledTools)
+	allToolSpecs := toolPolicy.filterSpecs(toolSpecs)
 
 	var allResourceSpecs []map[string]any
 
 	if mcpReg := service.GetMCPRegistry(); mcpReg != nil {
 		mcpTools, _ := mcpReg.ListTools(runCtx)
-		for _, mt := range mcpTools {
-			if name, ok := mt["name"].(string); ok {
-				if _, disabled := disabledSet[strings.ToLower(name)]; !disabled {
-					allToolSpecs = append(allToolSpecs, mt)
-				}
-			}
-		}
+		allToolSpecs = append(allToolSpecs, toolPolicy.filterSpecs(mcpTools)...)
 
 		mcpResources, _ := mcpReg.ListResources(runCtx)
 		allResourceSpecs = append(allResourceSpecs, mcpResources...)
@@ -712,20 +711,12 @@ func processExecutionTick(
 	// Tool executor that first tries MCP routing, then falls back to the
 	// tracker / linear executor. Context flows from the active turn so a
 	// cancelled run cleanly aborts in-flight tracker / MCP calls.
-	mcpAwareExecutor := func(ctx context.Context, tool string, args map[string]any) map[string]any {
+	mcpAwareExecutor := toolPolicy.executor(func(ctx context.Context, serverName, toolName string, args map[string]any) (map[string]any, error) {
 		if mcpReg := service.GetMCPRegistry(); mcpReg != nil {
-			if strings.Contains(tool, "_") {
-				parts := strings.SplitN(tool, "_", 2)
-				serverName := parts[0]
-				toolName := parts[1]
-				res, err := mcpReg.ExecuteTool(ctx, serverName, toolName, args)
-				if err == nil {
-					return res
-				}
-			}
+			return mcpReg.ExecuteTool(ctx, serverName, toolName, args)
 		}
-		return toolExecutor(ctx, tool, args)
-	}
+		return nil, fmt.Errorf("MCP registry unavailable")
+	}, toolExecutor)
 
 	sessionID := fmt.Sprintf("%s-%d", entry.IssueIdentifier, time.Now().UnixNano())
 	_ = logfile.ResetLatestLog(workspaceRoot, entry.IssueIdentifier, sessionID)
@@ -746,18 +737,20 @@ func processExecutionTick(
 	}
 
 	result, runErr := registry.RunTurn(runCtx, activeProvider, agents.TurnRequest{
-		SessionID:       sessionID,
-		Workspace:       workspacePath,
-		WorkspaceRoot:   effectiveWorkspaceRoot,
-		Prompt:          renderedPrompt,
-		IssueIdentifier: entry.IssueIdentifier,
-		Attempt:         int(attempt),
-		Timeout:         30 * time.Minute,
-		AutoApprove:     true,
-		ToolExecutor:    mcpAwareExecutor,
-		ToolSpecs:       allToolSpecs,
-		ResourceSpecs:   allResourceSpecs,
-		RuntimeTarget:   agents.NormalizeRuntimeTarget(entry.RuntimeTarget),
+		RequestedModel:    requestedOptions.RequestedModel,
+		RequestedMaxTurns: requestedOptions.RequestedMaxTurns,
+		SessionID:         sessionID,
+		Workspace:         workspacePath,
+		WorkspaceRoot:     effectiveWorkspaceRoot,
+		Prompt:            renderedPrompt,
+		IssueIdentifier:   entry.IssueIdentifier,
+		Attempt:           int(attempt),
+		Timeout:           30 * time.Minute,
+		AutoApprove:       true,
+		ToolExecutor:      mcpAwareExecutor,
+		ToolSpecs:         allToolSpecs,
+		ResourceSpecs:     allResourceSpecs,
+		RuntimeTarget:     agents.NormalizeRuntimeTarget(entry.RuntimeTarget),
 	}, func(event agents.Event) {
 		service.RecordRunEvent(entry.IssueID, activeProviderName, event)
 		publishRunEvent(pubsub, entry, activeProviderName, event)

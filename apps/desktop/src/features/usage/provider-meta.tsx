@@ -7,7 +7,7 @@ export function providerLabel(provider: UsageProvider): string {
     case 'codex':
       return 'Codex'
     case 'gemini':
-      return 'Gemini'
+      return 'Gemini CLI (legacy logs)'
     case 'opencode':
       return 'OpenCode'
   }
@@ -18,13 +18,13 @@ type ProviderIconMeta = { src: string; invert: boolean }
 function providerIconMeta(provider: UsageProvider): ProviderIconMeta {
   switch (provider) {
     case 'claude':
-      return { src: '/Anthropic_Symbol_1.png', invert: true }
+      return { src: './Anthropic_Symbol_1.png', invert: true }
     case 'codex':
-      return { src: '/OpenAI_Symbol_1.png', invert: true }
+      return { src: './OpenAI_Symbol_1.png', invert: true }
     case 'gemini':
-      return { src: '/Google_Symbol_1.png', invert: false }
+      return { src: './Google_Symbol_1.png', invert: false }
     case 'opencode':
-      return { src: '/opencode.png', invert: false }
+      return { src: './opencode.png', invert: false }
   }
 }
 

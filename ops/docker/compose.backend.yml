@@ -1,0 +1,17 @@
+name: orchestra-backend
+services:
+  backend:
+    build:
+      context: ../..
+      dockerfile: ops/docker/Dockerfile.backend
+      target: runtime
+    image: orchestra-backend:local
+    init: true
+    ports:
+      - "127.0.0.1:${ORCHESTRA_DOCKER_PORT:-4010}:4010"
+    environment:
+      ORCHESTRA_API_TOKEN: ${ORCHESTRA_API_TOKEN:?Set an API token explicitly in your shell before starting the backend}
+    volumes:
+      - backend-data:/data
+volumes:
+  backend-data:

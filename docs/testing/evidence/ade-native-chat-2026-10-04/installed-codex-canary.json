@@ -1,0 +1,23 @@
+{
+  "scope": "installed Codex stdio transport, not Orchestra UI E2E",
+  "settings_unchanged": true,
+  "account_available": true,
+  "model_count": 8,
+  "model": "gpt-6.1-sol",
+  "thread_id": "01a108a9-0200-78a1-80f1-ac8aa668db34",
+  "turns": [
+    {
+      "turn_id": "01a108a9-0271-7bf3-baaf-09978a06387d",
+      "status": "completed",
+      "response": "ACK",
+      "usage_observed": true
+    },
+    {
+      "turn_id": "01a108a9-17a4-71b2-bd36-eb59f77df726",
+      "status": "completed",
+      "response": "ORCHESTRA_NATIVE_7F3B",
+      "usage_observed": true
+    }
+  ],
+  "two_turn_memory_verified": true
+}

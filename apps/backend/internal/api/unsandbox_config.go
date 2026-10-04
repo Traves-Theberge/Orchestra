@@ -3,12 +3,11 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/orchestra/orchestra/apps/backend/internal/fileconfig"
 	"net/http"
 	"os"
-	"os/user"
 	"path/filepath"
 	"strings"
-	"syscall"
 )
 
 // GetUnsandboxConfig returns the current unsandbox credential configuration.
@@ -77,11 +76,11 @@ func (s *Server) DeleteUnsandboxConfig(w http.ResponseWriter, r *http.Request) {
 // --- helpers ---
 
 func unsandboxCSVPath() (string, error) {
-	u, err := user.Current()
+	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(u.HomeDir, ".unsandbox", "accounts.csv"), nil
+	return filepath.Join(home, ".unsandbox", "accounts.csv"), nil
 }
 
 func loadUnsandboxKeys() (publicKey, secretKey string) {
@@ -122,31 +121,6 @@ func saveUnsandboxKeys(publicKey, secretKey string) error {
 		return err
 	}
 
-	dir := filepath.Dir(csvPath)
-
-	// Set restrictive umask BEFORE any file/dir creation to prevent
-	// a window where the file exists with lax permissions.
-	// Permacomputer tripwire monitors for world-readable credential files.
-	oldUmask := syscall.Umask(0077)
-	defer syscall.Umask(oldUmask)
-
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return fmt.Errorf("mkdir %s: %w", dir, err)
-	}
-	// Belt-and-suspenders: enforce even if umask was ignored
-	if err := os.Chmod(dir, 0700); err != nil {
-		return fmt.Errorf("chmod dir: %w", err)
-	}
-
 	content := fmt.Sprintf("# unsandbox.com API credentials (managed by Orchestra)\n%s,%s\n", publicKey, secretKey)
-
-	if err := os.WriteFile(csvPath, []byte(content), 0600); err != nil {
-		return fmt.Errorf("write %s: %w", csvPath, err)
-	}
-	// Belt-and-suspenders: enforce even if umask was ignored
-	if err := os.Chmod(csvPath, 0600); err != nil {
-		return fmt.Errorf("chmod file: %w", err)
-	}
-
-	return nil
+	return fileconfig.WritePrivate(csvPath, []byte(content))
 }

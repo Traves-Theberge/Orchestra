@@ -33,6 +33,7 @@ type codexJSONLRecord struct {
 }
 
 type codexSessionMeta struct {
+	ID        string `json:"id"`
 	SessionID string `json:"session_id"`
 	Cwd       string `json:"cwd"`
 }
@@ -43,6 +44,7 @@ type codexTurnContext struct {
 }
 
 type codexEventMsg struct {
+	Info            *codexEventMsg         `json:"info,omitempty"`
 	Type            string                 `json:"type"`
 	TotalTokenUsage *codexTokenSnapshot    `json:"total_token_usage,omitempty"`
 	LastTokenUsage  *codexTokenSnapshot    `json:"last_token_usage,omitempty"`
@@ -101,6 +103,7 @@ func scanCodex(
 	// Daily accumulator keyed by day+model+project.
 	dailyKey := func(d, m, p string) string { return d + "::" + m + "::" + p }
 	dailyAcc := map[string]*DailyAggregate{}
+	seenEvents := map[string]bool{}
 
 	for _, path := range jsonlFiles {
 		fi, statErr := os.Stat(path)
@@ -122,8 +125,7 @@ func scanCodex(
 			fileSessionID string
 			fileCwd       string
 			fileModel     string
-			prevTotals    codexTokenSnapshot
-			haveTotals    bool
+			prevTotals    *codexTokenSnapshot
 		)
 
 		scanner := bufio.NewScanner(f)
@@ -140,11 +142,18 @@ func scanCodex(
 				continue
 			}
 
-			switch rec.Kind {
+			kind := rec.Kind
+			if kind == "" {
+				kind = rec.Type
+			}
+			switch kind {
 			case "session_meta":
 				var meta codexSessionMeta
 				if json.Unmarshal(rec.Payload, &meta) == nil {
 					fileSessionID = meta.SessionID
+					if fileSessionID == "" {
+						fileSessionID = meta.ID
+					}
 					fileCwd = meta.Cwd
 				}
 			case "turn_context":
@@ -165,37 +174,32 @@ func scanCodex(
 				if ev.Type != "token_count" {
 					continue
 				}
-				var snap codexTokenSnapshot
-				switch {
-				case ev.TotalTokenUsage != nil:
-					snap = *ev.TotalTokenUsage
-				case ev.LastTokenUsage != nil:
-					snap = *ev.LastTokenUsage
-				default:
+				usage := &ev
+				if ev.Info != nil {
+					usage = ev.Info
+				}
+				total, last := normalizeCodexSnapshot(usage.TotalTokenUsage), normalizeCodexSnapshot(usage.LastTokenUsage)
+				resolved, next := codexDelta(total, last, prevTotals)
+				prevTotals = next
+				if resolved == nil {
 					continue
 				}
-
-				// Compute delta from previous total.
-				var delta codexTokenSnapshot
-				if haveTotals {
-					delta = codexTokenSnapshot{
-						InputTokens:           max64(0, snap.InputTokens-prevTotals.InputTokens),
-						CachedInputTokens:     max64(0, snap.CachedInputTokens-prevTotals.CachedInputTokens),
-						OutputTokens:          max64(0, snap.OutputTokens-prevTotals.OutputTokens),
-						ReasoningOutputTokens: max64(0, snap.ReasoningOutputTokens-prevTotals.ReasoningOutputTokens),
-						TotalTokens:           max64(0, snap.TotalTokens-prevTotals.TotalTokens),
-					}
-				} else {
-					delta = snap
+				// Fork/resume copies retain timestamps and raw token tuples even
+				// when their surrounding session ID changes. Advance file-local
+				// baselines before suppressing a copied billing observation.
+				keyBytes, _ := json.Marshal([]any{rec.Timestamp, usage.TotalTokenUsage, usage.LastTokenUsage})
+				key := string(keyBytes)
+				if seenEvents[key] {
+					continue
 				}
-				prevTotals = snap
-				haveTotals = true
+				seenEvents[key] = true
+				delta := *resolved
 
 				// Clamp cached <= input.
 				if delta.CachedInputTokens > delta.InputTokens {
 					delta.CachedInputTokens = delta.InputTokens
 				}
-				if delta.InputTokens+delta.OutputTokens+delta.ReasoningOutputTokens == 0 {
+				if delta.InputTokens+delta.OutputTokens == 0 {
 					continue
 				}
 
@@ -204,9 +208,6 @@ func scanCodex(
 					sessionID = path
 				}
 				model := fileModel
-				if model == "" {
-					model = "gpt-5"
-				}
 				cwd := fileCwd
 
 				projectKey, projectLabel, worktreeID, repoID := worktreeIndex.resolve(cwd)
@@ -271,7 +272,10 @@ func scanCodex(
 				}
 			}
 		}
-		_ = scanner.Err()
+		if scanErr := scanner.Err(); scanErr != nil {
+			_ = f.Close()
+			return nil, nil, nil, true, scanErr
+		}
 		_ = f.Close()
 	}
 

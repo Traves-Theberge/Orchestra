@@ -134,51 +134,21 @@ func (m *Manager) SendMessage(ctx context.Context, sessionID, msg string) error 
 	return m.spawner.SendMessage(ctx, sessionID, msg)
 }
 
-// ApplyDraftPatch applies a map of field updates to the draft for a session.
-// Supported keys: title, description, suggested_provider, suggested_model, max_turns.
+// ApplyDraftPatch validates the complete request before one atomic storage update.
+// Omitted fields are unchanged; max_turns:null clears the requested limit.
 func (m *Manager) ApplyDraftPatch(sessionID string, patch map[string]interface{}) error {
-	for k, v := range patch {
-		switch k {
-		case "title":
-			s, _ := v.(string)
-			if err := m.SetTitle(sessionID, s); err != nil {
-				return err
-			}
-		case "description":
-			s, _ := v.(string)
-			if err := m.SetDescription(sessionID, s); err != nil {
-				return err
-			}
-		case "suggested_provider":
-			s, _ := v.(string)
-			if err := m.SetProvider(sessionID, s); err != nil {
-				return err
-			}
-		case "suggested_model":
-			s, _ := v.(string)
-			if err := m.SetModel(sessionID, s); err != nil {
-				return err
-			}
-		case "max_turns":
-			switch x := v.(type) {
-			case float64:
-				if err := m.SetMaxTurns(sessionID, int(x)); err != nil {
-					return err
-				}
-			case int:
-				if err := m.SetMaxTurns(sessionID, x); err != nil {
-					return err
-				}
-			default:
-				return fmt.Errorf("studio: max_turns must be a number")
-			}
-		default:
-			return fmt.Errorf("studio: field not patchable: %q", k)
-		}
+	fields, err := validateDraftPatch(patch)
+	if err != nil {
+		return err
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := db.UpdateDraftFields(m.d, sessionID, fields); err != nil {
+		return err
+	}
+	m.publishDraftUpdate(sessionID)
 	return nil
 }
-
 func (m *Manager) Discard(sessionID string) error {
 	if m.spawner != nil {
 		_ = m.spawner.Stop(sessionID)
@@ -236,6 +206,8 @@ func (m *Manager) Push(ctx context.Context, sessionID string) (string, error) {
 		"attachments":          string(attJSON),
 		"agent_guidance":       string(guidanceJSON),
 		"authoring_session_id": sessionID,
+		"requested_model":      snap.SuggestedModel,
+		"requested_max_turns":  snap.MaxTurns,
 	}
 	if snap.TemplateName != "" {
 		updates["source_template"] = snap.TemplateName
@@ -367,6 +339,9 @@ func (m *Manager) SetModel(sessionID, model string) error {
 }
 
 func (m *Manager) SetMaxTurns(sessionID string, turns int) error {
+	if turns < 1 || turns > MaxDraftTurns {
+		return fmt.Errorf("studio: max_turns must be an integer between 1 and %d", MaxDraftTurns)
+	}
 	if err := db.UpdateDraftField(m.d, sessionID, "max_turns", turns); err != nil {
 		return err
 	}

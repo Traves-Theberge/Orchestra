@@ -1,6 +1,7 @@
 package usage
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"time"
@@ -39,5 +40,5 @@ func scanOpenCode(
 	if info, statErr := os.Stat(root); statErr != nil || !info.IsDir() {
 		return nil, nil, nil, false, nil
 	}
-	return nil, nil, nil, true, nil
+	return nil, nil, nil, true, errors.New("OpenCode usage import is unavailable: transcript token accounting is not implemented")
 }

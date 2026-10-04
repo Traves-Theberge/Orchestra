@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -57,6 +58,10 @@ func NewStudioSpawner(reg AgentRegistry, repoPath, daemonBin, socketPath string)
 
 // Spawn provisions a worktree + .mcp.json for the session. Does not run any turn.
 func (s *StudioSpawner) Spawn(_ context.Context, sess Session, onEvent func(Event)) error {
+	provider, err := agentsProviderFor(sess.Runner)
+	if err != nil {
+		return err
+	}
 	wt, err := CreateReadOnlyWorktree(s.repoPath)
 	if err != nil {
 		return fmt.Errorf("studio spawner: worktree: %w", err)
@@ -79,7 +84,7 @@ func (s *StudioSpawner) Spawn(_ context.Context, sess Session, onEvent func(Even
 	s.mu.Lock()
 	s.sessions[sess.ID] = &spawnedSession{
 		worktree: wt,
-		provider: agentsProviderFor(sess.Runner),
+		provider: provider,
 		onEvent:  onEvent,
 	}
 	s.mu.Unlock()
@@ -141,18 +146,18 @@ func (s *StudioSpawner) Stop(sessionID string) error {
 // agentsProviderFor maps the studio's runner string to an agents.Provider.
 // Phase 2 supports Claude Code only; other runners are recognized but their
 // MCP integration is not yet validated.
-func agentsProviderFor(runner string) agents.Provider {
-	switch runner {
-	case "claude-code", "CLAUDE":
-		return agents.ProviderClaude
-	case "codex", "CODEX":
-		return agents.ProviderCodex
-	case "opencode", "OPENCODE":
-		return agents.ProviderOpenCode
-	case "gemini", "GEMINI":
-		return agents.ProviderGemini
+func agentsProviderFor(runner string) (agents.Provider, error) {
+	switch strings.ToLower(strings.TrimSpace(runner)) {
+	case "claude-code", "claude":
+		return agents.ProviderClaude, nil
+	case "codex":
+		return agents.ProviderCodex, nil
+	case "opencode":
+		return agents.ProviderOpenCode, nil
+	case "gemini":
+		return agents.ProviderGemini, nil
 	default:
-		return agents.ProviderClaude
+		return "", fmt.Errorf("studio: unsupported runner %q", runner)
 	}
 }
 

@@ -1,0 +1,17 @@
+# Registered harness picker
+
+## Required reference observations
+
+T3 Code `737993303d36e10674c54b95e5bd3826682c99c7`, `apps/web/src/components/chat/ProviderModelPicker.tsx`: composer trigger opens a provider-instance/model popup; exact routing identity selects the active entry, models are account-specific, and continuation locking is distinct from selection. Orca `3284b4c70c901402831bb4ccc5576ea083d2e5ae`, `src/renderer/src/components/native-chat/use-native-chat-session-options.ts` and `use-native-chat-composer-catalog.ts`: native session options and authoritative discovery are scoped to the agent/session; unavailable discovery must not be represented as authoritative absence. Both sources were read before implementation; no reference application was run.
+
+Orchestra adapts a persistent composer harness trigger and popup with registered harness navigation, model search, provider-reported model rows and explicit provider default. Existing per-turn model/effort controls remain available. Unavailable harnesses expose their reason through their disabled row's tooltip. Running turns and unresolved creation/submission/reply receipts lock switching. Selecting a different harness prepares a new unsent conversation and retains the old conversation's draft. Existing provider threads are not rebound; no message or creation is sent by picker selection. New catalogs clear stale model intent through the existing scoped catalog key.
+
+The backend catalog now appends the actual registry's providers to the three baseline entries in deterministic order. Conversation creation accepts registered runners that validate local turn support instead of enforcing a three-provider whitelist. Native mode is still determined by the registry's actual native-session capability; other runners use explicit transcript replay. This does not establish signed-in/native parity for additional harnesses. Orchestra differs from T3's provider-instance system: the current registry has one routing ID per harness, and this package does not invent multiple account instances, favorites or shortcut model slots. Kanban and project/task identities are unchanged.
+
+## Behavioral verification and launch block
+
+Desktop integration verifies changing harness in an existing chat keeps the draft, leaves the old conversation reachable, does not create/send automatically, disables unavailable harnesses, and closes on Escape. Model selection verifies exact provider slug, search, hidden-model exclusion and focus return. Existing workspace chat regression tests remain passing. Typecheck, scoped lint and production build pass, with the existing chunk-size warning.
+
+Backend workspacechat tests and API tests pass. A recording-runner test registers 8GENT, verifies catalog capabilities, creates its conversation and dispatches through that runner into persisted history. This is registry/service evidence with a fixture, not live 8gent inference.
+
+The previous local app exited during the change. Relaunch of the updated executable failed before readiness. Windows CodeIntegrity/Operational events 3033 and 3077 at 2026-10-04 16:29 Edmonton name Electron loading `apps/backend/orchestrad.exe` and state that Enterprise signing requirements or code integrity policy were violated. No signing-policy bypass or executable relocation was attempted. Native runtime/picker screenshot verification remains blocked by this launch condition; do not claim the updated app is running.

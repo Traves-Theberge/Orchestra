@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -73,7 +74,7 @@ func WorktreeList(ctx context.Context, repoDir string) ([]string, error) {
 	var paths []string
 	for _, line := range strings.Split(stdout.String(), "\n") {
 		if strings.HasPrefix(line, "worktree ") {
-			paths = append(paths, strings.TrimPrefix(line, "worktree "))
+			paths = append(paths, filepath.Clean(filepath.FromSlash(strings.TrimPrefix(line, "worktree "))))
 		}
 	}
 	return paths, nil

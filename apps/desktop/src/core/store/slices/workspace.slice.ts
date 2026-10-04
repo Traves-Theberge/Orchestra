@@ -164,7 +164,7 @@ export const createWorkspaceSlice: StateCreator<AppState, [], [], WorkspaceSlice
     const ensure = ensureProjectGroups(state, projectId)
     const targetGroupId = groupId ?? ensure.focusedGroupId
     const groups = { ...ensure.groups }
-    let layout = ensure.layout
+    const layout = ensure.layout
     let focused = ensure.focusedGroupId
 
     // Look up which group the tab currently lives in (if any)

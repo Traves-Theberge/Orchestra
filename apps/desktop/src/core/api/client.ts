@@ -1,4 +1,4 @@
-import type { APIErrorEnvelope, BackendConfig, EventEnvelope, GlobalStats, Project, ProjectStats, SnapshotPayload, AgentConfig, DocItem, Issue, SessionDetail, SessionSummary } from '@core/api/types'
+import type { APIErrorEnvelope, BackendConfig, EventEnvelope, GlobalStats, Project, ProjectStats, SnapshotPayload, AgentConfig, DocItem, Issue, IssueAttachment, SessionDetail, SessionSummary } from '@core/api/types'
 
 // Re-exported so existing `import { BackendConfig } from '@core/api/client'`
 // callers keep working. Canonical definition lives in orchestra-types.ts.
@@ -90,6 +90,14 @@ export type IssueUpdatePayload = {
   description?: string
   project_id?: string
   disabled_tools?: string[]
+  runtime_target?: string
+  requested_model?: string | null
+  requested_max_turns?: number | null
+  acceptance_criteria?: string[]
+  attachments?: IssueAttachment[]
+  agent_guidance?: Record<string, unknown>
+  source_template?: string
+  authoring_session_id?: string
   [key: string]: unknown
 }
 
@@ -295,6 +303,80 @@ async function requestJSON<T>(config: BackendConfig, path: string, init?: Reques
   } finally {
     clearTimeout(timeout)
   }
+}
+
+export type WorkspaceChatProvider = {
+  id: string; label: string; enabled: boolean; reason?: string
+  conversation_mode: string; provider_resume: boolean
+}
+export type WorkspaceChatModelCatalog = {
+  provider: string; project_id: string; observation: 'provider_catalog'
+  models: { id: string; model: string; display_name: string; is_default: boolean; hidden?: boolean
+    default_reasoning_effort?: string; supported_reasoning_efforts?: { reasoning_effort: string; description?: string }[] }[]
+}
+export type WorkspaceChatSession = {
+  id: string; project_id: string; provider: string; title: string
+  status: 'idle' | 'running' | 'stopping' | 'failed' | 'interrupted'
+  conversation_mode: string; created_at: string; updated_at: string; error?: string
+  provider_thread_id?: string; requested_model?: string; effective_model?: string
+  approval_policy?: string; sandbox_mode?: string
+  requested_reasoning_effort?: string
+  effective_reasoning_effort?: string
+}
+export type WorkspaceChatMessage = {
+  id: string; session_id: string; role: 'user' | 'assistant' | 'system'; text: string
+  status: 'accepted' | 'completed' | 'failed' | 'cancelled' | 'unknown'
+  client_message_id?: string; created_at: string
+}
+export type WorkspaceChatEvent = {
+  sequence: number; type: string; thread_id?: string; turn_id?: string; item_id?: string
+  request_id?: string; delta?: string; payload?: Record<string, unknown>; created_at: string
+}
+export type WorkspaceChatRequest = {
+  id: string; turn_id: string; method: string; params: Record<string, unknown>
+  status: 'pending' | 'answered' | 'unknown' | 'stale'; created_at: string
+}
+export type WorkspaceChatSnapshot = {
+  session: WorkspaceChatSession; messages: WorkspaceChatMessage[]
+  events?: WorkspaceChatEvent[]; requests?: WorkspaceChatRequest[]; cursor?: number
+}
+function workspaceChatPath(projectId: string) {
+  return `/api/v1/projects/${encodeURIComponent(projectId)}/chat`
+}
+export function fetchWorkspaceChatProviders(config: BackendConfig, projectId: string) {
+  return requestJSON<{ providers: WorkspaceChatProvider[] }>(config, `${workspaceChatPath(projectId)}/providers`)
+}
+export function fetchWorkspaceChatModels(config: BackendConfig, projectId: string, provider: string) {
+  return requestJSON<WorkspaceChatModelCatalog>(config,
+    `${workspaceChatPath(projectId)}/providers/${encodeURIComponent(provider)}/models`)
+}
+export function listWorkspaceChatSessions(config: BackendConfig, projectId: string) {
+  return requestJSON<{ sessions: WorkspaceChatSession[] }>(config, `${workspaceChatPath(projectId)}/sessions`)
+}
+export function createWorkspaceChatSession(config: BackendConfig, projectId: string, provider: string, clientSessionId?: string) {
+  return requestJSON<WorkspaceChatSession>(config, `${workspaceChatPath(projectId)}/sessions`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, ...(clientSessionId ? { client_session_id: clientSessionId } : {}) }),
+  })
+}
+export function fetchWorkspaceChat(config: BackendConfig, projectId: string, sessionId: string) {
+  return requestJSON<WorkspaceChatSnapshot>(config, `${workspaceChatPath(projectId)}/sessions/${encodeURIComponent(sessionId)}`)
+}
+export function sendWorkspaceChatMessage(config: BackendConfig, projectId: string, sessionId: string, clientMessageId: string, text: string, requestedModel?: string, requestedReasoningEffort?: string) {
+  return requestJSON<{ session: WorkspaceChatSession; message: WorkspaceChatMessage }>(config,
+    `${workspaceChatPath(projectId)}/sessions/${encodeURIComponent(sessionId)}/messages`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client_message_id: clientMessageId, text, ...(requestedModel ? { requested_model: requestedModel } : {}), ...(requestedReasoningEffort ? { requested_reasoning_effort: requestedReasoningEffort } : {}) }),
+    })
+}
+export function stopWorkspaceChatTurn(config: BackendConfig, projectId: string, sessionId: string) {
+  return requestJSON<{ session: WorkspaceChatSession }>(config,
+    `${workspaceChatPath(projectId)}/sessions/${encodeURIComponent(sessionId)}/stop`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+}
+export function replyWorkspaceChatRequest(config: BackendConfig, projectId: string, sessionId: string,
+  requestId: string, clientResponseId: string, answer: Record<string, unknown>) {
+  return requestJSON<WorkspaceChatRequest>(config,
+    `${workspaceChatPath(projectId)}/sessions/${encodeURIComponent(sessionId)}/requests/${encodeURIComponent(requestId)}/reply`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client_response_id: clientResponseId, answer }),
+    })
 }
 
 async function requestText(config: BackendConfig, path: string, init?: RequestInit, timeoutMs = 30000): Promise<string> {
@@ -1033,8 +1115,9 @@ export type GitHubPR = {
   state: string
   html_url: string
   diff_url: string
-  head: { ref: string; label: string }
-  base: { ref: string; label: string }
+  head: { ref: string; label: string; sha?: string }
+  base: { ref: string; label: string; sha?: string }
+  draft?: boolean
   user: { login: string; avatar_url: string }
   created_at: string
   merged_at: string | null
@@ -1992,8 +2075,12 @@ export async function submitPRReview(config: BackendConfig, projectId: string, p
  * @param prNumber - The PR number.
  * @param method - Merge method (e.g. "merge", "squash", "rebase").
  */
-export async function mergePR(config: BackendConfig, projectId: string, prNumber: number, method: string): Promise<void> {
-  await requestJSON(config, `/api/v1/projects/${encodeURIComponent(projectId)}/github/pulls/${prNumber}/merge`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ method }) })
+export async function mergePR(config: BackendConfig, projectId: string, prNumber: number, method: string, expectedHeadSHA: string): Promise<void> {
+  await requestJSON(config, `/api/v1/projects/${encodeURIComponent(projectId)}/github/pulls/${prNumber}/merge`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ method, expected_head_sha: expectedHeadSHA }) })
+}
+
+export async function fetchPRSnapshot(config: BackendConfig, projectId: string, prNumber: number): Promise<{ pr: GitHubPR; diff: string }> {
+  return requestJSON(config, `/api/v1/projects/${encodeURIComponent(projectId)}/github/pulls/${prNumber}/snapshot`)
 }
 
 // --- Unsandbox Configuration ---
@@ -2491,7 +2578,7 @@ export interface StudioDraft {
   attachments: StudioAttachment[]
   suggested_provider: string
   suggested_model: string
-  max_turns?: number
+  max_turns?: number | null
   template_name?: string
   template_vars: Record<string, string>
   agent_guidance: Record<string, unknown>

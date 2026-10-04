@@ -21,7 +21,6 @@ import {
 import { KanbanBoard } from '@features/kanban'
 import { AppTooltipProvider } from '@ui/tooltip-wrapper'
 import { SectionErrorBoundary } from '@ui/section-error-boundary'
-import { EmbeddedAgentWidget } from '@features/embedded-agent'
 import { AppCommandPalette } from '@layout/AppCommandPalette'
 import { AppDialogs } from '@layout/AppDialogs'
 import {
@@ -176,7 +175,7 @@ export default function App() {
 
   // Keep a ref so keyboard shortcuts can always call the latest handleRefresh
   const handleRefreshRef = useRef(handleRefresh)
-  handleRefreshRef.current = handleRefresh
+  useEffect(() => { handleRefreshRef.current = handleRefresh }, [handleRefresh])
 
   const {
     handleIssueUpdate,
@@ -393,6 +392,8 @@ export default function App() {
         onSearch={(query) => (config ? searchIssues(config, query) : Promise.resolve([]))}
         onResultClick={handleInspectIssueFromList}
         bottomBar={<UsageStatusBar config={config} generatedAt={generatedAt} />}
+        errorMessage={errorMessage}
+        statusMessage={statusMessage}
       >
         <div className="flex flex-col flex-1 min-w-0 min-h-0 h-full">
           {sectionVisibility.showProjects ? (
@@ -607,18 +608,6 @@ export default function App() {
           ) : null}
         </div>
       </AppShell>
-
-      <EmbeddedAgentWidget
-        config={config}
-        onNavigate={(section, id) => {
-          setActiveSection(section as SectionID)
-          if (section === 'SETTINGS' && id) {
-            setSettingsInitialTab(id as 'backend' | 'agents' | 'integrations' | 'shortcuts' | 'notifications')
-          }
-        }}
-        onOpenSettings={() => { setSettingsInitialTab('agents'); setActiveSection('SETTINGS') }}
-        activeSection={activeSection}
-      />
 
       <AppDialogs
         config={config}

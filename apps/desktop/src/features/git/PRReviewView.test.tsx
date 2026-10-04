@@ -1,12 +1,14 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { PRReviewView } from './PRReviewView'
 import type { BackendConfig, GitHubPR } from '@core/api/client'
+import { fetchPRSnapshot, mergePR } from '@core/api/client'
 
 vi.mock('@core/api/client', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('@core/api/client')
   return {
     ...actual,
+    fetchPRSnapshot: vi.fn(),
     fetchProjectGitHubPullDiff: vi.fn().mockResolvedValue('diff --git a/file.ts b/file.ts\n--- a/file.ts\n+++ b/file.ts\n@@ -1,3 +1,4 @@\n+import React from "react"\n export default {}'),
     fetchPRReviews: vi.fn().mockResolvedValue([
       { id: 1, user: { login: 'alice' }, body: 'Looks great!', state: 'APPROVED', submitted_at: '2026-03-20T10:00:00Z' },
@@ -36,8 +38,8 @@ function makePR(overrides: Partial<GitHubPR> = {}): GitHubPR {
     state: 'open',
     html_url: 'https://github.com/org/repo/pull/42',
     diff_url: 'https://github.com/org/repo/pull/42.diff',
-    head: { ref: 'feat/auth', label: 'org:feat/auth' },
-    base: { ref: 'main', label: 'org:main' },
+    head: { ref: 'feat/auth', label: 'org:feat/auth', sha: 'a'.repeat(40) },
+    base: { ref: 'main', label: 'org:main', sha: 'b'.repeat(40) },
     user: { login: 'alice', avatar_url: '' },
     created_at: '2026-03-20T09:00:00Z',
     merged_at: null,
@@ -55,6 +57,7 @@ const defaultProps = {
 describe('PRReviewView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(fetchPRSnapshot).mockResolvedValue({ pr: makePR(), diff: 'diff --git a/file.ts b/file.ts\n+reviewed' })
   })
 
   it('renders PR title and number', () => {
@@ -95,10 +98,11 @@ describe('PRReviewView', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('shows merge dropdown with methods (merge, squash, rebase)', () => {
+  it('shows merge dropdown with methods (merge, squash, rebase)', async () => {
     render(<PRReviewView {...defaultProps} />)
     // Click the Merge dropdown button
     const mergeButton = screen.getByText(/Merge/)
+    await waitFor(() => expect((mergeButton as HTMLButtonElement).disabled).toBe(false))
     fireEvent.click(mergeButton)
     expect(screen.getByText('Squash and merge')).toBeTruthy()
     expect(screen.getByText('Rebase and merge')).toBeTruthy()
@@ -141,5 +145,46 @@ describe('PRReviewView', () => {
     render(<PRReviewView {...defaultProps} pr={makePR({ state: 'closed' })} />)
     expect(screen.getByText('closed')).toBeTruthy()
     expect(screen.queryByText('open')).toBeFalsy()
+  })
+
+  it('merges the displayed snapshot head and updates confirmed merged status', async () => {
+    render(<PRReviewView {...defaultProps} />)
+    await waitFor(() => expect(screen.getByText(/Reviewing commit/)).toBeTruthy())
+    fireEvent.click(screen.getByText('Merge'))
+    fireEvent.click(screen.getByText('Squash and merge'))
+    await waitFor(() => expect(mergePR).toHaveBeenCalledWith(config, 'proj-1', 42, 'squash', 'a'.repeat(40)))
+    await waitFor(() => expect(screen.getByText('merged')).toBeTruthy())
+    expect((screen.getByText('Merge') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('shows merge failure and prevents retry until review is refreshed', async () => {
+    vi.mocked(mergePR).mockRejectedValueOnce(new Error('Head changed. Refresh and review again.'))
+    render(<PRReviewView {...defaultProps} />)
+    await waitFor(() => expect(screen.getByText(/Reviewing commit/)).toBeTruthy())
+    fireEvent.click(screen.getByText('Merge'))
+    fireEvent.click(screen.getByText('Create merge commit'))
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('Head changed'))
+    expect((screen.getByText('Merge') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('failed snapshot does not appear as an empty successful review', async () => {
+    vi.mocked(fetchPRSnapshot).mockRejectedValueOnce(new Error('Diff unavailable'))
+    render(<PRReviewView {...defaultProps} />)
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('Diff unavailable'))
+    expect(screen.queryByTestId('diff-viewer')).toBeNull()
+    expect((screen.getByText('Merge') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('ignores delayed snapshot from a previous PR', async () => {
+    let resolveOld!: (value: { pr: GitHubPR; diff: string }) => void
+    vi.mocked(fetchPRSnapshot).mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve }))
+    const { rerender } = render(<PRReviewView {...defaultProps} />)
+    await waitFor(() => expect(fetchPRSnapshot).toHaveBeenCalledTimes(1))
+    vi.mocked(fetchPRSnapshot).mockResolvedValue({ pr: makePR({ number: 43, title: 'second PR' }), diff: 'second diff' })
+    rerender(<PRReviewView {...defaultProps} pr={makePR({ number: 43, title: 'second PR' })} />)
+    await waitFor(() => expect(screen.getByText('second diff')).toBeTruthy())
+    await act(async () => resolveOld({ pr: makePR(), diff: 'old diff' }))
+    expect(screen.queryByText('old diff')).toBeNull()
+    expect(screen.getByText('second diff')).toBeTruthy()
   })
 })

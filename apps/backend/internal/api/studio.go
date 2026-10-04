@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -64,8 +65,14 @@ func (s *Server) PostStudioSessionDraft(w http.ResponseWriter, r *http.Request) 
 	}
 	id := chi.URLParam(r, "id")
 	var patch map[string]interface{}
-	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
+	decoder := json.NewDecoder(r.Body)
+	decoder.UseNumber()
+	if err := decoder.Decode(&patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		http.Error(w, "draft patch must contain one JSON object", http.StatusBadRequest)
 		return
 	}
 	if err := s.studioMgr.ApplyDraftPatch(id, patch); err != nil {

@@ -1,6 +1,11 @@
 # Repository Guidelines
 
+## Required ADE Reference Patterns
+For ADE changes, inspect the relevant Orca and T3 Code patterns before implementation. Follow the pinned source registry and package mapping in `docs/superpowers/plans/ade-2026-10-03/reference-patterns.md`. Record the source revision, observed behavior, Orchestra adaptation, deliberate deviations, and behavioral verification in the package handoff. Both references must be considered; if one has no relevant pattern, document that finding. Preserve the Kanban model while integrating native provider chat and a shared orchestration control/observation layer. Reference code, documentation, and passing unit tests do not establish Orchestra's E2E reliability; verify each claimed capability independently.
+
 ## Project Structure & Module Organization
+The repository's Orchestra CLI skill is `.codex/skills/orchestra-cli/SKILL.md`. Keep its command examples and `references/task-system.md` aligned with executable CLI help, shared task semantics, and behavioral verification whenever CLI/task behavior changes. Planned commands must stay explicitly marked as unavailable.
+
 `apps/backend` contains the Go API server and orchestration logic. Put binaries in `cmd/` and application code in `internal/`. `apps/tui` is a separate Go module for the terminal dashboard. `apps/desktop` is the Electron + React client; renderer code lives in `src/`, Electron entrypoints in `electron/`, static assets in `public/`, and dev scripts in `scripts/`. Shared schemas live in `packages/protocol/schemas`, test fixtures in `packages/test-fixtures`, and longer-form references in `docs/` and `ops/`.
 
 ## Build, Test, and Development Commands

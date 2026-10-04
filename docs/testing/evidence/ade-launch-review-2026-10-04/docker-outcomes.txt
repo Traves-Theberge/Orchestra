@@ -1,0 +1,7 @@
+Image sha256:e2a1d7bcbafb22b43327609c1d174d92e3db981de010d1f7683ae799c8703f2b
+Build exit 0
+Final full unit + race all exit 0
+Final focused agents race exit 0
+Final slow callback race count10 exit 0
+PR-focused API exit 0, prior image1f9c625d7fa5f52dea9fef69153c2d7171fae950439cb87e9fb246af1ac625a6 before runner+fixture updates
+Go1.26.8 Linux/amd64 CGO1 nonroot10001, networknone, Docker managed own cache only; no hostbinds or credentials

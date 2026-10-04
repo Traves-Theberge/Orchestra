@@ -21,6 +21,7 @@ import {
   fetchMCPServers, fetchMCPTools,
 } from '@core/api/client'
 import type { Scope } from '../types'
+import { useConfigReadFence } from './use-config-read-fence'
 
 export interface ClaudeConfigState {
   // Settings
@@ -50,6 +51,7 @@ export interface ClaudeConfigState {
   // State
   loading: boolean
   error: string
+  readError: string
   saving: string | null
 
   // Mutations
@@ -106,22 +108,20 @@ export function useClaudeConfig(
   // State
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [readError, setReadError] = useState('')
   const [saving, setSaving] = useState<string | null>(null)
 
   const scopeStr = scope === 'PROJECT' ? 'project' : 'global'
   const projId = scope === 'PROJECT' ? projectId : undefined
+  const readTarget = JSON.stringify([backendConfig?.baseUrl, backendConfig?.apiToken, scope, projId])
+  const beginRead = useConfigReadFence(readTarget)
+  const [readCompletedTarget, setReadCompletedTarget] = useState('')
 
   const reload = useCallback(async () => {
     if (!backendConfig) return
+    const isCurrent = beginRead()
     setLoading(true)
     setError('')
-
-    // Each fetch fails gracefully so one broken endpoint doesn't block the rest
-    const safe = <T,>(p: Promise<T>, fallback: T): Promise<T> => p.catch(() => fallback)
-    const emptySettings = { settings: {} as Record<string, unknown>, path: '', exists: false }
-    const emptyInstructions = { content: '', path: '', exists: false }
-    const emptyFiles = { items: [] as ClaudeFileEntry[], dir: '' }
-    const emptyPerms: ProviderPermissions = { approval_mode: 'default', allow: [], deny: [], ask: [] }
 
     try {
       const [
@@ -129,20 +129,21 @@ export function useClaudeConfig(
         projectsRes, permsRes, modelRes, hooksRes,
         provMcpRes, orchMcpRes, mcpToolsRes,
       ] = await Promise.all([
-        safe(fetchClaudeSettings(backendConfig, scopeStr, projId), emptySettings),
-        safe(fetchClaudeInstructions(backendConfig, scopeStr, projId), emptyInstructions),
-        safe(fetchClaudeRules(backendConfig, scopeStr, projId), emptyFiles),
-        safe(fetchClaudeSkills(backendConfig, scopeStr, projId), emptyFiles),
-        safe(fetchClaudeSubAgents(backendConfig, scopeStr, projId), emptyFiles),
-        safe(fetchProjects(backendConfig), []),
-        safe(fetchProviderPermissions(backendConfig, 'claude', projId), emptyPerms),
-        safe(fetchProviderModel(backendConfig, 'claude'), { model: '', effort: '', temperature: null }),
-        safe(fetchProviderHooks(backendConfig, 'claude'), []),
-        safe(fetchProviderMCPServers(backendConfig, 'claude', projId), []),
-        safe(fetchMCPServers(backendConfig), []),
-        safe(fetchMCPTools(backendConfig), []),
+        fetchClaudeSettings(backendConfig, scopeStr, projId),
+        fetchClaudeInstructions(backendConfig, scopeStr, projId),
+        fetchClaudeRules(backendConfig, scopeStr, projId),
+        fetchClaudeSkills(backendConfig, scopeStr, projId),
+        fetchClaudeSubAgents(backendConfig, scopeStr, projId),
+        fetchProjects(backendConfig),
+        fetchProviderPermissions(backendConfig, 'claude', projId, scopeStr),
+        fetchProviderModel(backendConfig, 'claude', projId, scopeStr),
+        fetchProviderHooks(backendConfig, 'claude', scopeStr, projId),
+        fetchProviderMCPServers(backendConfig, 'claude', projId),
+        fetchMCPServers(backendConfig),
+        fetchMCPTools(backendConfig),
       ])
 
+      if (!isCurrent()) return
       setSettings(settingsRes.settings as Record<string, unknown>)
       setSettingsPath(settingsRes.path)
       setSettingsExists(settingsRes.exists)
@@ -159,12 +160,17 @@ export function useClaudeConfig(
       setProviderMcpServers(provMcpRes ?? [])
       setOrchestraMcpServers(orchMcpRes ?? [])
       setMcpTools(mcpToolsRes ?? [])
+      setReadError('')
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      if (!isCurrent()) return
+      setReadError(e instanceof Error ? e.message : String(e))
     } finally {
-      setLoading(false)
+      if (isCurrent()) {
+        setReadCompletedTarget(readTarget)
+        setLoading(false)
+      }
     }
-  }, [backendConfig, scopeStr, projId])
+  }, [backendConfig, scopeStr, projId, beginRead, readTarget])
 
   useEffect(() => {
     let cancelled = false
@@ -281,54 +287,66 @@ export function useClaudeConfig(
     if (!backendConfig) return
     setSaving('permissions')
     try {
-      await updateProviderPermissions(backendConfig, 'claude', perms)
+      await updateProviderPermissions(backendConfig, 'claude', perms, projId, scopeStr)
       setPermissions(perms)
     } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
     finally { setSaving(null) }
-  }, [backendConfig])
+  }, [backendConfig, projId, scopeStr])
 
   const saveModel = useCallback(async (model: ProviderModelConfig) => {
     if (!backendConfig) return
     setSaving('model')
     try {
-      await updateProviderModel(backendConfig, 'claude', model)
+      await updateProviderModel(backendConfig, 'claude', model, projId, scopeStr)
       setModelConfig(model)
     } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
     finally { setSaving(null) }
-  }, [backendConfig])
+  }, [backendConfig, projId, scopeStr])
 
   const saveHooks = useCallback(async (h: ProviderHook[]) => {
     if (!backendConfig) return
     setSaving('hooks')
     try {
-      await updateProviderHooks(backendConfig, 'claude', h)
+      await updateProviderHooks(backendConfig, 'claude', h, scopeStr, projId)
       setHooks(h)
     } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
     finally { setSaving(null) }
-  }, [backendConfig])
+  }, [backendConfig, projId, scopeStr])
 
   const addMCP = useCallback(async (name: string, command: string) => {
     if (!backendConfig) return
+    if (scope === 'PROJECT') {
+      setError('Project MCP editing is unavailable; switch to Global to edit account MCP settings.')
+      return
+    }
     setSaving('mcp')
     try {
       await addProviderMCPServer(backendConfig, 'claude', { name, command, args: [] })
       await reload()
     } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
     finally { setSaving(null) }
-  }, [backendConfig, reload])
+  }, [backendConfig, reload, scope])
 
   const updateMCP = useCallback(async (name: string, server: Partial<ProviderMCPServer>) => {
     if (!backendConfig) return
+    if (scope === 'PROJECT') {
+      setError('Project MCP editing is unavailable; switch to Global to edit account MCP settings.')
+      return
+    }
     setSaving('mcp')
     try {
       await updateProviderMCPServer(backendConfig, 'claude', name, server)
       await reload()
     } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
     finally { setSaving(null) }
-  }, [backendConfig, reload])
+  }, [backendConfig, reload, scope])
 
   const toggleMCP = useCallback(async (name: string, enabled: boolean) => {
     if (!backendConfig) return
+    if (scope === 'PROJECT') {
+      setError('Project MCP editing is unavailable; switch to Global to edit account MCP settings.')
+      return
+    }
     setSaving('mcp')
     try {
       await toggleProviderMCPServer(backendConfig, 'claude', name, enabled)
@@ -336,17 +354,21 @@ export function useClaudeConfig(
       setProviderMcpServers(prev => prev.map(s => s.name === name ? { ...s, enabled } : s))
     } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
     finally { setSaving(null) }
-  }, [backendConfig])
+  }, [backendConfig, scope])
 
   const deleteMCP = useCallback(async (name: string) => {
     if (!backendConfig) return
+    if (scope === 'PROJECT') {
+      setError('Project MCP editing is unavailable; switch to Global to edit account MCP settings.')
+      return
+    }
     setSaving('mcp')
     try {
       await deleteProviderMCPServer(backendConfig, 'claude', name)
       setProviderMcpServers(prev => prev.filter(s => s.name !== name))
     } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
     finally { setSaving(null) }
-  }, [backendConfig])
+  }, [backendConfig, scope])
 
   const deleteOrchMCP = useCallback(async (name: string) => {
     if (!backendConfig) return
@@ -368,7 +390,7 @@ export function useClaudeConfig(
     rules, skills, subagents, projects,
     permissions, modelConfig, hooks,
     providerMcpServers, orchestraMcpServers, mcpTools,
-    loading, error, saving,
+    loading: loading || readCompletedTarget !== readTarget, error, readError, saving,
     saveSettings, saveInstructions, deleteInstructions,
     saveRule, removeRule,
     saveSkill, removeSkill,

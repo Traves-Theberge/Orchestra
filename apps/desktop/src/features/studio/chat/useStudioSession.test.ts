@@ -144,4 +144,43 @@ describe('useStudioSession', () => {
     unmount()
     expect(FakeEventSource.instances[0].closed).toBe(true)
   })
+
+  it('clears visible state on session switch and ignores retired or wrong-session events', async () => {
+    let resolveSecond!: (draft: StudioDraft) => void
+    const client = makeClient({ getStudioDraft: vi.fn((id: string) => id === 'sess1'
+      ? Promise.resolve(emptyDraft)
+      : new Promise<StudioDraft>(resolve => { resolveSecond = resolve })) })
+    const { result, rerender } = renderHook(({ id }) => useStudioSession(id, client, {
+      createEventSource: url => new FakeEventSource(url) as unknown as EventSource,
+    }), { initialProps: { id: 'sess1' } })
+    await waitFor(() => expect(result.current.draft).not.toBeNull())
+    const old = FakeEventSource.instances[0]
+    act(() => {
+      old.triggerOpen()
+      old.emit({ session_id: 'sess1', kind: 'chat.message', payload: { role: 'agent', text: 'old' } })
+    })
+    rerender({ id: 'sess2' })
+    expect(result.current.draft).toBeNull()
+    expect(result.current.messages).toEqual([])
+    expect(result.current.connected).toBe(false)
+    act(() => {
+      old.triggerOpen()
+      old.emit({ session_id: 'sess1', kind: 'chat.message', payload: { role: 'agent', text: 'late' } })
+      FakeEventSource.instances[1].emit({ session_id: 'sess1', kind: 'draft.updated', payload: emptyDraft })
+      resolveSecond({ ...emptyDraft, session_id: 'sess2', title: 'second' })
+    })
+    await waitFor(() => expect(result.current.draft?.title).toBe('second'))
+    expect(result.current.messages).toEqual([])
+    expect(result.current.connected).toBe(false)
+    expect(old.closed).toBe(true)
+  })
+
+  it('does not let a delayed initial GET overwrite a newer stream snapshot', async () => {
+    let resolveInitial!: (draft: StudioDraft) => void
+    const client = makeClient({ getStudioDraft: vi.fn(() => new Promise<StudioDraft>(resolve => { resolveInitial = resolve })) })
+    const { result } = renderSession(client)
+    act(() => FakeEventSource.instances[0].emit({ session_id: 'sess1', kind: 'draft.updated', payload: { ...emptyDraft, title: 'newer' } }))
+    await act(async () => resolveInitial({ ...emptyDraft, title: 'stale GET' }))
+    expect(result.current.draft?.title).toBe('newer')
+  })
 })

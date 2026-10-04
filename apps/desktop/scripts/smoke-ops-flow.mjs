@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { createWriteStream } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
+import { tmpdir } from 'node:os'
 import { setTimeout as delay } from 'node:timers/promises'
 
 let smokeLogStream = null
@@ -148,10 +149,11 @@ function startGoBackend(baseUrl, requireAuth, token) {
   const host = requireAuth ? '0.0.0.0' : parsed.hostname
   const port = parsed.port || (parsed.protocol === 'https:' ? '443' : '80')
 
-  const workspaceRoot = `/tmp/orchestra_smoke_${Date.now()}`
+  const workspaceRoot = path.join(tmpdir(), `orchestra_smoke_${Date.now()}`)
   const child = spawn('go', ['run', './cmd/orchestrad'], {
     cwd: '../backend',
-    detached: true,
+    detached: process.platform !== 'win32',
+    windowsHide: true,
     env: {
       ...process.env,
       ORCHESTRA_SERVER_HOST: host,
@@ -191,7 +193,11 @@ async function stopProcess(child) {
 
     child.once('exit', finish)
 
-    if (typeof child.pid === 'number') {
+    if (process.platform === 'win32' && typeof child.pid === 'number') {
+      const kill = spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })
+      kill.once('error', () => { child.kill(); finish() })
+      kill.once('exit', finish)
+    } else if (typeof child.pid === 'number') {
       try {
         process.kill(-child.pid, 'SIGTERM')
       } catch {
@@ -344,7 +350,7 @@ async function main() {
   const { spawnBackend, requireAuth, baseUrl, token, verbose, logDir } = parseArgs(process.argv.slice(2))
   let backendProcess = null
 
-  const resolvedLogDir = logDir || path.join('/tmp', `orchestra-smoke-${Date.now()}`)
+  const resolvedLogDir = logDir || path.join(tmpdir(), `orchestra-smoke-${Date.now()}`)
   await mkdir(resolvedLogDir, { recursive: true })
   smokeLogStream = createWriteStream(path.join(resolvedLogDir, 'smoke-flow.log'), { flags: 'a' })
   backendLogStream = createWriteStream(path.join(resolvedLogDir, 'backend.log'), { flags: 'a' })

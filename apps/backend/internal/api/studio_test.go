@@ -105,6 +105,55 @@ func TestStudioCreateSession(t *testing.T) {
 	}
 }
 
+func TestStudioDraftHTTPPatchValidationAndClear(t *testing.T) {
+	f := spinUpStudioAPI(t)
+	sess, err := f.mgr.StartSession(context.Background(), studio.StartSessionRequest{Runner: "fake"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint := f.server.URL + "/api/v1/studio/sessions/" + sess.ID + "/draft"
+	post := func(body string, status int) {
+		t.Helper()
+		response, err := http.Post(endpoint, "application/json", bytes.NewBufferString(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		if response.StatusCode != status {
+			t.Fatalf("%s: status %d, want %d", body, response.StatusCode, status)
+		}
+	}
+	post(`{"title":"saved","max_turns":5,"acceptance_criteria":["check"],"attachments":[{"kind":"file","path":"main.go"}]}`, http.StatusNoContent)
+	for _, body := range []string{`{"title":"wrong","max_turns":1.5}`, `{"title":"wrong","max_turns":1.000000000000000001}`, `{"title":"wrong","attachments":[{"kind":"invalid"}]}`, `{"title":"wrong"} {}`, `null`} {
+		post(body, http.StatusBadRequest)
+		snap, err := f.mgr.GetDraft(sess.ID)
+		if err != nil || snap.Title != "saved" || snap.MaxTurns == nil || *snap.MaxTurns != 5 || len(snap.Attachments) != 1 {
+			t.Fatalf("invalid HTTP patch changed storage: %+v %v", snap, err)
+		}
+	}
+	for _, body := range []string{`{"max_turns":5.0}`, `{"max_turns":5e0}`, `{"max_turns":0.5e1}`} {
+		post(body, http.StatusNoContent)
+		snap, err := f.mgr.GetDraft(sess.ID)
+		if err != nil || snap.MaxTurns == nil || *snap.MaxTurns != 5 {
+			t.Fatalf("integral decimal/exponent reload: %+v %v", snap, err)
+		}
+	}
+	post(`{"max_turns":null,"acceptance_criteria":[],"attachments":[]}`, http.StatusNoContent)
+	response, err := http.Get(endpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var snap map[string]any
+	if err := json.NewDecoder(response.Body).Decode(&snap); err != nil {
+		t.Fatal(err)
+	}
+	value, exists := snap["max_turns"]
+	if !exists || value != nil || snap["title"] != "saved" || len(snap["attachments"].([]any)) != 0 || len(snap["acceptance_criteria"].([]any)) != 0 {
+		t.Fatalf("canonical HTTP reload: %+v", snap)
+	}
+}
+
 // Task 12 — full e2e: create session, drive draft fields via manager (as a
 // real runner would via tool calls), then GET draft via HTTP, PATCH via HTTP,
 // and push.

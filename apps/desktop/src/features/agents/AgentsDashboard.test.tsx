@@ -1,6 +1,7 @@
-import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AgentsDashboard } from './AgentsDashboard'
+import { resetAppStore, useAppStore } from '@core/store'
 
 const mockUseClaudeConfig = vi.fn()
 const mockUseCodexConfig = vi.fn()
@@ -15,29 +16,6 @@ vi.mock('./hooks/use-provider-domain-config', () => ({
   useCodexConfig: (...args: unknown[]) => mockUseCodexConfig(...args),
   useGeminiConfig: (...args: unknown[]) => mockUseGeminiConfig(...args),
   useOpenCodeConfig: (...args: unknown[]) => mockUseOpenCodeConfig(...args),
-}))
-
-vi.mock('./ProviderHeader', () => ({
-  ProviderHeader: ({ onProviderChange }: { onProviderChange: (provider: 'claude' | 'codex' | 'gemini' | 'opencode') => void }) => (
-    <div>
-      <button onClick={() => onProviderChange('claude')}>Claude</button>
-      <button onClick={() => onProviderChange('codex')}>Codex</button>
-      <button onClick={() => onProviderChange('gemini')}>Gemini</button>
-      <button onClick={() => onProviderChange('opencode')}>OpenCode</button>
-    </div>
-  ),
-}))
-
-vi.mock('./CategoryList', () => ({
-  CategoryList: ({ categories, onSelectCategory }: { categories: Array<{ id: string; label: string }>; onSelectCategory: (id: string) => void }) => (
-    <div>
-      {categories.map((category) => (
-        <button key={category.id} onClick={() => onSelectCategory(category.id)}>
-          {category.label}
-        </button>
-      ))}
-    </div>
-  ),
 }))
 
 function marker(name: string) {
@@ -101,6 +79,7 @@ function makeCommonState() {
 }
 
 describe('AgentsDashboard', () => {
+  beforeEach(() => resetAppStore())
   it('routes Gemini categories to provider-specific panels', () => {
     mockUseClaudeConfig.mockReturnValue({
       ...makeCommonState(),
@@ -154,19 +133,20 @@ describe('AgentsDashboard', () => {
 
     render(<AgentsDashboard config={{ baseUrl: 'http://localhost:4010', apiToken: 'dev-token' }} />)
 
-    fireEvent.click(screen.getByText('Gemini'))
+    act(() => useAppStore.getState().setActiveAgentProvider('gemini'))
+    act(() => useAppStore.getState().setActiveAgentCategory('settings'))
     expect(screen.getByText('Gemini Settings')).toBeTruthy()
 
-    fireEvent.click(screen.getByText('Models'))
+    act(() => useAppStore.getState().setActiveAgentCategory('models'))
     expect(screen.getByText('Gemini Model Panel')).toBeTruthy()
 
-    fireEvent.click(screen.getByText('Permissions'))
+    act(() => useAppStore.getState().setActiveAgentCategory('permissions'))
     expect(screen.getByText('Gemini Permissions Panel')).toBeTruthy()
 
-    fireEvent.click(screen.getByText('Context'))
+    act(() => useAppStore.getState().setActiveAgentCategory('context'))
     expect(screen.getByText('Gemini Context Panel')).toBeTruthy()
 
-    fireEvent.click(screen.getByText('Commands'))
+    act(() => useAppStore.getState().setActiveAgentCategory('commands'))
     expect(screen.getByText('Gemini Commands Panel')).toBeTruthy()
   })
 
@@ -227,25 +207,43 @@ describe('AgentsDashboard', () => {
 
     render(<AgentsDashboard config={{ baseUrl: 'http://localhost:4010', apiToken: 'dev-token' }} />)
 
-    fireEvent.click(screen.getByText('OpenCode'))
+    act(() => useAppStore.getState().setActiveAgentProvider('opencode'))
+    act(() => useAppStore.getState().setActiveAgentCategory('config'))
     expect(screen.getByText('OpenCode Config')).toBeTruthy()
 
-    fireEvent.click(screen.getByText('Models'))
+    act(() => useAppStore.getState().setActiveAgentCategory('models'))
     expect(screen.getByText('OpenCode Model Panel')).toBeTruthy()
 
-    fireEvent.click(screen.getByText('Instructions'))
+    act(() => useAppStore.getState().setActiveAgentCategory('instructions'))
     expect(screen.getByText('OpenCode Instructions Panel')).toBeTruthy()
 
-    fireEvent.click(screen.getByText('Agents'))
+    act(() => useAppStore.getState().setActiveAgentCategory('agents'))
     expect(screen.getByText('OpenCode Agents Panel')).toBeTruthy()
 
-    fireEvent.click(screen.getByText('Commands'))
+    act(() => useAppStore.getState().setActiveAgentCategory('commands'))
     expect(screen.getByText('OpenCode Commands Panel')).toBeTruthy()
 
-    fireEvent.click(screen.getByText('Skills'))
+    act(() => useAppStore.getState().setActiveAgentCategory('skills'))
     expect(screen.getByText('OpenCode Skills Panel')).toBeTruthy()
 
-    fireEvent.click(screen.getByText('Permissions'))
+    act(() => useAppStore.getState().setActiveAgentCategory('permissions'))
     expect(screen.getByText('OpenCode Permissions Panel')).toBeTruthy()
   })
+  it('withholds editors after a failed read and offers an explicit retry', () => {
+    const reload = vi.fn()
+    mockUseClaudeConfig.mockReturnValue({ ...makeCommonState(), rules: [], skills: [], subagents: [] })
+    mockUseCodexConfig.mockReturnValue({ ...makeCommonState(), config: [], instructions: [], subagents: [], skills: [], rules: [], readError: '403 forbidden', reload })
+    mockUseGeminiConfig.mockReturnValue({ ...makeCommonState(), settings: [], context: [], commands: [] })
+    mockUseOpenCodeConfig.mockReturnValue({ ...makeCommonState(), config: [], agents: [], commands: [], skills: [] })
+    act(() => {
+      useAppStore.getState().setActiveAgentProvider('codex')
+      useAppStore.getState().setActiveAgentCategory('config')
+    })
+    render(<AgentsDashboard config={{ baseUrl: 'http://localhost:4010', apiToken: 'test' }} />)
+    expect(screen.getByRole('alert').textContent).toContain('403 forbidden')
+    expect(screen.queryByText('Codex Config Panel')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry configuration' }))
+    expect(reload).toHaveBeenCalledOnce()
+  })
+
 })

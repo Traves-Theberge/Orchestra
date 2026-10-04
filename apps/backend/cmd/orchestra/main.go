@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 
 	"github.com/orchestra/orchestra/apps/backend/internal/app"
+	"github.com/orchestra/orchestra/apps/backend/internal/cli"
 	"github.com/orchestra/orchestra/apps/backend/internal/logging"
 	"github.com/orchestra/orchestra/apps/backend/internal/specs"
 )
@@ -14,15 +16,24 @@ type cliRunner struct {
 	start       func() error
 	check       func() error
 	checkPRBody func(path string) error
+	observe     func(args []string, stdout, stderr io.Writer) int
 }
 
 func runCLI(args []string, stdout io.Writer, stderr io.Writer, runner cliRunner) int {
 	if len(args) < 2 {
-		fmt.Fprintln(stderr, "usage: orchestra <start|check|check-pr-body>")
+		fmt.Fprintln(stderr, "usage: orchestra <start|check|check-pr-body|status|project|task>")
 		return 2
 	}
 
 	switch args[1] {
+	case "help", "--help", "-h":
+		fmt.Fprintln(stdout, cli.Help)
+		return 0
+	case "status", "project", "task":
+		if runner.observe != nil {
+			return runner.observe(args[1:], stdout, stderr)
+		}
+		return cli.Run(context.Background(), args[1:], stdout, stderr, os.Getenv)
 	case "start":
 		if err := runner.start(); err != nil {
 			fmt.Fprintf(stderr, "orchestra start failed: %v\n", err)

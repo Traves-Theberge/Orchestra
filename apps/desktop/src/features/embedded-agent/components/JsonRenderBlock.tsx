@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { Component, type ReactNode } from 'react'
 import type { JsonRenderSpec } from '../lib/types'
 
 interface JsonRenderBlockProps {
@@ -34,7 +34,25 @@ function formatCellValue(val: unknown): string {
   return String(val)
 }
 
-export function JsonRenderBlock({ spec, onAction }: JsonRenderBlockProps) {
+class JsonRenderBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state: { error: Error | null } = { error: null }
+  static getDerivedStateFromError(error: Error) { return { error } }
+  render() {
+    if (!this.state.error) return this.props.children
+    return (
+      <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3" role="alert">
+        <p className="text-[10px] font-bold text-amber-400 mb-1">Render error</p>
+        <pre className="text-[9px] font-mono text-muted-foreground/60 overflow-auto max-h-[80px]">{this.state.error.message}</pre>
+      </div>
+    )
+  }
+}
+
+export function JsonRenderBlock(props: JsonRenderBlockProps) {
+  return <JsonRenderBoundary key={JSON.stringify(props.spec)}><JsonRenderContent {...props} /></JsonRenderBoundary>
+}
+
+function JsonRenderContent({ spec, onAction }: JsonRenderBlockProps) {
   if (!spec?.root || !spec?.elements) return null
 
   function renderElement(key: string): ReactNode {
@@ -240,16 +258,5 @@ export function JsonRenderBlock({ spec, onAction }: JsonRenderBlockProps) {
     }
   }
 
-  try {
-    return <div>{renderElement(spec.root)}</div>
-  } catch (err) {
-    return (
-      <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
-        <p className="text-[10px] font-bold text-amber-400 mb-1">Render error</p>
-        <pre className="text-[9px] font-mono text-muted-foreground/60 overflow-auto max-h-[80px]">
-          {err instanceof Error ? err.message : 'Unknown error'}
-        </pre>
-      </div>
-    )
-  }
+  return <div>{renderElement(spec.root)}</div>
 }

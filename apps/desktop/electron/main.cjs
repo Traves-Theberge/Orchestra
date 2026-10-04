@@ -6,6 +6,7 @@ const fsSync = require('node:fs')
 const crypto = require('node:crypto')
 const net = require('node:net')
 const { spawn } = require('node:child_process')
+const { observeManagedBackend, prepareManagedBackend, stopManagedBackendChild } = require('./managed-backend.cjs')
 
 let managedBackendState = null
 
@@ -63,10 +64,6 @@ function resolveManagedBackendBinaryPath() {
   return newestExistingPath(devCandidates)
 }
 
-function wait(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
 async function isPortAvailable(port) {
   return new Promise((resolve) => {
     const server = net.createServer()
@@ -86,38 +83,6 @@ async function findAvailablePort(startPort, maxAttempts = 50) {
     }
   }
   throw new Error(`unable to find available port after ${maxAttempts} attempts from ${startPort}`)
-}
-
-async function waitForManagedBackendReady(baseUrl, token, child, timeoutMs = 20000) {
-  const started = Date.now()
-  let lastError = 'no response yet'
-
-  while (Date.now() - started < timeoutMs) {
-    if (child.exitCode !== null) {
-      throw new Error(`backend exited with code ${child.exitCode}`)
-    }
-
-    try {
-      const response = await fetch(new URL('/api/v1/state', baseUrl), {
-        headers: {
-          Accept: 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-      })
-
-      if (response.ok) {
-        return
-      }
-
-      lastError = `status ${response.status}`
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error)
-    }
-
-    await wait(250)
-  }
-
-  throw new Error(`managed backend health check timed out: ${lastError}`)
 }
 
 async function startManagedBackend() {
@@ -151,6 +116,16 @@ async function startManagedBackend() {
       PATH: process.env.PATH,
       HOME: process.env.HOME,
       USERPROFILE: process.env.USERPROFILE,
+      SYSTEMROOT: process.env.SYSTEMROOT,
+      WINDIR: process.env.WINDIR,
+      COMSPEC: process.env.COMSPEC,
+      APPDATA: process.env.APPDATA,
+      LOCALAPPDATA: process.env.LOCALAPPDATA,
+      CODEX_HOME: process.env.CODEX_HOME,
+      CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR,
+      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+      XDG_DATA_HOME: process.env.XDG_DATA_HOME,
+      XDG_CACHE_HOME: process.env.XDG_CACHE_HOME,
       TMPDIR: process.env.TMPDIR,
       TEMP: process.env.TEMP,
       TMP: process.env.TMP,
@@ -158,11 +133,14 @@ async function startManagedBackend() {
       ORCHESTRA_SERVER_HOST: '127.0.0.1',
       ORCHESTRA_SERVER_PORT: String(port),
       ORCHESTRA_WORKSPACE_ROOT: workspaceRoot,
+      ORCHESTRA_PROJECT_ROOTS: process.env.ORCHESTRA_PROJECT_ROOTS,
+      ORCHESTRA_NATIVE_COMMAND_CODEX: process.env.ORCHESTRA_NATIVE_COMMAND_CODEX,
       ORCHESTRA_API_TOKEN: token,
       ORCHESTRA_TOKEN_KEY: process.env.ORCHESTRA_TOKEN_KEY,
     },
   })
 
+  const observation = observeManagedBackend(child)
   const maskToken = (text) => text.replaceAll(token, '****')
   child.stdout.on('data', (chunk) => {
     process.stdout.write(`[orchestrad] ${maskToken(chunk.toString())}`)
@@ -172,7 +150,7 @@ async function startManagedBackend() {
   })
 
   const baseUrl = `http://127.0.0.1:${port}`
-  await waitForManagedBackendReady(baseUrl, token, child)
+  await prepareManagedBackend(baseUrl, token, child, observation)
 
   return {
     child,
@@ -184,31 +162,7 @@ async function startManagedBackend() {
 }
 
 async function stopManagedBackend() {
-  const child = managedBackendState?.child
-  if (!child || child.killed || child.exitCode !== null) {
-    managedBackendState = null
-    return
-  }
-
-  await new Promise((resolve) => {
-    let settled = false
-    const finish = () => {
-      if (!settled) {
-        settled = true
-        resolve()
-      }
-    }
-
-    child.once('exit', finish)
-    child.kill('SIGTERM')
-    setTimeout(() => {
-      if (!settled) {
-        child.kill('SIGKILL')
-        finish()
-      }
-    }, 1200)
-  })
-
+  await stopManagedBackendChild(managedBackendState?.child)
   managedBackendState = null
 }
 
@@ -433,7 +387,7 @@ function createWindow() {
           `script-src ${scriptSrc}; ` +
           `style-src 'self' 'unsafe-inline' ${fontStyleHosts}; ` +
           "img-src 'self' data: blob:; " +
-          `font-src 'self' ${fontFileHosts}; ` +
+          `font-src 'self' data: ${fontFileHosts}; ` +
           `connect-src ${connectSrc}; ` +
           "media-src 'self' blob:; " +
           "worker-src 'self' blob:"
@@ -696,7 +650,9 @@ app.whenReady().then(async () => {
 })
 
 app.on('before-quit', () => {
-  void stopManagedBackend()
+  void stopManagedBackend().catch((error) => {
+    console.error('Failed to stop managed backend during quit:', error)
+  })
 })
 
 app.on('window-all-closed', () => {

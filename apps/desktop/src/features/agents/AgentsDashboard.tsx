@@ -129,6 +129,9 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
       ? gemini
       : opencode
   const state = isClaudeOrEightgent ? claude : domainState
+  const overviewProjectRead = isClaudeOrEightgent && category === 'overview' && agentHubProjectId
+  const readFailure = state.readError || (isClaudeOrEightgent && claudeGlobal.readError) || (overviewProjectRead && claudeProject.readError)
+  const readLoading = state.loading || (isClaudeOrEightgent && claudeGlobal.loading) || (overviewProjectRead && claudeProject.loading)
 
   const categories = useMemo(() => {
     switch (provider) {
@@ -349,10 +352,30 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
       </div>
 
       <div className="flex flex-col flex-1 min-h-0">
+        {category === 'mcp' && agentHubScope === 'PROJECT' && (
+          <p className="px-4 py-2 text-xs text-muted-foreground border-b border-border/20">
+            Project MCP configuration is read-only here. Switch to Global to edit account MCP settings.
+          </p>
+        )}
         {/* Detail panel */}
         <div className="flex flex-1 min-h-0">
             <div className="flex-1 min-w-0 min-h-0">
-              {category === 'overview' ? (
+              {readFailure ? (
+                <div role="alert" className="p-6 space-y-3">
+                  <h2 className="text-sm font-semibold">Configuration unavailable</h2>
+                  <p className="text-sm text-muted-foreground">{readFailure}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Editing is unavailable until the selected provider configuration can be read. A failed read does not mean the file is empty or missing.
+                  </p>
+                  <Button variant="outline" onClick={() => {
+                    void state.reload()
+                    if (isClaudeOrEightgent) void claudeGlobal.reload()
+                    if (overviewProjectRead) void claudeProject.reload()
+                  }}>Retry configuration</Button>
+                </div>
+              ) : readLoading ? (
+                <div className="p-6 space-y-3"><Skeleton className="h-6 w-48" /><Skeleton className="h-[300px] w-full" /></div>
+              ) : category === 'overview' ? (
                 <OverviewPanel
                   provider={provider}
                   projectName={selectedProject?.name ?? null}
@@ -363,8 +386,6 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                     setCategory(nextCategory)
                   })}
                 />
-              ) : state.loading ? (
-                <div className="p-6 space-y-3"><Skeleton className="h-6 w-48" /><Skeleton className="h-[300px] w-full" /></div>
               ) : isClaudeOrEightgent ? (
                 <>
                   {category === 'settings' && (

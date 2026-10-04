@@ -78,7 +78,7 @@ cmd_run() {
   issue=$(curl_json -X POST "${BASE}/issues" -d "$(jq -n \
     --arg t "${title}" \
     --arg d "Smoke test for #147 — ${provider} end-to-end. Touch a single file and stop." \
-    --arg s "Todo" \
+    --arg s "Backlog" \
     --arg p "${project_id}" \
     --arg pr "${provider}" \
     '{title:$t, description:$d, state:$s, priority:2, project_id:$p, provider:$pr}')")
@@ -92,6 +92,7 @@ cmd_run() {
   fi
 
   green "issue created: ${identifier}"
+  yellow "Assign the agent and move Backlog -> Todo in the board to begin planning."
   dim   "expected worktree dir under: ${WORKSPACE_ROOT}/<branch>/"
   dim   "session log lives at:        ${WORKSPACE_ROOT}/<wt>/_logs/${identifier}/latest.log"
   dim   "Kanban link (UI):            http://localhost:5173 (open and find ${identifier})"

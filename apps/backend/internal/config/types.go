@@ -29,6 +29,8 @@ type Config struct {
 	AgentProvider string
 	// AgentCommands maps provider names to their CLI command templates.
 	AgentCommands map[string]string
+	// NativeAgentCommands are independent structured chat commands, never batch templates.
+	NativeAgentCommands map[string]string
 	// AgentMaxTurns is the maximum number of consecutive execution turns per issue.
 	AgentMaxTurns int
 	// TrackerType selects the issue tracker backend (e.g. "github", "sqlite").

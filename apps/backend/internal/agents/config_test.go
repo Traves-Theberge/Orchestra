@@ -11,6 +11,7 @@ func TestListAgentConfigsClassifiesProviderResources(t *testing.T) {
 	projectRoot := t.TempDir()
 	workspaceRoot := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 
 	mustWriteFile(t, filepath.Join(home, ".codex", "config.toml"), "model = \"gpt-5.3-codex\"\n")
 	mustWriteFile(t, filepath.Join(projectRoot, "AGENTS.md"), "# Project instructions\n")

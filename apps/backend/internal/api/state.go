@@ -79,6 +79,10 @@ func (s *Server) CreateGitHubPR(w http.ResponseWriter, r *http.Request) {
 	// Try to lookup issue to find project ID
 	var projectID string
 	issue, err := s.orchestrator.FetchIssueByIdentifier(r.Context(), identifier)
+	if err != nil || issue == nil {
+		writeJSONError(w, http.StatusNotFound, "issue_not_found", "issue not found; a task must exist before creating its pull request")
+		return
+	}
 	if err == nil && issue != nil {
 		projectID = issue.ProjectID
 		if projectID != "" {
@@ -170,16 +174,9 @@ func (s *Server) CreateGitHubPR(w http.ResponseWriter, r *http.Request) {
 			pushCmd := exec.CommandContext(r.Context(), "git", "push", "-u", "origin", body.Head)
 			pushCmd.Dir = pushDir
 			if pushOut, pushErr := pushCmd.CombinedOutput(); pushErr != nil {
-				s.logger.Warn().Err(pushErr).Str("output", string(pushOut)).Str("branch", body.Head).Msg("regular push failed, retrying with --force-with-lease")
-				// Retry with --force-with-lease: the branch may have stale history
-				// from a previous dispatch (e.g., re-plan or re-execute cycle).
-				forceCmd := exec.CommandContext(r.Context(), "git", "push", "--force-with-lease", "-u", "origin", body.Head)
-				forceCmd.Dir = pushDir
-				if forceOut, forceErr := forceCmd.CombinedOutput(); forceErr != nil {
-					s.logger.Error().Err(forceErr).Str("output", string(forceOut)).Str("branch", body.Head).Msg("force push also failed — PR creation may fail")
-				} else {
-					s.logger.Info().Str("branch", body.Head).Msg("force-pushed branch to origin for PR creation")
-				}
+				s.logger.Warn().Err(pushErr).Str("output", string(pushOut)).Str("branch", body.Head).Msg("branch push failed; PR creation stopped")
+				writeJSONError(w, http.StatusConflict, "pr_push_failed", "could not push the PR branch; resolve the remote rejection or local Git/authentication error and retry. No force push was attempted and no pull request was created")
+				return
 			} else {
 				s.logger.Info().Str("branch", body.Head).Msg("pushed branch to origin for PR creation")
 			}
@@ -195,7 +192,7 @@ func (s *Server) CreateGitHubPR(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// If a PR already exists for this branch, find and return it instead of failing.
 		if strings.Contains(err.Error(), "A pull request already exists") {
-			s.logger.Info().Str("head", body.Head).Msg("PR already exists for branch — looking up existing PR")
+			s.logger.Info().Str("head", body.Head).Msg("PR already exists for branch â€” looking up existing PR")
 			existing, lookupErr := githubutils.FindPullRequestByHead(r.Context(), body.Owner, body.Repo, body.Token, body.Head)
 			if lookupErr == nil && existing != nil {
 				pr = existing
@@ -344,12 +341,11 @@ func (s *Server) GetIssue(w http.ResponseWriter, r *http.Request) {
 
 	// If not in memory (not running/retrying), try to fetch from tracker
 	if !ok {
-		issues, err := s.orchestrator.SearchIssues(r.Context(), identifier)
-		if err != nil || len(issues) == 0 {
+		issue, err := s.orchestrator.FetchIssueByIdentifier(r.Context(), identifier)
+		if err != nil || issue == nil {
 			writeJSONError(w, http.StatusNotFound, "issue_not_found", "issue not found in memory or tracker")
 			return
 		}
-		issue := issues[0]
 
 		logPath := ""
 		if wsPath, err := workspace.WorkspacePath(s.workspaceRoot, issue.Identifier, ""); err == nil {
@@ -358,7 +354,7 @@ func (s *Server) GetIssue(w http.ResponseWriter, r *http.Request) {
 
 		history, _ := s.orchestrator.GetHistory(r.Context(), issue.ID)
 
-		writeJSON(w, http.StatusOK, map[string]any{
+		response := map[string]any{
 			"issue_id":         issue.ID,
 			"issue_identifier": issue.Identifier,
 			"title":            issue.Title,
@@ -395,7 +391,9 @@ func (s *Server) GetIssue(w http.ResponseWriter, r *http.Request) {
 					},
 				},
 			},
-		})
+		}
+		mergeIssueAuthoringMetadata(response, issue)
+		writeJSON(w, http.StatusOK, response)
 		return
 	}
 
@@ -403,9 +401,9 @@ func (s *Server) GetIssue(w http.ResponseWriter, r *http.Request) {
 
 	// Fetch full issue details from tracker to ensure consistent response
 	var issueDetails *tracker.Issue
-	issues, err := s.orchestrator.SearchIssues(r.Context(), identifier)
-	if err == nil && len(issues) > 0 {
-		issueDetails = &issues[0]
+	issue, err := s.orchestrator.FetchIssueByIdentifier(r.Context(), identifier)
+	if err == nil {
+		issueDetails = issue
 	}
 
 	restartCount := int64(0)
@@ -520,6 +518,7 @@ func (s *Server) GetIssue(w http.ResponseWriter, r *http.Request) {
 		response["feedback"] = issueDetails.Feedback
 		response["pr_url"] = issueDetails.PRURL
 		response["plan"] = issueDetails.Plan
+		mergeIssueAuthoringMetadata(response, issueDetails)
 	}
 
 	writeJSON(w, http.StatusOK, response)
@@ -532,6 +531,31 @@ var validTransitions = map[string][]string{
 	"In Progress": {"Review", "Todo", "Backlog"},
 	"Review":      {"Done", "Todo", "In Progress", "Backlog"},
 	"Done":        {"Todo", "Backlog"},
+}
+
+// mergeIssueAuthoringMetadata projects requested task metadata, not effective
+// provider settings. Empty lists/maps are canonical JSON values rather than null.
+func mergeIssueAuthoringMetadata(response map[string]any, issue *tracker.Issue) {
+	criteria := issue.AcceptanceCriteria
+	if criteria == nil {
+		criteria = []string{}
+	}
+	attachments := issue.Attachments
+	if attachments == nil {
+		attachments = []tracker.Attachment{}
+	}
+	guidance := issue.AgentGuidance
+	if guidance == nil {
+		guidance = map[string]any{}
+	}
+	response["runtime_target"] = issue.RuntimeTarget
+	response["requested_model"] = issue.RequestedModel
+	response["requested_max_turns"] = issue.RequestedMaxTurns
+	response["acceptance_criteria"] = criteria
+	response["attachments"] = attachments
+	response["agent_guidance"] = guidance
+	response["source_template"] = issue.SourceTemplate
+	response["authoring_session_id"] = issue.AuthoringSessionID
 }
 
 // lockedFields are fields that cannot be changed when an issue is not in Backlog.
@@ -560,7 +584,7 @@ func validateStateTransition(current, next string, issue *tracker.Issue, updates
 		return fmt.Sprintf("transition from %q to %q is not allowed", current, next)
 	}
 
-	// Gate: Backlog → Todo requires title, description, assignee_id, project_id all non-empty
+	// Gate: Backlog â†’ Todo requires title, description, assignee_id, project_id all non-empty
 	if current == "Backlog" && next == "Todo" {
 		title := issue.Title
 		if v, ok := updates["title"].(string); ok {
@@ -586,7 +610,7 @@ func validateStateTransition(current, next string, issue *tracker.Issue, updates
 		}
 	}
 
-	// Gate: Review → Todo and Review → In Progress both require feedback
+	// Gate: Review â†’ Todo and Review â†’ In Progress both require feedback
 	if current == "Review" && (next == "Todo" || next == "In Progress") {
 		if _, ok := updates["feedback"]; !ok {
 			return fmt.Sprintf("cannot move from Review to %s without providing feedback", next)
@@ -615,10 +639,24 @@ func validateFieldLocking(currentState string, updates map[string]any) string {
 // an auto-commit is triggered on the associated project.
 func (s *Server) PatchIssue(w http.ResponseWriter, r *http.Request) {
 	identifier := chi.URLParam(r, "issue_identifier")
-	var updates map[string]any
-	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
+	var fields map[string]json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&fields); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid_json", "failed to decode request body")
 		return
+	}
+	updates := make(map[string]any, len(fields))
+	for key, raw := range fields {
+		var value any
+		decoder := json.NewDecoder(strings.NewReader(string(raw)))
+		// Preserve exact requested limits without changing legacy numeric fields.
+		if key == "requested_max_turns" {
+			decoder.UseNumber()
+		}
+		if err := decoder.Decode(&value); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid_json", "failed to decode field")
+			return
+		}
+		updates[key] = value
 	}
 
 	// Fetch current issue for validation
@@ -897,7 +935,7 @@ func (s *Server) GetIssueDiff(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 
-				// Fallback: no base_sha/branch_name — try to find the worktree by
+				// Fallback: no base_sha/branch_name â€” try to find the worktree by
 				// scanning the worktree root for a directory belonging to this project.
 				// This avoids diffing the shared project root which leaks other issues' changes.
 				if s.worktreeRoot != "" {

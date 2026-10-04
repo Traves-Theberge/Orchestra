@@ -1,5 +1,5 @@
 // apps/desktop/src/features/agents/panels/CodexEnvironmentPanel.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { PanelHeader } from '../components/PanelHeader'
 import { PanelFooter } from '../components/PanelFooter'
 import { ErrorStrip } from '../components/ErrorStrip'
@@ -14,14 +14,16 @@ interface CodexEnvironmentPanelProps {
   onSave: (path: string, content: string) => Promise<void>
 }
 
-export function CodexEnvironmentPanel({ items, scope, projectName, saving, onSave }: CodexEnvironmentPanelProps) {
+export function CodexEnvironmentPanel(props: CodexEnvironmentPanelProps) {
+  const item = props.items[0]
+  return <CodexEnvironmentPanelEditor key={JSON.stringify([item?.path, item?.content])} {...props} />
+}
+
+function CodexEnvironmentPanelEditor({ items, scope, projectName, saving, onSave }: CodexEnvironmentPanelProps) {
   const config = items[0] ?? null
   const [content, setContent] = useState(config?.content ?? '')
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    setContent(config?.content ?? '')
-  }, [config?.content])
 
   const fields = useMemo(() => ({
     history: readTomlScalar(content, 'history.persistence'),

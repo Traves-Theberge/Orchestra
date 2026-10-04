@@ -13,6 +13,9 @@ import (
 
 // ClaudeSourceDir returns ~/.claude/projects, mirroring Orca's CLAUDE_PROJECTS_DIR.
 func ClaudeSourceDir() string {
+	if configDir := strings.TrimSpace(os.Getenv("CLAUDE_CONFIG_DIR")); configDir != "" {
+		return filepath.Join(configDir, "projects")
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""

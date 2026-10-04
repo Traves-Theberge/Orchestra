@@ -115,7 +115,7 @@ func TestRemoveWorktree(t *testing.T) {
 func TestWorktreePath(t *testing.T) {
 	svc := Service{Root: "/tmp/worktrees"}
 	got := svc.WorktreePath("myproject", "fix-123")
-	want := "/tmp/worktrees/myproject/fix-123"
+	want := filepath.Join("/tmp/worktrees", "myproject", "fix-123")
 	if got != want {
 		t.Fatalf("WorktreePath = %q, want %q", got, want)
 	}

@@ -11,8 +11,10 @@
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
-    "dev": "concurrently -k \"vite --port 5173 --strictPort\" \"wait-on tcp:5173 && cross-env ELECTRON_RUN_AS_NODE= VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
-    "dev:linux": "concurrently -k \"vite --port 5173 --strictPort\" \"wait-on tcp:5173 && cross-env ELECTRON_RUN_AS_NODE= VITE_DEV_SERVER_URL=http://localhost:5173 electron . --no-sandbox\"",
+    "audit:dev": "node scripts/audit-dev.mjs",
+    "audit:chat:fixture": "node scripts/native-chat-ui-fixture.mjs",
+    "dev": "concurrently -k \"vite --port 5173 --strictPort\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 node scripts/launch-electron.mjs .\"",
+    "dev:linux": "concurrently -k \"vite --port 5173 --strictPort\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 node scripts/launch-electron.mjs . --no-sandbox\"",
     "build": "vite build",
     "dist:prep": "npm run build && node scripts/stage-backend-binary.mjs",
     "dist:dir": "npm run dist:prep && electron-builder --dir",
@@ -27,6 +29,7 @@
     "smoke:ops:go": "node scripts/smoke-ops-flow.mjs --spawn-backend --base-url=http://127.0.0.1:4010",
     "smoke:ops:go:debug": "node scripts/smoke-ops-flow.mjs --spawn-backend --base-url=http://127.0.0.1:4010 --verbose",
     "smoke:ops:go:auth": "node scripts/smoke-ops-flow.mjs --spawn-backend --require-auth --token=smoke-token --base-url=http://127.0.0.1:4012",
+    "smoke:electron": "npm run dist:prep && node scripts/launch-electron.mjs scripts/electron-smoke.cjs",
     "release:readiness": "node scripts/release-readiness.mjs",
     "release:gate": "npm run release:readiness"
   },

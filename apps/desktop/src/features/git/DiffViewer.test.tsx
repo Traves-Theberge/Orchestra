@@ -26,6 +26,16 @@ function renderViewer(overrides: Partial<Parameters<typeof DiffViewer>[0]> = {})
 }
 
 describe('DiffViewer', () => {
+  it('strips colored CSI and OSC link escapes from diff content', () => {
+    const escape = String.fromCharCode(27)
+    const bell = String.fromCharCode(7)
+    const diff = `@@ -1 +1 @@\n-${escape}[31mold${escape}[0m\n+${escape}]8;;https://example.test${bell}new${escape}]8;;${bell}`
+    const { container } = renderViewer({ diff })
+    expect(container.textContent).toContain('old')
+    expect(container.textContent).toContain('new')
+    expect(container.textContent).not.toContain(escape)
+    expect(container.textContent).not.toContain('https://example.test')
+  })
   // -----------------------------------------------------------------------
   // Empty states
   // -----------------------------------------------------------------------

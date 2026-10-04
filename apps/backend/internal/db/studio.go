@@ -3,6 +3,8 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 )
 
@@ -112,6 +114,39 @@ func UpdateDraftField(d *sql.DB, sessionID, column string, value interface{}) er
 	}
 	q := fmt.Sprintf("UPDATE issue_drafts SET %s=?, updated_at=CURRENT_TIMESTAMP WHERE session_id=?", column)
 	_, err := d.Exec(q, value, sessionID)
+	return err
+}
+
+// UpdateDraftFields applies a fully validated patch in one atomic SQL statement.
+func UpdateDraftFields(d *sql.DB, sessionID string, fields map[string]any) error {
+	columns := make([]string, 0, len(fields))
+	for column := range fields {
+		if !draftAllowedColumns[column] {
+			return fmt.Errorf("studio: column not allowed: %q", column)
+		}
+		columns = append(columns, column)
+	}
+	if len(columns) == 0 {
+		_, err := GetDraft(d, sessionID)
+		return err
+	}
+	sort.Strings(columns)
+	assignments := make([]string, 0, len(columns)+1)
+	values := make([]any, 0, len(columns)+1)
+	for _, column := range columns {
+		assignments = append(assignments, column+"=?")
+		values = append(values, fields[column])
+	}
+	assignments = append(assignments, "updated_at=CURRENT_TIMESTAMP")
+	values = append(values, sessionID)
+	result, err := d.Exec("UPDATE issue_drafts SET "+strings.Join(assignments, ",")+" WHERE session_id=?", values...)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err == nil && count == 0 {
+		return sql.ErrNoRows
+	}
 	return err
 }
 

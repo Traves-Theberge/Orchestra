@@ -1,0 +1,320 @@
+﻿{
+    "session":  {
+                    "id":  "d1176e2b-745a-4e4c-a80a-c3eac6397d96",
+                    "project_id":  "f2a81950c4adc0be5f4faa2ca87bbc39",
+                    "provider":  "CODEX",
+                    "title":  "New conversation",
+                    "status":  "idle",
+                    "conversation_mode":  "native_session",
+                    "created_at":  "2026-10-04T21:46:13.936036Z",
+                    "updated_at":  "2026-10-04T21:46:47.4540334Z",
+                    "provider_thread_id":  "fixture-b6a782dd-3f01-44e4-a857-18f967ed86bf",
+                    "effective_model":  "fixture-model",
+                    "approval_policy":  "on-request",
+                    "sandbox_mode":  "readOnly",
+                    "effective_reasoning_effort":  "medium"
+                },
+    "messages":  [
+                     {
+                         "id":  "63136552-ef5d-4aeb-be4a-4daaf21c58c8",
+                         "session_id":  "d1176e2b-745a-4e4c-a80a-c3eac6397d96",
+                         "role":  "user",
+                         "text":  "Verify the encoded approval reply",
+                         "status":  "completed",
+                         "client_message_id":  "262f624a-ae27-408f-9cd4-b66bf9b1dfd1",
+                         "created_at":  "2026-10-04T21:46:13.9471342Z"
+                     },
+                     {
+                         "id":  "c3c94c6c-9c1a-4c07-8525-523a45348fe5",
+                         "session_id":  "d1176e2b-745a-4e4c-a80a-c3eac6397d96",
+                         "role":  "assistant",
+                         "text":  "Fixture approval received: accept. No command ran.",
+                         "status":  "completed",
+                         "created_at":  "2026-10-04T21:46:19.2492896Z"
+                     },
+                     {
+                         "id":  "5890fa77-16b5-418a-9ca1-d7edcaf8d462",
+                         "session_id":  "d1176e2b-745a-4e4c-a80a-c3eac6397d96",
+                         "role":  "user",
+                         "text":  "interrupt fixture waiting turn",
+                         "status":  "cancelled",
+                         "client_message_id":  "729691f1-57d9-45c8-9666-b0bbd909b6f9",
+                         "created_at":  "2026-10-04T21:46:25.3513703Z"
+                     },
+                     {
+                         "id":  "bfe3aaab-6dbe-4ca3-b756-1bf721acf094",
+                         "session_id":  "d1176e2b-745a-4e4c-a80a-c3eac6397d96",
+                         "role":  "assistant",
+                         "text":  "Fixture waiting for interruption.",
+                         "status":  "cancelled",
+                         "created_at":  "2026-10-04T21:46:31.5142855Z"
+                     },
+                     {
+                         "id":  "bdcf3d1f-077e-4893-b0b8-d7ebe70fac08",
+                         "session_id":  "d1176e2b-745a-4e4c-a80a-c3eac6397d96",
+                         "role":  "user",
+                         "text":  "Follow-up after Stop",
+                         "status":  "completed",
+                         "client_message_id":  "02ff2f66-780a-4484-9071-98631d8f662d",
+                         "created_at":  "2026-10-04T21:46:47.4509001Z"
+                     },
+                     {
+                         "id":  "f96fcb3c-8fb1-4f6c-b6ad-dad1528ba1a7",
+                         "session_id":  "d1176e2b-745a-4e4c-a80a-c3eac6397d96",
+                         "role":  "assistant",
+                         "text":  "Fixture response: the desktop request reached the native protocol.",
+                         "status":  "completed",
+                         "created_at":  "2026-10-04T21:46:47.4535077Z"
+                     }
+                 ],
+    "events":  [
+                   {
+                       "sequence":  3,
+                       "type":  "turn/started",
+                       "thread_id":  "fixture-b6a782dd-3f01-44e4-a857-18f967ed86bf",
+                       "turn_id":  "fixture-turn-1",
+                       "payload":  {
+                                       "threadId":  "fixture-b6a782dd-3f01-44e4-a857-18f967ed86bf",
+                                       "turn":  {
+                                                    "id":  "fixture-turn-1"
+                                                }
+                                   },
+                       "created_at":  "2026-10-04T21:46:14.3084375Z"
+                   },
+                   {
+                       "sequence":  4,
+                       "type":  "server_request",
+                       "thread_id":  "fixture-b6a782dd-3f01-44e4-a857-18f967ed86bf",
+                       "turn_id":  "fixture-turn-1",
+                       "item_id":  "command-fixture-turn-1",
+                       "request_id":  "4b105129-8bff-4794-ae67-df0e556b7ccb:\"fixture-approval-1\"",
+                       "payload":  {
+                                       "method":  "item/commandExecution/requestApproval",
+                                       "params":  {
+                                                      "threadId":  "fixture-b6a782dd-3f01-44e4-a857-18f967ed86bf",
+                                                      "turnId":  "fixture-turn-1",
+                                                      "itemId":  "command-fixture-turn-1",
+                                                      "command":  "fixture: no shell command will run",
+                                                      "reason":  "Verify the desktop approval boundary"
+                                                  }
+                                   },
+                       "created_at":  "2026-10-04T21:46:14.3089727Z"
+                   },
+                   {
+                       "sequence":  5,
+                       "type":  "item/agentMessage/delta",
+                       "thread_id":  "fixture-b6a782dd-3f01-44e4-a857-18f967ed86bf",
+                       "turn_id":  "fixture-turn-1",
+                       "item_id":  "answer-fixture-turn-1",
+                       "delta":  "Fixture approval received: accept. No command ran.",
+                       "payload":  {
+                                       "threadId":  "fixture-b6a782dd-3f01-44e4-a857-18f967ed86bf",
+                                       "turnId":  "fixture-turn-1",
+                                       "itemId":  "answer-fixture-turn-1",
+                                       "delta":  "Fixture approval received: accept. No command ran."
+                                   },
+                       "created_at":  "2026-10-04T21:46:19.2471676Z"
+                   },
+                   {
+                       "sequence":  6,
+                       "type":  "thread/tokenUsage/updated",
+                       "thread_id":  "fixture-b6a782dd-3f01-44e4-a857-18f967ed86bf",
+                       "turn_id":  "fixture-turn-1",
+                       "payload":  {
+                                       "threadId":  "fixture-b6a782dd-3f01-44e4-a857-18f967ed86bf",
+                                       "turnId":  "fixture-turn-1",
+                                       "tokenUsage":  {
+                                                          "last":  {
+                                                                       "inputTokens":  10,
+                                                                       "outputTokens":  12,
+                                                                       "totalTokens":  22,
+                                                                       "cachedInputTokens":  0,
+                                                                       "reasoningOutputTokens":  0
+                                                                   },
+                                                          "total":  {
+                                                                        "inputTokens":  10,
+                                                                        "outputTokens":  12,
+                                                                        "totalTokens":  22,
+                                                                        "cachedInputTokens":  0,
+                                                                        "reasoningOutputTokens":  0
+                                                                    },
+                                                          "modelContextWindow":  10000
+                                                      }
+                                   },
+                       "usage":  {
+                                     "last":  {
+                                                  "input_tokens":  10,
+                                                  "output_tokens":  12,
+                                                  "total_tokens":  22
+                                              },
+                                     "total":  {
+                                                   "input_tokens":  10,
+                                                   "output_tokens":  12,
+                                                   "total_tokens":  22
+                                               },
+                                     "model_context_window":  10000
+                                 },
+                       "created_at":  "2026-10-04T21:46:19.2477005Z"
+                   },
+                   {
+                       "sequence":  7,
+                       "type":  "turn/completed",
+                       "thread_id":  "fixture-b6a782dd-3f01-44e4-a857-18f967ed86bf",
+                       "turn_id":  "fixture-turn-1",
+                       "payload":  {
+                                       "threadId":  "fixture-b6a782dd-3f01-44e4-a857-18f967ed86bf",
+                                       "turn":  {
+                                                    "id":  "fixture-turn-1",
+                                                    "status":  "completed"
+                                                }
+                                   },
+                       "created_at":  "2026-10-04T21:46:19.2482291Z"
+                   },
+                   {
+                       "sequence":  8,
+                       "type":  "turn/started",
+                       "thread_id":  "fixture-b6a782dd-3f01-44e4-a857-18f967ed86bf",
+                       "turn_id":  "fixture-turn-2",
+                       "payload":  {
+                                       "threadId":  "fixture-b6a782dd-3f01-44e4-a857-18f967ed86bf",
+                                       "turn":  {
+                                                    "id":  "fixture-turn-2"
+                                                }
+                                   },
+                       "created_at":  "2026-10-04T21:46:25.3524218Z"
+                   },
+                   {
+                       "sequence":  9,
+                       "type":  "item/agentMessage/delta",
+                       "thread_id":  "fixture-b6a782dd-3f01-44e4-a857-18f967ed86bf",
+                       "turn_id":  "fixture-turn-2",
+                       "item_id":  "answer-fixture-turn-2",
+                       "delta":  "Fixture waiting for interruption.",
+                       "payload":  {
+                                       "threadId":  "fixture-b6a782dd-3f01-44e4-a857-18f967ed86bf",
+                                       "turnId":  "fixture-turn-2",
+                                       "itemId":  "answer-fixture-turn-2",
+                                       "delta":  "Fixture waiting for interruption."
+                                   },
+                       "created_at":  "2026-10-04T21:46:25.3535204Z"
+                   },
+                   {
+                       "sequence":  10,
+                       "type":  "turn/completed",
+                       "thread_id":  "fixture-b6a782dd-3f01-44e4-a857-18f967ed86bf",
+                       "turn_id":  "fixture-turn-2",
+                       "payload":  {
+                                       "threadId":  "fixture-b6a782dd-3f01-44e4-a857-18f967ed86bf",
+                                       "turn":  {
+                                                    "id":  "fixture-turn-2",
+                                                    "status":  "interrupted"
+                                                }
+                                   },
+                       "created_at":  "2026-10-04T21:46:31.5131903Z"
+                   },
+                   {
+                       "sequence":  11,
+                       "type":  "turn/started",
+                       "thread_id":  "fixture-b6a782dd-3f01-44e4-a857-18f967ed86bf",
+                       "turn_id":  "fixture-turn-3",
+                       "payload":  {
+                                       "threadId":  "fixture-b6a782dd-3f01-44e4-a857-18f967ed86bf",
+                                       "turn":  {
+                                                    "id":  "fixture-turn-3"
+                                                }
+                                   },
+                       "created_at":  "2026-10-04T21:46:47.4519443Z"
+                   },
+                   {
+                       "sequence":  12,
+                       "type":  "item/agentMessage/delta",
+                       "thread_id":  "fixture-b6a782dd-3f01-44e4-a857-18f967ed86bf",
+                       "turn_id":  "fixture-turn-3",
+                       "item_id":  "answer-fixture-turn-3",
+                       "delta":  "Fixture response: the desktop request reached the native protocol.",
+                       "payload":  {
+                                       "threadId":  "fixture-b6a782dd-3f01-44e4-a857-18f967ed86bf",
+                                       "turnId":  "fixture-turn-3",
+                                       "itemId":  "answer-fixture-turn-3",
+                                       "delta":  "Fixture response: the desktop request reached the native protocol."
+                                   },
+                       "created_at":  "2026-10-04T21:46:47.4524659Z"
+                   },
+                   {
+                       "sequence":  13,
+                       "type":  "thread/tokenUsage/updated",
+                       "thread_id":  "fixture-b6a782dd-3f01-44e4-a857-18f967ed86bf",
+                       "turn_id":  "fixture-turn-3",
+                       "payload":  {
+                                       "threadId":  "fixture-b6a782dd-3f01-44e4-a857-18f967ed86bf",
+                                       "turnId":  "fixture-turn-3",
+                                       "tokenUsage":  {
+                                                          "last":  {
+                                                                       "inputTokens":  10,
+                                                                       "outputTokens":  12,
+                                                                       "totalTokens":  22,
+                                                                       "cachedInputTokens":  0,
+                                                                       "reasoningOutputTokens":  0
+                                                                   },
+                                                          "total":  {
+                                                                        "inputTokens":  30,
+                                                                        "outputTokens":  36,
+                                                                        "totalTokens":  66,
+                                                                        "cachedInputTokens":  0,
+                                                                        "reasoningOutputTokens":  0
+                                                                    },
+                                                          "modelContextWindow":  10000
+                                                      }
+                                   },
+                       "usage":  {
+                                     "last":  {
+                                                  "input_tokens":  10,
+                                                  "output_tokens":  12,
+                                                  "total_tokens":  22
+                                              },
+                                     "total":  {
+                                                   "input_tokens":  30,
+                                                   "output_tokens":  36,
+                                                   "total_tokens":  66
+                                               },
+                                     "model_context_window":  10000
+                                 },
+                       "created_at":  "2026-10-04T21:46:47.4529907Z"
+                   },
+                   {
+                       "sequence":  14,
+                       "type":  "turn/completed",
+                       "thread_id":  "fixture-b6a782dd-3f01-44e4-a857-18f967ed86bf",
+                       "turn_id":  "fixture-turn-3",
+                       "payload":  {
+                                       "threadId":  "fixture-b6a782dd-3f01-44e4-a857-18f967ed86bf",
+                                       "turn":  {
+                                                    "id":  "fixture-turn-3",
+                                                    "status":  "completed"
+                                                }
+                                   },
+                       "created_at":  "2026-10-04T21:46:47.4535077Z"
+                   }
+               ],
+    "requests":  [
+                     {
+                         "id":  "4b105129-8bff-4794-ae67-df0e556b7ccb:\"fixture-approval-1\"",
+                         "turn_id":  "fixture-turn-1",
+                         "method":  "item/commandExecution/requestApproval",
+                         "params":  {
+                                        "threadId":  "fixture-b6a782dd-3f01-44e4-a857-18f967ed86bf",
+                                        "turnId":  "fixture-turn-1",
+                                        "itemId":  "command-fixture-turn-1",
+                                        "command":  "fixture: no shell command will run",
+                                        "reason":  "Verify the desktop approval boundary"
+                                    },
+                         "status":  "answered",
+                         "answer":  {
+                                        "decision":  "accept"
+                                    },
+                         "client_response_id":  "317e4de9-f1e3-4979-a2b5-dccca3acc840",
+                         "created_at":  "2026-10-04T21:46:14.3095012Z"
+                     }
+                 ],
+    "cursor":  14
+}

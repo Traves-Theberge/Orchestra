@@ -30,6 +30,11 @@ func Load() (Config, error) {
 		"OPENCODE": "opencode -p {{prompt}} -f json",
 		"8GENT":    "8gent run --yes --output-format stream-json {{prompt}}",
 	}
+	nativeAgentCommands := map[string]string{"CODEX": "codex app-server"}
+	// An explicitly empty value disables native Codex chat. Batch flags are not inherited.
+	if nativeCodex, explicit := os.LookupEnv("ORCHESTRA_NATIVE_COMMAND_CODEX"); explicit {
+		nativeAgentCommands["CODEX"] = strings.TrimSpace(nativeCodex)
+	}
 
 	host := getenvOrEmpty("ORCHESTRA_SERVER_HOST")
 	portRaw := getenvOrEmpty("ORCHESTRA_SERVER_PORT")
@@ -304,6 +309,7 @@ func Load() (Config, error) {
 		WorkflowFile:             strings.TrimSpace(workflowPath),
 		AgentProvider:            strings.TrimSpace(strings.ToUpper(agentProvider)),
 		AgentCommands:            agentCommands,
+		NativeAgentCommands:      nativeAgentCommands,
 		AgentMaxTurns:            agentMaxTurns,
 		TrackerType:              strings.TrimSpace(strings.ToLower(trackerType)),
 		TrackerEndpoint:          strings.TrimSpace(trackerEndpoint),

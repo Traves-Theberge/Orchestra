@@ -58,6 +58,7 @@ func requestArray(t *testing.T, handler http.Handler, method, path string, body 
 func TestAgentConfigSettingsMerge(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 
 	// Create initial settings with multiple fields
 	settingsDir := filepath.Join(home, ".claude")
@@ -117,6 +118,7 @@ func TestAgentConfigSettingsMerge(t *testing.T) {
 func TestAgentConfigInstructionsCRUD(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	os.MkdirAll(filepath.Join(home, ".claude"), 0755)
 
 	ts, cleanup := testServer(t)
@@ -165,6 +167,7 @@ func TestAgentConfigInstructionsCRUD(t *testing.T) {
 func TestAgentConfigRulesCRUD(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	os.MkdirAll(filepath.Join(home, ".claude", "rules"), 0755)
 
 	ts, cleanup := testServer(t)
@@ -209,6 +212,7 @@ func TestAgentConfigRulesCRUD(t *testing.T) {
 func TestAgentConfigSkillsCRUD(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	os.MkdirAll(filepath.Join(home, ".claude", "skills"), 0755)
 
 	ts, cleanup := testServer(t)
@@ -260,6 +264,7 @@ func TestAgentConfigSkillsCRUD(t *testing.T) {
 func TestAgentConfigSubAgentsCRUD(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	os.MkdirAll(filepath.Join(home, ".claude", "agents"), 0755)
 
 	ts, cleanup := testServer(t)
@@ -306,6 +311,7 @@ func TestAgentConfigSubAgentsCRUD(t *testing.T) {
 func TestAgentConfigMCPPluginDetection(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 
 	// Set up settings.json with enabledPlugins
 	settingsDir := filepath.Join(home, ".claude")
@@ -385,6 +391,7 @@ func TestAgentConfigMCPPluginDetection(t *testing.T) {
 func TestAgentConfigMCPTogglePersistence(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 
 	settingsDir := filepath.Join(home, ".claude")
 	os.MkdirAll(settingsDir, 0755)
@@ -443,6 +450,7 @@ func TestAgentConfigMCPTogglePersistence(t *testing.T) {
 func TestAgentConfigHooksCRUD(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 
 	settingsDir := filepath.Join(home, ".claude")
 	os.MkdirAll(settingsDir, 0755)

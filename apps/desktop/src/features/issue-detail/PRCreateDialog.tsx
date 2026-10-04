@@ -15,7 +15,12 @@ interface PRCreateDialogProps {
   projectId: string
 }
 
-export function PRCreateDialog({
+export function PRCreateDialog(props: PRCreateDialogProps) {
+  if (!props.open) return null
+  return <PRCreateForm key={JSON.stringify([props.projectId, props.issueTitle, props.issueDescription])} {...props} />
+}
+
+function PRCreateForm({
   open,
   onClose,
   onSubmit,
@@ -50,17 +55,6 @@ export function PRCreateDialog({
   // Fetch default branch on mount
   useEffect(() => {
     if (!open) return
-    setTitle(issueTitle)
-    const planSplit = issueDescription.split('\n\n## Agent Plan\n\n')
-    const originalDesc = planSplit[0] || issueDescription
-    const plan = planSplit[1] || ''
-    let prBody = `## Summary\n\n${originalDesc}`
-    if (plan) {
-      prBody += `\n\n## Implementation Plan\n\n${plan}`
-    }
-    setBody(prBody)
-    setError(null)
-    setSubmitting(false)
     fetchDefaultBranch(config, projectId)
       .then(setBase)
       .catch(() => setBase('main'))

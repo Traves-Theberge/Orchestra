@@ -21,8 +21,9 @@ __pycache__/
 # ------------------------------------------------------------------------------
 
 # Go binaries
-**/*orchestrd*
-**/*orchestra*
+**/orchestrd
+**/orchestrad
+**/orchestra
 **/*.exe
 **/*.bin
 **/*.dll

@@ -327,7 +327,6 @@ function PreviewPane({
       <div className="grid h-full w-full place-items-center p-6">
         <div
           className="max-h-full max-w-full [&_svg]:max-h-full [&_svg]:max-w-full"
-          // eslint-disable-next-line react/no-danger -- local file source
           dangerouslySetInnerHTML={{ __html: content }}
         />
       </div>

@@ -2,6 +2,15 @@ package tracker
 
 import "context"
 
+// Attachment identifies authoring context without implying it has been
+// materialized or made available to a provider.
+type Attachment struct {
+	Kind  string `json:"kind"`
+	Path  string `json:"path,omitempty"`
+	URL   string `json:"url,omitempty"`
+	Label string `json:"label,omitempty"`
+}
+
 // WorkItem is the canonical domain type for a tracked work item across all backends.
 type WorkItem struct {
 	ID          string `json:"id"`
@@ -18,20 +27,28 @@ type WorkItem struct {
 	AssigneeID string `json:"assignee_id,omitempty"`
 	// Assignees is the full set of assignees for backends that support multiple
 	// (e.g. Jira, GitHub). Single-assignee backends populate AssigneeID only.
-	Assignees        []string       `json:"assignees,omitempty"`
-	AssignedToWorker bool           `json:"assigned_to_worker"`
-	Labels           []string       `json:"labels,omitempty"`
-	BlockedBy        []Blocker      `json:"blocked_by,omitempty"`
-	CreatedAt        string         `json:"created_at,omitempty"`
-	UpdatedAt        string         `json:"updated_at,omitempty"`
-	Provider         string         `json:"provider,omitempty"`
-	RuntimeTarget    string         `json:"runtime_target,omitempty"`
-	DisabledTools    []string       `json:"disabled_tools,omitempty"`
-	BaseSHA          string         `json:"base_sha,omitempty"`
-	Feedback         string         `json:"feedback,omitempty"`
-	PRURL            string         `json:"pr_url,omitempty"`
-	Plan             string         `json:"plan,omitempty"`
-	Extra            map[string]any `json:"extra,omitempty"`
+	Assignees        []string  `json:"assignees,omitempty"`
+	AssignedToWorker bool      `json:"assigned_to_worker"`
+	Labels           []string  `json:"labels,omitempty"`
+	BlockedBy        []Blocker `json:"blocked_by,omitempty"`
+	CreatedAt        string    `json:"created_at,omitempty"`
+	UpdatedAt        string    `json:"updated_at,omitempty"`
+	Provider         string    `json:"provider,omitempty"`
+	RuntimeTarget    string    `json:"runtime_target,omitempty"`
+	// Requested values are authoring intent, not evidence of provider execution.
+	RequestedModel     string         `json:"requested_model,omitempty"`
+	RequestedMaxTurns  *int           `json:"requested_max_turns"`
+	DisabledTools      []string       `json:"disabled_tools,omitempty"`
+	BaseSHA            string         `json:"base_sha,omitempty"`
+	Feedback           string         `json:"feedback,omitempty"`
+	PRURL              string         `json:"pr_url,omitempty"`
+	Plan               string         `json:"plan,omitempty"`
+	AcceptanceCriteria []string       `json:"acceptance_criteria,omitempty"`
+	Attachments        []Attachment   `json:"attachments,omitempty"`
+	AgentGuidance      map[string]any `json:"agent_guidance,omitempty"`
+	SourceTemplate     string         `json:"source_template,omitempty"`
+	AuthoringSessionID string         `json:"authoring_session_id,omitempty"`
+	Extra              map[string]any `json:"extra,omitempty"`
 }
 
 // Filter narrows which WorkItems are returned by Adapter.Fetch.

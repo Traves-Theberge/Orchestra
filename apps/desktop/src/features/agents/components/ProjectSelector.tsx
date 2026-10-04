@@ -42,6 +42,7 @@ export function ProjectSelector({ projects, selectedId, onChange }: ProjectSelec
       {open && (
         <div role="menu" className="absolute right-0 top-full mt-1 z-50 min-w-[220px] rounded-md border border-border/50 bg-popover shadow-lg overflow-hidden">
           <button
+            role="menuitem"
             type="button"
             onClick={() => { onChange(null); setOpen(false) }}
             className={`w-full flex items-center gap-2 px-3 py-2 text-left text-[11px] hover:bg-foreground/[0.04] ${selectedId === null ? 'bg-foreground/[0.06]' : ''}`}

@@ -486,6 +486,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                     <AppTooltip content="Remove project">
                         <button
                             onClick={() => setIsDeleteDialogOpen(true)}
+                            aria-label="Remove project"
                             className="size-7 grid place-items-center rounded text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10 transition-colors"
                         >
                             <Trash2 size={12} />

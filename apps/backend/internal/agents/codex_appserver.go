@@ -6,12 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
+	"github.com/orchestra/orchestra/apps/backend/internal/shellcommand"
 )
 
 // CodexAppServerRunner implements the Runner interface for the Codex app-server
@@ -33,7 +32,7 @@ func NewCodexAppServerRunner(command string) *CodexAppServerRunner {
 // (initialize, thread/start, turn/start), handles approval and tool-call
 // requests, and waits for the turn to complete or fail.
 func (r *CodexAppServerRunner) RunTurn(ctx context.Context, request TurnRequest, onEvent EventHandler) (TurnResult, error) {
-	if err := workspace.ValidateWorkspacePath(request.WorkspaceRoot, request.Workspace); err != nil {
+	if err := validateTurnWorkspace(request); err != nil {
 		return TurnResult{}, fmt.Errorf("invalid workspace path: %w", err)
 	}
 
@@ -52,7 +51,10 @@ func (r *CodexAppServerRunner) RunTurn(ctx context.Context, request TurnRequest,
 		defer cancel()
 	}
 
-	cmd := exec.CommandContext(cmdCtx, "sh", "-lc", commandLine)
+	cmd, err := shellcommand.CommandContext(cmdCtx, commandLine)
+	if err != nil {
+		return TurnResult{}, err
+	}
 	cmd.Dir = request.Workspace
 
 	stdout, err := cmd.StdoutPipe()

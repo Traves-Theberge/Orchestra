@@ -37,7 +37,7 @@ type DraftSnapshot struct {
 	Attachments        []Attachment           `json:"attachments"`
 	SuggestedProvider  string                 `json:"suggested_provider"`
 	SuggestedModel     string                 `json:"suggested_model"`
-	MaxTurns           *int                   `json:"max_turns,omitempty"`
+	MaxTurns           *int                   `json:"max_turns"`
 	TemplateName       string                 `json:"template_name,omitempty"`
 	TemplateVars       map[string]string      `json:"template_vars"`
 	AgentGuidance      map[string]interface{} `json:"agent_guidance"`

@@ -2,6 +2,7 @@ package agents
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,8 +20,8 @@ import (
 	"log"
 
 	"github.com/acarl005/stripansi"
+	"github.com/orchestra/orchestra/apps/backend/internal/shellcommand"
 	"github.com/orchestra/orchestra/apps/backend/internal/terminal"
-	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
 )
 
 // CommandRunner executes agent turns by spawning a shell command and parsing
@@ -57,7 +59,10 @@ const (
 // stdout and stderr, parses events, enforces output size and event count limits,
 // and returns the aggregated result.
 func (r *CommandRunner) RunTurn(ctx context.Context, request TurnRequest, onEvent EventHandler) (TurnResult, error) {
-	if err := workspace.ValidateWorkspacePath(request.WorkspaceRoot, request.Workspace); err != nil {
+	if err := validateTurnWorkspace(request); err != nil {
+		if request.ProjectRootWorkspace {
+			return TurnResult{}, fmt.Errorf("invalid project workspace path: %w", err)
+		}
 		log.Printf("WARN: workspace path validation: %v (proceeding anyway)", err)
 	}
 
@@ -97,7 +102,7 @@ func (r *CommandRunner) RunTurn(ctx context.Context, request TurnRequest, onEven
 	commandContainsPrompt := strings.Contains(commandLine, "{{prompt}}")
 
 	// If we have a terminal manager, we can run in a persistent PTY
-	if r.termManager != nil {
+	if r.termManager != nil && runtime.GOOS != "windows" {
 		return r.runInPTY(ctx, request, sessionID, resolvedCommand, finalPrompt, commandContainsPrompt, onEvent)
 	}
 
@@ -109,18 +114,24 @@ func (r *CommandRunner) RunTurn(ctx context.Context, request TurnRequest, onEven
 		defer timeoutCancel()
 	}
 
-	cmd := exec.CommandContext(cmdCtx, "sh", "-lc", resolvedCommand)
+	cmd, err := shellcommand.CommandContext(cmdCtx, resolvedCommand)
+	if err != nil {
+		return TurnResult{}, err
+	}
 	cmd.Env = safeSubprocessEnv(sessionID)
 	cmd.Dir = request.Workspace
 
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return TurnResult{}, fmt.Errorf("stdout pipe: %w", err)
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return TurnResult{}, fmt.Errorf("stderr pipe: %w", err)
-	}
+	// Copying subprocess output must not wait for event callbacks: WaitDelay
+	// bounds inherited OS handles, not parser/callback scheduling. Buffer the
+	// handoff within the shared output quota and parse concurrently.
+	outputBudget := &commandOutputBudget{cancel: cancel}
+	stdout := newCommandOutputStream(outputBudget)
+	stderr := newCommandOutputStream(outputBudget)
+	defer stdout.abort()
+	defer stderr.abort()
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	cmd.WaitDelay = time.Second
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -128,8 +139,16 @@ func (r *CommandRunner) RunTurn(ctx context.Context, request TurnRequest, onEven
 	}
 
 	if err := cmd.Start(); err != nil {
+		if contextErr := commandContextError(ctx, cmdCtx); contextErr != nil {
+			return TurnResult{}, contextErr
+		}
 		return TurnResult{}, fmt.Errorf("start command: %w", err)
 	}
+	stopClosingStreams := context.AfterFunc(cmdCtx, func() {
+		stdout.abort()
+		stderr.abort()
+	})
+	defer stopClosingStreams()
 
 	if !commandContainsPrompt {
 		_, _ = io.WriteString(stdin, finalPrompt+"\n")
@@ -282,6 +301,8 @@ func (r *CommandRunner) RunTurn(ctx context.Context, request TurnRequest, onEven
 	go parseStream(stderr, "stderr")
 
 	waitErr := cmd.Wait()
+	stdout.finish()
+	stderr.finish()
 	wg.Wait()
 
 	exitCode := 0
@@ -307,15 +328,11 @@ func (r *CommandRunner) RunTurn(ctx context.Context, request TurnRequest, onEven
 	if deferredErr != nil {
 		return result, deferredErr
 	}
-	if cmdErr := cmdCtx.Err(); cmdErr != nil {
-		if cmdErr == context.DeadlineExceeded {
-			return result, fmt.Errorf("agent command timed out")
-		}
-		if cmdErr == context.Canceled {
-			if parentErr := ctx.Err(); parentErr != nil {
-				return result, parentErr
-			}
-		}
+	if outputErr := outputBudget.err(); outputErr != nil {
+		return result, outputErr
+	}
+	if contextErr := commandContextError(ctx, cmdCtx); contextErr != nil {
+		return result, contextErr
 	}
 
 	if waitErr != nil {
@@ -326,6 +343,106 @@ func (r *CommandRunner) RunTurn(ctx context.Context, request TurnRequest, onEven
 	}
 
 	return result, nil
+}
+
+// A deadline may expire before Start or while the process is running. Both
+// phases have the same turn timeout contract; parent cancellation remains
+// distinguishable from a deadline and from internal stream cancellation.
+func commandContextError(parent, command context.Context) error {
+	switch command.Err() {
+	case context.DeadlineExceeded:
+		return fmt.Errorf("agent command timed out")
+	case context.Canceled:
+		return parent.Err()
+	default:
+		return nil
+	}
+}
+
+// The quota counts accepted raw bytes across both streams, including bytes
+// already consumed by the parser. This bounds delayed callbacks without
+// allowing a long-running producer to refill an unbounded queue.
+type commandOutputBudget struct {
+	mu       sync.Mutex
+	accepted int
+	failure  error
+	cancel   context.CancelFunc
+}
+
+func (budget *commandOutputBudget) err() error {
+	budget.mu.Lock()
+	defer budget.mu.Unlock()
+	return budget.failure
+}
+
+type commandOutputStream struct {
+	mu     sync.Mutex
+	ready  *sync.Cond
+	buffer bytes.Buffer
+	closed bool
+	budget *commandOutputBudget
+}
+
+func newCommandOutputStream(budget *commandOutputBudget) *commandOutputStream {
+	stream := &commandOutputStream{budget: budget}
+	stream.ready = sync.NewCond(&stream.mu)
+	return stream
+}
+
+func (stream *commandOutputStream) Write(data []byte) (int, error) {
+	stream.budget.mu.Lock()
+	stream.mu.Lock()
+	if stream.closed {
+		stream.mu.Unlock()
+		stream.budget.mu.Unlock()
+		return 0, io.ErrClosedPipe
+	}
+	accepted := len(data)
+	remaining := MaxOutputSize - stream.budget.accepted
+	if accepted > remaining {
+		accepted = remaining
+		stream.budget.failure = fmt.Errorf("agent exceeded maximum output size (%d bytes)", MaxOutputSize)
+	}
+	_, _ = stream.buffer.Write(data[:accepted])
+	stream.budget.accepted += accepted
+	stream.ready.Broadcast()
+	failure := stream.budget.failure
+	stream.mu.Unlock()
+	stream.budget.mu.Unlock()
+	if failure != nil {
+		stream.budget.cancel()
+	}
+	return accepted, failure
+}
+
+func (stream *commandOutputStream) Read(data []byte) (int, error) {
+	if len(data) == 0 {
+		return 0, nil
+	}
+	stream.mu.Lock()
+	defer stream.mu.Unlock()
+	for stream.buffer.Len() == 0 && !stream.closed {
+		stream.ready.Wait()
+	}
+	if stream.buffer.Len() == 0 {
+		return 0, io.EOF
+	}
+	return stream.buffer.Read(data)
+}
+
+func (stream *commandOutputStream) finish() {
+	stream.mu.Lock()
+	stream.closed = true
+	stream.ready.Broadcast()
+	stream.mu.Unlock()
+}
+
+func (stream *commandOutputStream) abort() {
+	stream.mu.Lock()
+	stream.closed = true
+	stream.buffer.Reset()
+	stream.ready.Broadcast()
+	stream.mu.Unlock()
 }
 
 func (r *CommandRunner) runInPTY(
@@ -875,7 +992,7 @@ func firstInt64(payload map[string]any, keys ...string) int64 {
 func safeSubprocessEnv(sessionID string) []string {
 	allowed := []string{
 		"PATH", "HOME", "USER", "SHELL", "LANG", "LC_ALL",
-		"TMPDIR", "TEMP", "TMP",
+		"TMPDIR", "TEMP", "TMP", "SYSTEMROOT", "WINDIR", "COMSPEC", "USERPROFILE", "APPDATA", "LOCALAPPDATA",
 		"ORCHESTRA_WORKSPACE_ROOT", "ORCHESTRA_SERVER_HOST", "ORCHESTRA_SERVER_PORT",
 	}
 	env := make([]string, 0, len(allowed)+1)

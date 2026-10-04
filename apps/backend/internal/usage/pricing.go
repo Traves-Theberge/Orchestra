@@ -2,6 +2,7 @@ package usage
 
 import (
 	"strings"
+	"time"
 )
 
 // modelPricing extends the shared pricing.ModelPricing with the
@@ -76,18 +77,9 @@ func normalizeClaudeModel(model string) string {
 		"claude-sonnet-4-6", "claude-sonnet-4-5",
 		"claude-haiku-4-5",
 	} {
-		if strings.Contains(m, key) {
+		if pricedAlias(m, key) {
 			return key
 		}
-	}
-	// Family-only fallback so partial matches still get sensible Opus/Sonnet/Haiku rates.
-	switch {
-	case strings.Contains(m, "opus"):
-		return "claude-opus-4-7"
-	case strings.Contains(m, "sonnet"):
-		return "claude-sonnet-4-6"
-	case strings.Contains(m, "haiku"):
-		return "claude-haiku-4-5"
 	}
 	return m
 }
@@ -95,11 +87,16 @@ func normalizeClaudeModel(model string) string {
 func normalizeCodexModel(model string) string {
 	m := strings.ToLower(strings.TrimSpace(model))
 	if m == "" {
-		return "gpt-5"
+		return ""
 	}
 	for _, key := range []string{"gpt-5.4", "gpt-5.3-codex", "gpt-5.2-codex", "gpt-5"} {
-		if strings.Contains(m, key) {
+		if m == key {
 			return key
+		}
+		if strings.HasPrefix(m, key+"-") {
+			if _, err := time.Parse("2006-01-02", strings.TrimPrefix(m, key+"-")); err == nil {
+				return key
+			}
 		}
 	}
 	return m
@@ -114,11 +111,27 @@ func normalizeGeminiModel(model string) string {
 		"gemini-3-pro", "gemini-3-flash",
 		"gemini-2.5-pro", "gemini-2.5-flash-lite", "gemini-2.5-flash",
 	} {
-		if strings.Contains(m, key) {
+		if pricedAlias(m, key) {
 			return key
 		}
 	}
 	return m
+}
+
+func pricedAlias(model, key string) bool {
+	if model == key {
+		return true
+	}
+	if !strings.HasPrefix(model, key+"-") {
+		return false
+	}
+	date := strings.TrimPrefix(model, key+"-")
+	for _, format := range []string{"2006-01-02", "20060102"} {
+		if _, err := time.Parse(format, date); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // normalizeModel applies the provider-specific normalizer.
@@ -136,8 +149,7 @@ func normalizeModel(provider Provider, model string) string {
 
 // estimateCost computes USD cost for the given token tallies using the
 // provider's pricing table. Returns (cost, hasInferredPricing). cost is nil
-// if the model is unknown for a provider that does NOT carry an inferred
-// flag (Claude — we'd rather show "unknown" than guess).
+// whenever the model has no explicit rate. Unknown rates are never guessed.
 func estimateCost(
 	provider Provider,
 	model string,
@@ -150,19 +162,7 @@ func estimateCost(
 	key := normalizeModel(provider, model)
 	pricing, found := pp.models[key]
 	if !found {
-		if !pp.hasInferredFlag {
-			return nil, false
-		}
-		// Use the cheapest model in the table as a conservative fallback so
-		// we still surface a number for OpenCode/Codex/Gemini.
-		for _, p := range pp.models {
-			if pricing.Input == 0 || p.Input < pricing.Input {
-				pricing = p
-			}
-		}
-		if pricing.Input == 0 {
-			return nil, true
-		}
+		return nil, true
 	}
 
 	// For providers that distinguish cached vs uncached input, the input

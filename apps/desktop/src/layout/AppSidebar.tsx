@@ -40,7 +40,7 @@ const DRILLDOWN_SECTIONS: ReadonlySet<string> = new Set(['SETTINGS', 'PROJECTS',
 
 const SETTINGS_SECTIONS = [
   { id: 'connections', label: 'Connections', icon: Database },
-  { id: 'agents', label: 'Maestro', icon: Cpu },
+  { id: 'agents', label: 'Agents', icon: Cpu },
   { id: 'integrations', label: 'Integrations', icon: Cable },
   { id: 'appearance', label: 'Appearance', icon: Paintbrush },
   { id: 'terminal', label: 'Terminal', icon: Terminal },
@@ -127,18 +127,17 @@ export function AppSidebar({
 }: AppSidebarProps) {
   const [view, setView] = useState<SidebarView>(() => sectionToView(activeSection))
   const [width, setWidth] = useState(DEFAULT_WIDTH)
-  // eslint-disable-next-line react-doctor/rerender-state-only-in-handlers -- read in JSX at line 175
   const [collapsed, setCollapsed] = useState(false)
   const dragging = useRef(false)
   const startX = useRef(0)
   const startWidth = useRef(DEFAULT_WIDTH)
   const sidebarRef = useRef<HTMLElement>(null)
 
-  useEffect(() => {
-    if (DRILLDOWN_SECTIONS.has(activeSection)) {
-      setView(sectionToView(activeSection))
-    }
-  }, [activeSection])
+  const [previousSection, setPreviousSection] = useState(activeSection)
+  if (previousSection !== activeSection) {
+    setPreviousSection(activeSection)
+    if (DRILLDOWN_SECTIONS.has(activeSection)) setView(sectionToView(activeSection))
+  }
 
   const handleItemClick = (id: string) => {
     onSectionChange(id)
@@ -214,7 +213,7 @@ export function AppSidebar({
       {/* Header */}
       <div className="shrink-0 border-b border-border/30">
         <div className="h-20 flex items-center gap-3 px-3">
-          <img src="/Orchesta.png" alt="Orchestra" className="size-16 dark:invert shrink-0" aria-hidden="true" />
+          <img src="./Orchesta.png" alt="Orchestra" className="size-16 dark:invert shrink-0" aria-hidden="true" />
           <span className="text-[20px] font-bold text-foreground tracking-tight flex-1 truncate">Orchestra</span>
           <button
             type="button"
@@ -442,7 +441,15 @@ function PrimaryNav({
   }
 
   return (
-    <nav className="flex flex-col h-full py-2 px-2" aria-label="Primary navigation">
+    <nav className="flex flex-col h-full py-2 px-2" aria-label="Primary navigation" onKeyDown={(event) => {
+      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+      const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button[data-testid^="sidebar-nav-"]'))
+      const current = buttons.indexOf(event.target as HTMLButtonElement)
+      if (current < 0 || !buttons.length) return
+      event.preventDefault()
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (current + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
+      buttons[next]?.focus()
+    }}>
       <div className="flex-1 overflow-y-auto space-y-0.5">
         {mainItems.map((item) => (
           <NavItem key={item.id} item={item} activeSection={activeSection} onItemClick={onItemClick} />

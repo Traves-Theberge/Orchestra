@@ -31,6 +31,11 @@ export function UsageStatusBar({ config, generatedAt }: { config: BackendConfig 
   const [rateLimits, setRateLimits] = useState<RateLimitState | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const lastFetchRef = useRef(0)
+  const profileKey = JSON.stringify([config?.baseUrl, config?.apiToken])
+  const profile = useRef({ key: profileKey, generation: 0 })
+  if (profile.current.key !== profileKey) profile.current = { key: profileKey, generation: profile.current.generation + 1 }
+  const [dataKey, setDataKey] = useState(profileKey)
+  const requestToken = useRef(0)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
@@ -52,18 +57,26 @@ export function UsageStatusBar({ config, generatedAt }: { config: BackendConfig 
   const loadAll = useCallback(
     async (force: boolean) => {
       if (!config) return
+      const generation = profile.current.generation
+      const token = ++requestToken.current
+      const fresh = () => profile.current.key === profileKey && profile.current.generation === generation && token === requestToken.current
       lastFetchRef.current = Date.now()
       try {
         const limits = force ? await refreshRateLimits(config) : await fetchRateLimits(config)
+        if (!fresh()) return
         setRateLimits(limits)
-      } catch {
-        // non-fatal
+      } catch (err) {
+        if (!fresh()) return
+        setRateLimits(previous => Object.fromEntries(BAR_PROVIDERS.map(p => [p, { ...previous?.[p], provider: p, status: 'error', error: err instanceof Error ? err.message : 'Unable to observe rate limits', updated_at: previous?.[p]?.updated_at ?? 0 }])) as RateLimitState)
       }
     },
-    [config],
+    [config, profileKey],
   )
 
   useEffect(() => {
+    setDataKey(profileKey)
+    setRateLimits(null)
+    setRefreshing(false)
     if (!config) return
     void loadAll(false)
     const id = window.setInterval(() => void loadAll(false), POLL_MS)
@@ -72,21 +85,24 @@ export function UsageStatusBar({ config, generatedAt }: { config: BackendConfig 
     }
     window.addEventListener('focus', onFocus)
     return () => {
+      profile.current.generation++
       window.clearInterval(id)
       window.removeEventListener('focus', onFocus)
     }
-  }, [config, loadAll])
+  }, [config, loadAll, profileKey])
 
   const handleRefresh = useCallback(async () => {
+    const generation = profile.current.generation
     setRefreshing(true)
     try {
       await loadAll(true)
     } finally {
-      setRefreshing(false)
+      if (profile.current.key === profileKey && profile.current.generation === generation) setRefreshing(false)
     }
-  }, [loadAll])
+  }, [loadAll, profileKey])
 
-  const anyFetching = BAR_PROVIDERS.some((p) => rateLimits?.[p]?.status === 'fetching')
+  const visibleLimits = dataKey === profileKey ? rateLimits : null
+  const anyFetching = BAR_PROVIDERS.some((p) => visibleLimits?.[p]?.status === 'fetching')
 
   if (!config) return null
 
@@ -100,7 +116,7 @@ export function UsageStatusBar({ config, generatedAt }: { config: BackendConfig 
           <ProviderSegment
             key={p}
             provider={p}
-            limits={rateLimits?.[p] ?? null}
+            limits={visibleLimits?.[p] ?? null}
             iconOnly={iconOnly}
           />
         ))}
@@ -205,12 +221,12 @@ function SegmentBody({
     )
   }
 
-  // Error with no data — render quietly as a loader rather than a warning.
+  // An observation failure is unknown utilization, not loading or zero.
   if (limits.status === 'error' && !limits.session && !limits.weekly) {
     return (
       <span className="inline-flex items-center gap-1 text-muted-foreground">
         <ProviderIcon provider={provider} size={12} />
-        <span className="animate-pulse">···</span>
+        <span title={limits.error}>Unknown</span>
       </span>
     )
   }
@@ -296,13 +312,14 @@ function DetailPopover({
           <>
             {limits.session && <WindowSection w={limits.session} label="Session (5h)" />}
             {limits.weekly && <WindowSection w={limits.weekly} label="Weekly" />}
+            {limits.status === 'error' && <p role="status" className="text-xs text-muted-foreground">Showing cached data. {limits.error}</p>}
           </>
         ) : limits.status === 'unavailable' ? (
           <p className="text-[12px] text-muted-foreground">
-            {sanitizeRateLimitMessage(limits.error) ?? `Rate limits unavailable for ${providerLabel(provider)}.`}
+            {limits.error ?? `Rate limits unavailable for ${providerLabel(provider)}.`}
           </p>
         ) : (
-          <p className="text-[12px] text-muted-foreground">Loading rate limits…</p>
+          <p className="text-[12px] text-muted-foreground">{limits.error || 'Rate-limit utilization unknown.'}</p>
         )}
       </div>
 
@@ -331,13 +348,4 @@ function DetailPopover({
       </div>
     </div>
   )
-}
-
-// Strip rate-limit / 429 backoff messages from any backend error string —
-// these are noise the user can't act on and a stale daemon may keep emitting
-// them after the underlying limit has cleared.
-function sanitizeRateLimitMessage(msg: string | undefined | null): string | null {
-  if (!msg) return null
-  if (/rate.?limit|refresh paused|retry in|backing off|429/i.test(msg)) return null
-  return msg
 }

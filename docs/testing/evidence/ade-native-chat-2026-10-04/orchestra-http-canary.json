@@ -1,0 +1,50 @@
+{
+  "scope": "real Orchestra HTTP/SQLite/adapter plus signed-in installed Codex; no Electron interaction",
+  "codex_capability": {
+    "id": "CODEX",
+    "label": "Codex",
+    "enabled": true,
+    "conversation_mode": "native_session",
+    "provider_resume": true
+  },
+  "catalog": {
+    "observation": "provider_catalog",
+    "model_count": 8,
+    "has_canary_model": true,
+    "created_no_conversations": true
+  },
+  "conversation_mode": "native_session",
+  "session_id": "598a899b-1803-4b40-952d-f7b1d5e2561b",
+  "turns": [
+    {
+      "status": "idle",
+      "message_status": "completed",
+      "response": "ACK",
+      "thread_id": "01a108b2-dc67-7091-84cb-91cc46afb506",
+      "model": "gpt-6.1-sol",
+      "event_count": 19,
+      "usage_observed": true
+    },
+    {
+      "status": "idle",
+      "message_status": "completed",
+      "response": "ORCHESTRA_SERVICE_9D2A",
+      "thread_id": "01a108b2-dc67-7091-84cb-91cc46afb506",
+      "model": "gpt-6.1-sol",
+      "event_count": 37,
+      "usage_observed": true
+    },
+    {
+      "status": "idle",
+      "message_status": "completed",
+      "response": "ORCHESTRA_SERVICE_9D2A",
+      "thread_id": "01a108b2-dc67-7091-84cb-91cc46afb506",
+      "model": "gpt-6.1-sol",
+      "event_count": 66,
+      "usage_observed": true
+    }
+  ],
+  "two_turn_memory_verified": true,
+  "restart_resume_verified": true,
+  "settings_unchanged": true
+}

@@ -7,16 +7,17 @@ export interface UseDraftResult {
   setLocal: (patch: Partial<StudioDraft>) => void
 }
 
-export function useDraft(_sessionId: string): UseDraftResult {
-  const [draft, setDraft] = useState<StudioDraft | null>(null)
+export function useDraft(sessionId: string): UseDraftResult {
+  const [storedDraft, setDraft] = useState<StudioDraft | null>(null)
+  const draft = storedDraft?.session_id === sessionId ? storedDraft : null
 
   const applyServerSnapshot = useCallback((snap: StudioDraft) => {
-    setDraft(snap)
-  }, [])
+    if (snap.session_id === sessionId) setDraft(snap)
+  }, [sessionId])
 
   const setLocal = useCallback((patch: Partial<StudioDraft>) => {
-    setDraft((d) => (d ? { ...d, ...patch } : d))
-  }, [])
+    setDraft((d) => (d?.session_id === sessionId ? { ...d, ...patch, session_id: sessionId } : d))
+  }, [sessionId])
 
   return { draft, applyServerSnapshot, setLocal }
 }
