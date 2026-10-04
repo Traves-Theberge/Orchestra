@@ -1,7 +1,9 @@
 package api
 
 import (
+	"net"
 	"net/http"
+	"net/netip"
 	"sync"
 	"time"
 )
@@ -81,11 +83,9 @@ func RateLimit(requestsPerSecond float64, burst int) func(http.Handler) http.Han
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ip := r.RemoteAddr
-			// Use X-Forwarded-For if behind a proxy (chi's RealIP middleware sets RemoteAddr)
-			if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-				ip = forwarded
-			}
+			// RemoteAddr is the transport peer. Forwarded headers are supplied by
+			// clients and must not create a new bucket or rewrite this identity.
+			ip := rateLimitPeer(r.RemoteAddr)
 
 			if !limiter.allow(ip) {
 				writeJSONError(w, http.StatusTooManyRequests, "rate_limited", "too many requests, please slow down")
@@ -94,4 +94,15 @@ func RateLimit(requestsPerSecond float64, burst int) func(http.Handler) http.Han
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func rateLimitPeer(remoteAddr string) string {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	if addr, err := netip.ParseAddr(host); err == nil {
+		return addr.Unmap().String()
+	}
+	return host
 }

@@ -64,7 +64,7 @@ Orchestra connects your local projects and GitHub to AI coding agents (Claude Co
 
 ### Prerequisites
 
-- Go 1.25+
+- Go 1.26.8+
 - Node.js 22+
 - npm
 - Git

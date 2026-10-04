@@ -278,7 +278,7 @@ func TestAuthMatrixCoversAllRoutes(t *testing.T) {
 // auth-bypasses introduced by route refactors. Public routes (root,
 // healthz, openapi, docs, terminal WS, github oauth) are skipped.
 //
-// Each subtest sets a unique X-Forwarded-For so the per-IP rate limiter
+// Each subtest uses a unique transport peer so the per-IP rate limiter
 // (20 req/s, 60 burst) doesn't return 429 partway through the matrix.
 func TestAuthMatrixProtectedRoutesRequireBearer(t *testing.T) {
 	router := newAuthMatrixRouter(t)
@@ -288,7 +288,7 @@ func TestAuthMatrixProtectedRoutesRequireBearer(t *testing.T) {
 		}
 		t.Run(r.method+" "+r.path, func(t *testing.T) {
 			req := httptest.NewRequest(r.method, r.path, nil)
-			req.Header.Set("X-Forwarded-For", uniqueIPForIndex(i))
+			req.RemoteAddr = uniqueIPForIndex(i) + ":12345"
 			if needsJSONBody(r.method) {
 				req.Header.Set("Content-Type", "application/json")
 			}
@@ -312,7 +312,7 @@ func TestAuthMatrixWithBearerAvoids401(t *testing.T) {
 		t.Run(r.method+" "+r.path, func(t *testing.T) {
 			req := httptest.NewRequest(r.method, r.path, nil)
 			req.Header.Set("Authorization", "Bearer test-token")
-			req.Header.Set("X-Forwarded-For", uniqueIPForIndex(i+1000))
+			req.RemoteAddr = uniqueIPForIndex(i+1000) + ":12345"
 			if needsJSONBody(r.method) {
 				req.Header.Set("Content-Type", "application/json")
 			}
@@ -328,7 +328,7 @@ func TestAuthMatrixWithBearerAvoids401(t *testing.T) {
 // uniqueIPForIndex returns a distinct dotted-quad per subtest so each
 // request lands in a fresh per-IP token bucket and the rate limiter
 // doesn't 429 partway through the matrix. The rate limit middleware
-// keys on X-Forwarded-For when set, so this is enough.
+// keys on the transport peer and ignores untrusted forwarding headers.
 func uniqueIPForIndex(i int) string {
 	return fmt.Sprintf("10.%d.%d.%d", (i/65536)&0xff, (i/256)&0xff, i&0xff)
 }

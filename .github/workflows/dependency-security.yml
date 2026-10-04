@@ -1,0 +1,51 @@
+name: dependency-security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  desktop-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: ./.github/actions/setup-node-cached
+        with:
+          cache-dependency-path: apps/desktop/package-lock.json
+      - run: npm ci
+        working-directory: apps/desktop
+      - run: npm audit --audit-level=low
+        working-directory: apps/desktop
+
+  go-vulnerabilities:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - module: apps/backend
+            platform: linux
+          - module: apps/backend
+            platform: windows
+          - module: apps/tui
+            platform: linux
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: ./.github/actions/setup-go-cached
+        with:
+          go-mod-path: ${{ matrix.module }}/go.mod
+          go-sum-path: ${{ matrix.module }}/go.sum
+      - run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - run: govulncheck ./...
+        working-directory: ${{ matrix.module }}
+        env:
+          GOOS: ${{ matrix.platform }}

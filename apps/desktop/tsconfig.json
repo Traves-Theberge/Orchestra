@@ -7,13 +7,12 @@
     "strict": true,
     "skipLibCheck": true,
     "types": ["vite/client", "vitest/globals"],
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"],
-      "@core/*": ["src/core/*"],
-      "@features/*": ["src/features/*"],
-      "@ui/*": ["src/ui/*"],
-      "@layout/*": ["src/layout/*"]
+      "@/*": ["./src/*"],
+      "@core/*": ["./src/core/*"],
+      "@features/*": ["./src/features/*"],
+      "@ui/*": ["./src/ui/*"],
+      "@layout/*": ["./src/layout/*"]
     }
   },
   "include": ["src", "vite.config.ts"],

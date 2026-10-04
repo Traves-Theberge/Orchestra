@@ -103,7 +103,6 @@ func NewRouterWithPubSub(
 
 	allowedOrigins := corsAllowedOrigins(cfg.Host)
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
 	r.Use(RequestLogger(logger))
 	r.Use(RateLimit(20, 60)) // 20 req/s sustained, 60 burst

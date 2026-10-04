@@ -67,7 +67,7 @@ jobs:
         run: npm run test
 
       - name: Test evidence gate
-        run: node --test scripts/release-readiness.test.mjs
+        run: node --test scripts/release-readiness.test.mjs scripts/fixture-environment.test.mjs scripts/security-dependencies.test.mjs electron/managed-backend.test.cjs
 
       - name: Build renderer
         run: npm run build

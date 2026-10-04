@@ -2,10 +2,15 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/orchestra/orchestra/apps/backend/internal/config"
+	"github.com/orchestra/orchestra/apps/backend/internal/orchestrator"
+	"github.com/rs/zerolog"
 )
 
 func TestRateLimiter_AllowWithinBurst(t *testing.T) {
@@ -130,30 +135,72 @@ func TestRateLimitMiddleware_Returns429(t *testing.T) {
 	}
 }
 
-func TestRateLimitMiddleware_XForwardedFor(t *testing.T) {
-	mw := RateLimit(1, 1)
-
-	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	// First request with X-Forwarded-For should pass
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.RemoteAddr = "shared-proxy"
-	req.Header.Set("X-Forwarded-For", "real-client-a")
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("first request should pass, got %d", rec.Code)
+func TestRateLimitMiddleware_ForwardedHeadersCannotBypassPeerLimit(t *testing.T) {
+	for _, peers := range [][]string{
+		{"192.0.2.1:1000", "192.0.2.1:2000", "[::ffff:192.0.2.1]:3000"},
+		{"[2001:db8::1]:1000", "[2001:0db8:0:0:0:0:0:1]:2000", "[2001:db8::1]:3000"},
+	} {
+		t.Run(peers[0], func(t *testing.T) {
+			handler := RateLimit(0, 1)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			}))
+			for i, peer := range peers {
+				req := httptest.NewRequest(http.MethodGet, "/", nil)
+				req.RemoteAddr = peer
+				req.Header.Set("X-Forwarded-For", []string{"198.51.100.1", "198.51.100.2, 203.0.113.1", "198.51.100.3"}[i])
+				req.Header.Set("X-Real-IP", []string{"198.51.100.4", "198.51.100.5", "198.51.100.6"}[i])
+				req.Header.Set("Forwarded", "for="+req.Header.Get("X-Real-IP"))
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
+				want := http.StatusTooManyRequests
+				if i == 0 {
+					want = http.StatusOK
+				}
+				if rec.Code != want {
+					t.Fatalf("peer %s with rotated headers: got %d, want %d", peer, rec.Code, want)
+				}
+			}
+			// A distinct transport peer retains its own burst.
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.RemoteAddr = "192.0.2.2:1000"
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("independent peer: got %d, want 200", rec.Code)
+			}
+		})
 	}
+}
 
-	// Second request from different forwarded IP should also pass
-	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
-	req2.RemoteAddr = "shared-proxy"
-	req2.Header.Set("X-Forwarded-For", "real-client-b")
-	rec2 := httptest.NewRecorder()
-	handler.ServeHTTP(rec2, req2)
-	if rec2.Code != http.StatusOK {
-		t.Fatalf("request from different forwarded IP should pass, got %d", rec2.Code)
+func TestRouter_RotatedForwardedHeadersAreRateLimitedOverHTTP(t *testing.T) {
+	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), &config.Config{
+		Host: "127.0.0.1", WorkspaceRoot: t.TempDir(),
+	})
+	server := httptest.NewServer(router)
+	defer server.Close()
+	client := server.Client()
+	client.Timeout = 5 * time.Second
+	// Exercise the complete middleware chain over a real loopback socket. In
+	// particular, no earlier middleware may replace the peer with these headers.
+	for i := 0; i < 100; i++ {
+		req, err := http.NewRequest(http.MethodGet, server.URL+"/healthz", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("X-Forwarded-For", fmt.Sprintf("198.51.100.%d", i+1))
+		req.Header.Set("X-Real-IP", fmt.Sprintf("203.0.113.%d", i+1))
+		req.Header.Set("Forwarded", "for="+req.Header.Get("X-Real-IP"))
+		res, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode == http.StatusTooManyRequests {
+			return
+		}
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("request %d: unexpected HTTP status %d", i, res.StatusCode)
+		}
 	}
+	t.Fatal("rotating untrusted forwarding headers bypassed the peer rate limit")
 }
