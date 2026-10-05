@@ -1827,8 +1827,18 @@ func (s *Server) PostPRReview(w http.ResponseWriter, r *http.Request) {
 	numberStr := chi.URLParam(r, "number")
 
 	number, err := strconv.Atoi(numberStr)
-	if err != nil {
+	if err != nil || number <= 0 {
 		writeJSONError(w, http.StatusBadRequest, "invalid_number", "invalid pull request number")
+		return
+	}
+
+	var req ghutil.ReviewRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid_json", "invalid request body")
+		return
+	}
+	if err := req.Validate(); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid_review", err.Error())
 		return
 	}
 
@@ -1843,12 +1853,6 @@ func (s *Server) PostPRReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req ghutil.ReviewRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "invalid_json", "invalid request body")
-		return
-	}
-
 	ghToken, err := s.resolveGitHubToken(r.Context(), project)
 	if err != nil {
 		writeJSONError(w, http.StatusUnauthorized, "token_expired", err.Error())
@@ -1856,6 +1860,10 @@ func (s *Server) PostPRReview(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := ghutil.SubmitPRReview(r.Context(), project.GitHubOwner, project.GitHubRepo, ghToken, number, req); err != nil {
 		s.logger.Error().Err(err).Str("project_id", projectID).Int("number", number).Msg("failed to submit PR review")
+		if errors.Is(err, ghutil.ErrReviewNotConfirmed) {
+			writeJSONError(w, http.StatusConflict, "pr_review_unconfirmed", "the review may have been created, but its commit and submitted state could not be confirmed; refresh and inspect existing reviews before submitting again")
+			return
+		}
 		writeJSONError(w, http.StatusBadGateway, "github_review_failed", fmt.Sprintf("failed to submit PR review: %v", err))
 		return
 	}

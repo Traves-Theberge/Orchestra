@@ -2,7 +2,7 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { PRReviewView } from './PRReviewView'
 import type { BackendConfig, GitHubPR } from '@core/api/client'
-import { fetchPRSnapshot, mergePR } from '@core/api/client'
+import { fetchPRSnapshot, mergePR, submitPRReview } from '@core/api/client'
 
 vi.mock('@core/api/client', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('@core/api/client')
@@ -155,6 +155,27 @@ describe('PRReviewView', () => {
     await waitFor(() => expect(mergePR).toHaveBeenCalledWith(config, 'proj-1', 42, 'squash', 'a'.repeat(40)))
     await waitFor(() => expect(screen.getByText('merged')).toBeTruthy())
     expect((screen.getByText('Merge') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('anchors a review to the loaded snapshot rather than stale parent props', async () => {
+    const displayed = 'c'.repeat(40)
+    vi.mocked(fetchPRSnapshot).mockResolvedValue({ pr: makePR({ head: { ref: 'feat/auth', label: 'org:feat/auth', sha: displayed } }), diff: 'reviewed diff' })
+    render(<PRReviewView {...defaultProps} />)
+    await waitFor(() => expect((screen.getByText('Approve') as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(screen.getByText('Approve'))
+    await waitFor(() => expect(submitPRReview).toHaveBeenCalledWith(config, 'proj-1', 42, '', 'APPROVE', displayed))
+  })
+
+  it('retains review text and prevents blind resubmission when confirmation is unknown', async () => {
+    vi.mocked(submitPRReview).mockRejectedValueOnce(new Error('Review may have been created; inspect existing reviews.'))
+    render(<PRReviewView {...defaultProps} />)
+    await waitFor(() => expect((screen.getByText('Request changes') as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Please fix this.' } })
+    fireEvent.click(screen.getByText('Request changes'))
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('may have been created'))
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('Please fix this.')
+    fireEvent.click(screen.getByText('Request changes'))
+    expect(submitPRReview).toHaveBeenCalledTimes(1)
   })
 
   it('shows merge failure and prevents retry until review is refreshed', async () => {

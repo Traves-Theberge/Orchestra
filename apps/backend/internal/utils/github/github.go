@@ -327,9 +327,28 @@ func PostIssueComment(ctx context.Context, owner, repo, token string, issueNumbe
 
 // ReviewRequest represents the payload for submitting a pull request review.
 type ReviewRequest struct {
-	Body  string `json:"body"`
-	Event string `json:"event"`
+	Body     string `json:"body"`
+	Event    string `json:"event"`
+	CommitID string `json:"commit_id"`
 }
+
+func (review ReviewRequest) Validate() error {
+	if !ValidMergeHeadSHA(review.CommitID) {
+		return errors.New("commit_id must be the full 40-character hexadecimal SHA displayed during review")
+	}
+	switch review.Event {
+	case "APPROVE":
+	case "COMMENT", "REQUEST_CHANGES":
+		if strings.TrimSpace(review.Body) == "" {
+			return errors.New("a review body is required for COMMENT or REQUEST_CHANGES")
+		}
+	default:
+		return errors.New("event must be APPROVE, REQUEST_CHANGES or COMMENT")
+	}
+	return nil
+}
+
+var ErrReviewNotConfirmed = errors.New("review submission was not confirmed")
 
 // MergeRequest represents the payload for merging a pull request.
 type MergeRequest struct {
@@ -386,6 +405,10 @@ func ListPRReviews(ctx context.Context, owner, repo, token string, prNumber int)
 
 // SubmitPRReview submits a review on a pull request.
 func SubmitPRReview(ctx context.Context, owner, repo, token string, prNumber int, review ReviewRequest) error {
+	if err := review.Validate(); err != nil {
+		return err
+	}
+	review.CommitID = strings.ToLower(review.CommitID)
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/pulls/%d/reviews", owner, repo, prNumber)
 
 	body, err := json.Marshal(review)
@@ -404,15 +427,30 @@ func SubmitPRReview(ctx context.Context, owner, repo, token string, prNumber int
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %v", ErrReviewNotConfirmed, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode >= http.StatusInternalServerError {
+			return fmt.Errorf("%w: GitHub returned status %d", ErrReviewNotConfirmed, resp.StatusCode)
+		}
 		respBody, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("github api returned status %d: %s", resp.StatusCode, string(respBody))
 	}
 
+	var confirmation struct {
+		ID       int64  `json:"id"`
+		CommitID string `json:"commit_id"`
+		State    string `json:"state"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&confirmation); err != nil {
+		return fmt.Errorf("%w: invalid GitHub response", ErrReviewNotConfirmed)
+	}
+	expectedState := map[string]string{"APPROVE": "APPROVED", "COMMENT": "COMMENTED", "REQUEST_CHANGES": "CHANGES_REQUESTED"}[review.Event]
+	if confirmation.ID <= 0 || !strings.EqualFold(confirmation.CommitID, review.CommitID) || confirmation.State != expectedState {
+		return fmt.Errorf("%w: review identity, commit or state did not match", ErrReviewNotConfirmed)
+	}
 	return nil
 }
 

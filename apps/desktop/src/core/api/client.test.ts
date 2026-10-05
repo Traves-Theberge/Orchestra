@@ -10,6 +10,7 @@ import {
   normalizeSnapshotPayload,
   postRefresh,
   mergePR,
+  submitPRReview,
   createWorkspaceChatSession,
   sendWorkspaceChatMessage,
   replyWorkspaceChatRequest,
@@ -49,6 +50,14 @@ it('sends the reviewed head SHA with the merge mutation', async () => {
   const sha = 'a'.repeat(40)
   await mergePR(config, 'project/one', 42, 'squash', sha)
   expect(fetchMock).toHaveBeenCalledWith('http://127.0.0.1:4000/api/v1/projects/project%2Fone/github/pulls/42/merge', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ method: 'squash', expected_head_sha: sha }) }))
+})
+
+it('sends the displayed commit identity with the review mutation', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response('{"status":"ok"}', { status: 200, headers: { 'Content-Type': 'application/json' } }))
+  vi.stubGlobal('fetch', fetchMock)
+  const commit = 'c'.repeat(40)
+  await submitPRReview(config, 'project/one', 42, 'Reviewed this commit', 'APPROVE', commit)
+  expect(fetchMock).toHaveBeenCalledWith('http://127.0.0.1:4000/api/v1/projects/project%2Fone/github/pulls/42/reviews', expect.objectContaining({ method: 'POST', body: JSON.stringify({ body: 'Reviewed this commit', event: 'APPROVE', commit_id: commit }) }))
 })
 
 describe('normalizeSnapshotPayload', () => {
