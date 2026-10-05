@@ -64,6 +64,15 @@ package signing and verification reject an existing report before proceeding.
 No fixture binary was executed. Successful signing, timestamp verification and
 vendor-signature preservation still need the actual provider key.
 
+The real Windows certificate-build run
+[37246383314](https://github.com/Traves-Theberge/Orchestra/actions/runs/37246383314)
+passed on main revision `c3c8f0c6c9c3eff22378f6b014aa343e29bc62c3`: clean npm
+installation, zero-vulnerability audit, typecheck, backend/CLI compilation,
+portable Electron packaging and artifact upload. Its artifact is named
+`orchestra-windows-UNSIGNED-c3c8f0c6c9c3eff22378f6b014aa343e29bc62c3`.
+This proves Windows build/package output, not signed application startup. The
+separate desktop-smoke run `37245545599` remains queued with no job evidence.
+
 Native Windows launch is **not fixed** without a trusted signing setup. No
 policy was disabled, altered or bypassed. Backend tests and vulnerability scans
 run in the existing Linux Docker validation environment. That is independent
