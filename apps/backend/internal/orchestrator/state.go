@@ -1583,7 +1583,7 @@ func (s *Service) RevalidateClaimedIssue(ctx context.Context, issueID string) (b
 	s.mu.RUnlock()
 
 	if client == nil {
-		return true, nil
+		return false, errors.New("tracker client unavailable; refusing to dispatch an unvalidated task")
 	}
 
 	issues, err := client.FetchIssuesByIDs(ctx, []string{issueID})
@@ -1607,12 +1607,24 @@ func (s *Service) RevalidateClaimedIssue(ctx context.Context, issueID string) (b
 		delete(s.claimed, issueID)
 		return false, nil
 	}
-	if strings.EqualFold(issue.State, "In Progress") && s.PlanGate(ctx, issue).Status != "approved" {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		s.dropRunningIssueLocked(issueID)
-		delete(s.claimed, issueID)
-		return false, nil
+	gate := s.PlanGate(ctx, issue)
+	switch normalizeState(issue.State) {
+	case "todo":
+		if gate.Status == "awaiting_approval" || gate.Status == "approved" || gate.Status == "failed" || gate.Status == "unsupported" || gate.Status == "changed" {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			s.dropRunningIssueLocked(issueID)
+			delete(s.claimed, issueID)
+			return false, nil
+		}
+	case "in progress":
+		if gate.Status != "approved" {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			s.dropRunningIssueLocked(issueID)
+			delete(s.claimed, issueID)
+			return false, nil
+		}
 	}
 	terminalForBlockers := normalizeStateSet(terminalStates)
 	if isBlockedTodoByNonTerminal(issue, terminalForBlockers) {
@@ -1645,16 +1657,26 @@ func (s *Service) RevalidateClaimedIssue(ctx context.Context, issueID string) (b
 	defer s.mu.Unlock()
 	for idx, entry := range s.running {
 		if entry.IssueID == issueID {
+			// The caller holds a clone returned by ClaimNextRunnable. If a
+			// restored entry describes a different stage than the live task,
+			// updating only the service snapshot is not enough: the caller could
+			// still dispatch its stale clone as an execution turn. Drop it and let
+			// the next refresh enqueue the task from its current state and gate.
+			if !strings.EqualFold(strings.TrimSpace(entry.State), strings.TrimSpace(issue.State)) {
+				s.dropRunningIssueLocked(issueID)
+				delete(s.claimed, issueID)
+				return false, nil
+			}
 			entry.State = issue.State
 			if strings.TrimSpace(issue.Title) != "" {
 				entry.Title = issue.Title
 			}
 			s.running[idx] = entry
-			break
+			return true, nil
 		}
 	}
-
-	return true, nil
+	delete(s.claimed, issueID)
+	return false, nil
 }
 
 func (s *Service) dropRunningIssueLocked(issueID string) {

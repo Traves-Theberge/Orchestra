@@ -58,6 +58,36 @@ func (f *reviewTurnRunner) RunTurn(_ context.Context, req agents.TurnRequest, _ 
 	return result, f.err
 }
 
+type concurrentReviewTurnRunner struct {
+	started         chan agents.TurnRequest
+	release         <-chan struct{}
+	findingsSession string
+	mu              sync.Mutex
+	calls           map[string]int
+}
+
+func (f *concurrentReviewTurnRunner) RunTurn(ctx context.Context, req agents.TurnRequest, _ agents.EventHandler) (agents.TurnResult, error) {
+	f.mu.Lock()
+	f.calls[req.SessionID]++
+	f.mu.Unlock()
+	f.started <- req
+	select {
+	case <-f.release:
+	case <-ctx.Done():
+		return agents.TurnResult{}, ctx.Err()
+	}
+	if req.SessionID == f.findingsSession {
+		return agents.TurnResult{ExitCode: 0, SessionID: req.SessionID, Output: `{"decision":"changes_requested","feedback":"Task two needs its own follow-up."}`}, nil
+	}
+	return agents.TurnResult{ExitCode: 0, SessionID: req.SessionID, Output: `{"decision":"clean","feedback":""}`}, nil
+}
+
+func (f *concurrentReviewTurnRunner) callCount(sessionID string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls[sessionID]
+}
+
 func reviewSnapshot(head string, state string, draft bool, merged bool) *ghutil.ReviewSnapshot {
 	snapshot := &ghutil.ReviewSnapshot{Diff: "diff --git a/a.go b/a.go\n+return error"}
 	snapshot.PR.Number = 17
@@ -173,7 +203,11 @@ func TestRequestReviewRunsOnceWithVerifiedReadonlyToolFreeTurnAndReconciles(t *t
 	if turn.calls.Load() != 1 {
 		t.Fatalf("same UUID launched %d reviewer turns", turn.calls.Load())
 	}
-	if !turn.req.PlanOnly || turn.req.RuntimeTarget != agents.RuntimeLocal || turn.req.CommandOverride != "codex exec --skip-git-repo-check --ignore-user-config --sandbox read-only --json {{prompt}}" || turn.req.ToolExecutor != nil || len(turn.req.ToolSpecs) != 0 || len(turn.req.ResourceSpecs) != 0 || turn.req.RequestedAgentID != "" || turn.req.SessionID != "review-"+req.RequestID {
+	expectedStageCommand := "codex exec --skip-git-repo-check --ignore-user-config --sandbox read-only --json {{prompt}}"
+	if runtime.GOOS == "windows" {
+		expectedStageCommand = "codex exec --skip-git-repo-check --ignore-user-config -c windows.sandbox='\"unelevated\"' -c approval_policy='\"never\"' --sandbox read-only --json {{prompt}}"
+	}
+	if !turn.req.PlanOnly || turn.req.RuntimeTarget != agents.RuntimeLocal || turn.req.CommandOverride != expectedStageCommand || turn.req.ToolExecutor != nil || len(turn.req.ToolSpecs) != 0 || len(turn.req.ResourceSpecs) != 0 || turn.req.RequestedAgentID != "" || turn.req.SessionID != "review-"+req.RequestID {
 		t.Fatalf("reviewer did not receive the constrained stage request: %+v", turn.req)
 	}
 	if !strings.Contains(turn.req.Prompt, identity.HeadSHA) || !strings.Contains(turn.req.Prompt, "immutable diff") || !strings.Contains(turn.req.Prompt, "untrusted") {
@@ -181,6 +215,108 @@ func TestRequestReviewRunsOnceWithVerifiedReadonlyToolFreeTurnAndReconciles(t *t
 	}
 	if settled.Freshness != "not_checked" {
 		t.Fatalf("stored view claimed remote freshness: %+v", settled)
+	}
+}
+
+func TestConcurrentReviewAttemptsAreIsolatedByTask(t *testing.T) {
+	head := strings.Repeat("a", 40)
+	snapshot := reviewSnapshot(head, "open", false, false)
+	runner, database, firstIdentity, _ := reviewPipelineFixture(t, agents.TurnResult{}, nil,
+		snapshot, snapshot, snapshot, snapshot, snapshot, snapshot,
+	)
+	secondTaskID := uuid.NewString()
+	if _, err := database.Exec(`INSERT INTO issues(id,identifier,title,description,state,assignee_id,project_id,provider,updated_at,pr_url,plan) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, secondTaskID, "ORC-18", "Review another change", "Second task context", "Review", "person", firstIdentity.ProjectID, "CODEX", "2026-10-05T00:00:00Z", firstIdentity.PRURL, "- [x] Task two plan"); err != nil {
+		t.Fatal(err)
+	}
+	secondIdentity := firstIdentity
+	secondIdentity.TaskID = secondTaskID
+	firstReq := reviewRequest(firstIdentity, "CODEX")
+	firstReq.RequestID = uuid.NewString()
+	secondReq := reviewRequest(secondIdentity, "CODEX")
+	secondReq.RequestID = uuid.NewString()
+	firstReq.ReviewerAgentID = ProviderDefaultAgent
+	secondReq.ReviewerAgentID = ProviderDefaultAgent
+
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseBoth := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(releaseBoth)
+	turn := &concurrentReviewTurnRunner{started: make(chan agents.TurnRequest, 2), release: release, findingsSession: "review-" + secondReq.RequestID, calls: map[string]int{}}
+	runner.registry.SetRunner(agents.ProviderCodex, turn)
+	for _, item := range []struct {
+		identity reviewgate.Identity
+		request  Request
+	}{{firstIdentity, firstReq}, {secondIdentity, secondReq}} {
+		gate, err := runner.Execute(context.Background(), item.request)
+		if err != nil || gate.Status != "running" || gate.AttemptID != item.request.RequestID {
+			t.Fatalf("task %s review admission=%+v err=%v", item.identity.TaskID, gate, err)
+		}
+	}
+
+	seen := map[string]bool{}
+	for range 2 {
+		select {
+		case req := <-turn.started:
+			seen[req.SessionID] = true
+		case <-time.After(3 * time.Second):
+			t.Fatalf("both provider turns did not start before release; started=%v", seen)
+		}
+	}
+	if !seen["review-"+firstReq.RequestID] || !seen["review-"+secondReq.RequestID] {
+		t.Fatalf("provider turns did not retain their request identities: %v", seen)
+	}
+
+	for _, req := range []Request{firstReq, secondReq} {
+		gate, err := runner.Execute(context.Background(), req)
+		if err != nil || gate.Status != "running" || gate.AttemptID != req.RequestID {
+			t.Fatalf("duplicate request %s did not observe its running attempt: %+v err=%v", req.RequestID, gate, err)
+		}
+	}
+	if calls := turn.callCount("review-" + firstReq.RequestID); calls != 1 {
+		t.Fatalf("first request launched %d provider turns before settlement", calls)
+	}
+	if calls := turn.callCount("review-" + secondReq.RequestID); calls != 1 {
+		t.Fatalf("second request launched %d provider turns before settlement", calls)
+	}
+	releaseBoth()
+
+	firstGate := waitForStatus(t, database, firstIdentity, "awaiting_human_approval", "changes_requested", "failed", "interrupted")
+	secondGate := waitForStatus(t, database, secondIdentity, "awaiting_human_approval", "changes_requested", "failed", "interrupted")
+	if firstGate.Status != "awaiting_human_approval" || firstGate.AttemptID != firstReq.RequestID || firstGate.Feedback != "" {
+		t.Fatalf("first task observed another task's result: %+v", firstGate)
+	}
+	if secondGate.Status != "changes_requested" || secondGate.AttemptID != secondReq.RequestID || secondGate.Feedback != "Task two needs its own follow-up." {
+		t.Fatalf("second task observed another task's result: %+v", secondGate)
+	}
+	if calls := turn.callCount("review-" + firstReq.RequestID); calls != 1 {
+		t.Fatalf("first request launched %d provider turns total", calls)
+	}
+	if calls := turn.callCount("review-" + secondReq.RequestID); calls != 1 {
+		t.Fatalf("second request launched %d provider turns total", calls)
+	}
+
+	var firstState, firstFeedback, firstPlan, secondState, secondFeedback, secondPlan string
+	if err := database.QueryRow(`SELECT state,COALESCE(feedback,''),plan FROM issues WHERE id=? AND project_id=?`, firstIdentity.TaskID, firstIdentity.ProjectID).Scan(&firstState, &firstFeedback, &firstPlan); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.QueryRow(`SELECT state,feedback,plan FROM issues WHERE id=? AND project_id=?`, secondIdentity.TaskID, secondIdentity.ProjectID).Scan(&secondState, &secondFeedback, &secondPlan); err != nil {
+		t.Fatal(err)
+	}
+	if firstState != "Review" || firstFeedback != "" || firstPlan != "- [x] Keep prior plan" {
+		t.Fatalf("first task state/context crossed with second task: state=%q feedback=%q plan=%q", firstState, firstFeedback, firstPlan)
+	}
+	if secondState != "Todo" || secondFeedback != secondGate.Feedback || secondPlan != "- [x] Task two plan" {
+		t.Fatalf("second task state/context crossed with first task: state=%q feedback=%q plan=%q", secondState, secondFeedback, secondPlan)
+	}
+	var firstReceiptTask, secondReceiptTask string
+	if err := database.QueryRow(`SELECT task_id FROM pr_review_attempts WHERE attempt_id=? AND project_id=?`, firstReq.RequestID, firstIdentity.ProjectID).Scan(&firstReceiptTask); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.QueryRow(`SELECT task_id FROM pr_review_attempts WHERE attempt_id=? AND project_id=?`, secondReq.RequestID, secondIdentity.ProjectID).Scan(&secondReceiptTask); err != nil {
+		t.Fatal(err)
+	}
+	if firstReceiptTask != firstIdentity.TaskID || secondReceiptTask != secondIdentity.TaskID {
+		t.Fatalf("attempt receipts crossed tasks: first=%q second=%q", firstReceiptTask, secondReceiptTask)
 	}
 }
 

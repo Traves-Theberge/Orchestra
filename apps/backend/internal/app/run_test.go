@@ -68,6 +68,24 @@ func setupApprovedLocalTask(t *testing.T, service *orchestrator.Service, warehou
 	if err != nil {
 		t.Fatal(err)
 	}
+	project, err := warehouseDB.GetProjectByID(ctx, projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseSHA, err := exec.Command("git", "-C", project.RootPath, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("resolve fixture base SHA: %v", err)
+	}
+	if _, err := service.UpdateIssue(ctx, issue.ID, map[string]any{
+		"branch_name": strings.ToLower(strings.ReplaceAll(issue.Identifier, " ", "-")),
+		"base_sha":    strings.TrimSpace(string(baseSHA)),
+	}); err != nil {
+		t.Fatalf("persist fixture workspace identity: %v", err)
+	}
+	issue, err = client.FetchIssueByIdentifier(ctx, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := service.RecordPlanResult(ctx, projectID, issue.ID, "- [ ] inspect\n- [ ] implement", plangate.Fingerprint(*issue)); err != nil {
 		t.Fatalf("record planning result: %v", err)
 	}
@@ -104,11 +122,14 @@ type fakeLifecycleRunner struct {
 	requests []agents.TurnRequest
 }
 
-func (r *fakeLifecycleRunner) RunTurn(_ context.Context, request agents.TurnRequest, _ agents.EventHandler) (agents.TurnResult, error) {
+func (r *fakeLifecycleRunner) RunTurn(_ context.Context, request agents.TurnRequest, onEvent agents.EventHandler) (agents.TurnResult, error) {
 	r.requests = append(r.requests, request)
-	output := "- [ ] inspect\n- [ ] implement"
+	output := "- [ ] inspect\n- [ ] implement\n- [ ] verify"
 	if !request.PlanOnly {
-		output = "- [x] inspect\n- [x] implement"
+		output = "- [x] inspect\n- [x] implement\n- [x] verify"
+		if onEvent != nil {
+			onEvent(agents.Event{Kind: "assistant", SessionID: request.SessionID, Message: output, Timestamp: time.Now().UTC()})
+		}
 	}
 	return agents.TurnResult{Provider: agents.ProviderCodex, SessionID: request.SessionID, ExitCode: 0, Output: output}, nil
 }
@@ -177,6 +198,8 @@ func TestLocalTwoTaskLifecycleIsBoundedAndRequiresPlanApproval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	approvedPlans := make(map[string]string, 2)
+	approvedPlanHashes := make(map[string]string, 2)
 	for i, task := range tasks[:2] {
 		current, err := client.FetchIssueByIdentifier(ctx, task.ID)
 		if err != nil {
@@ -190,6 +213,12 @@ func TestLocalTwoTaskLifecycleIsBoundedAndRequiresPlanApproval(t *testing.T) {
 		if result["success"] != true {
 			t.Fatalf("approve task %d plan: %+v", i+1, result)
 		}
+		approved, err := client.FetchIssueByIdentifier(ctx, task.ID)
+		if err != nil {
+			t.Fatalf("fetch approved task %d: %v", i+1, err)
+		}
+		approvedPlans[task.ID] = approved.Plan
+		approvedPlanHashes[task.ID] = service.PlanGate(ctx, *approved).PlanHash
 	}
 	if err := service.PerformRefreshForClient(ctx, client); err != nil {
 		t.Fatalf("refresh after exact human approvals: %v", err)
@@ -211,6 +240,17 @@ func TestLocalTwoTaskLifecycleIsBoundedAndRequiresPlanApproval(t *testing.T) {
 		if err != nil || current.State != "Review" {
 			t.Fatalf("approved task did not settle in Review: task=%+v err=%v", current, err)
 		}
+		gate := service.PlanGate(ctx, *current)
+		if current.Plan != approvedPlans[task.ID] || gate.PlanHash != approvedPlanHashes[task.ID] || gate.Status != "approved" {
+			t.Fatalf("execution checklist changed the approved plan or fingerprint: plan=%q gate=%+v", current.Plan, gate)
+		}
+	}
+	var persistedProgressEvents int
+	if err := warehouseDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM events WHERE message=?`, "- [x] inspect\n- [x] implement\n- [x] verify").Scan(&persistedProgressEvents); err != nil {
+		t.Fatalf("count persisted execution progress events: %v", err)
+	}
+	if persistedProgressEvents != 2 {
+		t.Fatalf("expected progress events from both execution turns to remain persisted, got %d", persistedProgressEvents)
 	}
 	if len(fake.requests) != 4 {
 		t.Fatalf("expected two plan-only and two execution turns, got %d: %+v", len(fake.requests), fake.requests)

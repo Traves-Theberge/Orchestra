@@ -471,19 +471,6 @@ func processExecutionTick(
 		return
 	}
 
-	shouldDispatch, revalidateErr := service.RevalidateClaimedIssue(context.Background(), entry.IssueID)
-	if revalidateErr != nil {
-		service.ReleaseClaim(entry.IssueID)
-		logger.Warn().Err(revalidateErr).Str("issue_id", entry.IssueID).Msg("issue revalidation failed; skipping dispatch")
-		publishSnapshot(pubsub, service)
-		return
-	}
-	if !shouldDispatch {
-		logger.Info().Str("issue_id", entry.IssueID).Msg("issue no longer dispatchable after revalidation")
-		publishSnapshot(pubsub, service)
-		return
-	}
-
 	// Backfill title/description/project from tracker if missing (e.g. retry path creates entries without these fields)
 	if entry.Title == "" || entry.Description == "" || entry.ProjectID == "" {
 		issue, fetchErr := service.FetchIssueByID(context.Background(), entry.IssueID)
@@ -546,6 +533,19 @@ func processExecutionTick(
 		}
 		service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, attempt, dueAt, selectionErr)
 		logger.Error().Err(selectionErr).Str("issue_id", entry.IssueID).Msg("provider selection rejected before workspace preparation")
+		publishSnapshot(pubsub, service)
+		return
+	}
+
+	shouldDispatch, revalidateErr := service.RevalidateClaimedIssue(context.Background(), entry.IssueID)
+	if revalidateErr != nil {
+		service.ReleaseClaim(entry.IssueID)
+		logger.Warn().Err(revalidateErr).Str("issue_id", entry.IssueID).Msg("issue revalidation failed; skipping dispatch")
+		publishSnapshot(pubsub, service)
+		return
+	}
+	if !shouldDispatch {
+		logger.Info().Str("issue_id", entry.IssueID).Msg("issue no longer dispatchable after revalidation")
 		publishSnapshot(pubsub, service)
 		return
 	}
@@ -933,6 +933,21 @@ func processExecutionTick(
 		_ = warehouseDB.RecordSession(context.Background(), sessionID, entry.ProjectID, entry.IssueID, sessionID, activeProviderName, "", "main")
 	}
 
+	// Workspace preparation can take long enough for a task or its plan gate to
+	// change after the initial claim check. Re-read the exact live task and gate
+	// at the provider handoff so a restored or stale execution entry cannot run
+	// against an unapproved plan.
+	if dispatchable, validationErr := service.RevalidateClaimedIssue(context.Background(), entry.IssueID); validationErr != nil {
+		service.ReleaseClaim(entry.IssueID)
+		logger.Warn().Err(validationErr).Str("issue_id", entry.IssueID).Msg("runner handoff validation failed; skipping dispatch")
+		publishSnapshot(pubsub, service)
+		return
+	} else if !dispatchable {
+		logger.Info().Str("issue_id", entry.IssueID).Msg("task or plan gate changed before runner handoff")
+		publishSnapshot(pubsub, service)
+		return
+	}
+
 	result, runErr := registry.RunTurn(runCtx, activeProvider, agents.TurnRequest{
 		RequestedModel:    requestedOptions.RequestedModel,
 		RequestedMaxTurns: requestedOptions.RequestedMaxTurns,
@@ -954,21 +969,6 @@ func processExecutionTick(
 		service.RecordRunEvent(entry.IssueID, activeProviderName, event)
 		publishRunEvent(pubsub, entry, activeProviderName, event)
 		eventsBuffer = append(eventsBuffer, event)
-
-		// Live plan update: if this event contains checkboxes with [x] marks,
-		// update the issue's plan field so the UI reflects progress in real-time.
-		if msg := strings.TrimSpace(event.Message); !planOnly && msg != "" && strings.Contains(msg, "- [x]") {
-			checkboxCount := 0
-			for _, line := range strings.Split(msg, "\n") {
-				t := strings.TrimSpace(line)
-				if strings.HasPrefix(t, "- [") || strings.HasPrefix(t, "* [") {
-					checkboxCount++
-				}
-			}
-			if checkboxCount >= 3 {
-				_, _ = service.UpdateIssue(context.Background(), entry.IssueIdentifier, map[string]any{"plan": msg})
-			}
-		}
 
 		// Persist to database in real-time
 		if warehouseDB != nil && event.SessionID != "" {
@@ -1250,26 +1250,16 @@ func processExecutionTick(
 			time.Sleep(500 * time.Millisecond)
 			updatedPlan = extractOriginalPlan(warehouseDB, entry.IssueID)
 		}
-		// Gate: if the plan still has unchecked items, don't advance to Review.
-		// Save progress and stay in In Progress so the orchestrator dispatches
-		// another turn to finish the remaining steps.
+		// Gate: if the result still has unchecked items, don't advance to Review.
+		// Keep the approved plan immutable; turn events carry checklist progress.
 		hasUnchecked := strings.Contains(updatedPlan, "- [ ]") || strings.Contains(updatedPlan, "* [ ]")
 		if hasUnchecked && entry.TurnCount < 20 {
 			logger.Info().Str("issue_id", entry.IssueID).Int64("turn", entry.TurnCount).Msg("plan has unchecked items — staying in In Progress for another turn")
-			if updatedPlan != "" {
-				if _, err := service.UpdateIssue(runCtx, entry.IssueIdentifier, map[string]any{"plan": updatedPlan}); err != nil {
-					logger.Warn().Err(err).Msg("failed to save partial plan progress")
-				}
-			}
 			// Don't advance — the orchestrator will re-dispatch
 			return
 		}
 
 		updateFields := map[string]any{"state": "Review"}
-		if updatedPlan != "" {
-			updateFields["plan"] = updatedPlan
-			logger.Info().Str("issue_id", entry.IssueID).Int("plan_length", len(updatedPlan)).Msg("updated plan with execution progress")
-		}
 		logger.Info().Str("issue_id", entry.IssueID).Msg("execution complete; auto-advancing to Review")
 		if runCtx.Err() != nil {
 			publishLifecycleEvent(pubsub, "RUN_DISCARDED", map[string]any{

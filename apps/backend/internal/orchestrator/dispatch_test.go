@@ -934,6 +934,108 @@ func TestRevalidateClaimedIssueBlocksLegacyInProgressWithoutApproval(t *testing.
 	}
 }
 
+func TestRevalidateClaimedIssueDropsRestoredExecutionStageWhenTaskIsAwaitingApproval(t *testing.T) {
+	ctx := context.Background()
+	service := NewService()
+	service.SetStateSets([]string{"Todo", "In Progress"}, []string{"Done"})
+	useLocalDispatchFixture(t, service, []tracker.Issue{{
+		ID: "restore-1", Identifier: "ORC-RESTORE-1", State: "Todo", AssignedToWorker: true,
+	}})
+
+	if _, err := service.db.Exec(`UPDATE issues SET plan=? WHERE id=?`, "- [ ] reviewed plan", "restore-1"); err != nil {
+		t.Fatal(err)
+	}
+	current, err := service.trackerClient.FetchIssueByIdentifier(ctx, "restore-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.db.Exec(`INSERT INTO issue_history(id,issue_id,user_id,action,new_value) VALUES(?,?,?,?,?)`, "plan-ready-restore-1", "restore-1", "test", "plan_ready", plangate.Fingerprint(*current)); err != nil {
+		t.Fatal(err)
+	}
+	if gate := service.PlanGate(ctx, *current); gate.Status != "awaiting_approval" {
+		t.Fatalf("fixture must be awaiting approval, got %+v", gate)
+	}
+
+	// Simulate the pre-crash run row retaining In Progress while the durable
+	// task is back at Todo with a plan that has no approval receipt.
+	service.SetRunningForTest([]RunningEntry{{IssueID: "restore-1", IssueIdentifier: "ORC-RESTORE-1", State: "In Progress"}})
+	if err := service.PersistStateToDB(ctx); err != nil {
+		t.Fatal(err)
+	}
+	restarted := NewService()
+	restarted.SetDB(service.db)
+	restarted.SetTrackerClient(service.trackerClient)
+	restarted.SetStateSets([]string{"Todo", "In Progress"}, []string{"Done"})
+	if err := restarted.RestoreStateFromDB(ctx); err != nil {
+		t.Fatalf("restore run row: %v", err)
+	}
+	claimed, ok := restarted.ClaimNextRunnable()
+	if !ok || claimed.State != "In Progress" {
+		t.Fatalf("expected stale persisted execution-stage claim, got %+v (claimed=%v)", claimed, ok)
+	}
+
+	keep, err := restarted.RevalidateClaimedIssue(ctx, claimed.IssueID)
+	if err != nil {
+		t.Fatalf("revalidate restored claim: %v", err)
+	}
+	if keep {
+		t.Fatal("restored execution-stage claim was allowed to dispatch against a Todo task awaiting approval")
+	}
+	if running := restarted.Snapshot().Running; len(running) != 0 {
+		t.Fatalf("stale restored claim was not dropped: %+v", running)
+	}
+}
+
+func TestRevalidateClaimedIssueDropsRestoredTodoRetryWhenPlanAwaitsApproval(t *testing.T) {
+	ctx := context.Background()
+	service := NewService()
+	service.SetStateSets([]string{"Todo", "In Progress"}, []string{"Done"})
+	useLocalDispatchFixture(t, service, []tracker.Issue{{
+		ID: "retry-restore-1", Identifier: "ORC-RETRY-RESTORE-1", State: "Todo", AssignedToWorker: true,
+	}})
+	if _, err := service.db.Exec(`UPDATE issues SET plan=? WHERE id=?`, "- [ ] reviewed plan", "retry-restore-1"); err != nil {
+		t.Fatal(err)
+	}
+	current, err := service.trackerClient.FetchIssueByIdentifier(ctx, "retry-restore-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.db.Exec(`INSERT INTO issue_history(id,issue_id,user_id,action,new_value) VALUES(?,?,?,?,?)`, "plan-ready-retry-restore-1", "retry-restore-1", "test", "plan_ready", plangate.Fingerprint(*current)); err != nil {
+		t.Fatal(err)
+	}
+	if gate := service.PlanGate(ctx, *current); gate.Status != "awaiting_approval" {
+		t.Fatalf("fixture must be awaiting approval, got %+v", gate)
+	}
+
+	// Retry release bypasses candidate enqueueing, so revalidation must apply
+	// the Todo plan gate to the restored retry before it reaches a provider.
+	service.SetRunningForTest([]RunningEntry{{IssueID: "retry-restore-1", IssueIdentifier: "ORC-RETRY-RESTORE-1", State: "Todo"}})
+	if err := service.PersistStateToDB(ctx); err != nil {
+		t.Fatal(err)
+	}
+	restarted := NewService()
+	restarted.SetDB(service.db)
+	restarted.SetTrackerClient(service.trackerClient)
+	restarted.SetStateSets([]string{"Todo", "In Progress"}, []string{"Done"})
+	if err := restarted.RestoreStateFromDB(ctx); err != nil {
+		t.Fatalf("restore retry run row: %v", err)
+	}
+	claimed, ok := restarted.ClaimNextRunnable()
+	if !ok || claimed.State != "Todo" {
+		t.Fatalf("expected restored Todo retry, got %+v (claimed=%v)", claimed, ok)
+	}
+	keep, err := restarted.RevalidateClaimedIssue(ctx, claimed.IssueID)
+	if err != nil {
+		t.Fatalf("revalidate restored retry: %v", err)
+	}
+	if keep {
+		t.Fatal("restored Todo retry bypassed the exact plan approval gate")
+	}
+	if running := restarted.Snapshot().Running; len(running) != 0 {
+		t.Fatalf("unapproved restored retry was not dropped: %+v", running)
+	}
+}
+
 func TestRevalidateClaimedIssueReturnsErrorOnTrackerFailure(t *testing.T) {
 	service := NewService()
 	service.SetRunningForTest([]RunningEntry{{IssueID: "1", IssueIdentifier: "ORC-1", State: "Todo"}})
