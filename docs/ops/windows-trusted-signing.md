@@ -8,6 +8,13 @@ in this session; native Windows launch is still blocked pending issuance.
 
 ## Certificate and key storage
 
+The publisher selected **their personal name** and **a hardware token**.
+Use an individual-validated code-signing certificate with provider-supported
+hardware delivery. The recommended order configuration is SSL.com IV Code
+Signing with its physical token; eSigner enrollment is not needed for this path.
+Use the legal name verified by the provider. Purchase and identity verification
+must be completed by the publisher before local signing can proceed.
+
 [SSL.com individual code signing](https://www.ssl.com/products/software-integrity/code-signing/iv/)
 is available without a registered business and displays the verified personal
 name. The current page lists $129/year plus $379 for its physical token, or a
