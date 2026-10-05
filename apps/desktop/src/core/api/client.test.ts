@@ -44,6 +44,19 @@ it('labels every chat mutation as JSON for the real HTTP content-type guard', as
   expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ client_session_id: 'a5639609-2861-4a70-b6a4-5a97c26132c8' })
 })
 
+it('routes global orchestrator chat independently from registered projects', async () => {
+  const fetchMock = vi.fn().mockImplementation(async () => new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } }))
+  vi.stubGlobal('fetch', fetchMock)
+  await createWorkspaceChatSession(config, '__orchestrator__', 'CODEX', 'orchestrator-session')
+  await sendWorkspaceChatMessage(config, '__orchestrator__', 'chat-a', 'message-a', 'Observe projects')
+  await createWorkspaceChatSession(config, 'project/a', 'CODEX', 'project-session')
+  expect(fetchMock.mock.calls.map(([url]) => new URL(url).pathname)).toEqual([
+    '/api/v1/orchestrator/chat/sessions',
+    '/api/v1/orchestrator/chat/sessions/chat-a/messages',
+    '/api/v1/projects/project%2Fa/chat/sessions',
+  ])
+})
+
 it('sends the reviewed head SHA with the merge mutation', async () => {
   const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: 'ok' }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
   vi.stubGlobal('fetch', fetchMock)

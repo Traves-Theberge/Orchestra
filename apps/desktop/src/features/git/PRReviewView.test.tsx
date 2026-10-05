@@ -15,6 +15,7 @@ vi.mock('@core/api/client', async () => {
       { id: 2, user: { login: 'bob' }, body: 'Needs a fix here', state: 'CHANGES_REQUESTED', submitted_at: '2026-03-20T11:00:00Z' },
     ]),
     submitPRReview: vi.fn().mockResolvedValue({}),
+    fetchPRReviewComments: vi.fn().mockResolvedValue([]),
     mergePR: vi.fn().mockResolvedValue({}),
   }
 })
@@ -57,7 +58,7 @@ const defaultProps = {
 describe('PRReviewView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(fetchPRSnapshot).mockResolvedValue({ pr: makePR(), diff: 'diff --git a/file.ts b/file.ts\n+reviewed' })
+    vi.mocked(fetchPRSnapshot).mockResolvedValue({ pr: makePR(), diff: 'diff --git a/file.ts b/file.ts\n--- a/file.ts\n+++ b/file.ts\n@@ -0,0 +1 @@\n+reviewed' })
   })
 
   it('renders PR title and number', () => {
@@ -74,11 +75,11 @@ describe('PRReviewView', () => {
     expect(branchInfo.textContent).toContain('feat/auth')
   })
 
-  it('shows Files Changed and Reviews tabs', () => {
+  it('shows Summary, Timeline and Code tabs', () => {
     render(<PRReviewView {...defaultProps} />)
-    expect(screen.getByText('Files Changed')).toBeTruthy()
-    // Reviews tab shows count; initially 0 before async load
-    expect(screen.getByText(/Reviews/)).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'Summary' })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'Timeline' })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'Code' })).toBeTruthy()
   })
 
   it('renders diff content after load', async () => {
@@ -120,10 +121,10 @@ describe('PRReviewView', () => {
   it('renders existing reviews', async () => {
     render(<PRReviewView {...defaultProps} />)
     // Switch to Reviews tab
-    const reviewsTab = screen.getByText(/Reviews/)
+    const reviewsTab = screen.getByRole('tab', { name: 'Timeline' })
     fireEvent.click(reviewsTab)
     await waitFor(() => {
-      expect(screen.getByText('alice')).toBeTruthy()
+      expect(screen.getAllByText('alice').length).toBeGreaterThan(0)
       expect(screen.getByText('Looks great!')).toBeTruthy()
       expect(screen.getByText('bob')).toBeTruthy()
       expect(screen.getByText('Needs a fix here')).toBeTruthy()
@@ -170,10 +171,10 @@ describe('PRReviewView', () => {
     vi.mocked(submitPRReview).mockRejectedValueOnce(new Error('Review may have been created; inspect existing reviews.'))
     render(<PRReviewView {...defaultProps} />)
     await waitFor(() => expect((screen.getByText('Request changes') as HTMLButtonElement).disabled).toBe(false))
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Please fix this.' } })
+    fireEvent.change(screen.getByPlaceholderText('Leave a review comment…'), { target: { value: 'Please fix this.' } })
     fireEvent.click(screen.getByText('Request changes'))
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('may have been created'))
-    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('Please fix this.')
+    expect((screen.getByPlaceholderText('Leave a review comment…') as HTMLTextAreaElement).value).toBe('Please fix this.')
     fireEvent.click(screen.getByText('Request changes'))
     expect(submitPRReview).toHaveBeenCalledTimes(1)
   })
@@ -201,11 +202,11 @@ describe('PRReviewView', () => {
     vi.mocked(fetchPRSnapshot).mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve }))
     const { rerender } = render(<PRReviewView {...defaultProps} />)
     await waitFor(() => expect(fetchPRSnapshot).toHaveBeenCalledTimes(1))
-    vi.mocked(fetchPRSnapshot).mockResolvedValue({ pr: makePR({ number: 43, title: 'second PR' }), diff: 'second diff' })
+    vi.mocked(fetchPRSnapshot).mockResolvedValue({ pr: makePR({ number: 43, title: 'second PR' }), diff: 'diff --git a/a b/a\n@@ -0,0 +1 @@\n+second diff' })
     rerender(<PRReviewView {...defaultProps} pr={makePR({ number: 43, title: 'second PR' })} />)
-    await waitFor(() => expect(screen.getByText('second diff')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/second diff/)).toBeTruthy())
     await act(async () => resolveOld({ pr: makePR(), diff: 'old diff' }))
     expect(screen.queryByText('old diff')).toBeNull()
-    expect(screen.getByText('second diff')).toBeTruthy()
+    expect(screen.getByText(/second diff/)).toBeTruthy()
   })
 })

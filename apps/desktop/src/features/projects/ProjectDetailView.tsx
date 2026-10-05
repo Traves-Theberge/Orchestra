@@ -49,6 +49,7 @@ function sshToHttps(url: string): string {
 
 /** Props for the {@link ProjectDetailView} component. */
 interface ProjectDetailViewProps {
+    workspaceIntegrated?: boolean
     project: Project
     stats?: ProjectStats
     config: BackendConfig | null
@@ -70,6 +71,7 @@ interface ProjectDetailViewProps {
 type ProjectTab = 'overview' | 'files' | 'git'
 
 export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
+    workspaceIntegrated = false,
     project,
     config,
     snapshot,
@@ -498,7 +500,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
             {/* Tab strip — dedicated row, underline-style for visual hierarchy */}
             <div className="shrink-0 flex items-center gap-1 px-5 border-b border-border/30">
-                {tabs.map((tab) => {
+                {tabs.filter(tab => !workspaceIntegrated || tab.id === 'overview').map((tab) => {
                     const disabled = tab.needsPath && !pathExists
                     const isActive = activeTab === tab.id
                     return (

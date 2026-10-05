@@ -60,15 +60,6 @@ describe('Composed store — UI slice', () => {
     expect(typeof togglePalette).toBe('function')
   })
 
-  it('exposes studioModalOpen initialized to false', () => {
-    const { studioModalOpen } = useAppStore.getState()
-    expect(studioModalOpen).toBe(false)
-  })
-
-  it('exposes setStudioModalOpen as a function', () => {
-    const { setStudioModalOpen } = useAppStore.getState()
-    expect(typeof setStudioModalOpen).toBe('function')
-  })
 })
 
 describe('Composed store — Runtime slice', () => {

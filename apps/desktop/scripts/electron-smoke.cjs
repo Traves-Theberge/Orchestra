@@ -14,6 +14,22 @@ const errors = []
 fs.mkdirSync(path.join(fixture, 'home'), { recursive: true })
 process.env.HOME = path.join(fixture, 'home')
 process.env.USERPROFILE = path.join(fixture, 'home')
+for (const [key, directory] of Object.entries({ APPDATA: 'appdata', LOCALAPPDATA: 'localappdata', TEMP: 'tmp', TMP: 'tmp', CODEX_HOME: 'home/.codex', CLAUDE_CONFIG_DIR: 'home/.claude', XDG_CONFIG_HOME: 'home/.config', XDG_DATA_HOME: 'home/.local', XDG_CACHE_HOME: 'home/.cache' })) {
+  process.env[key] = path.join(fixture, directory)
+  fs.mkdirSync(process.env[key], { recursive: true })
+}
+const workspaceAudit = process.argv.includes('--workspace-controls')
+const prVisualAudit = process.argv.includes('--pr-visual-fixture')
+if (workspaceAudit) {
+  const projectsRoot = path.join(fixture, 'projects')
+  fs.mkdirSync(projectsRoot, { recursive: true })
+  process.env.ORCHESTRA_PROJECT_ROOTS = projectsRoot
+  const gitConfig = path.join(fixture, 'empty-gitconfig')
+  fs.writeFileSync(gitConfig, '')
+  process.env.GIT_CONFIG_GLOBAL = gitConfig
+  process.env.GIT_CONFIG_NOSYSTEM = '1'
+  process.env.ORCHESTRA_TELEMETRY_PROVIDERS = 'none'
+}
 let complete = false
 const timeout = setTimeout(() => finish(new Error('Electron smoke timed out')), 45_000)
 
@@ -68,6 +84,66 @@ app.on('browser-window-created', (_, win) => {
         return { bridge: true, state: Boolean(state.counts), title: document.title }
       })()`)
       if (!result.bridge || !result.state) throw new Error('Missing bridge or state')
+      if (prVisualAudit) await require('./pr-visual-audit.cjs').installPRVisualFixture(win)
+      if (workspaceAudit) {
+        const workspaceResult = await win.webContents.executeJavaScript(`(async () => {
+          const wait = async predicate => {
+            const deadline = Date.now() + 15000
+            while (!predicate() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 75))
+            if (!predicate()) throw new Error('Workspace audit timed out')
+          }
+          const button = name => [...document.querySelectorAll('button')].find(element => element.getAttribute('aria-label') === name || element.textContent.trim() === name)
+          document.querySelector('[data-testid="sidebar-nav-PROJECTS"]').click()
+          await wait(() => button('Add project'))
+          button('Add project').click()
+          await wait(() => document.querySelector('[role="option"]'))
+          const source = [...document.querySelectorAll('[role="option"]')].find(element => element.textContent.includes('New project'))
+          if (!source) throw new Error('New project source missing')
+          source.click()
+          await wait(() => [...document.querySelectorAll('label')].some(element => element.textContent === 'Project name'))
+          const setInput = (label, value) => {
+            const controlLabel = [...document.querySelectorAll('label')].find(element => element.textContent === label)
+            const input = controlLabel && document.getElementById(controlLabel.htmlFor)
+            if (!input) throw new Error('Missing ' + label)
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value)
+            input.dispatchEvent(new Event('input', { bubbles: true }))
+          }
+          setInput('Project name', 'Workspace audit')
+          setInput('Parent folder', ${JSON.stringify(path.join(fixture, 'projects'))})
+          await wait(() => button('Create project') && !button('Create project').disabled)
+          button('Create project').click()
+          await wait(() => {
+            const failure = document.querySelector('[role="dialog"] [role="alert"]')
+            if (failure) throw new Error('Project creation: ' + failure.textContent)
+            return document.querySelector('[role="tab"][aria-selected="true"]') && !document.querySelector('[role="dialog"]')
+          })
+          const chat = document.querySelector('[aria-label="Workspace chat pane"]')
+          if (!chat || chat.getBoundingClientRect().width <= 0) throw new Error('Project did not open its workspace')
+          button('Expand Workspace audit').click()
+          await wait(() => button('Open Workspace audit workspace main'))
+          button('Files & terminals').click()
+          button('Toggle workspace files').click()
+          await wait(() => document.querySelector('[aria-label="Workspace file sidebar"]'))
+          button('Close workspace file sidebar').click()
+          await wait(() => button('Maximize workspace tools'))
+          const tools = document.querySelector('[aria-label="Workspace tools"]')
+          const originalChat = chat
+          button('Maximize workspace tools').click()
+          await wait(() => tools.dataset.maximized === 'true')
+          const containerWidth = tools.parentElement.getBoundingClientRect().width
+          if (tools.getBoundingClientRect().width < containerWidth - 2 || getComputedStyle(chat).display !== 'none') throw new Error('Workspace tools did not expand across the workspace')
+          button('Restore workspace tools').click()
+          await wait(() => tools.dataset.maximized === 'false')
+          if (document.querySelector('[aria-label="Workspace chat pane"]') !== originalChat) throw new Error('Maximize remounted chat')
+          button('Git & pull requests').click()
+          await wait(() => document.querySelector('[role="tabpanel"][aria-label="Git & pull requests"]'))
+          if (chat.getBoundingClientRect().width <= 0) throw new Error('Git review hides workspace chat')
+          if (button('Create with AI')) throw new Error('Legacy AI creation journey remains')
+          return { projectSource: 'new', workspaceOpened: true, primaryWorktreeObserved: true, fileSidebarOpened: true, maximized: true, chatRetained: true, gitAlongsideChat: true }
+        })()`)
+        console.log('WORKSPACE_CONTROLS_SMOKE_RESULT', JSON.stringify(workspaceResult))
+      }
+      if (prVisualAudit) console.log('PR_VISUAL_FIXTURE_RESULT', JSON.stringify(await require('./pr-visual-audit.cjs').auditPRVisual(win, path.join(__dirname, '..', 'reports'))))
       console.log('ELECTRON_SMOKE_RESULT', JSON.stringify(result))
       const screenshot = await win.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })
       if (screenshot.isEmpty()) throw new Error('Electron returned an empty launch screenshot')

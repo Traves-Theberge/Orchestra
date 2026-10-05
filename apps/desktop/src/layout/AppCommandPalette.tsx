@@ -1,7 +1,7 @@
-import { Activity, Cpu, Database, FileText, FolderTree, ListTodo, Settings2, Terminal } from 'lucide-react'
+import { Activity, Cpu, Database, FileText, FolderTree, ListTodo, Network, Settings2 } from 'lucide-react'
 import { Command } from 'cmdk'
 import { useAppStore } from '@core/store'
-import { sidebarItems, type SectionID } from '@layout/sections'
+import { type SectionID } from '@layout/sections'
 
 interface AppCommandPaletteProps {
   onCreateIssue: (state: string) => void
@@ -18,9 +18,9 @@ export function AppCommandPalette({ onCreateIssue, onTogglePolling }: AppCommand
   const setSelectedProjectID = useAppStore(s => s.setSelectedProjectID)
 
   const navItems: { id: SectionID; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+    { id: 'ORCHESTRATOR', label: 'Go to Orchestrator', icon: Network },
     { id: 'ISSUES', label: 'Go to Tasks', icon: ListTodo },
     { id: 'PROJECTS', label: 'Go to Projects', icon: FolderTree },
-    { id: 'CONSOLE', label: 'Go to Development', icon: Terminal },
     { id: 'AGENTS', label: 'Go to Agents', icon: Cpu },
     { id: 'WAREHOUSE', label: 'Go to Usage', icon: Database },
     { id: 'SETTINGS', label: 'Go to Settings', icon: Settings2 },
@@ -72,7 +72,7 @@ export function AppCommandPalette({ onCreateIssue, onTogglePolling }: AppCommand
             {projects.map(p => (
               <Command.Item
                 key={p.id}
-                onSelect={() => { setActiveSection('PROJECTS'); setSelectedProjectID(p.id); setPaletteOpen(false) }}
+                onSelect={() => { useAppStore.getState().openProjectTab(p.id, p.root_path); setActiveSection('PROJECTS'); setSelectedProjectID(p.id); setPaletteOpen(false) }}
                 className={itemClass}
               >
                 <FolderTree className="size-4" /> {p.name}

@@ -3,6 +3,7 @@ import { ArrowDown, ArrowUp, CheckCircle2, ChevronRight, Loader2, MessageSquare,
 import { MarkdownRenderer } from '@ui/MarkdownRenderer'
 import { ChatMessage } from './ChatMessage'
 import { HarnessPicker } from './HarnessPicker'
+import { useAppStore } from '@core/store'
 import { ChatUsage } from './ChatUsage'
 import { chatDraftStorageKey, readChatDraftReceipt, writeChatDraftReceipt } from './chat-draft-storage'
 import {
@@ -34,6 +35,11 @@ function AgentActivity({ events }: { events: WorkspaceChatEvent[] }) {
     } else if (event.type === 'item/commandExecution/outputDelta' && items.has(key)) {
       const previous = items.get(key)!
       items.set(key, { ...previous, text: previous.text + (event.delta || textValue(payload.delta)) })
+    } else if (event.type === 'orchestra/tool/started') {
+      const operation = textValue(record(payload.arguments).operation)
+      items.set(key, { label: 'Orchestra control', text: operation || textValue(payload.tool), status: 'running' })
+    } else if (event.type === 'orchestra/tool/completed') {
+      items.set(key, { label: 'Orchestra control', text: JSON.stringify(payload, null, 2), status: payload.success === false ? 'failed' : 'completed' })
     } else if (event.type === 'turn/plan/updated') {
       items.set(`plan:${event.turn_id}`, { label: 'Plan', text: textValue(payload.explanation) + '\n' + (Array.isArray(payload.plan) ? payload.plan.map(step => { const s = record(step); return `${textValue(s.status)}: ${textValue(s.step)}` }).join('\n') : ''), status: 'updated' })
     } else if (event.type === 'error') {
@@ -95,6 +101,7 @@ export function WorkspaceChat(props: WorkspaceChatProps) {
   return <ScopedWorkspaceChat key={JSON.stringify([props.config.baseUrl, props.config.apiToken, props.projectId])} {...props} />
 }
 function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, active = true }: WorkspaceChatProps) {
+  const requestedConversation = useAppStore(state => state.requestedWorkspaceConversation)
   const [providers, setProviders] = useState<WorkspaceChatProvider[]>([])
   const [sessions, setSessions] = useState<WorkspaceChatSession[]>([])
   const [provider, setProvider] = useState('')
@@ -203,6 +210,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, acti
     Promise.all([fetchWorkspaceChatProviders(config, projectId), listWorkspaceChatSessions(config, projectId)])
       .then(([catalog, history]) => {
         if (cancelled || generation.current !== epoch) return
+        if (!Array.isArray(catalog.providers) || !Array.isArray(history.sessions)) throw new Error('Workspace chat returned an invalid provider or session catalog. Refresh before continuing.')
         setProviders(catalog.providers)
         setSessions(history.sessions)
         setProvider(previous => catalog.providers.some(p => p.id === previous && p.enabled)
@@ -303,6 +311,24 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, acti
     setSessionId(id); setSnapshot(null); setError(null); setObservationError(null)
     setDraft(drafts.current[id] ?? ''); setThreadsOpen(false)
   }
+  useEffect(() => {
+    const request = requestedConversation
+    if (!request || !active || loading || pending || mutationPending.current || creating.current || request.projectId !== projectId || request.baseUrl !== config.baseUrl || request.apiToken !== config.apiToken) return
+    let cancelled = false
+    void Promise.resolve().then(() => {
+      if (cancelled) return
+      if (!sessions.some(session => session.id === request.sessionId && session.project_id === projectId)) {
+        setObservationError('The selected conversation was not found in this workspace. Refresh its history before opening it.')
+      } else {
+        chooseConversation(request.sessionId)
+        persist(request.sessionId)
+      }
+      useAppStore.getState().clearWorkspaceConversationRequest(request.requestId)
+    })
+    return () => { cancelled = true }
+    // Selection uses this render's session list and draft recovery state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedConversation, active, loading, pending, projectId, config.baseUrl, config.apiToken, sessions])
   const retryCreate = () => {
     const creation = creating.current
     if (!creation || !creation.uncertain || pending || mutationPending.current) return

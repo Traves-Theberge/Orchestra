@@ -4,6 +4,7 @@ import { WorkspaceChat } from './WorkspaceChat'
 import { webcrypto } from 'node:crypto'
 import { chatDraftStorageKey } from './chat-draft-storage'
 import * as api from '@core/api/client'
+import { resetAppStore, useAppStore } from '@core/store'
 
 vi.mock('@core/api/client', () => ({
   fetchWorkspaceChatProviders: vi.fn(), listWorkspaceChatSessions: vi.fn(),
@@ -22,6 +23,7 @@ const message: api.WorkspaceChatMessage = {
   status: 'accepted', created_at: '',
 }
 beforeEach(() => {
+  resetAppStore()
   vi.stubGlobal('crypto', webcrypto)
   sessionStorage.clear()
   vi.resetAllMocks()
@@ -47,6 +49,27 @@ async function selectConversation(title = 'Review changes') {
 }
 
 describe('WorkspaceChat', () => {
+  it('opens a sidebar-requested conversation without sending a message', async () => {
+    useAppStore.setState({ config, projects: [{ id: 'project-a', name: 'Alpha', root_path: '/alpha', remote_url: '' }] })
+    open()
+    await screen.findByRole('button', { name: 'Toggle conversations' })
+    act(() => useAppStore.getState().requestWorkspaceConversation('project-a', session.id))
+    await screen.findByText(/Session details/)
+    expect(api.fetchWorkspaceChat).toHaveBeenCalledWith(config, 'project-a', session.id)
+    expect(useAppStore.getState().requestedWorkspaceConversation).toBeNull()
+    expect(api.sendWorkspaceChatMessage).not.toHaveBeenCalled()
+  })
+  it('does not consume a sidebar conversation request from a different backend', async () => {
+    open()
+    await screen.findByRole('button', { name: 'Toggle conversations' })
+    act(() => useAppStore.setState({ requestedWorkspaceConversation: {
+      baseUrl: 'http://other-backend:4014', apiToken: config.apiToken, projectId: 'project-a', sessionId: session.id, requestId: 1,
+    } }))
+    await act(async () => { await Promise.resolve() })
+    expect(api.fetchWorkspaceChat).not.toHaveBeenCalled()
+    expect(useAppStore.getState().requestedWorkspaceConversation?.requestId).toBe(1)
+    expect(api.sendWorkspaceChatMessage).not.toHaveBeenCalled()
+  })
   it('offers registered harnesses in an existing chat and retains the draft when changing harness', async () => {
     vi.mocked(api.fetchWorkspaceChatProviders).mockResolvedValue({ providers: [
       { id: 'codex', label: 'Codex', enabled: true, provider_resume: false, conversation_mode: 'transcript_replay' },
@@ -301,6 +324,8 @@ describe('WorkspaceChat', () => {
         { sequence: 3, type: 'item/started', turn_id: 'turn-1', item_id: 'tool', payload: { item: { id: 'tool', type: 'commandExecution', command: 'git status' } }, created_at: '' },
         { sequence: 4, type: 'turn/plan/updated', turn_id: 'turn-1', payload: { plan: [{ step: 'Inspect', status: 'inProgress' }] }, created_at: '' },
         { sequence: 5, type: 'thread/tokenUsage/updated', payload: { tokenUsage: { total: { inputTokens: 100, outputTokens: 20, cachedInputTokens: 40, totalTokens: 120 } } }, created_at: '' },
+        { sequence: 6, type: 'orchestra/tool/started', turn_id: 'turn-1', item_id: 'control', payload: { tool: 'orchestra_control', arguments: { operation: 'create' } }, created_at: '' },
+        { sequence: 7, type: 'orchestra/tool/completed', turn_id: 'turn-1', item_id: 'control', payload: { success: true, data: { task_id: 'durable-task-id' } }, created_at: '' },
       ], cursor: 5,
     })
     open()
@@ -311,6 +336,8 @@ describe('WorkspaceChat', () => {
     expect(screen.getByText(/Model: observed-model/)).toBeInTheDocument()
     expect(screen.getByText(/Requested model: requested-model/)).toBeInTheDocument()
     expect(screen.getByText('git status')).toBeInTheDocument()
+    expect(screen.getByText('Orchestra control')).toBeInTheDocument()
+    expect(screen.getByText(/durable-task-id/)).toBeInTheDocument()
     expect(screen.getByText(/inProgress: Inspect/)).toBeInTheDocument()
     expect(screen.getByText(/100 input.*20 output.*40 cached.*120 total tokens/)).toBeInTheDocument()
   })

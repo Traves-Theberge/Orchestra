@@ -134,7 +134,6 @@ export interface UISlice {
   agentHubScope: 'GLOBAL' | 'PROJECT'
   agentHubDirty: boolean
   agentHubPendingNav: (() => void) | null
-  studioModalOpen: boolean
 
   // Actions
   setActiveSection: (section: SectionID) => void
@@ -169,7 +168,6 @@ export interface UISlice {
   /** Request a navigation that may need a discard-confirm. If the agent hub is dirty, the action is stashed in agentHubPendingNav for the dashboard to confirm; otherwise it is applied immediately. */
   requestAgentHubNav: (apply: () => void) => void
   setAgentHubPendingNav: (apply: (() => void) | null) => void
-  setStudioModalOpen: (open: boolean) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -284,6 +282,9 @@ export interface TerminalsSlice {
 type ActiveWorkspaceTab = { type: 'terminal' | 'editor' | 'browser'; id: string } | null
 
 export interface WorkspaceSlice {
+  requestedWorkspaceConversation: { baseUrl: string; apiToken: string; projectId: string; sessionId: string; requestId: number } | null
+  requestWorkspaceConversation: (projectId: string, sessionId: string) => void
+  clearWorkspaceConversationRequest: (requestId: number) => void
   // State
   explorerRoot: string | null // active project's explorer root (derived)
   projectExplorerRoots: Record<WorkspaceContextID, string | null> // per-project explorer roots

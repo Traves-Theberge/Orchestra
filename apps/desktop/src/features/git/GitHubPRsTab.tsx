@@ -113,17 +113,17 @@ export function GitHubPRsTab({
           <button
             key={pr.number}
             onClick={() => onOpenPR(pr)}
-            className="group flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-foreground/[0.03] text-left transition-colors"
+            className="group flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 px-2 py-1.5 rounded-md hover:bg-foreground/[0.03] text-left transition-colors"
           >
             <GitPullRequest size={11} className={`shrink-0 ${prStatusStyle(pr)}`} />
             <span className={`text-[10px] font-semibold uppercase tracking-tight shrink-0 ${prStatusStyle(pr)}`}>
               {prStatusLabel(pr)}
             </span>
-            <span className="text-[12px] text-foreground/90 truncate flex-1">
+            <span className="min-w-0 text-[12px] text-foreground/90 truncate flex-1">
               <span className="font-mono text-muted-foreground/60 mr-1.5">#{pr.number}</span>
               {pr.title}
             </span>
-            <span className="text-[10px] text-muted-foreground/50 font-mono shrink-0">
+            <span className="min-w-0 basis-full truncate pl-5 text-[10px] text-muted-foreground/50 font-mono">
               {pr.base.ref} ← {pr.head.ref}
             </span>
           </button>

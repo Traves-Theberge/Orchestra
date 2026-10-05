@@ -121,17 +121,14 @@ export function BranchManagerView({ config, projectId }: BranchManagerViewProps)
     if (!name) return
     setLoading(true); setError('')
     try {
-      if (baseBranch && baseBranch !== currentBranch) {
-        await gitCheckout(config, projectId, baseBranch)
-      }
-      await gitCreateBranch(config, projectId, name)
+      await gitCreateBranch(config, projectId, name, baseBranch || undefined)
       setCreateOpen(false); setNewBranchName(''); setBaseBranch('')
       await loadBranches()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Create branch failed')
       setTimeout(() => setError(''), 5000)
     } finally { setLoading(false) }
-  }, [config, projectId, newBranchName, baseBranch, currentBranch, loadBranches])
+  }, [config, projectId, newBranchName, baseBranch, loadBranches])
 
   const current = useMemo(() => branches.find((b) => b.is_current) ?? null, [branches])
   const localBranches = useMemo(() => branches.filter((b) => !b.is_remote), [branches])
@@ -232,8 +229,8 @@ export function BranchManagerView({ config, projectId }: BranchManagerViewProps)
 
         {/* Toolbar */}
         <section className="space-y-3">
-          <div className="flex items-center gap-2 px-1">
-            <div className="relative flex-1">
+          <div className="flex flex-wrap items-center gap-2 px-1">
+            <div className="relative min-w-[120px] flex-1">
               <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50" />
               <input
                 type="text"
@@ -265,7 +262,7 @@ export function BranchManagerView({ config, projectId }: BranchManagerViewProps)
             </button>
           </div>
 
-          <div className="flex items-center gap-1 px-1">
+          <div className="flex flex-wrap items-center gap-1 px-1">
             {filterTabs.map((t) => {
               const isActive = filter === t.id
               const count = filterCounts[t.id]
@@ -306,7 +303,7 @@ export function BranchManagerView({ config, projectId }: BranchManagerViewProps)
                 <select
                   value={baseBranch}
                   onChange={(e) => setBaseBranch(e.target.value)}
-                  className="h-8 px-2.5 rounded-md bg-background font-mono text-[11.5px] outline-none ring-1 ring-border/60 focus:ring-primary/50 transition-all"
+                  className="h-8 min-w-0 max-w-full px-2.5 rounded-md bg-background font-mono text-[11.5px] outline-none ring-1 ring-border/60 focus:ring-primary/50 transition-all"
                 >
                   {localBranchNames.map((b) => (
                     <option key={b} value={b}>{b}</option>
@@ -363,8 +360,8 @@ export function BranchManagerView({ config, projectId }: BranchManagerViewProps)
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="h-full overflow-auto bg-background">
-      <div className="min-h-full px-10 py-16">
-        <div className="w-full max-w-xl mx-auto">{children}</div>
+      <div className="min-h-full px-4 py-6">
+        <div className="w-full min-w-0 max-w-xl mx-auto">{children}</div>
       </div>
     </div>
   )

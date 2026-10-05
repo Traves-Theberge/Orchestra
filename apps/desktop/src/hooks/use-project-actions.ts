@@ -22,7 +22,7 @@ interface UseProjectActionsOpts {
 }
 
 interface UseProjectActionsResult {
-  handleAddProject: (path: string) => Promise<void>
+  handleAddProject: (path: string, setup?: import('@core/api/client').ProjectSetupOptions) => Promise<void>
   handleDeleteProject: (projectId: string) => Promise<void>
   refreshProjectsAndStats: () => Promise<void>
 }
@@ -167,13 +167,20 @@ export function useProjectActions(
     }
   }
 
-  const handleAddProject = async (path: string) => {
+  const handleAddProject = async (path: string, setup?: import('@core/api/client').ProjectSetupOptions) => {
     try {
       if (!config) throw new Error('Backend configuration unavailable. Reconnect to the backend and try again.')
       if (!path.trim()) throw new Error('Enter an absolute project folder path.')
-      await createProject(config, path)
-      opts.setStatusMessage(`Project at ${path} added successfully.`)
+      const registered = setup ? await createProject(config, path, setup) : await createProject(config, path)
       await refreshProjectsAndStats()
+      const state = useAppStore.getState()
+      const project = state.projects.find(item => item.id === registered.id)
+      if (project) {
+        state.openProjectTab(project.id, project.root_path)
+        state.setSelectedProjectID(project.id)
+        state.setActiveSection('PROJECTS')
+      }
+      opts.setStatusMessage(`Project ${project?.name ?? registered.id} added successfully.`)
     } catch (err) {
       opts.setErrorMessage(`failed to add project: ${toDisplayError(err)}`)
       throw err

@@ -10,7 +10,6 @@ import {
   Play,
   Plus,
   Rows,
-  Sparkles,
   Square,
   ClipboardList,
   Trash2,
@@ -456,14 +455,6 @@ export function KanbanBoard({
           >
             <Plus size={13} />
             Create Task
-          </button>
-          <button
-            type="button"
-            onClick={() => useAppStore.getState().setStudioModalOpen(true)}
-            className="h-9 px-3.5 inline-flex items-center gap-1.5 rounded-md border border-border bg-card hover:bg-muted text-[12px] font-medium tracking-tight transition-colors text-foreground"
-          >
-            <Sparkles size={13} />
-            Create with AI
           </button>
           {viewMode === 'list' && (
             <CustomDropdown

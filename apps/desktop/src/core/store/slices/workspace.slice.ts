@@ -15,6 +15,7 @@ const LEFT_SIDEBAR_MIN = 220
 const LEFT_SIDEBAR_MAX = 500
 const RIGHT_SIDEBAR_MIN = 280
 const RIGHT_SIDEBAR_MAX = 500
+let conversationRequestSequence = 0
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
@@ -25,6 +26,20 @@ function clamp(value: number, min: number, max: number): number {
 // ---------------------------------------------------------------------------
 
 export const createWorkspaceSlice: StateCreator<AppState, [], [], WorkspaceSlice> = (set, get) => ({
+  requestedWorkspaceConversation: null,
+  requestWorkspaceConversation: (projectId, sessionId) => {
+    const state = get()
+    const project = state.projects.find(project => project.id === projectId)
+    if (!state.config || !project || !sessionId) return
+    state.openProjectTab(projectId, project.root_path)
+    set({ requestedWorkspaceConversation: {
+      baseUrl: state.config.baseUrl, apiToken: state.config.apiToken,
+      projectId, sessionId, requestId: ++conversationRequestSequence,
+    } })
+  },
+  clearWorkspaceConversationRequest: (requestId) => {
+    if (get().requestedWorkspaceConversation?.requestId === requestId) set({ requestedWorkspaceConversation: null })
+  },
   // ---- State ----------------------------------------------------------------
   explorerRoot: null,
   projectExplorerRoots: {},

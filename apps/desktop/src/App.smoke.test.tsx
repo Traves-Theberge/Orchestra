@@ -687,7 +687,8 @@ describe('App smoke render', () => {
 
       // Wait for the empty state or projects to load
       await screen.findAllByText(/No projects yet/i)
-      fireEvent.click(screen.getByRole('button', { name: /New Project/i }))
+      fireEvent.click(screen.getAllByRole('button', { name: /^Add project$/i })[0]!)
+      fireEvent.click(screen.getByRole('option', { name: /Local folder/ }))
 
       // Click the browse button
       const browseButton = screen.getByRole('button', { name: /Browse filesystem/i })
@@ -731,6 +732,7 @@ describe('App smoke render', () => {
       })
 
       fireEvent.click(screen.getByRole('button', { name: 'Alpha Project' }))
+      fireEvent.click(await screen.findByRole('tab', { name: 'Tasks & settings' }))
 
       await waitFor(() => {
         expect(screen.getAllByText('Alpha Project').length).toBeGreaterThan(0)
@@ -769,6 +771,7 @@ describe('App smoke render', () => {
 
       // The ProjectGrid card has a delete button that calls setProjectToDelete
       fireEvent.click(screen.getByRole('button', { name: 'Doomed Project' }))
+      fireEvent.click(await screen.findByRole('tab', { name: 'Tasks & settings' }))
       const trashButton = await screen.findByRole('button', { name: 'Remove project' })
       expect(trashButton).toBeTruthy()
       fireEvent.click(trashButton)
@@ -810,6 +813,7 @@ describe('App smoke render', () => {
       })
 
       fireEvent.click(screen.getByRole('button', { name: 'Ghost Project' }))
+      fireEvent.click(await screen.findByRole('tab', { name: 'Tasks & settings' }))
 
       await waitFor(() => {
         expect(screen.getByText(/Path not found/i)).toBeTruthy()

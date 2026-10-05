@@ -7,6 +7,7 @@ import {
 } from '@core/api/client'
 import type { SessionSummary } from '@core/api/types'
 import { ProjectDetailView } from '@features/projects/ProjectDetailView'
+import { WorkspaceChat } from '@features/workspace/chat/WorkspaceChat'
 import { UsagePage } from '@features/usage/UsagePage'
 import { UsageStatusBar } from '@features/usage/UsageStatusBar'
 import { TerminalMultiplexer } from '@features/terminal/TerminalMultiplexer'
@@ -23,7 +24,6 @@ import { AppTooltipProvider } from '@ui/tooltip-wrapper'
 import { SectionErrorBoundary } from '@ui/section-error-boundary'
 import { AppCommandPalette } from '@layout/AppCommandPalette'
 import { AppDialogs } from '@layout/AppDialogs'
-import { StudioModal } from '@features/studio'
 import {
   useBackendConfig,
   useNotifications,
@@ -396,50 +396,9 @@ export default function App() {
         statusMessage={statusMessage}
       >
         <div className="flex flex-col flex-1 min-w-0 min-h-0 h-full">
-          {sectionVisibility.showProjects ? (
-            <SectionErrorBoundary name="Projects">
-              <section className="flex-1 flex flex-col min-h-0">
-                {selectedProjectID && projects.find(p => p.id === selectedProjectID) ? (
-                  <ProjectDetailView
-                    project={projects.find(p => p.id === selectedProjectID)!}
-                    stats={projectStats[selectedProjectID]}
-                    config={config}
-                    snapshot={snapshot}
-                    boardIssues={boardIssues}
-                    availableAgents={availableAgents}
-                    loadingState={loadingState}
-                    onBack={() => setSelectedProjectID(null)}
-                    onInspectIssue={handleInspectIssueFromList}
-                    onJumpToTerminal={handleJumpToTerminal}
-                    onIssueUpdate={handleIssueUpdate}
-                    onIssueDelete={handleIssueDelete}
-                    onStopSession={handleStopSession}
-                    onCreateIssue={handleCreateIssue}
-                    onDeleteProject={handleDeleteProject}
-                    onRefreshProjects={refreshProjectsAndStats}
-                  />
-                ) : (
-                  <div className="flex-1 grid place-items-center text-muted-foreground/50 text-sm">
-                    {projects.length === 0 ? (
-                      <div className="flex flex-col items-center gap-2 text-center">
-                        <p className="text-[13px] font-medium">No projects yet</p>
-                        <button
-                          type="button"
-                          onClick={() => setCreateProjectDialogOpen(true)}
-                          className="text-[12px] text-primary hover:underline"
-                        >
-                          Add a project
-                        </button>
-                      </div>
-                    ) : (
-                      <p className="text-[13px]">Select a project from the sidebar</p>
-                    )}
-                  </div>
-                )}
-              </section>
-            </SectionErrorBoundary>
-          ) : null}
-
+          {config && <section className={`${sectionVisibility.showOrchestrator ? 'flex' : 'hidden'} min-h-0 flex-1 flex-col`} aria-label="Global orchestrator">
+            <SectionErrorBoundary name="Orchestrator"><WorkspaceChat config={config} projectId="__orchestrator__" projectName="Orchestrator" active={sectionVisibility.showOrchestrator} /></SectionErrorBoundary>
+          </section>}
           {sectionVisibility.showAgents ? (
             <SectionErrorBoundary name="Agents">
               <section className="flex-1 flex flex-col min-h-0">
@@ -495,6 +454,27 @@ export default function App() {
               <section className={`flex-1 flex flex-col min-h-0 ${sectionVisibility.showConsole ? '' : 'hidden'}`}>
                 <Suspense fallback={<SectionLoader />}>
                   <WorkspaceLayout
+                    onInspectTask={handleInspectIssueFromList}
+                    projectDetails={project => <ProjectDetailView
+                      key={project.id}
+                      project={project}
+                      stats={projectStats[project.id]}
+                      config={config}
+                      snapshot={snapshot}
+                      boardIssues={boardIssues}
+                      availableAgents={availableAgents}
+                      loadingState={loadingState}
+                      workspaceIntegrated
+                      onBack={() => setSelectedProjectID(null)}
+                      onInspectIssue={handleInspectIssueFromList}
+                      onJumpToTerminal={handleJumpToTerminal}
+                      onIssueUpdate={handleIssueUpdate}
+                      onIssueDelete={handleIssueDelete}
+                      onStopSession={handleStopSession}
+                      onCreateIssue={handleCreateIssue}
+                      onDeleteProject={handleDeleteProject}
+                      onRefreshProjects={refreshProjectsAndStats}
+                    />}
                     onAddTerminal={() => {
                       const state = useAppStore.getState()
                       const projectId = state.activeProjectId
@@ -614,7 +594,6 @@ export default function App() {
         onAddProject={handleAddProject}
       />
 
-      <StudioModal config={config} projects={projects} />
 
       <AppCommandPalette onCreateIssue={handleCreateIssue} onTogglePolling={handleTogglePolling} />
     </AppTooltipProvider>

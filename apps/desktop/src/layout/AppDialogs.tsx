@@ -32,7 +32,7 @@ interface AppDialogsProps {
   onIssueUpdate: (identifier: string, updates: IssueUpdatePayload) => Promise<void>
   onStopSession: (identifier: string, provider?: string) => Promise<void>
   onTaskSubmit: (payload: import('@core/api/client').IssueCreatePayload) => Promise<void>
-  onAddProject: (path: string) => Promise<void>
+  onAddProject: (path: string, setup?: import('@core/api/client').ProjectSetupOptions) => Promise<void>
 }
 
 export function AppDialogs({

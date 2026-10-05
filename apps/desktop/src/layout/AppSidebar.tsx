@@ -15,20 +15,19 @@ import {
   Keyboard,
   Loader2,
   Paintbrush,
-  Plus,
   RefreshCcw,
   Search,
   Terminal,
   Type,
 } from 'lucide-react'
 import type { IssueListItem } from '@core/api/client'
+import type { IssueInspectionOwner } from '@/hooks/use-issue-actions'
 import { usePlatform } from '@/hooks/use-platform'
 import type { SidebarItem } from '@layout/types'
 import type { Project, DocItem } from '@core/api/types'
 import { useAppStore } from '@core/store'
-import { FileExplorer } from '@features/workspace/file-explorer/FileExplorer'
-import { WorkspaceSearch } from '@features/workspace/panels/WorkspaceSearch'
-import { ProjectSwitcher } from '@features/workspace/file-explorer/ProjectSwitcher'
+import { ProjectControls } from '@features/projects/ProjectControls'
+import { ProjectWorkspaceTree } from '@features/projects/ProjectWorkspaceTree'
 import type { LucideIcon } from 'lucide-react'
 import { getAgentIcon, CustomDropdown } from '@layout/shared/controls'
 import { AppTooltip } from '@ui/tooltip-wrapper'
@@ -94,7 +93,7 @@ const DEFAULT_WIDTH = 224
 function sectionToView(section: string): SidebarView {
   switch (section) {
     case 'SETTINGS': return 'settings'
-    case 'PROJECTS': return 'projects'
+    case 'PROJECTS': return 'console'
     case 'CONSOLE': return 'console'
     case 'AGENTS': return 'agents'
     case 'DOCS': return 'docs'
@@ -111,17 +110,13 @@ interface AppSidebarProps {
   onSelectProject: (id: string) => void
   onCreateProject: () => void
   onSearch?: (query: string) => Promise<IssueListItem[]>
-  onResultClick?: (issueIdentifier: string) => void
+  onResultClick?: (issueIdentifier: string, owner?: IssueInspectionOwner) => void
 }
 
 export function AppSidebar({
   items,
   activeSection,
   onSectionChange,
-  projects,
-  selectedProjectID,
-  onSelectProject,
-  onCreateProject,
   onSearch,
   onResultClick,
 }: AppSidebarProps) {
@@ -235,17 +230,8 @@ export function AppSidebar({
         {view === 'settings' && (
           <SettingsSubNav onBack={handleBack} />
         )}
-        {view === 'projects' && (
-          <ProjectsSubNav
-            projects={projects}
-            selectedId={selectedProjectID}
-            onSelect={onSelectProject}
-            onCreateProject={onCreateProject}
-            onBack={handleBack}
-          />
-        )}
         {view === 'console' && (
-          <ConsoleSubNav onBack={handleBack} />
+          <ConsoleSubNav onBack={handleBack} onInspectTask={(issue, owner) => { const identifier = issue.id || issue.issue_id || issue.identifier || issue.issue_identifier; if (identifier) onResultClick?.(identifier, owner) }} />
         )}
         {view === 'agents' && (
           <AgentsSubNav onBack={handleBack} />
@@ -550,114 +536,28 @@ function SettingsSubNav({ onBack }: { onBack: () => void }) {
   )
 }
 
-function ProjectsSubNav({
-  projects, selectedId, onSelect, onCreateProject, onBack,
-}: {
-  projects: Project[]
-  selectedId: string | null
-  onSelect: (id: string) => void
-  onCreateProject: () => void
-  onBack: () => void
-}) {
+function ConsoleSubNav({ onBack, onInspectTask }: { onBack: () => void; onInspectTask?: (issue: IssueListItem, owner: IssueInspectionOwner) => void }) {
+  const [projectQuery, setProjectQuery] = useState('')
+  const projects = useAppStore(s => s.projects)
+  const selectProject = (id: string) => {
+    const project = projects.find(item => item.id === id)
+    const state = useAppStore.getState()
+    state.openProjectTab(id, project?.root_path ?? null)
+    state.setSelectedProjectID(id)
+    state.setActiveSection('PROJECTS')
+  }
+
   return (
     <div className="flex flex-col h-full">
       <SubNavHeader label="Projects" onBack={onBack} />
-      <div className="px-2 pb-1.5 shrink-0">
-        <button
-          type="button"
-          onClick={onCreateProject}
-          className="w-full flex items-center gap-2 h-8 px-2.5 rounded-lg text-left text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.04] transition-colors border border-dashed border-border/50 hover:border-border"
-        >
-          <Plus size={13} strokeWidth={2} className="shrink-0" />
-          <span className="text-[12px] font-medium">New project</span>
-        </button>
-      </div>
-      <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-0.5">
-        {projects.length === 0 && (
-          <p className="text-[11.5px] text-muted-foreground/40 p-2">No projects yet</p>
-        )}
-        {projects.map((p) => {
-          const active = p.id === selectedId
-          return (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => onSelect(p.id)}
-              className={`w-full flex items-center gap-2.5 h-9 px-2.5 rounded-lg text-left transition-colors relative ${
-                active
-                  ? 'bg-foreground/[0.08] text-foreground'
-                  : 'text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.04]'
-              }`}
-            >
-              {active && <span className="absolute left-0 w-[2px] h-5 rounded-r-full bg-primary" />}
-              {active
-                ? <FolderOpen size={14} strokeWidth={2.2} className="text-primary shrink-0" />
-                : <Folder size={14} strokeWidth={1.8} className="shrink-0" />
-              }
-              <span className={`text-[12.5px] truncate flex-1 ${active ? 'font-semibold' : 'font-medium'}`}>
-                {p.name}
-              </span>
-              {p.issue_source_type && (
-                <span className="text-[10px] font-mono text-muted-foreground/40 shrink-0">{p.issue_source_type}</span>
-              )}
-            </button>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-function ConsoleSubNav({ onBack }: { onBack: () => void }) {
-  const activePanel = useAppStore(s => s.activeLeftPanel)
-  const setActivePanel = useAppStore(s => s.setActiveLeftPanel)
-  const projects = useAppStore(s => s.projects)
-
-  return (
-    <div className="flex flex-col h-full">
-      {/* Back + panel switcher row */}
-      <div className="flex items-center gap-1 px-2 pt-2 pb-1.5 shrink-0 border-b border-border/20">
-        <button
-          type="button"
-          data-testid="sidebar-back"
-          aria-label="Back to navigation"
-          onClick={onBack}
-          className="flex items-center gap-1.5 h-8 px-2 rounded-lg text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.06] transition-colors"
-        >
-          <ChevronLeft size={14} strokeWidth={2} className="shrink-0" />
-        </button>
-        <button
-          type="button"
-          onClick={() => setActivePanel('explorer')}
-          className={`flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium transition-colors ${
-            activePanel === 'explorer' ? 'bg-foreground/[0.08] text-foreground' : 'text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.04]'
-          }`}
-        >
-          <Folder size={13} strokeWidth={activePanel === 'explorer' ? 2.2 : 1.8} />
-          Explorer
-        </button>
-        <button
-          type="button"
-          onClick={() => setActivePanel('search')}
-          className={`flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium transition-colors ${
-            activePanel === 'search' ? 'bg-foreground/[0.08] text-foreground' : 'text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.04]'
-          }`}
-        >
-          <Search size={13} strokeWidth={activePanel === 'search' ? 2.2 : 1.8} />
-          Search
-        </button>
-      </div>
 
       {/* Project switcher */}
       <div className="px-2 py-1.5 border-b border-border/20 shrink-0">
-        <ProjectSwitcher projects={projects} />
+        <ProjectControls projects={projects} query={projectQuery} onQueryChange={setProjectQuery} onSelect={selectProject} onAddProject={() => useAppStore.getState().setCreateProjectDialogOpen(true)} onNewTask={() => useAppStore.getState().openCreateTaskDialog()} />
       </div>
 
-      {/* Panel content */}
-      <div className="flex-1 min-h-0 overflow-auto">
-        {activePanel === 'explorer' && <FileExplorer />}
-        {activePanel === 'search' && <WorkspaceSearch />}
-      </div>
+      <div className="min-h-0 flex-1 overflow-auto"><ProjectWorkspaceTree query={projectQuery} onSelect={selectProject} onInspectTask={onInspectTask} /></div>
+
     </div>
   )
 }

@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { act, render, screen } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ResizableSplit } from './ResizableSplit'
 
 const localStorageMock = (() => {
@@ -14,6 +14,42 @@ Object.defineProperty(window, 'localStorage', { value: localStorageMock })
 
 describe('ResizableSplit', () => {
   beforeEach(() => { localStorageMock.clear(); vi.clearAllMocks() })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('stacks a narrow pane and restores the saved side-by-side width after maximizing', () => {
+    let resize!: ResizeObserverCallback
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: ResizeObserverCallback) { resize = callback }
+      observe() {}
+      disconnect() {}
+    })
+    localStorageMock.setItem('git-tab-split-width', '400')
+    const { container } = render(<ResizableSplit left={<div>Files</div>} right={<div>Diff</div>} />)
+    const measure = (width: number) => act(() => resize([{ contentRect: { width } } as ResizeObserverEntry], {} as ResizeObserver))
+    measure(550)
+    const left = container.querySelector('[data-panel="left"]') as HTMLElement
+    expect(left.style.width).toBe('100%')
+    expect(screen.getByRole('separator').getAttribute('aria-orientation')).toBe('horizontal')
+    measure(1000)
+    expect(left.style.width).toBe('400px')
+    expect(screen.getByRole('separator').getAttribute('aria-orientation')).toBe('vertical')
+    measure(550)
+    expect(left.style.width).toBe('100%')
+    expect(localStorageMock.getItem('git-tab-split-width')).toBe('400')
+  })
+
+  it('limits a wide-pane saved width to reserve at least 320px for the diff', () => {
+    let resize!: ResizeObserverCallback
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: ResizeObserverCallback) { resize = callback }
+      observe() {}
+      disconnect() {}
+    })
+    localStorageMock.setItem('git-tab-split-width', '500')
+    const { container } = render(<ResizableSplit left={<div>Files</div>} right={<div>Diff</div>} />)
+    act(() => resize([{ contentRect: { width: 740 } } as ResizeObserverEntry], {} as ResizeObserver))
+    expect((container.querySelector('[data-panel="left"]') as HTMLElement).style.width).toBe('419px')
+  })
 
   it('renders left and right children', () => {
     render(<ResizableSplit left={<div>Left Panel</div>} right={<div>Right Panel</div>} />)

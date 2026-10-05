@@ -4,8 +4,8 @@ import {
   FileText,
   FolderTree,
   ListTodo,
+  Network,
   Settings2,
-  Terminal,
 } from 'lucide-react'
 import type { SidebarItem } from '@layout/types'
 
@@ -22,8 +22,8 @@ function SandboxIcon({ className, size }: { className?: string; size?: number })
 }
 
 export const sidebarItems: SidebarItem[] = [
-  { id: 'PROJECTS', label: 'Projects', description: 'Local workspace grouping', icon: FolderTree },
-  { id: 'CONSOLE', label: 'Development', description: 'Editor, terminals, and browser preview', icon: Terminal },
+  { id: 'PROJECTS', label: 'Projects', description: 'Chat, files, terminals, Git and tasks', icon: FolderTree },
+  { id: 'ORCHESTRATOR', label: 'Orchestrator', description: 'Coordinate agents across projects and worktrees', icon: Network },
   { id: 'ISSUES', label: 'Tasks', description: 'Task board and inspector', icon: ListTodo },
   { id: 'AGENTS', label: 'Agents', description: 'Global agent configurations', icon: Cpu },
   { id: 'WAREHOUSE', label: 'Usage', description: 'Per-agent tokens, cost, and sessions', icon: Database },
@@ -33,6 +33,7 @@ export const sidebarItems: SidebarItem[] = [
 ]
 
 export type SectionID =
+  | 'ORCHESTRATOR'
   | 'ISSUES'
   | 'PROJECTS'
   | 'AGENTS'
@@ -43,6 +44,7 @@ export type SectionID =
   | 'CONSOLE'
 
 const SECTION_IDS: readonly SectionID[] = [
+  'ORCHESTRATOR',
   'ISSUES',
   'PROJECTS',
   'AGENTS',
@@ -58,6 +60,7 @@ export function isSectionID(value: string): value is SectionID {
 }
 
 export type SectionVisibility = {
+  showOrchestrator: boolean
   showIssueBoard: boolean
   showProjects: boolean
   showAgents: boolean
@@ -69,6 +72,7 @@ export type SectionVisibility = {
 }
 
 const sectionMeta: Record<SectionID, { label: string; title: string }> = {
+  ORCHESTRATOR: { label: 'Control', title: 'Orchestrator' },
   ISSUES: { label: 'Tracker', title: 'Tasks' },
   PROJECTS: { label: 'Workspace', title: 'Projects' },
   AGENTS: { label: 'Compute', title: 'Agents' },
@@ -81,14 +85,15 @@ const sectionMeta: Record<SectionID, { label: string; title: string }> = {
 
 export function getSectionVisibility(activeSection: SectionID): SectionVisibility {
   return {
+    showOrchestrator: activeSection === 'ORCHESTRATOR',
     showIssueBoard: activeSection === 'ISSUES',
-    showProjects: activeSection === 'PROJECTS',
+    showProjects: false,
     showAgents: activeSection === 'AGENTS',
     showWarehouse: activeSection === 'WAREHOUSE',
     showSandbox: activeSection === 'SANDBOX',
     showSettings: activeSection === 'SETTINGS',
     showDocs: activeSection === 'DOCS',
-    showConsole: activeSection === 'CONSOLE',
+    showConsole: activeSection === 'CONSOLE' || activeSection === 'PROJECTS',
   }
 }
 

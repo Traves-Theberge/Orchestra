@@ -90,7 +90,6 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   agentHubScope: 'GLOBAL',
   agentHubDirty: false,
   agentHubPendingNav: null,
-  studioModalOpen: false,
 
   // ---- Actions --------------------------------------------------------------
   setActiveSection: (section) => set({ activeSection: section }),
@@ -181,5 +180,4 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
     }
   },
 
-  setStudioModalOpen: (open) => set({ studioModalOpen: open }),
 })

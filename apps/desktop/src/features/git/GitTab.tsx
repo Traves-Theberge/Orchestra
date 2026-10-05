@@ -16,6 +16,7 @@ import { ResizableSplit } from './ResizableSplit'
 import { CreateRepoDialog } from './CreateRepoDialog'
 import { ConflictBanner } from './ConflictBanner'
 import { useGitActions } from './use-git-actions'
+import { WorkspaceToolsControls } from '../workspace/WorkspaceToolsControls'
 
 type SubTab = 'changes' | 'history' | 'branches' | 'prs' | 'issues'
 
@@ -41,8 +42,10 @@ function NoGitHubMessage({ kind }: { kind: 'pull requests' | 'issues' }) {
 export function GitTab({
   project,
   config,
+  onInspectTask,
 }: {
   project: Project
+  onInspectTask?: (identifier: string) => void
   config: BackendConfig | null
 }) {
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
@@ -94,7 +97,8 @@ export function GitTab({
 
   return (
     <div className="flex flex-col h-full overflow-hidden relative bg-background">
-      <div className="flex items-center h-9 border-b border-border/30 shrink-0">
+      <div className="flex min-w-0 flex-wrap items-center border-b border-border/30 shrink-0">
+        <div className="min-w-0 flex-1 overflow-x-auto">
         <BranchBar
           projectId={project.id}
           config={config}
@@ -112,6 +116,7 @@ export function GitTab({
           onStashApply={git.handleStashApply}
           onStashDrop={git.handleStashDrop}
         />
+        </div>
 
         <div className="w-px h-4 bg-border/40 mx-1.5 shrink-0" />
 
@@ -125,14 +130,16 @@ export function GitTab({
           </button>
         </AppTooltip>
 
-        <div className="flex-1" />
+        <div className="mr-2"><WorkspaceToolsControls /></div>
 
-        <div className="flex items-center gap-0 pr-2 shrink-0">
+        <div role="tablist" aria-label="Project Git" className="flex w-full min-w-0 items-center gap-0 overflow-x-auto px-2">
           {subTabs.map((tab) => {
             const isActive = activeSubTab === tab.key
             return (
               <button
                 key={tab.key}
+                role="tab"
+                aria-selected={isActive}
                 onClick={() => setActiveSubTab(tab.key)}
                 className={`relative inline-flex items-center px-3 h-9 text-[12px] font-medium tracking-tight transition-colors ${
                   isActive ? 'text-foreground' : 'text-muted-foreground/65 hover:text-foreground'
@@ -145,6 +152,7 @@ export function GitTab({
           })}
         </div>
       </div>
+      <div title={project.root_path} className="shrink-0 truncate px-3 py-1.5 text-[10px] font-mono text-muted-foreground/60">{project.name} · {project.root_path}</div>
 
       {activeSubTab === 'changes' && (
         <div className="flex flex-col flex-1 overflow-hidden min-h-0">
@@ -183,23 +191,23 @@ export function GitTab({
       )}
 
       {activeSubTab === 'history' && (
-        <div className="flex flex-1 overflow-hidden min-h-0">
-          <div className="w-80 shrink-0 border-r border-border/40 overflow-hidden">
+        <ResizableSplit storageKey="git-history-split-width" defaultLeftWidth={260}
+          left={
             <CommitTimeline
               commits={git.commits}
               selectedHash={selectedCommit}
               onSelectCommit={handleCommitSelect}
             />
-          </div>
-          <div className="flex-1 overflow-hidden">
+          }
+          right={
             <DiffViewer
               filePath={selectedCommit ? `commit ${selectedCommit.slice(0, 7)}` : null}
               diff={selectedFile || selectedCommit ? diff : null}
               mode={diffMode}
               onModeChange={setDiffMode}
             />
-          </div>
-        </div>
+          }
+        />
       )}
 
       {activeSubTab === 'branches' && (
@@ -246,6 +254,7 @@ export function GitTab({
           config={config}
           pr={activePR}
           onClose={() => setActivePR(null)}
+          onInspectTask={onInspectTask}
         />
       )}
 

@@ -50,7 +50,7 @@ function parseDiff(rawInput: string): Hunk[] {
     } else if (first === '-') {
       currentLines.push({ type: 'del', content: line.slice(1), oldNum: oldLine, newNum: null })
       oldLine++
-    } else if (first === ' ' || line === '') {
+    } else if (first === ' ') {
       currentLines.push({ type: 'ctx', content: first === ' ' ? line.slice(1) : line, oldNum: oldLine, newNum: newLine })
       oldLine++
       newLine++
@@ -130,11 +130,15 @@ export function DiffViewer({
   diff,
   mode,
   onModeChange,
+  compact = false,
+  showHeader = true,
 }: {
   filePath: string | null
   diff: string | null
   mode: 'unified' | 'split'
   onModeChange: (mode: 'unified' | 'split') => void
+  compact?: boolean
+  showHeader?: boolean
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const hunks = useMemo(() => (diff ? parseDiff(diff) : []), [diff])
@@ -153,9 +157,9 @@ export function DiffViewer({
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className={`flex flex-col overflow-hidden ${compact ? '' : 'h-full'}`}>
       {/* Header */}
-      <div className="flex items-center justify-between px-3 h-9 border-b border-border/30 sticky top-0 z-10 shrink-0 bg-background">
+      {showHeader && <div className="flex items-center justify-between px-3 h-9 border-b border-border/30 sticky top-0 z-10 shrink-0 bg-background">
         {filePath && (
           <span className="font-mono text-[11.5px] text-foreground/85 truncate mr-4">{filePath}</span>
         )}
@@ -177,10 +181,10 @@ export function DiffViewer({
             Unified
           </button>
         </div>
-      </div>
+      </div>}
 
       {/* Diff content */}
-      <div ref={scrollRef} className="flex-1 overflow-auto font-mono text-[11px] leading-5">
+      <div ref={scrollRef} className={`${compact ? 'max-h-[480px]' : 'flex-1'} overflow-auto font-mono text-[11px] leading-5`}>
         {mode === 'unified' ? (
           <table className="w-full border-collapse">
             <tbody>

@@ -10,6 +10,7 @@ vi.mock('./chat/WorkspaceChat', () => ({ WorkspaceChat: ({ projectId, headerTool
   return <div>{headerTools}<textarea aria-label={`Draft ${projectId}`} value={draft} onChange={e => setDraft(e.target.value)} /></div>
 } }))
 vi.mock('./SplitLayout', () => ({ SplitLayout: () => <div>Project tools</div> }))
+vi.mock('@features/git', () => ({ GitTab: () => <div>Repository changes</div> }))
 vi.mock('./panels/WorkspaceWelcome', () => ({ WorkspaceWelcome: () => <div>Welcome</div> }))
 beforeEach(() => {
   resetAppStore()
@@ -21,6 +22,29 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 describe('WorkspaceLayout chat ownership', () => {
+  it('returns from task settings to the requested project conversation without losing its draft', () => {
+    render(<WorkspaceLayout projectDetails={() => <div>Task settings</div>} />)
+    const draft = screen.getByLabelText('Draft a')
+    fireEvent.change(draft, { target: { value: 'Keep this draft' } })
+    fireEvent.click(screen.getByRole('tab', { name: 'Tasks & settings' }))
+    act(() => useAppStore.getState().requestWorkspaceConversation('a', 'session-a'))
+    expect(screen.getByRole('tab', { name: 'Workspace' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByLabelText('Draft a')).toBe(draft)
+    expect(draft).toHaveValue('Keep this draft')
+  })
+  it('keeps chat mounted while accessing repository and task settings in the same project', () => {
+    render(<WorkspaceLayout projectDetails={project => <div>{project.name} settings</div>} />)
+    const draft = screen.getByLabelText('Draft a')
+    fireEvent.change(draft, { target: { value: 'Keep my workspace draft' } })
+    fireEvent.click(screen.getByRole('tab', { name: 'Git & pull requests' }))
+    expect(screen.getByText('Repository changes')).toBeVisible()
+    expect(draft).toBeVisible()
+    fireEvent.click(screen.getByRole('tab', { name: 'Tasks & settings' }))
+    expect(screen.getByText('Alpha settings')).toBeVisible()
+    fireEvent.click(screen.getByRole('tab', { name: 'Workspace' }))
+    expect(screen.getByLabelText('Draft a')).toBe(draft)
+    expect(draft).toHaveValue('Keep my workspace draft')
+  })
   it('starts with one chat surface and reveals tools only on request', () => {
     render(<WorkspaceLayout />)
     const tools = screen.getByLabelText('Workspace tools')

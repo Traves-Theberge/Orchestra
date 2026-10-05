@@ -344,6 +344,7 @@ export type WorkspaceChatSnapshot = {
   events?: WorkspaceChatEvent[]; requests?: WorkspaceChatRequest[]; cursor?: number
 }
 function workspaceChatPath(projectId: string) {
+  if (projectId === '__orchestrator__') return '/api/v1/orchestrator/chat'
   return `/api/v1/projects/${encodeURIComponent(projectId)}/chat`
 }
 export function fetchWorkspaceChatProviders(config: BackendConfig, projectId: string) {
@@ -673,11 +674,17 @@ export async function fetchWarehouseStats(config: BackendConfig): Promise<Global
  * @param rootPath - Absolute filesystem path of the project root.
  * @returns The newly created project record.
  */
-export async function createProject(config: BackendConfig, rootPath: string): Promise<Project> {
-  return requestJSON<Project>(config, '/api/v1/projects', {
+export interface ProjectSetupOptions {
+  source: 'new' | 'clone'
+  name: string
+  remote_url?: string
+}
+
+export async function createProject(config: BackendConfig, rootPath: string, setup?: ProjectSetupOptions): Promise<Pick<Project, 'id'>> {
+  return requestJSON<Pick<Project, 'id'>>(config, '/api/v1/projects', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ root_path: rootPath }),
+    body: JSON.stringify({ root_path: rootPath, ...setup }),
   })
 }
 
@@ -1134,6 +1141,11 @@ export type GitBranches = {
   current: string
   branches: string[]
   remotes?: string[]
+}
+
+export type ProjectWorktree = { path: string; head: string; branch: string; primary: boolean; detached: boolean; locked: boolean; prunable: boolean }
+export function fetchProjectWorktrees(config: BackendConfig, projectId: string) {
+  return requestJSON<{ worktrees: ProjectWorktree[] }>(config, `/api/v1/projects/${encodeURIComponent(projectId)}/git/worktrees`)
 }
 
 /**
@@ -1950,8 +1962,8 @@ export async function gitCheckout(config: BackendConfig, projectId: string, bran
  * @param projectId - The project UUID.
  * @param name - Name of the new branch.
  */
-export async function gitCreateBranch(config: BackendConfig, projectId: string, name: string): Promise<void> {
-  await requestJSON(config, `/api/v1/projects/${encodeURIComponent(projectId)}/git/branches`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })
+export async function gitCreateBranch(config: BackendConfig, projectId: string, name: string, startPoint?: string): Promise<void> {
+  await requestJSON(config, `/api/v1/projects/${encodeURIComponent(projectId)}/git/branches`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, ...(startPoint ? { start_point: startPoint } : {}) }) })
 }
 
 /**
@@ -2060,6 +2072,15 @@ export async function gitConflictResolve(config: BackendConfig, projectId: strin
  */
 export async function fetchPRReviews(config: BackendConfig, projectId: string, prNumber: number): Promise<unknown[]> {
   return requestJSON(config, `/api/v1/projects/${encodeURIComponent(projectId)}/github/pulls/${prNumber}/reviews`)
+}
+
+export type PRReviewComment = {
+  id: number; body: string; path: string; line?: number | null; original_line?: number | null
+  user?: { login: string }; created_at: string; html_url: string; in_reply_to_id?: number
+}
+
+export async function fetchPRReviewComments(config: BackendConfig, projectId: string, prNumber: number): Promise<PRReviewComment[]> {
+  return requestJSON(config, `/api/v1/projects/${encodeURIComponent(projectId)}/github/pulls/${prNumber}/comments`)
 }
 
 /**
