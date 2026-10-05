@@ -286,7 +286,16 @@ func TestWorkspaceChatHTTPRoutes(t *testing.T) {
 	if status, _ := call("POST", path+"/stop", `{}`, true); status != 200 {
 		t.Fatalf("stop %d", status)
 	}
+	// Reproduce a pre-workspace-binding conversation. The active root list has a
+	// legacy fallback for this row, and archive must materialize the exact root
+	// identity so its database-only catalog can retain it.
+	if _, err = database.Exec(`DELETE FROM workspace_chat_workspaces WHERE session_id=?`, sess.ID); err != nil {
+		t.Fatal(err)
+	}
 	archiveScope := "?workspace_id=" + url.QueryEscape(sess.WorkspaceID)
+	if status, data = call("GET", base+"/sessions", "", true); status != 200 || !strings.Contains(string(data), sess.ID) || !strings.Contains(string(data), sess.WorkspaceID) {
+		t.Fatalf("legacy root session was not listed in its workspace %d %s", status, data)
+	}
 	archiveBody, _ := json.Marshal(workspacechat.ArchiveRequest{WorkspaceID: sess.WorkspaceID, CWD: sess.WorkspacePath, ExpectedStatus: "idle", ExpectedVersion: 0})
 	if status, data = call("POST", path+"/archive"+archiveScope, string(archiveBody), true); status != 200 || !strings.Contains(string(data), `"archived":true`) {
 		t.Fatalf("archive %d %s", status, data)

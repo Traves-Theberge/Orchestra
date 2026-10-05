@@ -175,6 +175,114 @@ func TestArchiveSurvivesRemovedWorktreeAndDatabaseRestart(t *testing.T) {
 	}
 }
 
+func TestArchiveMaterializesLegacyBindingOnlyForPrimaryRoot(t *testing.T) {
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_TERMINAL_PROMPT", "0")
+	base := t.TempDir()
+	repo, child := filepath.Join(base, "repo"), filepath.Join(base, "child")
+	if err := os.Mkdir(repo, 0700); err != nil {
+		t.Fatal(err)
+	}
+	scopeGit(t, repo, "init")
+	scopeGit(t, repo, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--allow-empty", "-m", "fixture")
+	scopeGit(t, repo, "worktree", "add", "-b", "archive-child", child)
+	database, err := db.Connect(filepath.Join(base, "chat.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	pid, err := database.UpsertProject(context.Background(), repo, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := agents.NewRegistry(nil)
+	registry.SetRunner(agents.ProviderCodex, &recordingRunner{output: "retained root reply"})
+	svc, err := New(database, registry, []string{base})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	rootSession, err := svc.Create(context.Background(), pid, "codex", "Legacy root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = svc.Send(context.Background(), pid, rootSession.ID, SendRequest{ClientMessageID: "archive-fixture", Text: "retain this history"}); err != nil {
+		t.Fatal(err)
+	}
+	rootDetail := awaitScopedIdle(t, svc, context.Background(), pid, rootSession.ID)
+	if len(rootDetail.Messages) != 2 || rootDetail.Messages[1].Text != "retained root reply" {
+		t.Fatalf("root fixture did not settle: %+v", rootDetail.Messages)
+	}
+	if _, err = database.Exec(`DELETE FROM workspace_chat_workspaces WHERE session_id=?`, rootSession.ID); err != nil {
+		t.Fatal(err)
+	}
+	worktrees, err := workspace.ListProjectGitWorktrees(context.Background(), pid, repo, []string{base})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var childID string
+	for _, row := range worktrees {
+		if !row.Primary {
+			childID, child = row.ID, row.Path
+		}
+	}
+	if childID == "" {
+		t.Fatal("child worktree was not observed")
+	}
+	if _, err = svc.Archive(context.Background(), "wrong-project", rootSession.ID, ArchiveRequest{WorkspaceID: rootSession.WorkspaceID, CWD: repo, ExpectedStatus: "idle", ExpectedVersion: 0}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("legacy root conversation was visible to another project: %v", err)
+	}
+	if _, err = svc.Archive(WithWorkspaceID(context.Background(), childID), pid, rootSession.ID, ArchiveRequest{WorkspaceID: childID, CWD: child, ExpectedStatus: "idle", ExpectedVersion: 0}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("legacy root conversation was rebound to a child: %v", err)
+	}
+	var bindingCount int
+	if err = database.QueryRow(`SELECT COUNT(*) FROM workspace_chat_workspaces WHERE session_id=?`, rootSession.ID).Scan(&bindingCount); err != nil || bindingCount != 0 {
+		t.Fatalf("foreign archive attempt wrote binding: count=%d err=%v", bindingCount, err)
+	}
+	archived, err := svc.Archive(context.Background(), pid, rootSession.ID, ArchiveRequest{WorkspaceID: rootSession.WorkspaceID, CWD: repo, ExpectedStatus: "idle", ExpectedVersion: 0})
+	if err != nil || !archived.Archived {
+		t.Fatalf("legacy root archive: %+v %v", archived, err)
+	}
+	var storedID, storedPath string
+	if err = database.QueryRow(`SELECT workspace_id,cwd FROM workspace_chat_workspaces WHERE session_id=?`, rootSession.ID).Scan(&storedID, &storedPath); err != nil || storedID != rootSession.WorkspaceID || storedPath != repo {
+		t.Fatalf("archive did not persist exact root binding: %q %q %v", storedID, storedPath, err)
+	}
+	archives, err := svc.ArchivedCatalog(context.Background(), pid)
+	if err != nil || len(archives) != 1 || archives[0].ID != rootSession.ID {
+		t.Fatalf("legacy archive missing from catalog: %+v %v", archives, err)
+	}
+	history, err := svc.ArchivedDetailAfter(context.Background(), pid, rootSession.ID, archived.WorkspaceID, archived.WorkspacePath, 0)
+	if err != nil || len(history.Messages) != 2 || history.Messages[1].Text != "retained root reply" {
+		t.Fatalf("legacy archive history missing: %+v %v", history.Messages, err)
+	}
+	svc.Close()
+	if err = database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	database, err = db.Connect(filepath.Join(base, "chat.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	reopened, err := New(database, registry, []string{base})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	reopenedArchives, err := reopened.ArchivedCatalog(context.Background(), pid)
+	if err != nil || len(reopenedArchives) != 1 || reopenedArchives[0].WorkspaceID != archived.WorkspaceID || reopenedArchives[0].WorkspacePath != repo {
+		t.Fatalf("archive binding did not survive database reopen: %+v %v", reopenedArchives, err)
+	}
+	if _, err = reopened.Unarchive(context.Background(), pid, rootSession.ID, ArchiveRequest{WorkspaceID: archived.WorkspaceID, CWD: repo, ExpectedStatus: "idle", ExpectedVersion: 1}); err != nil {
+		t.Fatalf("restore after database reopen: %v", err)
+	}
+	active, err := reopened.List(context.Background(), pid)
+	if err != nil || len(active) != 1 || active[0].ID != rootSession.ID {
+		t.Fatalf("restored legacy conversation missing after database reopen: %+v %v", active, err)
+	}
+}
+
 func TestArchiveRejectsPendingRemovalFence(t *testing.T) {
 	base := t.TempDir()
 	repo := filepath.Join(base, "repo")

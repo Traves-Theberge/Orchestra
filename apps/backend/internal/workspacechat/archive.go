@@ -88,12 +88,12 @@ func (s *Service) setArchived(ctx context.Context, projectID, sessionID string, 
 	defer s.mu.Unlock()
 	// Root workspaces also exist for non-Git projects. Resolve that default
 	// first; only non-root IDs need membership in the live Git worktree registry.
-	id, cwd, _, err := s.scope(WithWorkspaceID(ctx, ""), projectID)
+	id, cwd, primary, err := s.scope(WithWorkspaceID(ctx, ""), projectID)
 	if err != nil {
 		return Session{}, err
 	}
 	if id != req.WorkspaceID {
-		id, cwd, _, err = s.scope(WithWorkspaceID(ctx, req.WorkspaceID), projectID)
+		id, cwd, primary, err = s.scope(WithWorkspaceID(ctx, req.WorkspaceID), projectID)
 		if err != nil {
 			return Session{}, err
 		}
@@ -107,6 +107,14 @@ func (s *Service) setArchived(ctx context.Context, projectID, sessionID string, 
 	}
 	if err = s.bindScope(ctx, &sess); err != nil {
 		return Session{}, err
+	}
+	legacyRootBinding := sess.WorkspaceID == "" && sess.WorkspacePath == "" && primary
+	if legacyRootBinding {
+		// Older root conversations predate workspace_chat_workspaces. Match the
+		// legacy fallback used by validateSessionScope, but only for this exact
+		// registered primary root. Persist the identity in the archive transaction
+		// so the database-only archive catalog can surface it afterwards.
+		sess.WorkspaceID, sess.WorkspacePath = id, cwd
 	}
 	if sess.WorkspaceID != id || sess.WorkspacePath != cwd {
 		return Session{}, ErrNotFound
@@ -147,6 +155,18 @@ func (s *Service) setArchived(ctx context.Context, projectID, sessionID string, 
 	}
 	if unsettled > 0 {
 		return Session{}, ErrBusy
+	}
+	if legacyRootBinding {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_workspaces(session_id,workspace_id,cwd) VALUES(?,?,?) ON CONFLICT(session_id) DO NOTHING`, sessionID, id, cwd); err != nil {
+			return Session{}, err
+		}
+		var storedID, storedCWD string
+		if err = tx.QueryRowContext(ctx, `SELECT workspace_id,cwd FROM workspace_chat_workspaces WHERE session_id=?`, sessionID).Scan(&storedID, &storedCWD); err != nil {
+			return Session{}, err
+		}
+		if storedID != id || storedCWD != cwd {
+			return Session{}, ErrNotFound
+		}
 	}
 	now := stamp()
 	archivedAt := ""
