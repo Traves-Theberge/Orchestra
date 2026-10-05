@@ -60,6 +60,8 @@ func TestPostPRReviewConfirmsExactCommitAndSubmittedState(t *testing.T) {
 		{"pending is not submitted", `{"id":18,"state":"PENDING","commit_id":"` + commit + `"}`, "pr_review_unconfirmed", 200, 409, "APPROVE"},
 		{"missing review identity", `{"state":"APPROVED","commit_id":"` + commit + `"}`, "pr_review_unconfirmed", 200, 409, "APPROVE"},
 		{"malformed response", `{`, "pr_review_unconfirmed", 200, 409, "APPROVE"},
+		{"trailing malformed data", `{"id":18,"state":"APPROVED","commit_id":"` + commit + `"} broken`, "pr_review_unconfirmed", 200, 409, "APPROVE"},
+		{"truncated after confirmation", `{"id":18,"state":"APPROVED","commit_id":"` + commit + `"}`, "pr_review_unconfirmed", 200, 409, "APPROVE"},
 		{"server failure is uncertain", `{}`, "pr_review_unconfirmed", 500, 409, "APPROVE"},
 		{"lost response after acceptance", "", "pr_review_unconfirmed", 0, 409, "APPROVE"},
 		{"rejected request", `{"message":"Forbidden"}`, "github_review_failed", 403, 502, "APPROVE"},
@@ -97,6 +99,9 @@ func TestPostPRReviewConfirmsExactCommitAndSubmittedState(t *testing.T) {
 					}
 					_ = connection.Close() // Received the POST, but its confirmation was lost.
 					return
+				}
+				if scenario.name == "truncated after confirmation" {
+					w.Header().Set("Content-Length", "10000")
 				}
 				w.WriteHeader(scenario.hostStatus)
 				_, _ = w.Write([]byte(scenario.hostBody))

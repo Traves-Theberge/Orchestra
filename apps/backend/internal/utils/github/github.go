@@ -444,7 +444,12 @@ func SubmitPRReview(ctx context.Context, owner, repo, token string, prNumber int
 		CommitID string `json:"commit_id"`
 		State    string `json:"state"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&confirmation); err != nil {
+	const maxReviewResponseBytes = 8 << 20
+	confirmationBody, err := io.ReadAll(io.LimitReader(resp.Body, maxReviewResponseBytes+1))
+	if err != nil || len(confirmationBody) > maxReviewResponseBytes {
+		return fmt.Errorf("%w: incomplete or oversized GitHub response", ErrReviewNotConfirmed)
+	}
+	if err := json.Unmarshal(confirmationBody, &confirmation); err != nil {
 		return fmt.Errorf("%w: invalid GitHub response", ErrReviewNotConfirmed)
 	}
 	expectedState := map[string]string{"APPROVE": "APPROVED", "COMMENT": "COMMENTED", "REQUEST_CHANGES": "CHANGES_REQUESTED"}[review.Event]

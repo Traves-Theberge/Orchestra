@@ -41,3 +41,11 @@ typecheck and production build. Full Linux backend `go test -race ./...` passed.
 Hosted CI remains a merge gate. No hosted review was posted by these fixtures,
 and the issue-to-provider-to-review lifecycle is not claimed complete. Repository
 configuration revision fencing and actual hosted-provider canaries remain open.
+
+Review additionally identified incomplete response validation: decoding one JSON
+value could accept a matching confirmation followed by malformed bytes or a
+truncated declared body. The utility now reads the complete response with an
+8 MiB bound, checks read errors and unmarshals exactly one JSON document. Both
+new native API fixtures fail against an overlay of the previous decoder (false
+HTTP 200) and pass with the correction (uncertain HTTP 409, exactly one POST).
+The overlay did not modify the working source.
