@@ -1,4 +1,5 @@
 import { AppTooltipProvider } from '@ui/tooltip-wrapper'
+import { createPortal } from 'react-dom'
 import { type ReactElement } from 'react'
 import { useState, type ReactNode } from 'react'
 import { act, cleanup, fireEvent, render as renderBase, screen } from '@testing-library/react'
@@ -7,9 +8,9 @@ import { resetAppStore, useAppStore } from '@core/store'
 import { GLOBAL_PROJECT_ID } from '@core/store/types'
 import { WorkspaceLayout } from './WorkspaceLayout'
 
-vi.mock('./chat/WorkspaceChat', () => ({ WorkspaceChat: ({ projectId, config, headerTools, headerNavigation, contentOverride, onShowChat }: { projectId: string; config: { workspaceId?: string }; headerTools?: ReactNode; headerNavigation?: ReactNode; contentOverride?: ReactNode; onShowChat?: () => void }) => {
+vi.mock('./chat/WorkspaceChat', () => ({ WorkspaceChat: ({ projectId, config, headerTools, headerNavigation, refreshToolbarTarget, contentOverride, onShowChat }: { projectId: string; config: { workspaceId?: string }; headerTools?: ReactNode; headerNavigation?: ReactNode; refreshToolbarTarget?: HTMLElement | null; contentOverride?: ReactNode; onShowChat?: () => void }) => {
   const [draft, setDraft] = useState('')
-  return <div><header><h2>Conversation title</h2>{headerNavigation}<button aria-label="New conversation" onClick={onShowChat}>New conversation</button>{headerTools}</header>{contentOverride}<textarea hidden={!!contentOverride} aria-label={`Draft ${projectId}${config.workspaceId ? ` / ${config.workspaceId}` : ''}`} value={draft} onChange={e => setDraft(e.target.value)} /></div>
+  return <div><header><h2>Conversation title</h2>{headerNavigation}<button aria-label="New conversation" onClick={onShowChat}>New conversation</button>{headerTools}</header>{refreshToolbarTarget && createPortal(<button type="button" aria-label="Refresh conversations">Refresh</button>, refreshToolbarTarget)}{contentOverride}<textarea hidden={!!contentOverride} aria-label={`Draft ${projectId}${config.workspaceId ? ` / ${config.workspaceId}` : ''}`} value={draft} onChange={e => setDraft(e.target.value)} /></div>
 } }))
 vi.mock('./SplitLayout', () => ({ SplitLayout: () => <div>Project tools</div> }))
 vi.mock('@features/git', () => ({ GitTab: () => <div>Repository changes</div> }))
@@ -43,15 +44,15 @@ describe('WorkspaceLayout chat ownership', () => {
     expect(childDraft).toHaveValue('Child draft')
     expect(useAppStore.getState().requestedWorkspaceConversation?.workspaceId).toBe('wt_child')
   })
-  it('opens the file tree from the Files & terminals tab', () => {
+  it('opens the file tree from the Files & terminals tab and closes from the pane toolbar', () => {
     render(<WorkspaceLayout />)
     fireEvent.click(screen.getByRole('tab', { name: 'Files & terminals' }))
     expect(screen.getByLabelText('Workspace tools')).toBeVisible()
     expect(screen.getByText('Select a file to open it in the editor')).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'Files & terminals' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Hide workspace tools' }))
     expect(screen.getByLabelText('Workspace tools')).not.toBeVisible()
     expect(screen.getByRole('tab', { name: 'Workspace' })).toHaveAttribute('aria-selected', 'true')
-    fireEvent.click(screen.getByRole('button', { name: 'Files & terminals' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Files & terminals' }))
     expect(screen.getByLabelText('Workspace tools')).toBeVisible()
   })
   it('returns from task settings to the requested project conversation without losing its draft', () => {
@@ -84,14 +85,40 @@ describe('WorkspaceLayout chat ownership', () => {
     fireEvent.click(screen.getByRole('button', { name: 'New conversation' }))
     expect(screen.getByRole('tab', { name: 'Workspace' })).toHaveAttribute('aria-selected', 'true')
   })
+  it('keeps the shared tools toolbar inside the pane on the Git view', () => {
+    render(<WorkspaceLayout />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Git & pull requests' }))
+    const tools = screen.getByLabelText('Workspace tools')
+    const toolbar = screen.getByLabelText('Workspace tool controls')
+    expect(tools).toContainElement(toolbar)
+    expect(toolbar).toContainElement(screen.getByRole('button', { name: 'Refresh conversations' }))
+    expect(toolbar).toContainElement(screen.getByRole('button', { name: 'Hide workspace tools' }))
+    expect(toolbar).toContainElement(screen.getByRole('button', { name: 'Maximize workspace tools' }))
+    expect(screen.getAllByRole('button', { name: 'Maximize workspace tools' })).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Hide workspace tools' }))
+    expect(tools).not.toBeVisible()
+    expect(screen.getByRole('button', { name: 'Show workspace tools' })).toBeVisible()
+  })
+  it('preserves the mounted editor and terminal surface while switching to Git', () => {
+    useAppStore.setState({
+      projectGroups: { a: { group: { id: 'group', tabs: [{ type: 'terminal', id: 'terminal-a' }], activeTabId: 'terminal-a' } } },
+      projectLayouts: { a: { kind: 'leaf', groupId: 'group' } },
+    })
+    render(<WorkspaceLayout />)
+    const split = screen.getByText('Project tools')
+    fireEvent.click(screen.getByRole('tab', { name: 'Git & pull requests' }))
+    expect(split).toBeInTheDocument()
+    expect(split).not.toBeVisible()
+    fireEvent.click(screen.getByRole('tab', { name: 'Workspace' }))
+    expect(screen.getByText('Project tools')).toBe(split)
+  })
   it('returns to the workspace before opening tools from the Tasks header', () => {
     const onAddTerminal = vi.fn()
     render(<WorkspaceLayout onAddTerminal={onAddTerminal} projectDetails={() => <div>Tasks content</div>} />)
     fireEvent.click(screen.getByRole('tab', { name: 'Tasks' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Files & terminals' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show workspace tools' }))
     expect(screen.getByRole('tab', { name: 'Workspace' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByLabelText('Workspace tools')).toBeVisible()
-    fireEvent.click(screen.getByRole('tab', { name: 'Tasks' }))
     fireEvent.click(screen.getByRole('button', { name: 'Add workspace tool' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'New terminal' }))
     expect(onAddTerminal).toHaveBeenCalledOnce()
@@ -102,10 +129,10 @@ describe('WorkspaceLayout chat ownership', () => {
     render(<WorkspaceLayout />)
     const tools = screen.getByLabelText('Workspace tools')
     expect(tools).not.toBeVisible()
-    fireEvent.click(screen.getAllByRole('button', { name: 'Files & terminals' })[0])
+    fireEvent.click(screen.getByRole('button', { name: 'Show workspace tools' }))
     expect(tools).toBeVisible()
     expect(screen.queryByText('Welcome')).not.toBeInTheDocument()
-    fireEvent.click(screen.getAllByRole('button', { name: 'Files & terminals' })[0])
+    fireEvent.click(screen.getByRole('button', { name: 'Hide workspace tools' }))
     expect(tools).not.toBeVisible()
   })
   it('keeps drafts isolated across project and global workspace switches', () => {

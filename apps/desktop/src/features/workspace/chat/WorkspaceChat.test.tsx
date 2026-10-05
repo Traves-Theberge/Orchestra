@@ -40,7 +40,7 @@ beforeEach(() => {
   vi.mocked(api.sendWorkspaceChatMessage).mockResolvedValue({ session: { ...session, status: 'running' }, message })
 })
 afterEach(() => { cleanup(); vi.useRealTimers() })
-const open = () => render(<WorkspaceChat config={config} projectId="project-a" projectName="Alpha" />)
+const open = (overrides: Partial<React.ComponentProps<typeof WorkspaceChat>> = {}) => render(<WorkspaceChat config={config} projectId="project-a" projectName="Alpha" {...overrides} />)
 async function openThreadList() {
   fireEvent.click(screen.getByRole('button', { name: 'Toggle conversations' }))
   await screen.findByRole('button', { name: 'Open conversation: Review changes' })
@@ -52,6 +52,17 @@ async function selectConversation(title = 'Review changes') {
 }
 
 describe('WorkspaceChat', () => {
+  it('opens and closes the conversation list with Escape and restores trigger focus', async () => {
+    open()
+    await openThreadList()
+    const toggle = screen.getByRole('button', { name: 'Toggle conversations' })
+    const list = screen.getByRole('navigation', { name: 'Workspace conversations' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.keyDown(list, { key: 'Escape' })
+    expect(screen.queryByRole('navigation', { name: 'Workspace conversations' })).not.toBeInTheDocument()
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle).toHaveFocus()
+  })
   it('renames inline and reconciles a committed mutation with a lost response', async () => {
     open(); await selectConversation()
     vi.mocked(api.renameWorkspaceChatSession).mockRejectedValue(new Error('Response lost'))
@@ -61,6 +72,16 @@ describe('WorkspaceChat', () => {
     fireEvent.keyDown(screen.getByRole('textbox', { name: 'Conversation name' }), { key: 'Enter' })
     await screen.findByRole('button', { name: 'Rename conversation: Named conversation' })
     expect(api.renameWorkspaceChatSession).toHaveBeenCalledWith(config, 'project-a', 'chat-a', 'Named conversation', 'Review changes')
+    expect(api.sendWorkspaceChatMessage).not.toHaveBeenCalled()
+  })
+  it('cancels a conversation title edit with Escape without issuing a mutation', async () => {
+    open(); await selectConversation()
+    fireEvent.click(screen.getByRole('button', { name: 'Rename conversation: Review changes' }))
+    const input = screen.getByRole('textbox', { name: 'Conversation name' })
+    fireEvent.change(input, { target: { value: 'Uncommitted title' } })
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(screen.getByRole('button', { name: 'Rename conversation: Review changes' })).toBeVisible()
+    expect(api.renameWorkspaceChatSession).not.toHaveBeenCalled()
     expect(api.sendWorkspaceChatMessage).not.toHaveBeenCalled()
   })
 
@@ -259,6 +280,27 @@ describe('WorkspaceChat', () => {
     expect(screen.getByLabelText('Message agent')).toHaveValue('A later unsent correction')
     expect(api.sendWorkspaceChatMessage).toHaveBeenCalledTimes(1)
     expect(api.createWorkspaceChatSession).not.toHaveBeenCalled()
+  })
+  it('renders conversation refresh in the supplied workspace-tools toolbar slot', async () => {
+    const toolbar = document.createElement('div')
+    toolbar.setAttribute('aria-label', 'Workspace tool controls')
+    const target = document.createElement('span')
+    toolbar.append(target)
+    document.body.append(toolbar)
+    const mounted = render(<WorkspaceChat config={config} projectId="project-a" projectName="Alpha" refreshToolbarTarget={target} />)
+    try {
+      await selectConversation()
+      const refresh = screen.getByRole('button', { name: 'Refresh conversations' })
+      expect(toolbar).toContainElement(refresh)
+      expect(screen.getByRole('region', { name: 'Alpha workspace chat' })).not.toContainElement(refresh)
+      expect(refresh).not.toHaveAttribute('title')
+      const previousCalls = vi.mocked(api.listWorkspaceChatSessions).mock.calls.length
+      fireEvent.click(refresh)
+      await waitFor(() => expect(api.listWorkspaceChatSessions).toHaveBeenCalledTimes(previousCalls + 1))
+    } finally {
+      mounted.unmount()
+      toolbar.remove()
+    }
   })
   it('does not start an agent or create a session on mount', async () => {
     open()
@@ -531,6 +573,14 @@ describe('WorkspaceChat', () => {
     fireEvent.keyDown(screen.getByLabelText('Message agent'), { key: 'Escape' })
     await waitFor(() => expect(api.stopWorkspaceChatTurn).toHaveBeenCalledExactlyOnceWith(config, 'project-a', 'chat-a'))
     expect(screen.getByLabelText('Message agent')).toHaveValue('Unsent follow-up')
+  })
+  it('does not interrupt a running turn when a nested harness picker consumes Escape', async () => {
+    vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({ session: { ...session, status: 'running' }, messages: [message] })
+    open({ headerTools: <button type="button" onKeyDown={event => event.preventDefault()}>Nested picker</button> })
+    await selectConversation()
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Nested picker' }), { key: 'Escape' })
+    expect(api.stopWorkspaceChatTurn).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Stop current turn')).toBeInTheDocument()
   })
   it('does not send on Shift+Enter or an IME composition gesture', async () => {
     open()

@@ -32,7 +32,7 @@ export function ResizableWorkspace({ storageKey, toolsOpen, chat, tools }: {
     setSize({ key: storageKey, percent: next })
     try { localStorage.setItem(storageKey, String(next)) } catch { /* Resizing still works without persistence. */ }
   }
-  return <WorkspaceToolsContext.Provider value={{ maximized, toggle: () => setMaximized(!maximized) }}><div className="flex min-h-0 flex-1 flex-col lg:flex-row" style={{ '--chat-share': `${percent}%` } as CSSProperties}
+  return <WorkspaceToolsContext.Provider value={{ maximized, toolbarHosted: true, toggle: () => setMaximized(!maximized) }}><div className="flex min-h-0 flex-1 flex-col lg:flex-row" style={{ '--chat-share': `${percent}%` } as CSSProperties}
     onKeyDown={event => {
       if (event.key === 'Escape' && !event.defaultPrevented && maximized) {
         event.preventDefault()

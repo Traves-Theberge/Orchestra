@@ -1,6 +1,8 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { ArrowDown, ArrowUp, CheckCircle2, ChevronRight, Loader2, MessageSquare, Plus, RefreshCcw, ShieldCheck, Sparkles, Square, Terminal } from 'lucide-react'
 import { MarkdownRenderer } from '@ui/MarkdownRenderer'
+import { AppTooltip } from '@ui/tooltip-wrapper'
 import { ChatMessage } from './ChatMessage'
 import { HarnessPicker } from './HarnessPicker'
 import { AgentPicker } from './AgentPicker'
@@ -96,13 +98,13 @@ function RuntimeRequestCard({ request, disabled, onReply }: { request: Workspace
 
 /** Mounted with a backend/project key: no draft or session is shared across workspaces. */
 type WorkspaceChatProps = {
-  config: BackendConfig; projectId: string; projectName: string; headerTools?: ReactNode; headerNavigation?: ReactNode; contentOverride?: ReactNode; onShowChat?: () => void; active?: boolean
+  config: BackendConfig; projectId: string; projectName: string; headerTools?: ReactNode; headerNavigation?: ReactNode; refreshToolbarTarget?: HTMLElement | null; contentOverride?: ReactNode; onShowChat?: () => void; active?: boolean
 }
 export function WorkspaceChat(props: WorkspaceChatProps) {
   // This key stays in React memory; persisted keys are credential digests only.
   return <ScopedWorkspaceChat key={JSON.stringify([props.config.baseUrl, props.config.apiToken, props.projectId, props.config.workspaceId ?? ''])} {...props} />
 }
-function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, headerNavigation, contentOverride, onShowChat, active = true }: WorkspaceChatProps) {
+function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, headerNavigation, refreshToolbarTarget, contentOverride, onShowChat, active = true }: WorkspaceChatProps) {
   const requestedConversation = useAppStore(state => state.requestedWorkspaceConversation)
   const [providers, setProviders] = useState<WorkspaceChatProvider[]>([])
   const [sessions, setSessions] = useState<WorkspaceChatSession[]>([])
@@ -113,6 +115,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
   const [modelCatalog, setModelCatalog] = useState<{ key: string; data?: WorkspaceChatModelCatalog; error?: string }>({ key: '' })
   const [sessionId, setSessionId] = useState('')
   const [threadsOpen, setThreadsOpen] = useState(false)
+  const threadToggleRef = useRef<HTMLButtonElement>(null)
   const [snapshot, setSnapshot] = useState<WorkspaceChatSnapshot | null>(null)
   const [draft, setDraft] = useState('')
   const [draftTitle, setDraftTitle] = useState('')
@@ -148,6 +151,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
   const inheritedAgent = snapshot?.session.requested_agent_id && snapshot.session.requested_agent_scope ? { agent_id: snapshot.session.requested_agent_id, agent_scope: snapshot.session.requested_agent_scope, agent_content_hash: snapshot.session.requested_agent_content_hash ?? '', agent_format: snapshot.session.requested_agent_format ?? '' } : undefined
   const selectedAgent = Object.hasOwn(agentSelections, agentKey) ? agentSelections[agentKey] ?? undefined : inheritedAgent
   const nativeSession = snapshot?.session.id === sessionId && snapshot?.session.conversation_mode === 'native_session'
+  const refreshControl = <AppTooltip content="Refresh conversations" side="bottom"><button type="button" aria-label="Refresh conversations" onClick={() => { if (!pending) setRevision(value => value + 1) }} disabled={pending} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent disabled:opacity-40"><RefreshCcw className="size-3.5" /></button></AppTooltip>
   const nativeComposer = nativeSession || (!sessionId && selectedProvider?.conversation_mode === 'native_session')
   const catalogProvider = nativeSession ? snapshot.session.provider : !sessionId && selectedProvider?.conversation_mode === 'native_session' ? provider : ''
   const catalogKey = catalogProvider ? JSON.stringify([config.baseUrl, config.apiToken, projectId, sessionId, catalogProvider]) : ''
@@ -467,21 +471,26 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
   }
 
   return (
-    <section aria-label={`${projectName} workspace chat`} onKeyDown={e => { if (e.key === 'Escape' && !e.nativeEvent.isComposing && working) { e.preventDefault(); interrupt() } }} className="relative flex h-full min-h-0 min-w-0 flex-col bg-background">
+    <section aria-label={`${projectName} workspace chat`} onKeyDown={e => {
+      if (e.defaultPrevented || e.key !== 'Escape' || e.nativeEvent.isComposing) return
+      if (threadsOpen) { e.preventDefault(); setThreadsOpen(false); threadToggleRef.current?.focus(); return }
+      if (working) { e.preventDefault(); interrupt() }
+    }} className="relative flex h-full min-h-0 min-w-0 flex-col bg-background">
       <header className="shrink-0 px-3 pt-1">
         <div className="flex min-h-9 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
-        <button aria-label="Toggle conversations" aria-expanded={threadsOpen} title="Conversations" onClick={() => setThreadsOpen(open => !open)} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent"><MessageSquare className="size-4" /></button>
+        <AppTooltip content="Conversations" side="bottom"><button ref={threadToggleRef} type="button" aria-label="Toggle conversations" aria-expanded={threadsOpen} onClick={() => setThreadsOpen(open => !open)} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent"><MessageSquare className="size-4" /></button></AppTooltip>
         <span className="max-w-36 truncate text-[11px] text-muted-foreground">{projectName}</span><ChevronRight className="size-3 shrink-0 text-muted-foreground/50" />
         <h2 className="min-w-8 flex-1 truncate text-[13px] font-medium">{titleEditor ? <input autoFocus aria-label="Conversation name" value={titleEditor.value} disabled={pending} onFocus={e => e.currentTarget.select()} onChange={e => setTitleEditor({ ...titleEditor, value: e.target.value })} onBlur={() => { void saveTitle() }} onKeyDown={e => { if (e.nativeEvent.isComposing) return; if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); void saveTitle() } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setTitleEditor(null) } }} className="w-full rounded border border-border bg-background px-1 outline-none focus:border-primary" /> : <button type="button" aria-label={`Rename conversation: ${conversationTitle}`} title={conversationTitle} disabled={pending || !!creating.current || (sessionId !== '' && snapshot?.session.id !== sessionId)} onClick={() => setTitleEditor({ id: sessionId, original: conversationTitle, value: conversationTitle })} className="block w-full truncate rounded px-1 text-left hover:bg-accent disabled:opacity-50">{conversationTitle}</button>}</h2>
         {headerNavigation}
         {(working || observationError) && <span className="shrink-0 text-[10px] text-muted-foreground">{observationError ? 'Disconnected' : 'Working'}</span>}
         <div className="flex shrink-0 items-center gap-0.5">
-          <button aria-label="Refresh conversations" title="Refresh conversations" onClick={() => setRevision(r => r + 1)} disabled={pending} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent disabled:opacity-40"><RefreshCcw className="size-3.5" /></button>
-          <button aria-label="New conversation" title="New chat" onClick={newConversation} disabled={pending || working || !!creating.current} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent disabled:opacity-40"><Plus className="size-4" /></button>
+          {!refreshToolbarTarget && refreshControl}
+          <AppTooltip content="New chat" side="bottom"><button type="button" aria-label="New conversation" onClick={newConversation} disabled={pending || working || !!creating.current} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent disabled:opacity-40"><Plus className="size-4" /></button></AppTooltip>
           {headerTools}
         </div>
         </div>
       </header>
+      {refreshToolbarTarget && createPortal(refreshControl, refreshToolbarTarget)}
       {!contentOverride && threadsOpen && <nav aria-label="Workspace conversations" className="absolute bottom-0 left-0 top-11 z-30 flex w-64 max-w-[85%] flex-col border-r border-border bg-card p-3 shadow-xl"><button onClick={newConversation} disabled={pending || !!creating.current} className="mb-3 flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs hover:bg-accent"><Plus className="size-3.5" />New chat</button><p className="mb-2 px-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Conversations</p><div className="min-h-0 flex-1 space-y-1 overflow-auto">{creating.current && !sessions.some(session => session.id === creating.current?.sessionId) && <button disabled={pending} onClick={() => chooseConversation(creating.current!.sessionId)} className="block w-full rounded-lg border border-border px-3 py-2 text-left text-xs hover:bg-accent">Recover pending chat<span className="block text-[10px] text-muted-foreground">Creation outcome unknown</span></button>}{sessions.map(session => <button key={session.id} aria-label={`Open conversation: ${session.title || 'Conversation'}`} aria-current={session.id === sessionId ? 'page' : undefined} disabled={pending} onClick={() => chooseConversation(session.id)} className={`block w-full rounded-lg px-3 py-2 text-left hover:bg-accent disabled:opacity-40 ${session.id === sessionId ? 'bg-accent' : ''}`}><span className="block truncate text-xs">{session.title || 'Conversation'}</span><span className="text-[10px] capitalize text-muted-foreground">{session.provider} · {session.status}</span></button>)}{!loading && !sessions.length && <p className="px-2 text-xs text-muted-foreground">Your chats will appear here.</p>}</div></nav>}
       {contentOverride && <div className="min-h-0 flex-1 overflow-auto">{contentOverride}</div>}
       <div hidden={!!contentOverride} className={`${contentOverride ? 'hidden' : 'flex'} min-h-0 flex-1 flex-col`}>

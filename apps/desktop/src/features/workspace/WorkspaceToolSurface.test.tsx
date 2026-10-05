@@ -36,6 +36,34 @@ it('portals its compact menu, opens file viewer and dismisses with keyboard focu
   expect(screen.getByRole('button', { name: 'Maximize workspace tools' })).toBeVisible()
 })
 
+it('keeps the full borderless control strip inside the pane and reports its refresh slot', async () => {
+  const onToggleTools = vi.fn()
+  const setRefreshTarget = vi.fn()
+  render(<WorkspaceToolSurface toolsOpen onToggleTools={onToggleTools} onRefreshTargetChange={setRefreshTarget}><div>Tools</div></WorkspaceToolSurface>)
+  const toolbar = screen.getByLabelText('Workspace tool controls')
+  expect(toolbar).toHaveClass('h-10')
+  expect(toolbar).not.toHaveClass('border-t', 'border-b')
+  expect(toolbar).toContainElement(screen.getByRole('button', { name: 'Toggle workspace files' }))
+  expect(toolbar).toContainElement(screen.getByRole('button', { name: 'Toggle workspace search' }))
+  expect(toolbar).toContainElement(screen.getByRole('button', { name: 'Add workspace tool' }))
+  expect(toolbar).toContainElement(screen.getByRole('button', { name: 'Hide workspace tools' }))
+  expect(toolbar).toContainElement(screen.getByRole('button', { name: 'Maximize workspace tools' }))
+  expect(screen.getByRole('button', { name: 'Hide workspace tools' })).not.toHaveAttribute('title')
+  await waitFor(() => expect(setRefreshTarget).toHaveBeenCalledWith(expect.any(HTMLSpanElement)))
+  fireEvent.click(screen.getByRole('button', { name: 'Hide workspace tools' }))
+  expect(onToggleTools).toHaveBeenCalledOnce()
+})
+
+it('toggles the search sidebar closed without changing the active tools pane', () => {
+  const onToggleTools = vi.fn()
+  render(<WorkspaceToolSurface toolsOpen onToggleTools={onToggleTools}><div>Tools</div></WorkspaceToolSurface>)
+  fireEvent.click(screen.getByRole('button', { name: 'Toggle workspace search' }))
+  expect(screen.getByLabelText('Workspace search sidebar')).toHaveTextContent('Checkout search')
+  fireEvent.click(screen.getByRole('button', { name: 'Toggle workspace search' }))
+  expect(screen.queryByLabelText('Workspace search sidebar')).not.toBeInTheDocument()
+  expect(onToggleTools).not.toHaveBeenCalled()
+})
+
 it('uses the selected workspace browser context and delegates terminal creation once', () => {
   const child = { projectId: 'a', workspaceId: 'wt_child', path: 'C:/alpha-child', branch: 'feature', registered: false, isMain: false }
   useAppStore.getState().selectProjectWorkspace('a', child)

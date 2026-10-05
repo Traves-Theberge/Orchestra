@@ -1,4 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react'
+import { PanelRight } from 'lucide-react'
+import { AppTooltip } from '@ui/tooltip-wrapper'
 import { SplitLayout } from './SplitLayout'
 import { ResizableWorkspace } from './ResizableWorkspace'
 import { WorkspaceToolSurface } from './WorkspaceToolSurface'
@@ -34,7 +36,7 @@ export function WorkspaceLayout({ onAddTerminal, projectDetails, onInspectTask }
   const [toolPreferences, setToolPreferences] = useState<Record<string, number>>({})
   const [projectViews, setProjectViews] = useState<Record<string, View>>({})
   const [filesRequest, setFilesRequest] = useState(0)
-  const [toolHeader, setToolHeader] = useState<HTMLSpanElement | null>(null)
+  const [refreshToolbarTarget, setRefreshToolbarTarget] = useState<HTMLSpanElement | null>(null)
   const conversationRequest = useAppStore(s => s.requestedWorkspaceConversation)
   const [lastConversationRequest, setLastConversationRequest] = useState(0)
   const chatWorkspaceId = workspace && !workspace.registered ? workspace.workspaceId : undefined
@@ -88,17 +90,15 @@ export function WorkspaceLayout({ onAddTerminal, projectDetails, onInspectTask }
         <ResizableWorkspace storageKey={`orchestra:workspace-split:v1:${encodeURIComponent(config.baseUrl)}:${encodeURIComponent(contextId)}`} toolsOpen={toolsOpen} chat={<div className="flex h-full min-h-0 flex-col">
           <div className="min-h-0 flex-1">
           {[...chatOwners].map(([id, owner]) => <div key={`${config.baseUrl}:${config.apiToken}:${id}`} hidden={id !== contextId} className={id === contextId ? 'h-full' : 'hidden'}>
-            <WorkspaceChat config={owner.config} projectId={owner.project.id} projectName={owner.name} headerNavigation={id === contextId ? workspaceTabs : undefined} contentOverride={id === contextId && view === 'project' && project ? projectDetails?.(project) : undefined} onShowChat={() => setProjectViews(previous => ({ ...previous, [contextId]: 'workspace' }))} active={id === contextId && view !== 'project' && (activeSection === 'CONSOLE' || activeSection === 'PROJECTS')} headerTools={id === contextId ? <span ref={setToolHeader} className="flex items-center gap-1" /> : undefined} />
+            <WorkspaceChat config={owner.config} projectId={owner.project.id} projectName={owner.name} headerNavigation={id === contextId ? workspaceTabs : undefined} refreshToolbarTarget={id === contextId ? refreshToolbarTarget : null} contentOverride={id === contextId && view === 'project' && project ? projectDetails?.(project) : undefined} onShowChat={() => setProjectViews(previous => ({ ...previous, [contextId]: 'workspace' }))} active={id === contextId && view !== 'project' && (activeSection === 'CONSOLE' || activeSection === 'PROJECTS')} headerTools={id === contextId && !toolsOpen ? <AppTooltip content="Show workspace tools" side="bottom"><button type="button" aria-label="Show workspace tools" onClick={toggleTools} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent"><PanelRight className="size-4" /></button></AppTooltip> : undefined} />
           </div>)}
           </div>
-        </div>} tools={<>
+        </div>} tools={<WorkspaceToolSurface filesRequest={view === 'files' ? filesRequest : undefined} onAddTerminal={addTerminal} onRefreshTargetChange={setRefreshToolbarTarget} toolsOpen={toolsOpen} onToggleTools={toggleTools}>
           <div hidden={view === 'git'} className={`${view === 'git' ? 'hidden' : 'flex'} min-h-0 min-w-0 flex-1`}>
-            <WorkspaceToolSurface filesRequest={view === 'files' ? filesRequest : undefined} onAddTerminal={addTerminal} toolbarTarget={toolHeader} toolsOpen={toolsOpen} onToggleTools={toggleTools}>
-              {layout && tabCount > 0 ? <SplitLayout projectId={contextId} layout={layout} /> : <div className="flex w-full items-center justify-center p-4"><p className="text-center text-xs text-muted-foreground">{view === 'files' ? 'Select a file to open it in the editor' : 'Open a file or add a tool from the + menu'}</p></div>}
-            </WorkspaceToolSurface>
+            {layout && tabCount > 0 ? <SplitLayout projectId={contextId} layout={layout} /> : <div className="flex w-full items-center justify-center p-4"><p className="text-center text-xs text-muted-foreground">{view === 'files' ? 'Select a file to open it in the editor' : 'Open a file or add a tool from the + menu'}</p></div>}
           </div>
           {project && view === 'git' && <div role="tabpanel" aria-label="Git & pull requests" className="min-h-0 min-w-0 flex-1"><GitTab key={`${config.baseUrl}:${contextId}`} project={project} config={config} workspace={workspace ? { id: workspace.workspaceId, path: workspace.path, branch: workspace.branch } : undefined} onInspectTask={onInspectTask} /></div>}
-        </>} />
+        </WorkspaceToolSurface>} />
       </div>
     </div>}
   </div>

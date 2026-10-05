@@ -43,7 +43,7 @@ it('maximizes the whole tools surface without remounting sessions and restores t
   function Session() {
     const [value, setValue] = useState('')
     useEffect(() => { mounted(); return disposed }, [])
-    return <><WorkspaceToolsControls /><input aria-label="Session state" value={value} onChange={event => setValue(event.target.value)} /></>
+    return <><WorkspaceToolsControls inToolbar /><input aria-label="Session state" value={value} onChange={event => setValue(event.target.value)} /></>
   }
   render(<ResizableWorkspace {...props} tools={<Session />} storageKey="workspace-a" />)
   fireEvent.keyDown(screen.getByRole('separator'), { key: 'ArrowLeft', shiftKey: true })
@@ -66,15 +66,25 @@ it('maximizes the whole tools surface without remounting sessions and restores t
   expect(screen.getByRole('separator')).toHaveAttribute('aria-valuenow', '50')
 })
 
+it('keeps a single maximize action in the pane toolbar when legacy child headers request one', () => {
+  const tools = <><WorkspaceToolsControls /><div aria-label="Workspace tool controls"><WorkspaceToolsControls inToolbar /></div></>
+  render(<ResizableWorkspace {...props} tools={tools} storageKey="workspace-toolbar" />)
+  const maximize = screen.getByRole('button', { name: 'Maximize workspace tools' })
+  expect(screen.getAllByRole('button', { name: 'Maximize workspace tools' })).toHaveLength(1)
+  expect(screen.getByLabelText('Workspace tool controls')).toContainElement(maximize)
+  fireEvent.click(maximize)
+  expect(screen.getByLabelText('Workspace tools')).toHaveAttribute('data-maximized', 'true')
+})
+
 it('leaves maximize mode when switching workspace or closing tools', () => {
-  const view = render(<ResizableWorkspace {...props} tools={<WorkspaceToolsControls />} storageKey="workspace-a" />)
+  const view = render(<ResizableWorkspace {...props} tools={<WorkspaceToolsControls inToolbar />} storageKey="workspace-a" />)
   fireEvent.click(screen.getByRole('button', { name: 'Maximize workspace tools' }))
-  view.rerender(<ResizableWorkspace {...props} tools={<WorkspaceToolsControls />} storageKey="workspace-b" />)
+  view.rerender(<ResizableWorkspace {...props} tools={<WorkspaceToolsControls inToolbar />} storageKey="workspace-b" />)
   expect(screen.getByLabelText('Workspace chat pane')).toBeVisible()
   fireEvent.click(screen.getByRole('button', { name: 'Maximize workspace tools' }))
-  view.rerender(<ResizableWorkspace {...props} tools={<WorkspaceToolsControls />} storageKey="workspace-b" toolsOpen={false} />)
+  view.rerender(<ResizableWorkspace {...props} tools={<WorkspaceToolsControls inToolbar />} storageKey="workspace-b" toolsOpen={false} />)
   expect(screen.getByLabelText('Workspace chat pane')).toBeVisible()
-  view.rerender(<ResizableWorkspace {...props} tools={<WorkspaceToolsControls />} storageKey="workspace-b" />)
+  view.rerender(<ResizableWorkspace {...props} tools={<WorkspaceToolsControls inToolbar />} storageKey="workspace-b" />)
   expect(screen.getByRole('separator')).toBeInTheDocument()
 })
 

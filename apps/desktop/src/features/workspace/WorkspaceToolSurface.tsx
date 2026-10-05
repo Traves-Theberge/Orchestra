@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { FileText, Folder, Globe, PanelRight, Plus, Search, Terminal, X } from 'lucide-react'
 import { AppTooltip } from '@ui/tooltip-wrapper'
@@ -7,15 +7,13 @@ import { getActiveWorkspaceContextId, selectedProjectWorkspace } from '@core/sto
 import { FileExplorer } from './file-explorer/FileExplorer'
 import { WorkspaceSearch } from './panels/WorkspaceSearch'
 import { WorkspaceToolsControls } from './WorkspaceToolsControls'
-import { WorkspaceToolsContext } from './workspace-tools-context'
 import { ResizableInspector } from './ResizableInspector'
 
-export function WorkspaceToolSurface({ children, filesRequest, onAddTerminal, toolbarTarget, toolsOpen, onToggleTools }: { children: ReactNode; filesRequest?: number; onAddTerminal?: () => void; toolbarTarget?: HTMLElement | null; toolsOpen?: boolean; onToggleTools?: () => void }) {
+export function WorkspaceToolSurface({ children, filesRequest, onAddTerminal, onRefreshTargetChange, toolsOpen, onToggleTools }: { children: ReactNode; filesRequest?: number; onAddTerminal?: () => void; onRefreshTargetChange?: (target: HTMLSpanElement | null) => void; toolsOpen?: boolean; onToggleTools?: () => void }) {
   const [inspector, setInspector] = useState<'files' | 'search' | null>(null)
   const [lastFilesRequest, setLastFilesRequest] = useState<number | undefined>()
   const contextId = useAppStore(getActiveWorkspaceContextId)
   const config = useAppStore(state => state.config)
-  const toolsControls = useContext(WorkspaceToolsContext)
   const explorerRoot = useAppStore(state => state.explorerRoot)
   const workspace = useAppStore(state => selectedProjectWorkspace(state))
   const [menu, setMenu] = useState<{ left: number; top: number; contextId: string } | null>(null)
@@ -70,19 +68,21 @@ export function WorkspaceToolSurface({ children, filesRequest, onAddTerminal, to
     setLastFilesRequest(filesRequest)
     setInspector('files')
   }
-  const toolbar = <div aria-label="Workspace tool controls" className="flex shrink-0 items-center gap-1">
-      <AppTooltip content="Files" side="bottom"><button aria-label="Toggle workspace files" aria-pressed={inspector === 'files'} onClick={() => { setInspector(current => current === 'files' ? null : 'files'); if (toolsOpen === false) onToggleTools?.() }} className="rounded p-1.5 text-muted-foreground hover:bg-muted"><Folder size={13} /></button></AppTooltip>
-      <AppTooltip content="Search files" side="bottom"><button aria-label="Toggle workspace search" aria-pressed={inspector === 'search'} onClick={() => { setInspector(current => current === 'search' ? null : 'search'); if (toolsOpen === false) onToggleTools?.() }} className="rounded p-1.5 text-muted-foreground hover:bg-muted"><Search size={13} /></button></AppTooltip>
-        {inspector && <AppTooltip content="Close file sidebar" side="bottom"><button aria-label="Close workspace file sidebar" onClick={() => setInspector(null)} className="rounded p-1 text-muted-foreground hover:bg-muted"><X size={12} /></button></AppTooltip>}
-        <AppTooltip content="Add workspace tool" side="bottom"><button ref={trigger} type="button" aria-label="Add workspace tool" aria-haspopup="menu" aria-expanded={Boolean(menu)} onClick={event => {
+  const toolbar = <div aria-label="Workspace tool controls" className="flex h-10 shrink-0 items-center gap-1 px-3 pt-1">
+      <AppTooltip content="Files" side="bottom"><button type="button" aria-label="Toggle workspace files" aria-pressed={inspector === 'files'} onClick={() => { setInspector(current => current === 'files' ? null : 'files'); if (toolsOpen === false) onToggleTools?.() }} className="rounded p-1.5 text-muted-foreground hover:bg-muted"><Folder size={13} /></button></AppTooltip>
+      <AppTooltip content="Search files" side="bottom"><button type="button" aria-label="Toggle workspace search" aria-pressed={inspector === 'search'} onClick={() => { setInspector(current => current === 'search' ? null : 'search'); if (toolsOpen === false) onToggleTools?.() }} className="rounded p-1.5 text-muted-foreground hover:bg-muted"><Search size={13} /></button></AppTooltip>
+      {inspector && <AppTooltip content="Close file sidebar" side="bottom"><button type="button" aria-label="Close workspace file sidebar" onClick={() => setInspector(null)} className="rounded p-1 text-muted-foreground hover:bg-muted"><X size={12} /></button></AppTooltip>}
+      <span className="flex-1" />
+      <span ref={onRefreshTargetChange} className="flex items-center gap-1" />
+      <AppTooltip content="Add workspace tool" side="bottom"><button ref={trigger} type="button" aria-label="Add workspace tool" aria-haspopup="menu" aria-expanded={Boolean(menu)} onClick={event => {
           const rect = event.currentTarget.getBoundingClientRect()
           setMenu(current => current ? null : { left: Math.max(8, Math.min(rect.right - 224, window.innerWidth - 232)), top: Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - 184)), contextId })
         }} className="rounded p-1.5 text-muted-foreground hover:bg-muted"><Plus size={14} /></button></AppTooltip>
-        {onToggleTools && <AppTooltip content="Files & terminals" side="bottom"><button onClick={onToggleTools} aria-label="Files & terminals" aria-pressed={toolsOpen} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent"><PanelRight size={16} /></button></AppTooltip>}
-        <WorkspaceToolsControls />
+      {onToggleTools && <AppTooltip content="Hide workspace tools" side="bottom"><button type="button" onClick={onToggleTools} aria-label="Hide workspace tools" aria-pressed={toolsOpen} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent"><PanelRight size={16} /></button></AppTooltip>}
+      <WorkspaceToolsControls inToolbar />
     </div>
   return <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-    {toolsControls?.maximized ? toolbar : toolbarTarget ? createPortal(toolbar, toolbarTarget) : toolbarTarget === undefined ? toolbar : null}
+    {toolbar}
     {error && <p role="alert" className="px-3 py-1 text-xs text-destructive">{error}</p>}
     {creating && <p role="status" className="px-3 py-1 text-xs text-muted-foreground">Creating document…</p>}
     {menu && createPortal(<div ref={popup} role="menu" aria-label="Add workspace tool" className="fixed z-[100] w-56 max-w-[calc(100vw-16px)] rounded-lg border border-border bg-popover p-1 shadow-xl" style={{ left: menu.left, top: menu.top }} onKeyDown={event => {
