@@ -1457,7 +1457,7 @@ func (s *Service) filterRetryingByCurrentStates(ctx context.Context, client trac
 
 // RecordRunFailure removes the issue from the running list, accumulates its
 // totals, and schedules a retry entry if the attempt count is within limits.
-// On high attempt counts, it cascades to an alternate provider if available.
+// Retries retain the provider selected for the admitted run.
 func (s *Service) RecordRunFailure(issueID string, provider string, issueIdentifier string, attempt int64, dueAt time.Time, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1507,28 +1507,12 @@ func (s *Service) RecordRunFailure(issueID string, provider string, issueIdentif
 		return
 	}
 
-	nextProvider := lastProvider
-	if attempt >= 3 && s.agentRegistry != nil {
-		// Cascade: Try a different provider if the current one has failed multiple times
-		allProviders := s.agentRegistry.Providers()
-		if len(allProviders) > 1 {
-			for i, p := range allProviders {
-				if string(p) == lastProvider {
-					// Pick the next one in the ring
-					next := allProviders[(i+1)%len(allProviders)]
-					nextProvider = string(next)
-					break
-				}
-			}
-		}
-	}
-
 	s.retrying = append(s.retrying, RetryEntry{
 		IssueID:           issueID,
 		IssueIdentifier:   issueIdentifier,
 		State:             issueState,
 		AssigneeID:        issueAssigneeID,
-		Provider:          nextProvider,
+		Provider:          lastProvider,
 		RuntimeTarget:     lastRuntimeTarget,
 		RequestedModel:    requestedModel,
 		RequestedMaxTurns: requestedMaxTurns,

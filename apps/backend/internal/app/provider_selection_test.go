@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -54,6 +55,41 @@ func TestResolveDispatchProvider(t *testing.T) {
 	}
 	if _, err := resolveDispatchProvider(registry, "MISSING", orchestrator.RunningEntry{}); err == nil {
 		t.Fatal("unconfigured default accepted")
+	}
+}
+
+func TestExplicitProviderSurvivesRepeatedFailureAndRetryRelease(t *testing.T) {
+	commands := map[string]string{
+		"CODEX":       "codex app-server",
+		"ANTIGRAVITY": "agy",
+	}
+	registry := agents.NewRegistry(commands)
+	service := orchestrator.NewService()
+	// The global default differs from the task's explicit selection.
+	service.SetAgentRegistry(registry, commands, "ANTIGRAVITY")
+	service.SetRunningForTest([]orchestrator.RunningEntry{{
+		IssueID:         "task-2",
+		IssueIdentifier: "ORCHESTRA-2",
+		State:           "In Progress",
+		AssigneeID:      "agent-CODEX",
+		Provider:        "CODEX",
+		TurnCount:       2,
+	}})
+
+	service.RecordRunFailure("task-2", "CODEX", "ORCHESTRA-2", 3, time.Now().UTC().Add(-time.Second), errors.New("invalid global Codex rules"))
+	if err := service.PerformRefreshForClient(context.Background(), nil); err != nil {
+		t.Fatalf("release retry: %v", err)
+	}
+	entry, ok := service.ClaimNextRunnable()
+	if !ok {
+		t.Fatal("retry was not released to the running queue")
+	}
+	if entry.Provider != "CODEX" {
+		t.Fatalf("retry provider changed to %q; want frozen CODEX selection", entry.Provider)
+	}
+	got, err := resolveDispatchProvider(registry, agents.ProviderAntigravity, entry)
+	if err != nil || got != agents.ProviderCodex {
+		t.Fatalf("retry resolved to %q, err=%v; want CODEX", got, err)
 	}
 }
 
