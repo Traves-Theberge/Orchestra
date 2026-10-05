@@ -49,3 +49,14 @@ truncated declared body. The utility now reads the complete response with an
 new native API fixtures fail against an overlay of the previous decoder (false
 HTTP 200) and pass with the correction (uncertain HTTP 409, exactly one POST).
 The overlay did not modify the working source.
+
+## Merged verification
+
+[PR #175](https://github.com/Traves-Theberge/Orchestra/pull/175) merged as
+`f2b36c0dd64983a96d0951b12f274a4a678a43ca`. All checks on `48865c4` passed:
+[backend Linux/Windows and race](https://github.com/Traves-Theberge/Orchestra/actions/runs/37250802693),
+[desktop Linux/Windows including native Electron](https://github.com/Traves-Theberge/Orchestra/actions/runs/37250802670)
+and [security](https://github.com/Traves-Theberge/Orchestra/actions/runs/37250802688).
+The main synchronization preserved the tested source tree exactly, and the
+merged main tree matched the reviewed branch before cleanup. Both inline review
+findings in this batch were addressed and resolved before merging.

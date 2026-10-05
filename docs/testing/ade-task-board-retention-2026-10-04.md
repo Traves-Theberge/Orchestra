@@ -103,3 +103,16 @@ in Console and follows back-to-primary-to-Issues navigation; it failed before
 marking the Console button. That button now has the same smoke locator and an
 accessible name. This corrects the fixture's observation boundary without
 changing the fresh-profile default or relaxing native renderer assertions.
+
+## Merged verification
+
+[PR #174](https://github.com/Traves-Theberge/Orchestra/pull/174) merged as
+`a989405aa0c8f709ec2596cfc86719cca45098d5`. All checks on `0c49dd9` passed:
+[backend Linux/Windows and race](https://github.com/Traves-Theberge/Orchestra/actions/runs/37250221165),
+[desktop Linux/Windows](https://github.com/Traves-Theberge/Orchestra/actions/runs/37250221176)
+and security. Native Windows Electron exercised the production renderer,
+preload and managed authenticated backend. Its uploaded launch screenshot was
+inspected: primary navigation and the empty workspace welcome screen rendered,
+with SSE live. This validates launch/navigation, not a signed installation or
+provider/task/PR lifecycle. The Studio bridge logged a Windows socket-path bind
+failure; that feature remains an independent open gate.
