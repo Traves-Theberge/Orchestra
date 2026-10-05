@@ -10,7 +10,7 @@ func TestStatePayloadIncludesRunningAndRetrying(t *testing.T) {
 	snapshot := orchestrator.Snapshot{
 		GeneratedAt: "2026-01-01T00:00:00Z",
 		Counts:      orchestrator.SnapshotCount{Running: 1, Retrying: 1},
-		Running:     []orchestrator.RunningEntry{{IssueID: "1", IssueIdentifier: "ORC-1", State: "In Progress", SessionLogPath: "/tmp/s.log", LastMessage: "ok"}},
+		Running:     []orchestrator.RunningEntry{{IssueID: "1", IssueIdentifier: "ORC-1", ProjectID: "project", WorktreePath: "/tmp/worktree", RequestedModel: "model", Title: "Task", State: "In Progress", SessionLogPath: "/tmp/s.log", LastMessage: "ok"}},
 		Retrying:    []orchestrator.RetryEntry{{IssueID: "2", IssueIdentifier: "ORC-2", State: "Todo", Attempt: 2, Error: "failed"}},
 	}
 
@@ -25,6 +25,11 @@ func TestStatePayloadIncludesRunningAndRetrying(t *testing.T) {
 	}
 	if running[0]["session_log_path"] != "/tmp/s.log" {
 		t.Fatalf("expected running session_log_path, got %+v", running[0])
+	}
+	for key, want := range map[string]string{"project_id": "project", "worktree_path": "/tmp/worktree", "requested_model": "model", "title": "Task"} {
+		if running[0][key] != want {
+			t.Fatalf("missing workspace runtime identity %s: %+v", key, running[0])
+		}
 	}
 	if retrying[0]["state"] != "Todo" {
 		t.Fatalf("expected retrying state field, got %+v", retrying[0])

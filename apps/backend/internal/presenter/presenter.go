@@ -16,6 +16,10 @@ func StatePayload(snapshot orchestrator.Snapshot) map[string]any {
 		running = append(running, map[string]any{
 			"issue_id":         entry.IssueID,
 			"issue_identifier": entry.IssueIdentifier,
+			"project_id":       entry.ProjectID,
+			"worktree_path":    entry.WorktreePath,
+			"requested_model":  entry.RequestedModel,
+			"title":            entry.Title,
 			"state":            entry.State,
 			"session_id":       entry.SessionID,
 			"session_log_path": entry.SessionLogPath,

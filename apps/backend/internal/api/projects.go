@@ -29,7 +29,7 @@ var aheadBehindRe = regexp.MustCompile(`\[(?:ahead (\d+))?(?:, )?(?:behind (\d+)
 
 func (s *Server) PostGitCommit(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
-	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	project, err := s.gitProject(r, projectID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
@@ -65,7 +65,7 @@ func (s *Server) PostGitCommit(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) PostGitPush(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
-	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	project, err := s.gitProject(r, projectID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
@@ -113,7 +113,7 @@ func (s *Server) PostGitPush(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) PostGitPull(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
-	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	project, err := s.gitProject(r, projectID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
@@ -160,7 +160,7 @@ func (s *Server) PostGitPull(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) PostGitFetch(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
-	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	project, err := s.gitProject(r, projectID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
@@ -834,7 +834,7 @@ func (s *Server) GetWorkspaceTree(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) GetProjectGitStatus(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
-	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	project, err := s.gitProject(r, projectID)
 	if err != nil {
 		s.logger.Error().Str("project_id", projectID).Msg("project not found for git status")
 		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
@@ -889,7 +889,7 @@ func (s *Server) GetProjectGitStatus(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) GetProjectGitStats(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
-	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	project, err := s.gitProject(r, projectID)
 	if err != nil {
 		s.logger.Debug().Str("project_id", projectID).Err(err).Msg("project not found in DB for git stats")
 		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
@@ -950,7 +950,7 @@ func (s *Server) GetProjectGitStats(w http.ResponseWriter, r *http.Request) {
 func (s *Server) GetProjectGitDiff(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
 	hash := r.URL.Query().Get("hash")
-	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	project, err := s.gitProject(r, projectID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
@@ -1041,7 +1041,7 @@ func (s *Server) GetProjectGitHubIssues(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) GetDefaultBranch(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
-	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	project, err := s.gitProject(r, projectID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
@@ -1052,7 +1052,7 @@ func (s *Server) GetDefaultBranch(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) GetProjectGitBranches(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
-	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	project, err := s.gitProject(r, projectID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
@@ -1070,7 +1070,7 @@ func (s *Server) GetProjectGitBranches(w http.ResponseWriter, r *http.Request) {
 	current := strings.TrimSpace(string(currentOut))
 
 	// Get all branches
-	branchCmd := exec.CommandContext(r.Context(), "git", "branch", "--list")
+	branchCmd := exec.CommandContext(r.Context(), "git", "branch", "--list", "--format=%(refname:short)")
 	branchCmd.Dir = project.RootPath
 	branchOut, err := branchCmd.Output()
 	if err != nil {
@@ -1081,14 +1081,14 @@ func (s *Server) GetProjectGitBranches(w http.ResponseWriter, r *http.Request) {
 
 	var branches []string
 	for _, line := range strings.Split(string(branchOut), "\n") {
-		name := strings.TrimSpace(strings.TrimPrefix(line, "*"))
+		name := strings.TrimSpace(line)
 		if name != "" {
 			branches = append(branches, name)
 		}
 	}
 
 	// Get remote branches
-	remoteCmd := exec.CommandContext(r.Context(), "git", "branch", "-r", "--list")
+	remoteCmd := exec.CommandContext(r.Context(), "git", "for-each-ref", "--format=%(refname:short)%09%(symref)", "refs/remotes/")
 	remoteCmd.Dir = project.RootPath
 	remoteOut, err := remoteCmd.Output()
 	if err != nil {
@@ -1099,8 +1099,9 @@ func (s *Server) GetProjectGitBranches(w http.ResponseWriter, r *http.Request) {
 
 	var remoteBranches []string
 	for _, line := range strings.Split(string(remoteOut), "\n") {
-		name := strings.TrimSpace(line)
-		if name == "" || strings.Contains(name, "->") {
+		fields := strings.SplitN(line, "\t", 2)
+		name := strings.TrimSpace(fields[0])
+		if name == "" || len(fields) == 2 && fields[1] != "" {
 			continue
 		}
 		remoteBranches = append(remoteBranches, name)
@@ -1115,7 +1116,7 @@ func (s *Server) GetProjectGitBranches(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) GetProjectGitBranchesDetail(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
-	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	project, err := s.gitProject(r, projectID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
@@ -1334,7 +1335,7 @@ func (s *Server) CreateProjectGitHubPull(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) PostGitCheckout(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
-	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	project, err := s.gitProject(r, projectID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
@@ -1370,7 +1371,7 @@ func (s *Server) PostGitCheckout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) PostGitMerge(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
-	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	project, err := s.gitProject(r, projectID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
@@ -1399,7 +1400,7 @@ func (s *Server) PostGitMerge(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) PostGitCreateBranch(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
-	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	project, err := s.gitProject(r, projectID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
@@ -1438,7 +1439,7 @@ func (s *Server) DeleteGitBranch(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
 	branch := chi.URLParam(r, "branch")
 
-	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	project, err := s.gitProject(r, projectID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
@@ -1466,7 +1467,7 @@ func (s *Server) DeleteGitBranch(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) PostGitStage(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
-	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	project, err := s.gitProject(r, projectID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
@@ -1502,7 +1503,7 @@ func (s *Server) PostGitStage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) PostGitUnstage(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
-	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	project, err := s.gitProject(r, projectID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
@@ -1538,7 +1539,7 @@ func (s *Server) PostGitUnstage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) PostGitStash(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
-	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	project, err := s.gitProject(r, projectID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
@@ -1561,7 +1562,7 @@ func (s *Server) PostGitStash(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) PostGitStashPop(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
-	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	project, err := s.gitProject(r, projectID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
@@ -1584,7 +1585,7 @@ func (s *Server) PostGitStashPop(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) GetGitStashList(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
-	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	project, err := s.gitProject(r, projectID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
@@ -1611,7 +1612,7 @@ func (s *Server) GetGitStashList(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) PostGitStashApply(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
-	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	project, err := s.gitProject(r, projectID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
@@ -1646,7 +1647,7 @@ func (s *Server) PostGitStashApply(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) PostGitStashDrop(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
-	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	project, err := s.gitProject(r, projectID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
@@ -1681,7 +1682,7 @@ func (s *Server) PostGitStashDrop(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) GetGitConflicts(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
-	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	project, err := s.gitProject(r, projectID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
@@ -1733,7 +1734,7 @@ func (s *Server) GetGitConflicts(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) PostGitMergeAbort(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
-	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	project, err := s.gitProject(r, projectID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return
@@ -1760,7 +1761,7 @@ func (s *Server) PostGitMergeAbort(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) PostGitConflictResolve(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
-	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	project, err := s.gitProject(r, projectID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 		return

@@ -1,0 +1,35 @@
+# Native chat ownership by observed worktree — 2026-10-04
+
+## Reference receipt
+
+- T3 Code revision `737993303d36e10674c54b95e5bd3826682c99c7`, `apps/web/src/components/Sidebar.tsx`: inspected thread rows and Git cwd resolution from `thread.worktreePath` before project root, plus project/environment ownership in session selection. Previously inspected `apps/server/src/orchestration-v2/ProviderAdapter.ts` distinguishes app conversation, provider thread, turn and runtime request identities. Orchestra keeps conversation identity separate from worktree identity and launches against the exact selected canonical checkout.
+- Orca revision `3284b4c70c901402831bb4ccc5576ea083d2e5ae`, `src/renderer/src/components/sidebar/WorktreeCardAgents.tsx`: inspected worktree-owned agent selection, stable pane identity checks, and activation of the owning worktree before focusing its tab/pane; malformed or mismatched identities do not guess another pane. Orchestra uses the shared observed Git worktree resolver and refuses stale, foreign or unauthorized IDs.
+- No reference application was run for this backend package. Source patterns establish design intent, not E2E reliability. No reference implementation source was copied.
+
+## Contract and adaptation
+
+All existing project chat suffixes accept `?workspace_id=<observed Git worktree id>`: providers, models, session list/create/detail, messages, request replies and stop. The shared resolver re-enumerates the actual allowed Git registry rather than accepting an arbitrary client path. Global `__orchestrator__` chat remains separate and rejects a worktree query.
+
+New sessions persist `workspace_id` and canonical `cwd` in additive `workspace_chat_workspaces` rows, in the same creation transaction as the session and conversation mode. Session DTOs expose `workspace_id` and `workspace_path`. Detail/mutation access must match the selected scope and persisted cwd; unavailable membership or changed cwd fails before launch. Session retry identity cannot cross workspace boundaries. Active/unsettled ownership is serialized per selected checkout rather than across every checkout of the project.
+
+Legacy sessions without a binding belong only to the registered root. Explicit selection of that root's observed ID includes those sessions, while children never inherit them. Their DTO identifies the current registered root; their first accepted send persists that binding. An old session has no prior persisted cwd to prove the historical root before that first binding. Omitted workspace selection retains registered-root behavior for local folders, including existing non-Git projects; explicit IDs require current Git membership.
+
+The state presenter now preserves running-agent `project_id`, `worktree_path`, `requested_model` and `title`, enabling exact observed runtime joins. These fields do not imply a task runner and a workspace chat are the same session.
+
+## Agent creation preferences follow-up
+
+Session creation accepts optional `requested_model` and `requested_reasoning_effort`. A nonempty model must appear in the selected native provider's visible catalog; reasoning effort must be advertised for that model. Effort without a selected model and model preferences for a replay-only harness are rejected. Creation persists requested preferences atomically with the session, with immutable original preferences separately binding the creation UUID. Reusing that UUID with different preferences fails with identity conflict, even when the provider catalog is currently unavailable or a later turn changed the session's defaults.
+
+No creation message, provider thread or effective configuration is fabricated. The first explicit send inherits stored requested settings when overrides are omitted; its original submission input is preserved separately from resolved defaults so an omitted-default retry retains exact input identity and cannot launch another turn. Existing native provider observations populate effective settings after actual fixture start. This borrows the already inspected T3 typed model/policy boundary and Orca workspace-versus-account-default distinction, with Orchestra's requested/observed separation preserved.
+
+`TestCreationPreferencesPersistWithoutTurnAndBindRetryIdentity` verifies persisted settings, no messages/events/native start at creation, same UUID replay through a catalog outage, changed model/effort conflicts, service recreation, actual native option forwarding on the first send and idempotent omitted-default retry. `TestCreationPreferencesRejectUnsupportedCatalogBeforePersistence` verifies catalog/capability rejection leaves no sessions. `TestWorkspaceChatCreationModelPreferencesHTTP` verifies the actual HTTP DTO accepts the fields, preserves unobserved effective settings, rejects changed UUID preferences and rejects unadvertised reasoning. Full workspacechat tests and targeted API tests pass; isolated Linux race checks pass for creation preferences plus the worktree-scope fixtures. These remain deterministic provider fixtures, not live account/model entitlement verification.
+
+## Independent verification
+
+- `TestNativeChatWorktreeScopePersistsAndRejectsStaleMembership`: actual temporary Git main/linked checkouts and on-disk SQLite, deterministic native harness adapter. Checks child-only and legacy-primary-only lists; foreign read/stop/reply/reused session identity rejection; persisted cwd drift rejection; busy ownership within one checkout while root ownership permits a child turn; actual native start request cwd; provider thread/history/binding after closing and reopening SQLite; and no launch after real `git worktree remove`.
+- `TestWorkspaceChatHTTPQueryScopesEveryOperation`: actual Git/SQLite plus authenticated HTTP router. Checks child creation DTO and scoped list; all eight endpoint suffixes reject stale workspace IDs; omitted root scope cannot read the child session.
+- Presenter test checks all four runtime identity fields survive the API presentation layer.
+- Native Windows full affected package suites passed: workspacechat, presenter and API (`go test ./internal/workspacechat ./internal/presenter ./internal/api -count=1`; API 66.831 seconds). Subsequent stronger scope fixture checks passed independently.
+- Isolated Linux Docker targeted race checks passed for the new native worktree fixture, HTTP scope fixture, existing native reply boundary and presenter runtime fields. CLI skill task-system reference updated to distinguish worktree chat, task run and conversation identities.
+
+The native adapter in this fixture is deterministic; this is not a live Codex/Claude inference proof, a provider-login test or a complete desktop click-through test. Git registry membership and filesystem checks occur at request/launch preparation; external filesystem changes after validation are not an OS-atomic lease. Worktree removal disables live access but does not erase persisted conversation data. Frontend selection/resource integration and shared Git resolver verification are owned by their respective packages.

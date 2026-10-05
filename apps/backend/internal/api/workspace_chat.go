@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -11,6 +12,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/orchestra/orchestra/apps/backend/internal/workspacechat"
 )
+
+func chatContext(r *http.Request) context.Context {
+	return workspacechat.WithWorkspaceID(r.Context(), r.URL.Query().Get("workspace_id"))
+}
 
 func (s *Server) chatError(w http.ResponseWriter, err error) {
 	code, status := "workspace_chat_failed", http.StatusInternalServerError
@@ -56,7 +61,7 @@ func (s *Server) GetWorkspaceChatProviders(w http.ResponseWriter, r *http.Reques
 	if !s.chatReady(w) {
 		return
 	}
-	v, err := s.workspaceChat.Providers(r.Context(), chi.URLParam(r, "project_id"))
+	v, err := s.workspaceChat.Providers(chatContext(r), chi.URLParam(r, "project_id"))
 	if err != nil {
 		s.chatError(w, err)
 		return
@@ -67,7 +72,7 @@ func (s *Server) GetWorkspaceChatModels(w http.ResponseWriter, r *http.Request) 
 	if !s.chatReady(w) {
 		return
 	}
-	v, err := s.workspaceChat.Models(r.Context(), chi.URLParam(r, "project_id"), chi.URLParam(r, "provider"))
+	v, err := s.workspaceChat.Models(chatContext(r), chi.URLParam(r, "project_id"), chi.URLParam(r, "provider"))
 	if err != nil {
 		s.chatError(w, err)
 		return
@@ -78,7 +83,7 @@ func (s *Server) GetWorkspaceChatSessions(w http.ResponseWriter, r *http.Request
 	if !s.chatReady(w) {
 		return
 	}
-	v, err := s.workspaceChat.List(r.Context(), chi.URLParam(r, "project_id"))
+	v, err := s.workspaceChat.List(chatContext(r), chi.URLParam(r, "project_id"))
 	if err != nil {
 		s.chatError(w, err)
 		return
@@ -93,7 +98,7 @@ func (s *Server) PostWorkspaceChatSession(w http.ResponseWriter, r *http.Request
 	if !decodeChat(w, r, &req) {
 		return
 	}
-	v, err := s.workspaceChat.CreateWithRequest(r.Context(), chi.URLParam(r, "project_id"), req)
+	v, err := s.workspaceChat.CreateWithRequest(chatContext(r), chi.URLParam(r, "project_id"), req)
 	if err != nil {
 		s.chatError(w, err)
 		return
@@ -113,7 +118,7 @@ func (s *Server) GetWorkspaceChatSession(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
-	v, err := s.workspaceChat.DetailAfter(r.Context(), chi.URLParam(r, "project_id"), chi.URLParam(r, "session_id"), after)
+	v, err := s.workspaceChat.DetailAfter(chatContext(r), chi.URLParam(r, "project_id"), chi.URLParam(r, "session_id"), after)
 	if err != nil {
 		s.chatError(w, err)
 		return
@@ -140,7 +145,7 @@ func (s *Server) PostWorkspaceChatReply(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
-	v, err := s.workspaceChat.Reply(r.Context(), chi.URLParam(r, "project_id"), chi.URLParam(r, "session_id"), requestID, req)
+	v, err := s.workspaceChat.Reply(chatContext(r), chi.URLParam(r, "project_id"), chi.URLParam(r, "session_id"), requestID, req)
 	if err != nil {
 		s.chatError(w, err)
 		return
@@ -155,7 +160,7 @@ func (s *Server) PostWorkspaceChatMessage(w http.ResponseWriter, r *http.Request
 	if !decodeChat(w, r, &req) {
 		return
 	}
-	v, err := s.workspaceChat.Send(r.Context(), chi.URLParam(r, "project_id"), chi.URLParam(r, "session_id"), req)
+	v, err := s.workspaceChat.Send(chatContext(r), chi.URLParam(r, "project_id"), chi.URLParam(r, "session_id"), req)
 	if err != nil {
 		s.chatError(w, err)
 		return
@@ -166,7 +171,7 @@ func (s *Server) PostWorkspaceChatStop(w http.ResponseWriter, r *http.Request) {
 	if !s.chatReady(w) {
 		return
 	}
-	v, err := s.workspaceChat.Stop(r.Context(), chi.URLParam(r, "project_id"), chi.URLParam(r, "session_id"))
+	v, err := s.workspaceChat.Stop(chatContext(r), chi.URLParam(r, "project_id"), chi.URLParam(r, "session_id"))
 	if err != nil {
 		s.chatError(w, err)
 		return

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"context"
+	"errors"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
@@ -23,9 +25,11 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/studio"
 	"github.com/orchestra/orchestra/apps/backend/internal/studio/templates"
 	"github.com/orchestra/orchestra/apps/backend/internal/terminal"
+	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
 	trackerregistry "github.com/orchestra/orchestra/apps/backend/internal/tracker/registry"
 	"github.com/orchestra/orchestra/apps/backend/internal/usage"
 	"github.com/orchestra/orchestra/apps/backend/internal/workspacechat"
+	"github.com/orchestra/orchestra/apps/backend/internal/worktreejobs"
 	"github.com/rs/zerolog"
 )
 
@@ -47,6 +51,7 @@ type Server struct {
 	studioTpls          *templates.Store
 	workspaceChat       *workspacechat.Service
 	orchestratorControl *control.Service
+	worktreeJobs        *worktreejobs.Service
 }
 
 // SetStudioTemplateStore wires a template store onto the server for the
@@ -111,6 +116,34 @@ func NewRouterWithPubSub(
 			server.orchestratorControl = controlService
 		} else {
 			logger.Warn().Err(err).Msg("native orchestrator control unavailable")
+		}
+	}
+	if warehouseDB != nil {
+		jobs, err := worktreejobs.New(warehouseDB, cfg.WorktreeRoot, cfg.ProjectRoots, func(ctx context.Context, projectID, taskID string) error {
+			if server.orchestratorControl == nil {
+				return errors.New("exact existing-task linking is unavailable")
+			}
+			result := server.orchestratorControl.Execute(ctx, "orchestra_control", map[string]any{"operation": "tasks", "project_id": projectID})
+			if success, _ := result["success"].(bool); !success {
+				return errors.New("existing task inventory could not be confirmed")
+			}
+			data, _ := result["data"].(map[string]any)
+			tasks, _ := data["tasks"].([]tracker.Issue)
+			matches := 0
+			for _, task := range tasks {
+				if task.ID == taskID && task.ProjectID == projectID {
+					matches++
+				}
+			}
+			if matches == 1 {
+				return nil
+			}
+			return errors.New("existing task was not confirmed in this project")
+		})
+		if err == nil {
+			server.worktreeJobs = jobs
+		} else {
+			logger.Warn().Err(err).Msg("workspace creation jobs unavailable")
 		}
 	}
 	r := chi.NewRouter()
@@ -266,36 +299,38 @@ func NewRouterWithPubSub(
 	protected.Post("/api/v1/projects", server.CreateProject)
 	protected.Get("/api/v1/projects/{project_id}/file", server.GetProjectFileContent)
 	protected.Get("/api/v1/projects/{project_id}/tree", server.GetProjectFileTree)
-	protected.Get("/api/v1/projects/{project_id}/git", server.GetProjectGitStats)
-	protected.Get("/api/v1/projects/{project_id}/git/status", server.GetProjectGitStatus)
-	protected.Get("/api/v1/projects/{project_id}/git/diff", server.GetProjectGitDiff)
+	protected.Get("/api/v1/projects/{project_id}/git", server.withGitWorkspace(server.GetProjectGitStats))
+	protected.Get("/api/v1/projects/{project_id}/git/status", server.withGitWorkspace(server.GetProjectGitStatus))
+	protected.Get("/api/v1/projects/{project_id}/git/diff", server.withGitWorkspace(server.GetProjectGitDiff))
 	protected.Post("/api/v1/projects/{project_id}/refresh", server.RefreshProject)
 	protected.Get("/api/v1/projects/{project_id}", server.GetProject)
 	protected.Get("/api/v1/projects/{project_id}/git/worktrees", server.GetProjectWorktrees)
+	protected.Post("/api/v1/projects/{project_id}/worktree-jobs", server.PostWorktreeJob)
+	protected.Get("/api/v1/projects/{project_id}/worktree-jobs/{request_id}", server.GetWorktreeJob)
 	protected.Delete("/api/v1/projects/{project_id}", server.DeleteProject)
-	protected.Post("/api/v1/projects/{project_id}/git/commit", server.PostGitCommit)
-	protected.Post("/api/v1/projects/{project_id}/git/push", server.PostGitPush)
-	protected.Post("/api/v1/projects/{project_id}/git/pull", server.PostGitPull)
-	protected.Post("/api/v1/projects/{project_id}/git/fetch", server.PostGitFetch)
-	protected.Post("/api/v1/projects/{project_id}/git/branches", server.PostGitCreateBranch)
-	protected.Post("/api/v1/projects/{project_id}/git/checkout", server.PostGitCheckout)
-	protected.Delete("/api/v1/projects/{project_id}/git/branches/{branch}", server.DeleteGitBranch)
-	protected.Post("/api/v1/projects/{project_id}/git/stage", server.PostGitStage)
-	protected.Post("/api/v1/projects/{project_id}/git/unstage", server.PostGitUnstage)
-	protected.Post("/api/v1/projects/{project_id}/git/stash", server.PostGitStash)
-	protected.Post("/api/v1/projects/{project_id}/git/stash/pop", server.PostGitStashPop)
-	protected.Get("/api/v1/projects/{project_id}/git/stash/list", server.GetGitStashList)
-	protected.Post("/api/v1/projects/{project_id}/git/stash/apply", server.PostGitStashApply)
-	protected.Post("/api/v1/projects/{project_id}/git/stash/drop", server.PostGitStashDrop)
-	protected.Get("/api/v1/projects/{project_id}/git/conflicts", server.GetGitConflicts)
-	protected.Post("/api/v1/projects/{project_id}/git/merge/abort", server.PostGitMergeAbort)
-	protected.Post("/api/v1/projects/{project_id}/git/resolve", server.PostGitConflictResolve)
-	protected.Post("/api/v1/projects/{project_id}/git/merge", server.PostGitMerge)
+	protected.Post("/api/v1/projects/{project_id}/git/commit", server.withGitWorkspace(server.PostGitCommit))
+	protected.Post("/api/v1/projects/{project_id}/git/push", server.withGitWorkspace(server.PostGitPush))
+	protected.Post("/api/v1/projects/{project_id}/git/pull", server.withGitWorkspace(server.PostGitPull))
+	protected.Post("/api/v1/projects/{project_id}/git/fetch", server.withGitWorkspace(server.PostGitFetch))
+	protected.Post("/api/v1/projects/{project_id}/git/branches", server.withGitWorkspace(server.PostGitCreateBranch))
+	protected.Post("/api/v1/projects/{project_id}/git/checkout", server.withGitWorkspace(server.PostGitCheckout))
+	protected.Delete("/api/v1/projects/{project_id}/git/branches/{branch}", server.withGitWorkspace(server.DeleteGitBranch))
+	protected.Post("/api/v1/projects/{project_id}/git/stage", server.withGitWorkspace(server.PostGitStage))
+	protected.Post("/api/v1/projects/{project_id}/git/unstage", server.withGitWorkspace(server.PostGitUnstage))
+	protected.Post("/api/v1/projects/{project_id}/git/stash", server.withGitWorkspace(server.PostGitStash))
+	protected.Post("/api/v1/projects/{project_id}/git/stash/pop", server.withGitWorkspace(server.PostGitStashPop))
+	protected.Get("/api/v1/projects/{project_id}/git/stash/list", server.withGitWorkspace(server.GetGitStashList))
+	protected.Post("/api/v1/projects/{project_id}/git/stash/apply", server.withGitWorkspace(server.PostGitStashApply))
+	protected.Post("/api/v1/projects/{project_id}/git/stash/drop", server.withGitWorkspace(server.PostGitStashDrop))
+	protected.Get("/api/v1/projects/{project_id}/git/conflicts", server.withGitWorkspace(server.GetGitConflicts))
+	protected.Post("/api/v1/projects/{project_id}/git/merge/abort", server.withGitWorkspace(server.PostGitMergeAbort))
+	protected.Post("/api/v1/projects/{project_id}/git/resolve", server.withGitWorkspace(server.PostGitConflictResolve))
+	protected.Post("/api/v1/projects/{project_id}/git/merge", server.withGitWorkspace(server.PostGitMerge))
 	protected.Post("/api/v1/projects/{project_id}/github/disconnect", server.HandleGitHubDisconnect)
 	protected.Post("/api/v1/projects/{project_id}/github/create-repo", server.PostCreateGitHubRepo)
-	protected.Get("/api/v1/projects/{project_id}/git/default-branch", server.GetDefaultBranch)
-	protected.Get("/api/v1/projects/{project_id}/git/branches", server.GetProjectGitBranches)
-	protected.Get("/api/v1/projects/{project_id}/git/branches/detail", server.GetProjectGitBranchesDetail)
+	protected.Get("/api/v1/projects/{project_id}/git/default-branch", server.withGitWorkspace(server.GetDefaultBranch))
+	protected.Get("/api/v1/projects/{project_id}/git/branches", server.withGitWorkspace(server.GetProjectGitBranches))
+	protected.Get("/api/v1/projects/{project_id}/git/branches/detail", server.withGitWorkspace(server.GetProjectGitBranchesDetail))
 	protected.Get("/api/v1/projects/{project_id}/github/issues", server.GetProjectGitHubIssues)
 	protected.Post("/api/v1/projects/{project_id}/github/issues", server.CreateProjectGitHubIssue)
 	protected.Patch("/api/v1/projects/{project_id}/github/issues/{number}", server.UpdateProjectGitHubIssue)

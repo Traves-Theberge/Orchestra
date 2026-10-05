@@ -21,7 +21,7 @@ func (s *Server) GetProjectWorktrees(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, 403, "unauthorized_project_path", "unauthorized project path")
 		return
 	}
-	worktrees, err := workspace.ListGitWorktrees(r.Context(), project.RootPath, s.config.ProjectRoots)
+	worktrees, err := workspace.ListProjectGitWorktrees(r.Context(), project.ID, project.RootPath, s.config.ProjectRoots)
 	if err != nil {
 		writeJSONError(w, 500, "worktree_list_failed", "unable to read repository worktrees")
 		return

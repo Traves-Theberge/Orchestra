@@ -36,9 +36,11 @@ var ErrUnsupported = errors.New("provider or options unavailable")
 var ErrConflict = errors.New("conversation identity is already bound to another project or provider")
 
 type CreateRequest struct {
-	Provider        string `json:"provider"`
-	Title           string `json:"title"`
-	ClientSessionID string `json:"client_session_id,omitempty"`
+	Provider                 string `json:"provider"`
+	Title                    string `json:"title"`
+	ClientSessionID          string `json:"client_session_id,omitempty"`
+	RequestedModel           string `json:"requested_model,omitempty"`
+	RequestedReasoningEffort string `json:"requested_reasoning_effort,omitempty"`
 }
 
 type Registry interface {
@@ -57,6 +59,8 @@ type Provider struct {
 type Session struct {
 	ID                       string `json:"id"`
 	ProjectID                string `json:"project_id"`
+	WorkspaceID              string `json:"workspace_id,omitempty"`
+	WorkspacePath            string `json:"workspace_path,omitempty"`
 	Provider                 string `json:"provider"`
 	Title                    string `json:"title"`
 	Status                   string `json:"status"`
@@ -127,6 +131,12 @@ func New(database *db.DB, registry Registry, roots []string) (*Service, error) {
 	if err = migrateNative(database); err != nil {
 		return nil, err
 	}
+	if _, err = database.Exec(`CREATE TABLE IF NOT EXISTS workspace_chat_workspaces(session_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, cwd TEXT NOT NULL); CREATE INDEX IF NOT EXISTS workspace_chat_workspace_scope ON workspace_chat_workspaces(workspace_id);`); err != nil {
+		return nil, err
+	}
+	if _, err = database.Exec(`CREATE TABLE IF NOT EXISTS workspace_chat_creation_options(session_id TEXT PRIMARY KEY, requested_model TEXT NOT NULL, effort TEXT NOT NULL); CREATE TABLE IF NOT EXISTS workspace_chat_submission_inputs(message_id TEXT PRIMARY KEY, requested_model TEXT NOT NULL, effort TEXT NOT NULL);`); err != nil {
+		return nil, err
+	}
 	tx, err := database.Begin()
 	if err != nil {
 		return nil, err
@@ -144,7 +154,7 @@ func New(database *db.DB, registry Registry, roots []string) (*Service, error) {
 	return &Service{db: database, registry: registry, roots: append([]string(nil), roots...), active: map[string]context.CancelFunc{}, native: map[string]agents.NativeSession{}, nativePrefixes: map[string]string{}}, nil
 }
 func stamp() string { return time.Now().UTC().Format(time.RFC3339Nano) }
-func (s *Service) root(ctx context.Context, projectID string) (string, error) {
+func (s *Service) registeredRoot(ctx context.Context, projectID string) (string, error) {
 	if projectID == OrchestratorScope {
 		if s.orchestratorRoot == "" {
 			return "", ErrForbidden
@@ -224,7 +234,7 @@ func (s *Service) Providers(ctx context.Context, pid string) ([]Provider, error)
 func (s *Service) Create(ctx context.Context, pid, provider, title string) (Session, error) {
 	return s.CreateWithRequest(ctx, pid, CreateRequest{Provider: provider, Title: title})
 }
-func (s *Service) CreateWithRequest(ctx context.Context, pid string, req CreateRequest) (Session, error) {
+func (s *Service) createWithRequest(ctx context.Context, pid string, req CreateRequest) (Session, error) {
 	provider, title := req.Provider, req.Title
 	identity := req.ClientSessionID
 	if identity != "" {
@@ -239,7 +249,8 @@ func (s *Service) CreateWithRequest(ctx context.Context, pid string, req CreateR
 	if s.closed {
 		return Session{}, fmt.Errorf("chat service shutting down")
 	}
-	if _, err := s.root(ctx, pid); err != nil {
+	workspaceID, cwd, _, err := s.scope(ctx, pid)
+	if err != nil {
 		return Session{}, err
 	}
 	p := agents.NormalizeProvider(provider)
@@ -251,6 +262,12 @@ func (s *Service) CreateWithRequest(ctx context.Context, pid string, req CreateR
 		if err == nil {
 			if existing.ProjectID != pid || existing.Provider != string(p) {
 				return Session{}, ErrConflict
+			}
+			if err = s.validateSessionScope(ctx, &existing); err != nil {
+				return Session{}, ErrConflict
+			}
+			if err = s.matchCreationOptions(ctx, existing.ID, req); err != nil {
+				return Session{}, err
 			}
 			if err = s.decorate(ctx, &existing); err != nil {
 				return Session{}, err
@@ -278,7 +295,7 @@ func (s *Service) CreateWithRequest(ctx context.Context, pid string, req CreateR
 	if identity == "" {
 		identity = uuid.NewString()
 	}
-	sess := Session{ID: identity, ProjectID: pid, Provider: string(p), Title: title, Status: "idle", ConversationMode: Mode, CreatedAt: now, UpdatedAt: now}
+	sess := Session{ID: identity, ProjectID: pid, WorkspaceID: workspaceID, WorkspacePath: cwd, Provider: string(p), Title: title, Status: "idle", ConversationMode: Mode, CreatedAt: now, UpdatedAt: now}
 	if s.supportsNative(p) {
 		sess.ConversationMode = "native_session"
 	}
@@ -293,6 +310,19 @@ func (s *Service) CreateWithRequest(ctx context.Context, pid string, req CreateR
 	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_modes(session_id,mode) VALUES(?,?)`, sess.ID, sess.ConversationMode); err != nil {
 		return Session{}, err
 	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_workspaces(session_id,workspace_id,cwd) VALUES(?,?,?)`, sess.ID, workspaceID, cwd); err != nil {
+		return Session{}, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_creation_options(session_id,requested_model,effort) VALUES(?,?,?)`, sess.ID, req.RequestedModel, req.RequestedReasoningEffort); err != nil {
+		return Session{}, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_native(session_id,requested_model) VALUES(?,?)`, sess.ID, req.RequestedModel); err != nil {
+		return Session{}, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_efforts(session_id,requested) VALUES(?,?)`, sess.ID, req.RequestedReasoningEffort); err != nil {
+		return Session{}, err
+	}
+	sess.RequestedModel, sess.RequestedReasoningEffort = req.RequestedModel, req.RequestedReasoningEffort
 	return sess, tx.Commit()
 }
 func scanSession(row interface{ Scan(...any) error }) (Session, error) {
@@ -308,10 +338,11 @@ func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 const sessionFields = "id,project_id,provider,title,status,created_at,updated_at,error"
 
 func (s *Service) List(ctx context.Context, pid string) ([]Session, error) {
-	if _, err := s.root(ctx, pid); err != nil {
+	workspaceID, _, primary, err := s.scope(ctx, pid)
+	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT `+sessionFields+` FROM workspace_chat_sessions WHERE project_id=? ORDER BY created_at DESC`, pid)
+	rows, err := s.db.QueryContext(ctx, `SELECT `+sessionFields+` FROM workspace_chat_sessions WHERE project_id=? AND (id IN (SELECT session_id FROM workspace_chat_workspaces WHERE workspace_id=?) OR (? AND id NOT IN (SELECT session_id FROM workspace_chat_workspaces))) ORDER BY created_at DESC`, pid, workspaceID, primary)
 	if err != nil {
 		return nil, err
 	}
@@ -327,6 +358,9 @@ func (s *Service) List(ctx context.Context, pid string) ([]Session, error) {
 	err = rows.Err()
 	rows.Close()
 	for i := range result {
+		if e := s.validateSessionScope(ctx, &result[i]); e != nil {
+			return nil, e
+		}
 		if e := s.decorate(ctx, &result[i]); e != nil {
 			return nil, e
 		}
@@ -345,6 +379,9 @@ func (s *Service) DetailAfter(ctx context.Context, pid, id string, after int64) 
 	}
 	v, err := scanSession(s.db.QueryRowContext(ctx, `SELECT `+sessionFields+` FROM workspace_chat_sessions WHERE project_id=? AND id=?`, pid, id))
 	if err != nil {
+		return Detail{}, err
+	}
+	if err = s.validateSessionScope(ctx, &v); err != nil {
 		return Detail{}, err
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT id,session_id,role,text,status,client_message_id,created_at FROM workspace_chat_messages WHERE session_id=? ORDER BY ordinal`, id)
@@ -377,6 +414,7 @@ func (s *Service) Send(ctx context.Context, pid, id string, req SendRequest) (Ac
 	return s.send(ctx, pid, id, req, "", "")
 }
 func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, validatedRoot, validatedModel string) (Accepted, error) {
+	inputModel, inputEffort := req.RequestedModel, req.RequestedReasoningEffort
 	if strings.TrimSpace(req.Text) == "" || len(req.Text) > maxText || strings.TrimSpace(req.ClientMessageID) == "" || len(req.ClientMessageID) > 200 {
 		return Accepted{}, ErrInvalid
 	}
@@ -407,11 +445,21 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 			if e != nil && !errors.Is(e, sql.ErrNoRows) {
 				return Accepted{}, e
 			}
+			e = s.db.QueryRowContext(ctx, `SELECT requested_model,effort FROM workspace_chat_submission_inputs WHERE message_id=?`, m.ID).Scan(&requestedModel, &requestedEffort)
+			if e != nil && !errors.Is(e, sql.ErrNoRows) {
+				return Accepted{}, e
+			}
 			if m.Text != req.Text || req.RequestedModel != requestedModel || req.RequestedReasoningEffort != requestedEffort || req.RequestedMaxTurns != nil {
 				return Accepted{}, ErrInvalid
 			}
 			return Accepted{d.Session, m}, nil
 		}
+	}
+	if req.RequestedModel == "" {
+		req.RequestedModel = d.Session.RequestedModel
+	}
+	if req.RequestedReasoningEffort == "" {
+		req.RequestedReasoningEffort = d.Session.RequestedReasoningEffort
 	}
 	if _, ok := s.active[id]; ok {
 		return Accepted{}, ErrBusy
@@ -419,11 +467,15 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 	if d.Session.Status == "running" || d.Session.Status == "stopping" {
 		return Accepted{}, ErrBusy
 	}
-	// Conversations currently share the main checkout. Serialize all chat turns
-	// in this project, including persisted ownership whose process is unknown.
+	// Serialize turns in this exact checkout, including persisted ownership
+	// whose process is unknown, while allowing independent worktree chats.
 	// The service mutex covers this check through durable acceptance.
 	var occupied int
-	if err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM workspace_chat_sessions WHERE project_id=? AND status IN ('running','stopping')`, pid).Scan(&occupied); err != nil {
+	_, _, primary, scopeErr := s.scope(ctx, pid)
+	if scopeErr != nil {
+		return Accepted{}, scopeErr
+	}
+	if err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM workspace_chat_sessions WHERE project_id=? AND status IN ('running','stopping') AND (id IN (SELECT session_id FROM workspace_chat_workspaces WHERE workspace_id=?) OR (? AND id NOT IN (SELECT session_id FROM workspace_chat_workspaces)))`, pid, d.Session.WorkspaceID, primary).Scan(&occupied); err != nil {
 		return Accepted{}, err
 	}
 	if occupied > 0 {
@@ -467,6 +519,7 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 			if err = s.validateEffort(ctx, pid, d.Session.Provider, model, req.RequestedReasoningEffort); err != nil {
 				return Accepted{}, err
 			}
+			req.RequestedModel, req.RequestedReasoningEffort = inputModel, inputEffort
 			return s.send(ctx, pid, id, req, root, model)
 		}
 	}
@@ -495,6 +548,9 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 		return Accepted{}, err
 	}
 	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_workspaces(session_id,workspace_id,cwd) VALUES(?,?,?) ON CONFLICT(session_id) DO NOTHING`, id, d.Session.WorkspaceID, d.Session.WorkspacePath); err != nil {
+		return Accepted{}, err
+	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_messages(id,session_id,role,text,status,client_message_id,created_at) VALUES(?,?,?,?,?,?,?)`, m.ID, id, m.Role, m.Text, m.Status, m.ClientMessageID, m.CreatedAt); err != nil {
 		return Accepted{}, err
 	}
@@ -502,6 +558,9 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 		return Accepted{}, err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_submissions(message_id,requested_model) VALUES(?,?)`, m.ID, req.RequestedModel); err != nil {
+		return Accepted{}, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_submission_inputs(message_id,requested_model,effort) VALUES(?,?,?)`, m.ID, inputModel, inputEffort); err != nil {
 		return Accepted{}, err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_submission_efforts(message_id,effort) VALUES(?,?)`, m.ID, req.RequestedReasoningEffort); err != nil {
