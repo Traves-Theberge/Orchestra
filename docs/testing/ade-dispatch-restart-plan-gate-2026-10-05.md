@@ -29,3 +29,9 @@ The deliberate difference is that Orchestra does not restore or replay a provide
 - No real provider/account action or task mutation was performed by these fixture tests. The separate live restart observation that exposed this bug is recorded by the operator; it is not treated as verification of the fix. The runner-handoff guard has unit/integration coverage only through the focused app lifecycle test, not a provider-backed canary.
 
 The live `plan_approved` history receipt means the reported provider work may have followed a valid earlier approval; the receipt does not establish who submitted it. The stale plan is explained by execution checklist writes and is covered by the lifecycle fixture. These results apply to the current shared working tree, including concurrent account-related edits. Passing unit tests do not certify full restart/E2E reliability.
+
+## Corrected-build live restart observation
+
+The isolated committed-scope build passed `go test -p 1 ./internal/orchestrator ./internal/plangate ./internal/reviewgate ./internal/reviewpipeline ./internal/app` and built successfully. After relaunching the persistent audit profile with that binary, the authenticated CLI observation at 2026-10-05T20:25:10Z found ORCHESTRA-2 still In Progress with stale plan fingerprint `1ad21144046443620e69edb73c00511bb3265f8d4d0ed6a038e837701adacd7e`, unchanged task timestamp, and zero running/retrying workers. The new launch log contained no worktree/provider dispatch for the task. No new plan or PR approval was submitted. The runtime is left running with the task held; returning it to planning requires an explicit scoped replan with feedback rather than editing SQLite.
+
+This is live evidence that this stale task is held after restart on this host. It does not verify every recovery case, provider, approved execution, or PR gate end to end. The in-memory runtime usage totals reset on relaunch; durable usage restoration remains a separate verification gap.
