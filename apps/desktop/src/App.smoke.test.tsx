@@ -732,7 +732,7 @@ describe('App smoke render', () => {
       })
 
       fireEvent.click(screen.getByRole('button', { name: 'Alpha Project' }))
-      fireEvent.click(await screen.findByRole('tab', { name: 'Tasks & settings' }))
+      fireEvent.click(await screen.findByRole('tab', { name: 'Tasks' }))
 
       await waitFor(() => {
         expect(screen.getAllByText('Alpha Project').length).toBeGreaterThan(0)
@@ -771,7 +771,7 @@ describe('App smoke render', () => {
 
       // The ProjectGrid card has a delete button that calls setProjectToDelete
       fireEvent.click(screen.getByRole('button', { name: 'Doomed Project' }))
-      fireEvent.click(await screen.findByRole('tab', { name: 'Tasks & settings' }))
+      fireEvent.click(await screen.findByRole('tab', { name: 'Tasks' }))
       const trashButton = await screen.findByRole('button', { name: 'Remove project' })
       expect(trashButton).toBeTruthy()
       fireEvent.click(trashButton)
@@ -813,7 +813,7 @@ describe('App smoke render', () => {
       })
 
       fireEvent.click(screen.getByRole('button', { name: 'Ghost Project' }))
-      fireEvent.click(await screen.findByRole('tab', { name: 'Tasks & settings' }))
+      fireEvent.click(await screen.findByRole('tab', { name: 'Tasks' }))
 
       await waitFor(() => {
         expect(screen.getByText(/Path not found/i)).toBeTruthy()
@@ -1170,10 +1170,13 @@ describe('App smoke render', () => {
       for (const section of sections) {
         fireEvent.click(screen.getByTestId(section.testId))
         await waitFor(() => {
-          // Drilldown replaces the primary navigation with its section header.
-          expect(screen.getByRole('button', { name: section.label })).toBeTruthy()
+          // Drilldown replaces the primary navigation while the labeled footer stays visible.
+          expect(screen.getByTestId('sidebar-back')).toBeTruthy()
         })
-        fireEvent.click(screen.getByRole('button', { name: section.label }))
+        fireEvent.click(screen.getByRole('button', { name: 'Orchestra main navigation' }))
+        await waitFor(() => {
+          expect(screen.getByRole('navigation', { name: 'Primary navigation' })).toBeTruthy()
+        })
       }
     })
 
@@ -1210,7 +1213,7 @@ describe('App smoke render', () => {
       const lastButton = screen.getByTestId('sidebar-nav-SETTINGS')
       fireEvent.keyDown(lastButton, { key: 'Home' })
       await waitFor(() => {
-        expect(document.activeElement).toBe(screen.getByTestId('sidebar-nav-PROJECTS'))
+        expect(document.activeElement).toBe(screen.getByTestId('sidebar-nav-ORCHESTRATOR'))
       })
     })
 

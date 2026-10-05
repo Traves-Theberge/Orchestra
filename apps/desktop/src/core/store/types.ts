@@ -116,6 +116,9 @@ export interface UISlice {
   createTaskDialogOpen: boolean
   createTaskInitialState: CreateTaskInitialState | null
   createProjectDialogOpen: boolean
+  createWorktreeDialogOpen: boolean
+  createWorktreeProjectId: string | null
+  createAgentWorkspace: SelectedProjectWorkspace | null
   settingsInitialTab: SettingsTab | undefined
   browserHomepage: string
   sidePanelOpen: boolean
@@ -149,6 +152,9 @@ export interface UISlice {
   openCreateTaskDialog: (initialState?: CreateTaskInitialState) => void
   closeCreateTaskDialog: () => void
   setCreateProjectDialogOpen: (open: boolean) => void
+  openCreateWorktreeDialog: (projectId?: string) => void
+  closeCreateWorktreeDialog: () => void
+  openCreateAgentDialog: (workspace: SelectedProjectWorkspace) => void
   setSettingsInitialTab: (tab: SettingsTab | undefined) => void
   setSidePanelOpen: (v: boolean) => void
   toggleSidePanel: () => void
@@ -281,9 +287,22 @@ export interface TerminalsSlice {
 
 type ActiveWorkspaceTab = { type: 'terminal' | 'editor' | 'browser'; id: string } | null
 
+export type SelectedProjectWorkspace = {
+  projectId: string
+  workspaceId: string
+  path: string
+  branch: string
+  registered: boolean
+  isMain: boolean
+}
+
 export interface WorkspaceSlice {
-  requestedWorkspaceConversation: { baseUrl: string; apiToken: string; projectId: string; sessionId: string; requestId: number } | null
-  requestWorkspaceConversation: (projectId: string, sessionId: string) => void
+  workspaceSelections: Record<string, SelectedProjectWorkspace>
+  knownProjectWorkspaces: Record<string, SelectedProjectWorkspace>
+  selectProjectWorkspace: (projectId: string, workspace: SelectedProjectWorkspace) => void
+  activateWorkspaceContext: (contextId: string) => void
+  requestedWorkspaceConversation: { baseUrl: string; apiToken: string; projectId: string; workspaceId?: string; sessionId: string; requestId: number } | null
+  requestWorkspaceConversation: (projectId: string, sessionId: string, workspace?: SelectedProjectWorkspace) => void
   clearWorkspaceConversationRequest: (requestId: number) => void
   // State
   explorerRoot: string | null // active project's explorer root (derived)

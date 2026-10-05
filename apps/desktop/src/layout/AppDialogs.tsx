@@ -15,6 +15,7 @@ import { IssueDetailView, CreateTaskDialog, CreateProjectDialog } from '@layout/
 import { SessionDetailView } from '@features/usage/SessionDetailView'
 import { useAppStore } from '@core/store'
 import type { IssueDetailResult } from '@features/issue-detail/types'
+import { CreateWorktreeDialog } from '@features/projects/CreateWorktreeDialog'
 
 interface AppDialogsProps {
   config: BackendConfig | null
@@ -58,6 +59,9 @@ export function AppDialogs({
   const sessionInspectDialogOpen = useAppStore(s => s.sessionInspectDialogOpen)
   const setSessionInspectDialogOpen = useAppStore(s => s.setSessionInspectDialogOpen)
   const createTaskDialogOpen = useAppStore(s => s.createTaskDialogOpen)
+  const createWorktreeDialogOpen = useAppStore(s => s.createWorktreeDialogOpen)
+  const createWorktreeProjectId = useAppStore(s => s.createWorktreeProjectId)
+  const createAgentWorkspace = useAppStore(s => s.createAgentWorkspace)
   const createProjectDialogOpen = useAppStore(s => s.createProjectDialogOpen)
   const setCreateProjectDialogOpen = useAppStore(s => s.setCreateProjectDialogOpen)
   const projects = useAppStore(s => s.projects)
@@ -125,6 +129,14 @@ export function AppDialogs({
         </DialogContent>
       </Dialog>
 
+      <CreateWorktreeDialog
+        open={createWorktreeDialogOpen}
+        onOpenChange={open => { if (!open) useAppStore.getState().closeCreateWorktreeDialog() }}
+        initialProjectId={createWorktreeProjectId ?? undefined}
+        mode={createAgentWorkspace ? 'agent' : 'worktree'}
+        initialWorkspace={createAgentWorkspace ?? undefined}
+        onAddProject={() => useAppStore.getState().setCreateProjectDialogOpen(true)}
+      />
       <CreateTaskDialog
         open={createTaskDialogOpen}
         onOpenChange={(open) => { if (!open) useAppStore.getState().closeCreateTaskDialog() }}

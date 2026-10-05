@@ -2,6 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   applyWorkspaceMigration,
   fetchState,
+  fetchProjectGitStatus,
+  fetchProjectGitHistory,
+  fetchProjectWorktrees,
+  createWorktreeJob,
+  fetchWorktreeJob,
+  fetchPRSnapshot,
   fetchIssueDetail,
   fetchIssueLogs,
   fetchWorkspaceMigrationPlan,
@@ -12,6 +18,7 @@ import {
   mergePR,
   submitPRReview,
   createWorkspaceChatSession,
+  renameWorkspaceChatSession,
   sendWorkspaceChatMessage,
   replyWorkspaceChatRequest,
   stopWorkspaceChatTurn,
@@ -26,6 +33,48 @@ const config: BackendConfig = {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+})
+
+it('scopes title rename and sends the optimistic title separately from creation preferences', async () => {
+  const fetchMock = vi.fn(async () => new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } }))
+  vi.stubGlobal('fetch', fetchMock)
+  await renameWorkspaceChatSession({ ...config, workspaceId: 'wt_child' }, 'project/a', 'chat/a', 'New title', 'Old title')
+  await createWorkspaceChatSession(config, 'owner', 'codex', 'session-id', { title: 'Named draft', requested_model: 'model' })
+  const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit]>
+  expect(new URL(calls[0][0]).pathname).toBe('/api/v1/projects/project%2Fa/chat/sessions/chat%2Fa/title')
+  expect(new URL(calls[0][0]).searchParams.get('workspace_id')).toBe('wt_child')
+  expect(calls[0][1].method).toBe('PATCH')
+  expect(JSON.parse(String(calls[0][1].body))).toEqual({ title: 'New title', expected_title: 'Old title' })
+  expect(JSON.parse(String(calls[1][1].body))).toEqual({ provider: 'codex', client_session_id: 'session-id', title: 'Named draft', requested_model: 'model' })
+})
+
+it('retains workspace creation identity and leaves creation jobs scoped to their owning project', async () => {
+  const fetchMock = vi.fn(async () => new Response('{}', { status: 202, headers: { 'Content-Type': 'application/json' } }))
+  vi.stubGlobal('fetch', fetchMock)
+  const request = { request_id: '7456d633-bd27-4aa2-8f6a-2062281843e9', name: 'new-agent', branch: 'agent/feature', base_ref: 'origin/main', provider: 'CODEX' }
+  const scoped = { ...config, workspaceId: 'wt_existing' }
+  await createWorktreeJob(scoped, 'owner', request)
+  await fetchWorktreeJob(scoped, 'owner', request.request_id)
+  const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit]>
+  expect(new URL(calls[0][0]).pathname).toBe('/api/v1/projects/owner/worktree-jobs')
+  expect(new URL(calls[1][0]).pathname).toBe(`/api/v1/projects/owner/worktree-jobs/${request.request_id}`)
+  expect(calls.every(([url]) => !new URL(url).searchParams.has('workspace_id'))).toBe(true)
+  expect(JSON.parse(String(calls[0][1].body))).toEqual(request)
+  expect(new Headers(calls[0][1].headers).get('Content-Type')).toBe('application/json')
+})
+
+it('carries exact workspace scope to Git and chat, without scoping project or hosted PR identity', async () => {
+  const fetchMock = vi.fn(async () => new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } }))
+  vi.stubGlobal('fetch', fetchMock)
+  const scoped = { ...config, workspaceId: 'wt_child' }
+  await fetchProjectGitStatus(scoped, 'owner')
+  await fetchProjectGitHistory(scoped, 'owner')
+  await createWorkspaceChatSession(scoped, 'owner', 'CODEX', 'chat-id')
+  await fetchProjectWorktrees(scoped, 'owner')
+  await fetchPRSnapshot(scoped, 'owner', 7)
+  const urls = fetchMock.mock.calls.map(call => new URL(String((call as unknown[])[0])))
+  expect(urls.slice(0, 3).map(url => url.searchParams.get('workspace_id'))).toEqual(['wt_child', 'wt_child', 'wt_child'])
+  expect(urls.slice(3).map(url => url.searchParams.has('workspace_id'))).toEqual([false, false])
 })
 
 it('labels every chat mutation as JSON for the real HTTP content-type guard', async () => {

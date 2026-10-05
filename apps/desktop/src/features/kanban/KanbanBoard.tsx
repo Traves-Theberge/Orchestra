@@ -373,19 +373,20 @@ export function KanbanBoard({
 
   return (
     <div className="flex-1 flex flex-col min-h-0 gap-y-5">
-      <div className="flex items-center gap-1 px-5 pt-4 shrink-0">
-        <button
-          onClick={() => setActiveTab('board')}
-          className={`h-8 px-3 rounded-md text-[12px] font-medium transition-colors ${activeTab === 'board' ? 'bg-foreground/10 text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04]'}`}
-        >
-          Board
-        </button>
-        <button
-          onClick={() => setActiveTab('workitems')}
-          className={`h-8 px-3 rounded-md text-[12px] font-medium transition-colors ${activeTab === 'workitems' ? 'bg-foreground/10 text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04]'}`}
-        >
-          Work Items
-        </button>
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4 shrink-0">
+        <div className="flex flex-wrap items-center gap-1">
+          <button
+            onClick={() => setActiveTab('board')}
+            className={`h-8 px-3 rounded-md text-[12px] font-medium transition-colors ${activeTab === 'board' ? 'bg-foreground/10 text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04]'}`}
+          >
+            Board
+          </button>
+          <button
+            onClick={() => setActiveTab('workitems')}
+            className={`h-8 px-3 rounded-md text-[12px] font-medium transition-colors ${activeTab === 'workitems' ? 'bg-foreground/10 text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04]'}`}
+          >
+            Work Items
+          </button>
 
         {activeTab === 'workitems' && projects.length > 0 && (
           <div className="relative ml-2" ref={pickerRef}>
@@ -417,6 +418,64 @@ export function KanbanBoard({
             )}
           </div>
         )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => handleCreateClick('backlog')}
+            className="h-8 px-3.5 inline-flex items-center gap-1.5 rounded-md bg-foreground text-background hover:bg-foreground/90 text-[12px] font-semibold tracking-tight transition-colors"
+          >
+            <Plus size={13} />
+            Create Task
+          </button>
+          {activeTab === 'board' && (
+            <>
+            {viewMode === 'list' && (
+              <CustomDropdown
+                className="w-40"
+                value={stateFilter}
+                options={[
+                  { label: 'All States', value: 'all', icon: <CircleDashed className="size-3" /> },
+                  { label: 'Backlog', value: 'Backlog', icon: <div className="size-1.5 rounded-full bg-muted-foreground/40" /> },
+                  { label: 'Todo', value: 'Todo', icon: <div className="size-1.5 rounded-full bg-muted-foreground" /> },
+                  { label: 'In Progress', value: 'In Progress', icon: <div className="size-1.5 rounded-full bg-amber-500" /> },
+                  { label: 'Review', value: 'Review', icon: <div className="size-1.5 rounded-full bg-blue-500" /> },
+                  { label: 'Done', value: 'Done', icon: <div className="size-1.5 rounded-full bg-primary" /> },
+                ]}
+                onChange={setStateFilter}
+              />
+            )}
+            {projects.length > 1 && (
+              <CustomDropdown
+                className="w-56"
+                value={projectFilter}
+                options={[
+                  { label: 'All Projects', value: 'all', icon: <FolderTree className="size-3" /> },
+                  ...projects.map((project) => ({ label: project.name, value: project.id, icon: <Folder className="size-3" /> })),
+                ]}
+                onChange={setProjectFilter}
+              />
+            )}
+            <div className="flex items-center rounded-md bg-muted/30 p-0.5">
+              <AppTooltip content="Board view">
+                <button
+                  onClick={() => setViewMode('board')}
+                  className={`grid h-7 w-8 place-items-center rounded transition-colors ${viewMode === 'board' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground/60 hover:text-foreground'}`}
+                >
+                  <Layout className="size-3.5" />
+                </button>
+              </AppTooltip>
+              <AppTooltip content="List view">
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`grid h-7 w-8 place-items-center rounded transition-colors ${viewMode === 'list' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground/60 hover:text-foreground'}`}
+                >
+                  <Rows className="size-3.5" />
+                </button>
+              </AppTooltip>
+            </div>
+            </>
+          )}
+        </div>
       </div>
 
       {activeTab === 'workitems' ? (
@@ -447,65 +506,6 @@ export function KanbanBoard({
 
       {activeTab === 'board' ? (
         <>
-      <div className="flex flex-wrap items-center justify-between gap-3 px-5 pb-3 shrink-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => handleCreateClick('backlog')}
-            className="h-9 px-3.5 inline-flex items-center gap-1.5 rounded-md bg-foreground text-background hover:bg-foreground/90 text-[12px] font-semibold tracking-tight transition-colors"
-          >
-            <Plus size={13} />
-            Create Task
-          </button>
-          {viewMode === 'list' && (
-            <CustomDropdown
-              className="w-40"
-              value={stateFilter}
-              options={[
-                { label: 'All States', value: 'all', icon: <CircleDashed className="size-3" /> },
-                { label: 'Backlog', value: 'Backlog', icon: <div className="size-1.5 rounded-full bg-muted-foreground/40" /> },
-                { label: 'Todo', value: 'Todo', icon: <div className="size-1.5 rounded-full bg-muted-foreground" /> },
-                { label: 'In Progress', value: 'In Progress', icon: <div className="size-1.5 rounded-full bg-amber-500" /> },
-                { label: 'Review', value: 'Review', icon: <div className="size-1.5 rounded-full bg-blue-500" /> },
-                { label: 'Done', value: 'Done', icon: <div className="size-1.5 rounded-full bg-primary" /> },
-              ]}
-              onChange={setStateFilter}
-            />
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
-          {projects.length > 1 && (
-            <CustomDropdown
-              className="w-56"
-              value={projectFilter}
-              options={[
-                { label: 'All Projects', value: 'all', icon: <FolderTree className="size-3" /> },
-                ...projects.map((project) => ({ label: project.name, value: project.id, icon: <Folder className="size-3" /> })),
-              ]}
-              onChange={setProjectFilter}
-            />
-          )}
-          <div className="flex items-center rounded-md bg-muted/30 p-0.5">
-            <AppTooltip content="Board view">
-              <button
-                onClick={() => setViewMode('board')}
-                className={`grid h-7 w-8 place-items-center rounded transition-colors ${viewMode === 'board' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground/60 hover:text-foreground'}`}
-              >
-                <Layout className="size-3.5" />
-              </button>
-            </AppTooltip>
-            <AppTooltip content="List view">
-              <button
-                onClick={() => setViewMode('list')}
-                className={`grid h-7 w-8 place-items-center rounded transition-colors ${viewMode === 'list' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground/60 hover:text-foreground'}`}
-              >
-                <Rows className="size-3.5" />
-              </button>
-            </AppTooltip>
-          </div>
-        </div>
-      </div>
-
       {dragValidationMsg && (
         <div className="mx-4 mb-2 px-4 py-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-500 text-[11px] font-bold animate-in fade-in slide-in-from-top-2 duration-300">
           {dragValidationMsg}

@@ -10,6 +10,7 @@ vi.mock('@core/api/client', () => ({
   fetchWorkspaceChatProviders: vi.fn(), listWorkspaceChatSessions: vi.fn(),
   fetchWorkspaceChatModels: vi.fn(),
   createWorkspaceChatSession: vi.fn(), fetchWorkspaceChat: vi.fn(),
+  renameWorkspaceChatSession: vi.fn(),
   sendWorkspaceChatMessage: vi.fn(), stopWorkspaceChatTurn: vi.fn(),
   replyWorkspaceChatRequest: vi.fn(),
 }))
@@ -49,6 +50,47 @@ async function selectConversation(title = 'Review changes') {
 }
 
 describe('WorkspaceChat', () => {
+  it('renames inline and reconciles a committed mutation with a lost response', async () => {
+    open(); await selectConversation()
+    vi.mocked(api.renameWorkspaceChatSession).mockRejectedValue(new Error('Response lost'))
+    vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({ session: { ...session, title: 'Named conversation' }, messages: [] })
+    fireEvent.click(screen.getByRole('button', { name: 'Rename conversation: Review changes' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Conversation name' }), { target: { value: ' Named conversation ' } })
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Conversation name' }), { key: 'Enter' })
+    await screen.findByRole('button', { name: 'Rename conversation: Named conversation' })
+    expect(api.renameWorkspaceChatSession).toHaveBeenCalledWith(config, 'project-a', 'chat-a', 'Named conversation', 'Review changes')
+    expect(api.sendWorkspaceChatMessage).not.toHaveBeenCalled()
+  })
+
+  it('keeps an editable new conversation name without creating or sending, then restores it', async () => {
+    const rendered = open()
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message agent' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Rename conversation: New conversation' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Conversation name' }), { target: { value: 'Future work' } })
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Conversation name' }), { key: 'Enter' })
+    await screen.findByRole('button', { name: 'Rename conversation: Future work' })
+    expect(api.createWorkspaceChatSession).not.toHaveBeenCalled()
+    expect(api.sendWorkspaceChatMessage).not.toHaveBeenCalled()
+    rendered.unmount(); open()
+    await screen.findByRole('button', { name: 'Rename conversation: Future work' })
+    vi.mocked(api.createWorkspaceChatSession).mockImplementation(async (_config, _project, _provider, id) => ({ ...session, id: id!, title: 'Future work' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Message agent' }), { target: { value: 'Start work' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
+    await waitFor(() => expect(api.createWorkspaceChatSession).toHaveBeenCalledWith(config, 'project-a', 'codex', expect.any(String), { title: 'Future work' }))
+  })
+
+  it('rejects a foreign rename recovery without replacing the current conversation', async () => {
+    open(); await selectConversation()
+    vi.mocked(api.renameWorkspaceChatSession).mockRejectedValue(new Error('Response lost'))
+    vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({ session: { ...session, project_id: 'foreign', title: 'Foreign' }, messages: [] })
+    fireEvent.click(screen.getByRole('button', { name: 'Rename conversation: Review changes' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Conversation name' }), { target: { value: 'Attempt' } })
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Conversation name' }), { key: 'Enter' })
+    await screen.findByText(/belongs to another workspace/)
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Conversation name' }), { key: 'Escape' })
+    expect(screen.getByRole('button', { name: 'Rename conversation: Review changes' })).toBeVisible()
+    expect(screen.queryByText('Foreign')).not.toBeInTheDocument()
+  })
   it('opens a sidebar-requested conversation without sending a message', async () => {
     useAppStore.setState({ config, projects: [{ id: 'project-a', name: 'Alpha', root_path: '/alpha', remote_url: '' }] })
     open()

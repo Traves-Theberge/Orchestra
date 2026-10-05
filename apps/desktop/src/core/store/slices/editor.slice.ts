@@ -5,6 +5,7 @@
 import type { StateCreator } from 'zustand'
 import { DEFAULT_EDITOR_SETTINGS, GLOBAL_PROJECT_ID } from '../types'
 import type { AppState, EditorSettings, EditorSlice, OpenFile, WorkspaceContextID } from '../types'
+import { getActiveWorkspaceContextId } from '../workspace-context'
 
 const EDITOR_SETTINGS_KEY = 'orchestra.editor.settings'
 
@@ -61,8 +62,8 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
   // ---- Actions --------------------------------------------------------------
   openFile: (filePath: string, relativePath: string, revealLine?: number, projectId?: WorkspaceContextID) => {
     const state = get()
-    const { openFiles, config, activeProjectId } = state
-    const targetProjectId = projectId ?? activeProjectId ?? GLOBAL_PROJECT_ID
+    const { openFiles, config } = state
+    const targetProjectId = projectId ?? getActiveWorkspaceContextId(state) ?? GLOBAL_PROJECT_ID
     console.log('[editor] openFile', { filePath, relativePath, revealLine, projectId: targetProjectId, hasConfig: !!config?.baseUrl })
     const existing = openFiles.find((f) => f.filePath === filePath)
     if (existing) {
@@ -70,11 +71,11 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
         activeFileId: existing.id,
         activeWorkspaceTab: { type: 'editor', id: existing.id },
         // If the file lives in a different project tab, switch to that project
-        activeProjectId: existing.projectId,
         openFiles: openFiles.map((f) =>
           f.id === existing.id ? { ...f, pendingReveal: revealLine ?? f.pendingReveal ?? null } : f,
         ),
       })
+      get().activateWorkspaceContext?.(existing.projectId)
       // Make sure the tab is reflected in some group of the project (and active).
       // The fn is part of WorkspaceSlice — guard for slice-isolated tests.
       get().addTabToGroup?.(existing.projectId, { type: 'editor', id: existing.id })

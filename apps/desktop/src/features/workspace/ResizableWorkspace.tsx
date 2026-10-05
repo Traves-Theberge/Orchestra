@@ -42,7 +42,7 @@ export function ResizableWorkspace({ storageKey, toolsOpen, chat, tools }: {
     <div aria-label="Workspace chat pane" hidden={maximized} className={`${maximized ? 'hidden' : ''} min-h-0 min-w-0`} style={{ flex: toolsOpen ? '0 1 var(--chat-share)' : '1 1 0%' }}>{chat}</div>
     {toolsOpen && !maximized && <div role="separator" aria-orientation={wide ? 'vertical' : 'horizontal'} aria-label="Resize chat and workspace tools" aria-valuemin={25} aria-valuemax={80} aria-valuenow={Math.round(percent)} tabIndex={0}
       title="Drag to resize · Arrow keys to adjust · Double-click to reset"
-      className="group relative z-10 h-2 shrink-0 touch-none cursor-row-resize select-none bg-border/30 hover:bg-primary/20 focus-visible:bg-primary/20 focus-visible:outline-none lg:h-auto lg:w-2 lg:cursor-col-resize"
+      className="group relative z-10 h-2 shrink-0 touch-none cursor-row-resize select-none bg-transparent hover:bg-primary/10 focus-visible:bg-primary/10 focus-visible:outline-none lg:h-auto lg:w-2 lg:cursor-col-resize"
       onDoubleClick={() => save(60)}
       onKeyDown={event => {
         const step = event.shiftKey ? 10 : 2

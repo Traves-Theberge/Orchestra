@@ -29,6 +29,8 @@ func (s *Server) chatError(w http.ResponseWriter, err error) {
 		code, status, message = "chat_busy", 409, err.Error()
 	case errors.Is(err, workspacechat.ErrConflict):
 		code, status, message = "chat_identity_conflict", 409, err.Error()
+	case errors.Is(err, workspacechat.ErrTitleConflict):
+		code, status, message = "chat_title_conflict", 409, err.Error()
 	case errors.Is(err, workspacechat.ErrInvalid):
 		code, status, message = "invalid_chat_request", 400, err.Error()
 	case errors.Is(err, workspacechat.ErrUnsupported):

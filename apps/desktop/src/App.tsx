@@ -8,6 +8,7 @@ import {
 import type { SessionSummary } from '@core/api/types'
 import { ProjectDetailView } from '@features/projects/ProjectDetailView'
 import { WorkspaceChat } from '@features/workspace/chat/WorkspaceChat'
+import { getActiveWorkspaceContextId, selectedProjectWorkspace } from '@core/store/workspace-context'
 import { UsagePage } from '@features/usage/UsagePage'
 import { UsageStatusBar } from '@features/usage/UsageStatusBar'
 import { TerminalMultiplexer } from '@features/terminal/TerminalMultiplexer'
@@ -269,9 +270,9 @@ export default function App() {
         e.preventDefault()
         const s = useAppStore.getState()
         s.setActiveSection('CONSOLE')
-        const pid = s.activeProjectId
-        const proj = s.projects.find((p) => p.id === pid)
-        const root = proj?.root_path || s.explorerRoot
+        const pid = getActiveWorkspaceContextId(s)
+        const proj = s.projects.find((p) => p.id === s.activeProjectId)
+        const root = selectedProjectWorkspace(s)?.path || s.explorerRoot || proj?.root_path
         const cfg = s.config
         if (!root || !cfg?.baseUrl) return
         const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
@@ -290,15 +291,15 @@ export default function App() {
         e.preventDefault()
         const s = useAppStore.getState()
         s.setActiveSection('CONSOLE')
-        const pid = s.activeProjectId
+        const pid = getActiveWorkspaceContextId(s)
         const focusedGroupId = s.projectFocusedGroupId[pid]
         if (focusedGroupId) {
           const id = `shell-${Date.now()}`
-          const proj = s.projects.find((p) => p.id === pid)
-          const cwd = proj?.root_path
-          const initialCommand = cwd ? `cd '${cwd}' && clear` : undefined
+          const proj = s.projects.find((p) => p.id === s.activeProjectId)
+          const cwd = selectedProjectWorkspace(s)?.path || proj?.root_path
+          const initialCommand = undefined
           const title = proj ? `${proj.name} Shell` : 'Shell'
-          s.setOpenTerminals([...s.openTerminals, { id, title, projectId: proj ? pid : undefined, cwd, initialCommand }])
+          s.setOpenTerminals([...s.openTerminals, { id, title, projectId: proj?.id, cwd, initialCommand }])
           s.addTabToGroup(pid, { type: 'terminal', id }, focusedGroupId)
         }
         return
@@ -477,14 +478,12 @@ export default function App() {
                     />}
                     onAddTerminal={() => {
                       const state = useAppStore.getState()
-                      const projectId = state.activeProjectId
-                      const proj = state.projects.find(p => p.id === projectId)
+                      const projectId = getActiveWorkspaceContextId(state)
+                      const proj = state.projects.find(p => p.id === state.activeProjectId)
                       const title = proj ? `${proj.name} Shell` : 'Shell'
-                      const realProjectId = proj ? projectId : undefined
-                      const cwd = proj?.root_path ?? undefined
-                      const initialCommand = cwd
-                        ? `cd "${cwd.replace(/"/g, '\\"')}" && clear`
-                        : undefined
+                      const realProjectId = proj?.id
+                      const cwd = selectedProjectWorkspace(state)?.path ?? proj?.root_path ?? undefined
+                      const initialCommand = undefined
                       const id = `shell-${Date.now()}`
                       setOpenTerminals([
                         ...state.openTerminals,

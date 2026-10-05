@@ -27,6 +27,8 @@ type route struct {
 // silent drift fails CI loudly. Path params are substituted with the
 // `pathParam(...)` placeholder so the chi mux actually matches.
 var allRoutes = []route{
+	{"PATCH", "/api/v1/projects/x/chat/sessions/x/title", false},
+	{"PATCH", "/api/v1/orchestrator/chat/sessions/x/title", false},
 	// Public — no bearer token required
 	{"GET", "/", true},
 	{"GET", "/healthz", true},
@@ -269,7 +271,7 @@ func newAuthMatrixRouter(t *testing.T) http.Handler {
 // sync with router.go. If routes are added or removed and the table
 // isn't updated, this test fails so the gap is loud.
 func TestAuthMatrixCoversAllRoutes(t *testing.T) {
-	const expectedRoutes = 189
+	const expectedRoutes = 191
 	if got := len(allRoutes); got != expectedRoutes {
 		t.Fatalf("auth matrix has %d routes, want %d — keep allRoutes in sync with router.go", got, expectedRoutes)
 	}

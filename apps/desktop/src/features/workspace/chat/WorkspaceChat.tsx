@@ -7,7 +7,7 @@ import { useAppStore } from '@core/store'
 import { ChatUsage } from './ChatUsage'
 import { chatDraftStorageKey, readChatDraftReceipt, writeChatDraftReceipt } from './chat-draft-storage'
 import {
-  createWorkspaceChatSession, fetchWorkspaceChat, fetchWorkspaceChatProviders, fetchWorkspaceChatModels,
+  createWorkspaceChatSession, renameWorkspaceChatSession, fetchWorkspaceChat, fetchWorkspaceChatProviders, fetchWorkspaceChatModels,
   listWorkspaceChatSessions, sendWorkspaceChatMessage, stopWorkspaceChatTurn, replyWorkspaceChatRequest,
   type BackendConfig, type WorkspaceChatProvider, type WorkspaceChatSession,
   type WorkspaceChatSnapshot, type WorkspaceChatRequest, type WorkspaceChatEvent, type WorkspaceChatModelCatalog,
@@ -94,13 +94,13 @@ function RuntimeRequestCard({ request, disabled, onReply }: { request: Workspace
 
 /** Mounted with a backend/project key: no draft or session is shared across workspaces. */
 type WorkspaceChatProps = {
-  config: BackendConfig; projectId: string; projectName: string; headerTools?: ReactNode; active?: boolean
+  config: BackendConfig; projectId: string; projectName: string; headerTools?: ReactNode; headerNavigation?: ReactNode; contentOverride?: ReactNode; onShowChat?: () => void; active?: boolean
 }
 export function WorkspaceChat(props: WorkspaceChatProps) {
   // This key stays in React memory; persisted keys are credential digests only.
-  return <ScopedWorkspaceChat key={JSON.stringify([props.config.baseUrl, props.config.apiToken, props.projectId])} {...props} />
+  return <ScopedWorkspaceChat key={JSON.stringify([props.config.baseUrl, props.config.apiToken, props.projectId, props.config.workspaceId ?? ''])} {...props} />
 }
-function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, active = true }: WorkspaceChatProps) {
+function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, headerNavigation, contentOverride, onShowChat, active = true }: WorkspaceChatProps) {
   const requestedConversation = useAppStore(state => state.requestedWorkspaceConversation)
   const [providers, setProviders] = useState<WorkspaceChatProvider[]>([])
   const [sessions, setSessions] = useState<WorkspaceChatSession[]>([])
@@ -112,6 +112,9 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, acti
   const [threadsOpen, setThreadsOpen] = useState(false)
   const [snapshot, setSnapshot] = useState<WorkspaceChatSnapshot | null>(null)
   const [draft, setDraft] = useState('')
+  const [draftTitle, setDraftTitle] = useState('')
+  const [titleEditor, setTitleEditor] = useState<{ id: string; original: string; value: string } | null>(null)
+  const titleSaving = useRef(false)
   const drafts = useRef<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [pending, setPending] = useState(false)
@@ -124,7 +127,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, acti
   const mutationPending = useRef(false)
   const submitted = useRef<{ sessionId: string; messageId: string; text: string } | null>(null)
   const submittedReply = useRef<{ sessionId: string; requestId: string } | null>(null)
-  const creating = useRef<{ sessionId: string; provider: string; uncertain: boolean } | null>(null)
+  const creating = useRef<{ sessionId: string; provider: string; title?: string; uncertain: boolean } | null>(null)
   const storageKey = useRef('')
   const storageBaseUrl = config.baseUrl
   const storageApiToken = config.apiToken
@@ -155,19 +158,20 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, acti
   const persist = (selectedId = sessionId) => {
     if (!storageKey.current) return
     if (!writeChatDraftReceipt(storageKey.current, {
-      version: 1, sessionId: selectedId, provider, drafts: drafts.current,
-      creation: creating.current ? { sessionId: creating.current.sessionId, provider: creating.current.provider } : null,
+      version: 1, sessionId: selectedId, provider, drafts: drafts.current, title: draftTitle,
+      creation: creating.current ? { sessionId: creating.current.sessionId, provider: creating.current.provider, title: creating.current.title } : null,
       submission: submitted.current, reply: submittedReply.current,
       blockedRequests: submittedReply.current ? { ...blockedRequests, [submittedReply.current.requestId]: true } : blockedRequests, uncertainSession,
     })) setStorageWarning('Draft storage is unavailable. Keep this tab open to retain unsent drafts and recovery identities.')
   }
   useEffect(() => {
     let cancelled = false
-    void chatDraftStorageKey({ baseUrl: storageBaseUrl, apiToken: storageApiToken }, projectId).then(key => {
+    void chatDraftStorageKey({ baseUrl: storageBaseUrl, apiToken: storageApiToken, workspaceId: config.workspaceId }, projectId).then(key => {
       if (cancelled) return
       storageKey.current = key
       const saved = readChatDraftReceipt(key)
       if (saved) {
+        setDraftTitle(saved.title ?? '')
         // Input typed while the digest is loading belongs to the fresh draft.
         drafts.current = { ...saved.drafts, ...drafts.current }
         creating.current = saved.creation ? { ...saved.creation, uncertain: true } : null
@@ -186,7 +190,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, acti
       setStorageReady(true)
     }).catch(() => { if (!cancelled) { setStorageWarning('Draft storage is unavailable. Keep this tab open to retain unsent drafts and recovery identities.'); setStorageReady(true) } })
     return () => { cancelled = true }
-  }, [storageBaseUrl, storageApiToken, projectId])
+  }, [storageBaseUrl, storageApiToken, projectId, config.workspaceId])
   useEffect(() => { if (storageReady) persist() })
 
   useEffect(() => {
@@ -211,6 +215,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, acti
       .then(([catalog, history]) => {
         if (cancelled || generation.current !== epoch) return
         if (!Array.isArray(catalog.providers) || !Array.isArray(history.sessions)) throw new Error('Workspace chat returned an invalid provider or session catalog. Refresh before continuing.')
+        if (history.sessions.some(session => session.project_id !== projectId || (config.workspaceId && session.workspace_id !== config.workspaceId))) throw new Error('Conversation history belongs to another workspace.')
         setProviders(catalog.providers)
         setSessions(history.sessions)
         setProvider(previous => catalog.providers.some(p => p.id === previous && p.enabled)
@@ -229,7 +234,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, acti
       try {
         const result = await fetchWorkspaceChat(config, projectId, sessionId)
         if (cancelled) return
-        if (result.session.project_id !== projectId || result.session.id !== sessionId) {
+        if (result.session.project_id !== projectId || result.session.id !== sessionId || (config.workspaceId && result.session.workspace_id !== config.workspaceId)) {
           throw new Error('Chat response belongs to another workspace.')
         }
         setSnapshot(result)
@@ -302,18 +307,19 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, acti
 
   const newConversation = () => {
     if (pending || mutationPending.current || creating.current) return
-    setSessionId(''); setSnapshot(null); setError(null); setObservationError(null)
+    onShowChat?.()
+    setSessionId(''); setSnapshot(null); setError(null); setObservationError(null); setTitleEditor(null); setDraftTitle('')
     setDraft(drafts.current[''] ?? ''); setThreadsOpen(false)
     textareaRef.current?.focus()
   }
   const chooseConversation = (id: string) => {
     if (pending) return
-    setSessionId(id); setSnapshot(null); setError(null); setObservationError(null)
+    setSessionId(id); setSnapshot(null); setError(null); setObservationError(null); setTitleEditor(null)
     setDraft(drafts.current[id] ?? ''); setThreadsOpen(false)
   }
   useEffect(() => {
     const request = requestedConversation
-    if (!request || !active || loading || pending || mutationPending.current || creating.current || request.projectId !== projectId || request.baseUrl !== config.baseUrl || request.apiToken !== config.apiToken) return
+    if (!request || !active || loading || pending || mutationPending.current || creating.current || request.projectId !== projectId || request.baseUrl !== config.baseUrl || request.apiToken !== config.apiToken || request.workspaceId !== config.workspaceId) return
     let cancelled = false
     void Promise.resolve().then(() => {
       if (cancelled) return
@@ -328,14 +334,14 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, acti
     return () => { cancelled = true }
     // Selection uses this render's session list and draft recovery state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requestedConversation, active, loading, pending, projectId, config.baseUrl, config.apiToken, sessions])
+  }, [requestedConversation, active, loading, pending, projectId, config.baseUrl, config.apiToken, config.workspaceId, sessions])
   const retryCreate = () => {
     const creation = creating.current
     if (!creation || !creation.uncertain || pending || mutationPending.current) return
     creation.uncertain = false
     void mutate(async () => {
       const epoch = generation.current
-      const session = await createWorkspaceChatSession(config, projectId, creation.provider, creation.sessionId)
+      const session = creation.title ? await createWorkspaceChatSession(config, projectId, creation.provider, creation.sessionId, { title: creation.title }) : await createWorkspaceChatSession(config, projectId, creation.provider, creation.sessionId)
       if (generation.current !== epoch) return
       if (session.project_id !== projectId || session.provider !== creation.provider || session.id !== creation.sessionId) throw new Error('Created conversation belongs to another workspace or provider.')
       const result = await fetchWorkspaceChat(config, projectId, creation.sessionId)
@@ -359,11 +365,11 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, acti
     void mutate(async () => {
       const epoch = generation.current
       if (!sessionId) {
-        creating.current = { sessionId: targetId, provider, uncertain: false }
+        creating.current = { sessionId: targetId, provider, title: draftTitle || undefined, uncertain: false }
         setSessionId(targetId)
         drafts.current[targetId] = text
         persist(targetId)
-        const session = await createWorkspaceChatSession(config, projectId, provider, targetId)
+        const session = draftTitle ? await createWorkspaceChatSession(config, projectId, provider, targetId, { title: draftTitle }) : await createWorkspaceChatSession(config, projectId, provider, targetId)
         if (generation.current !== epoch) return
         if (session.project_id !== projectId || session.provider !== provider || session.id !== targetId) throw new Error('Created conversation belongs to another workspace or provider.')
         creating.current = null
@@ -402,6 +408,40 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, acti
     })
   }
 
+  const conversationTitle = snapshot?.session.title || draftTitle || 'New conversation'
+  const saveTitle = async () => {
+    const edit = titleEditor
+    if (!edit || titleSaving.current || mutationPending.current) return
+    const title = edit.value.trim()
+    if (!title || Array.from(title).length > 200) { setError('Conversation name must contain 1–200 characters.'); return }
+    if (!edit.id) { setDraftTitle(title); setTitleEditor(null); setError(null); return }
+    if (title === edit.original) { setTitleEditor(null); return }
+    titleSaving.current = true
+    mutationPending.current = true
+    setPending(true)
+    const epoch = generation.current
+    try {
+      let renamed: WorkspaceChatSession
+      try { renamed = await renameWorkspaceChatSession(config, projectId, edit.id, title, edit.original) }
+      catch (failure) {
+        // A lost response may have committed. Observe before reporting or retrying.
+        const observed = await fetchWorkspaceChat(config, projectId, edit.id)
+        if (observed.session.id !== edit.id || observed.session.project_id !== projectId || (config.workspaceId && observed.session.workspace_id !== config.workspaceId)) throw new Error('Rename observation belongs to another workspace.')
+        if (observed.session.title !== title) {
+          if (generation.current === epoch) { setSnapshot(observed); setSessions(previous => previous.map(s => s.id === edit.id ? observed.session : s)) }
+          throw failure
+        }
+        renamed = observed.session
+      }
+      if (generation.current !== epoch) return
+      if (renamed.id !== edit.id || renamed.project_id !== projectId || (config.workspaceId && renamed.workspace_id !== config.workspaceId)) throw new Error('Rename response belongs to another workspace.')
+      setSnapshot(previous => previous?.session.id === edit.id ? { ...previous, session: renamed } : previous)
+      setSessions(previous => previous.map(s => s.id === edit.id ? renamed : s))
+      setTitleEditor(null); setError(null)
+    } catch (failure) { if (generation.current === epoch) setError(errorText(failure)) }
+    finally { titleSaving.current = false; mutationPending.current = false; if (generation.current === epoch) setPending(false) }
+  }
+
   const reply = (request: WorkspaceChatRequest, answer: Record<string, unknown>) => {
     if (request.status !== 'pending' || pending || observationError || blockedRequests[request.id]) return
     setBlockedRequests(previous => ({ ...previous, [request.id]: true }))
@@ -418,16 +458,23 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, acti
 
   return (
     <section aria-label={`${projectName} workspace chat`} onKeyDown={e => { if (e.key === 'Escape' && !e.nativeEvent.isComposing && working) { e.preventDefault(); interrupt() } }} className="relative flex h-full min-h-0 min-w-0 flex-col bg-background">
-      <header className="flex shrink-0 flex-wrap items-center gap-2 px-4 py-2.5">
+      <header className="shrink-0 px-3 pt-1">
+        <div className="flex min-h-9 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
         <button aria-label="Toggle conversations" aria-expanded={threadsOpen} title="Conversations" onClick={() => setThreadsOpen(open => !open)} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent"><MessageSquare className="size-4" /></button>
         <span className="max-w-36 truncate text-[11px] text-muted-foreground">{projectName}</span><ChevronRight className="size-3 shrink-0 text-muted-foreground/50" />
-        <h2 className="min-w-0 flex-1 truncate text-[13px] font-medium">{snapshot?.session.title || 'New chat'}</h2>
-        {(working || observationError) && <span className="text-[10px] text-muted-foreground">{observationError ? 'Disconnected' : 'Working'}</span>}
-        <button aria-label="Refresh conversations" title="Refresh conversations" onClick={() => setRevision(r => r + 1)} disabled={pending} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent disabled:opacity-40"><RefreshCcw className="size-3.5" /></button>
-        <button aria-label="New conversation" title="New chat" onClick={newConversation} disabled={pending || working || !!creating.current} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent disabled:opacity-40"><Plus className="size-4" /></button>
-        {headerTools}
+        <h2 className="min-w-8 flex-1 truncate text-[13px] font-medium">{titleEditor ? <input autoFocus aria-label="Conversation name" value={titleEditor.value} disabled={pending} onFocus={e => e.currentTarget.select()} onChange={e => setTitleEditor({ ...titleEditor, value: e.target.value })} onBlur={() => { void saveTitle() }} onKeyDown={e => { if (e.nativeEvent.isComposing) return; if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); void saveTitle() } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setTitleEditor(null) } }} className="w-full rounded border border-border bg-background px-1 outline-none focus:border-primary" /> : <button type="button" aria-label={`Rename conversation: ${conversationTitle}`} title={conversationTitle} disabled={pending || !!creating.current || (sessionId !== '' && snapshot?.session.id !== sessionId)} onClick={() => setTitleEditor({ id: sessionId, original: conversationTitle, value: conversationTitle })} className="block w-full truncate rounded px-1 text-left hover:bg-accent disabled:opacity-50">{conversationTitle}</button>}</h2>
+        {headerNavigation}
+        {(working || observationError) && <span className="shrink-0 text-[10px] text-muted-foreground">{observationError ? 'Disconnected' : 'Working'}</span>}
+        <div className="flex shrink-0 items-center gap-0.5">
+          <button aria-label="Refresh conversations" title="Refresh conversations" onClick={() => setRevision(r => r + 1)} disabled={pending} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent disabled:opacity-40"><RefreshCcw className="size-3.5" /></button>
+          <button aria-label="New conversation" title="New chat" onClick={newConversation} disabled={pending || working || !!creating.current} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent disabled:opacity-40"><Plus className="size-4" /></button>
+          {headerTools}
+        </div>
+        </div>
       </header>
-      {threadsOpen && <nav aria-label="Workspace conversations" className="absolute bottom-0 left-0 top-11 z-30 flex w-64 max-w-[85%] flex-col border-r border-border bg-card p-3 shadow-xl"><button onClick={newConversation} disabled={pending || !!creating.current} className="mb-3 flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs hover:bg-accent"><Plus className="size-3.5" />New chat</button><p className="mb-2 px-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Conversations</p><div className="min-h-0 flex-1 space-y-1 overflow-auto">{creating.current && !sessions.some(session => session.id === creating.current?.sessionId) && <button disabled={pending} onClick={() => chooseConversation(creating.current!.sessionId)} className="block w-full rounded-lg border border-border px-3 py-2 text-left text-xs hover:bg-accent">Recover pending chat<span className="block text-[10px] text-muted-foreground">Creation outcome unknown</span></button>}{sessions.map(session => <button key={session.id} aria-label={`Open conversation: ${session.title || 'Conversation'}`} aria-current={session.id === sessionId ? 'page' : undefined} disabled={pending} onClick={() => chooseConversation(session.id)} className={`block w-full rounded-lg px-3 py-2 text-left hover:bg-accent disabled:opacity-40 ${session.id === sessionId ? 'bg-accent' : ''}`}><span className="block truncate text-xs">{session.title || 'Conversation'}</span><span className="text-[10px] capitalize text-muted-foreground">{session.provider} · {session.status}</span></button>)}{!loading && !sessions.length && <p className="px-2 text-xs text-muted-foreground">Your chats will appear here.</p>}</div></nav>}
+      {!contentOverride && threadsOpen && <nav aria-label="Workspace conversations" className="absolute bottom-0 left-0 top-11 z-30 flex w-64 max-w-[85%] flex-col border-r border-border bg-card p-3 shadow-xl"><button onClick={newConversation} disabled={pending || !!creating.current} className="mb-3 flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs hover:bg-accent"><Plus className="size-3.5" />New chat</button><p className="mb-2 px-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Conversations</p><div className="min-h-0 flex-1 space-y-1 overflow-auto">{creating.current && !sessions.some(session => session.id === creating.current?.sessionId) && <button disabled={pending} onClick={() => chooseConversation(creating.current!.sessionId)} className="block w-full rounded-lg border border-border px-3 py-2 text-left text-xs hover:bg-accent">Recover pending chat<span className="block text-[10px] text-muted-foreground">Creation outcome unknown</span></button>}{sessions.map(session => <button key={session.id} aria-label={`Open conversation: ${session.title || 'Conversation'}`} aria-current={session.id === sessionId ? 'page' : undefined} disabled={pending} onClick={() => chooseConversation(session.id)} className={`block w-full rounded-lg px-3 py-2 text-left hover:bg-accent disabled:opacity-40 ${session.id === sessionId ? 'bg-accent' : ''}`}><span className="block truncate text-xs">{session.title || 'Conversation'}</span><span className="text-[10px] capitalize text-muted-foreground">{session.provider} · {session.status}</span></button>)}{!loading && !sessions.length && <p className="px-2 text-xs text-muted-foreground">Your chats will appear here.</p>}</div></nav>}
+      {contentOverride && <div className="min-h-0 flex-1 overflow-auto">{contentOverride}</div>}
+      <div hidden={!!contentOverride} className={`${contentOverride ? 'hidden' : 'flex'} min-h-0 flex-1 flex-col`}>
       {(error || observationError) && <div role="alert" className="border-b border-destructive/20 bg-destructive/5 px-5 py-3 text-xs text-destructive">{error || observationError}</div>}
       {creating.current?.uncertain && creating.current.sessionId === sessionId && <div className="px-5 py-2"><button disabled={pending} onClick={retryCreate} className="rounded-md border border-border px-3 py-1.5 text-xs disabled:opacity-40">Retry creating chat</button><p className="mt-1 text-[10px] text-muted-foreground">Reuses the same conversation identity. Your message stays unsent.</p></div>}
       <div ref={timelineRef} aria-label="Chat timeline" onScroll={e => { const el = e.currentTarget; followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; setShowJump(!followRef.current) }} className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6">
@@ -474,6 +521,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, acti
         {!loading && !sessionId && !selectedProvider?.enabled && <p className="mt-2 text-xs text-muted-foreground">{providers.map(p => `${p.label}: ${p.reason || 'unavailable'}`).join(' · ') || 'Workspace chat is unavailable on this backend. Refresh after updating the backend.'}</p>}
         <div className="mt-2 flex items-start justify-between gap-3 text-[10px] text-muted-foreground/70"><span>{working ? 'Drafts stay unsent until the current turn finishes · Esc to interrupt' : 'Enter to send · Shift+Enter for a new line'}</span>{snapshot && <details className="max-w-[60%] text-right"><summary className="cursor-pointer">{nativeSession ? 'Native session' : 'Transcript replay'} · Session details</summary><div className="mt-2 space-y-1 break-words text-left text-[10px]"><p>{snapshot.session.provider} · {snapshot.session.conversation_mode === 'native_session' ? 'Native provider session' : snapshot.session.conversation_mode === 'transcript_replay' ? 'Conversation history is supplied to each fresh agent turn' : snapshot.session.conversation_mode} · {snapshot.session.effective_model ? `Model: ${snapshot.session.effective_model}` : 'Model not observed'}</p>{snapshot.session.provider_thread_id && <p className="break-all">Provider thread: {snapshot.session.provider_thread_id}</p>}{snapshot.session.requested_model && <p>Requested model: {snapshot.session.requested_model}</p>}{snapshot.session.requested_reasoning_effort && <p>Requested effort: {snapshot.session.requested_reasoning_effort}</p>}<p>Observed effort: {snapshot.session.effective_reasoning_effort || 'unknown'}</p>{(snapshot.session.approval_policy || snapshot.session.sandbox_mode) && <p>Approvals: {snapshot.session.approval_policy || 'not observed'} · Sandbox: {snapshot.session.sandbox_mode || 'not observed'}</p>}<ProviderUsage events={snapshot.events ?? []} />{!nativeSession && <p>Model selection is unavailable for this transcript-replay conversation.</p>}</div></details>}</div>
       </footer>
+      </div>
     </section>
   )
 }

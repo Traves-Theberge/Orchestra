@@ -240,6 +240,21 @@ func TestWorkspaceChatHTTPRoutes(t *testing.T) {
 		t.Fatalf("invalid identity %d", status)
 	}
 	path := base + "/sessions/" + sess.ID
+	if status, _ := call("PATCH", path+"/title", `{"title":"Human label","expected_title":"New conversation"}`, false); status != 401 {
+		t.Fatalf("rename auth %d", status)
+	}
+	if status, _ := call("PATCH", path+"/title", `{"title":" " ,"expected_title":"New conversation"}`, true); status != 400 {
+		t.Fatalf("rename validation %d", status)
+	}
+	if status, body := call("PATCH", path+"/title", `{"title":"Human label","expected_title":"New conversation"}`, true); status != 200 || !strings.Contains(string(body), `"title":"Human label"`) {
+		t.Fatalf("rename %d %s", status, body)
+	}
+	if status, _ := call("PATCH", path+"/title", `{"title":"Stale label","expected_title":"New conversation"}`, true); status != 409 {
+		t.Fatalf("rename conflict %d", status)
+	}
+	if status, _ := call("PATCH", "/api/v1/projects/wrong/chat/sessions/"+sess.ID+"/title", `{"title":"Other","expected_title":"Human label"}`, true); status != 404 {
+		t.Fatalf("rename scope %d", status)
+	}
 	if status, _ := call("GET", "/api/v1/projects/wrong/chat/sessions/"+sess.ID, "", true); status != 404 {
 		t.Fatalf("scope %d", status)
 	}

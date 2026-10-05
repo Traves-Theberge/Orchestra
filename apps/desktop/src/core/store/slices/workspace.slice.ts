@@ -6,6 +6,7 @@ import type { StateCreator } from 'zustand'
 import { GLOBAL_PROJECT_ID } from '../types'
 import type { AppState, WorkspaceSlice, TreeNode, WorkspaceContextID, TabRef, TabGroup, TabGroupLayoutNode } from '../types'
 import { newGroupId, splitLeaf, removeLeaf, updateNodeAtPath, collectGroupIds } from '../group-helpers'
+import { getActiveWorkspaceContextId, selectedProjectWorkspace, workspaceResourceContext, workspaceSelectionKey } from '../workspace-context'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -26,15 +27,38 @@ function clamp(value: number, min: number, max: number): number {
 // ---------------------------------------------------------------------------
 
 export const createWorkspaceSlice: StateCreator<AppState, [], [], WorkspaceSlice> = (set, get) => ({
+  workspaceSelections: {},
+  knownProjectWorkspaces: {},
+  selectProjectWorkspace: (projectId, workspace) => {
+    const state = get()
+    if (!state.config || workspace.projectId !== projectId || !workspace.workspaceId || !workspace.path || !state.projects.some(project => project.id === projectId)) return
+    const contextId = workspaceResourceContext(state.config.baseUrl, workspace)
+    set({
+      workspaceSelections: { ...state.workspaceSelections, [workspaceSelectionKey(state.config.baseUrl, projectId)]: workspace },
+      knownProjectWorkspaces: { ...state.knownProjectWorkspaces, [workspaceSelectionKey(state.config.baseUrl, contextId)]: workspace },
+      projectExplorerRoots: { ...state.projectExplorerRoots, [contextId]: workspace.path },
+      openProjectIds: state.openProjectIds.includes(projectId) ? state.openProjectIds : [...state.openProjectIds, projectId],
+    })
+    get().setActiveProjectId(projectId)
+    get().setSelectedProjectID(projectId)
+    get().setActiveSection('PROJECTS')
+  },
+  activateWorkspaceContext: contextId => {
+    const state = get()
+    const workspace = state.config ? state.knownProjectWorkspaces[workspaceSelectionKey(state.config.baseUrl, contextId)] : undefined
+    if (workspace) state.selectProjectWorkspace(workspace.projectId, workspace)
+    else if (state.projects.some(project => project.id === contextId) || contextId === GLOBAL_PROJECT_ID) state.setActiveProjectId(contextId)
+  },
   requestedWorkspaceConversation: null,
-  requestWorkspaceConversation: (projectId, sessionId) => {
+  requestWorkspaceConversation: (projectId, sessionId, workspace) => {
     const state = get()
     const project = state.projects.find(project => project.id === projectId)
     if (!state.config || !project || !sessionId) return
-    state.openProjectTab(projectId, project.root_path)
+    if (workspace) state.selectProjectWorkspace(projectId, workspace)
+    else state.openProjectTab(projectId, project.root_path)
     set({ requestedWorkspaceConversation: {
       baseUrl: state.config.baseUrl, apiToken: state.config.apiToken,
-      projectId, sessionId, requestId: ++conversationRequestSequence,
+      projectId, workspaceId: workspace?.registered ? undefined : workspace?.workspaceId, sessionId, requestId: ++conversationRequestSequence,
     } })
   },
   clearWorkspaceConversationRequest: (requestId) => {
@@ -65,12 +89,13 @@ export const createWorkspaceSlice: StateCreator<AppState, [], [], WorkspaceSlice
   setExplorerRoot: (root) =>
     set((s) => ({
       explorerRoot: root,
-      projectExplorerRoots: { ...s.projectExplorerRoots, [s.activeProjectId]: root },
+      projectExplorerRoots: { ...s.projectExplorerRoots, [getActiveWorkspaceContextId(s)]: root },
     })),
 
   setActiveProjectId: (id: WorkspaceContextID) => {
     const state = get()
-    const root = state.projectExplorerRoots[id] ?? null
+    const selected = selectedProjectWorkspace(state, id)
+    const root = selected?.path ?? state.projectExplorerRoots[id] ?? null
     set({
       activeProjectId: id,
       explorerRoot: root,

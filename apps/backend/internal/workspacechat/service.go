@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/orchestra/orchestra/apps/backend/internal/agents"
@@ -34,6 +35,7 @@ var ErrInvalid = errors.New("invalid chat request")
 var ErrForbidden = errors.New("project path is not authorized or unavailable")
 var ErrUnsupported = errors.New("provider or options unavailable")
 var ErrConflict = errors.New("conversation identity is already bound to another project or provider")
+var ErrTitleConflict = errors.New("conversation title changed; refresh before renaming")
 
 type CreateRequest struct {
 	Provider                 string `json:"provider"`
@@ -286,9 +288,9 @@ func (s *Service) createWithRequest(ctx context.Context, pid string, req CreateR
 	}
 	title = strings.TrimSpace(title)
 	if title == "" {
-		title = "New conversation"
+		title = s.defaultTitle(ctx, pid, workspaceID)
 	}
-	if len(title) > 200 {
+	if !utf8.ValidString(title) || utf8.RuneCountInString(title) > 200 {
 		return Session{}, ErrInvalid
 	}
 	now := stamp()

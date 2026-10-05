@@ -33,3 +33,9 @@ The first native root screenshot exposed a ~550px tools pane with a 376px file c
 `apps/desktop/scripts/pr-visual-audit.cjs` supplies an explicit read-only native renderer fixture for the root Electron smoke. It decorates only disposable smoke-created project rows, intercepts project-scoped GitHub reads, supplies a merged PR with immutable base/head identities, rejects GitHub mutations, and checks Summary/Timeline/Code content plus disabled actions before screenshot capture. This helper's syntax/typecheck passed; root owns actual native execution and screenshot inspection. These intercepted reads are UI evidence only and do not replace real API fixtures or hosted canaries.
 
 The first PR visual fixture exposed a null empty-project catalog that the interceptor incorrectly treated as an object. The helper now preserves null and fails on visible section-load errors before captures. The initial code screenshot also exposed duplicate diff headers and a fixed-height blank area: PR file diffs now grow to content up to a 480px scroll limit, using the existing outer file header/toolbar. Review text occupies a full-width footer row, with actions wrapping below it. Git feature tests passed after these corrections (125); final native captures are root-owned.
+
+Root ran the integrated native helper successfully (exit 0), inspected populated
+Summary/Timeline/Code captures and a smaller-window Code capture, and verified
+disabled merged-PR actions and unclipped action controls. Evidence and the
+explicit intercepted-read boundary are recorded in
+`ade-unified-project-workspace-2026-10-04.md`.

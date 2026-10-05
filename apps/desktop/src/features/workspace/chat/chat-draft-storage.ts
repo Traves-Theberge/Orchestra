@@ -5,7 +5,8 @@ export type ChatDraftReceipt = {
   sessionId: string
   provider: string
   drafts: Record<string, string>
-  creation: { sessionId: string; provider: string } | null
+  title?: string
+  creation: { sessionId: string; provider: string; title?: string } | null
   submission: { sessionId: string; messageId: string; text: string } | null
   reply: { sessionId: string; requestId: string } | null
   blockedRequests: Record<string, boolean>
@@ -14,7 +15,9 @@ export type ChatDraftReceipt = {
 
 // Only the digest is used in storage. Credentials remain in renderer memory.
 export async function chatDraftStorageKey(config: BackendConfig, projectId: string) {
-  const bytes = new TextEncoder().encode(JSON.stringify([config.baseUrl, config.apiToken, projectId]))
+  const identity = [config.baseUrl, config.apiToken, projectId]
+  if (config.workspaceId) identity.push(config.workspaceId)
+  const bytes = new TextEncoder().encode(JSON.stringify(identity))
   const digest = await crypto.subtle.digest('SHA-256', bytes)
   return `orchestra:chat-draft:v1:${Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('')}`
 }
@@ -29,7 +32,9 @@ function decodeReceipt(serialized: string | null): ChatDraftReceipt | null {
     const strings = (v: unknown): v is Record<string, string> => !!v && typeof v === 'object' && !Array.isArray(v) && Object.values(v).every(s => typeof s === 'string')
     const identity = (v: unknown, fields: string[]) => v === null || (!!v && typeof v === 'object' && fields.every(f => typeof (v as Record<string, unknown>)[f] === 'string' && (v as Record<string, unknown>)[f] !== ''))
     if (value.version !== 1 || typeof value.sessionId !== 'string' || typeof value.provider !== 'string' || !strings(value.drafts)
+      || (value.title !== undefined && typeof value.title !== 'string')
       || !identity(value.creation, ['sessionId', 'provider']) || !identity(value.submission, ['sessionId', 'messageId', 'text'])
+      || (value.creation?.title !== undefined && typeof value.creation.title !== 'string')
       || !identity(value.reply, ['sessionId', 'requestId']) || typeof value.uncertainSession !== 'string'
       || !value.blockedRequests || typeof value.blockedRequests !== 'object' || !Object.values(value.blockedRequests).every(v => typeof v === 'boolean')) return null
     return value as ChatDraftReceipt

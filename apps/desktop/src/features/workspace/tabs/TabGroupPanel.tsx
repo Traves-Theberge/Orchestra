@@ -12,6 +12,7 @@ import {
   Settings,
 } from 'lucide-react'
 import { useAppStore } from '@core/store'
+import { projectIdForWorkspaceContext, workspaceSelectionKey } from '@core/store/workspace-context'
 import { getAgentIcon } from '@layout/shared/controls'
 import type { TabGroup, TabRef, WorkspaceContextID } from '@core/store/types'
 import { EditorContent } from '../editor/EditorContent'
@@ -30,6 +31,12 @@ interface TabGroupPanelProps {
 }
 
 export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: TabGroupPanelProps) {
+  const workspaceRoot = () => {
+    const state = useAppStore.getState()
+    const project = state.projects.find(p => p.id === projectIdForWorkspaceContext(state, projectId))
+    const workspace = state.config ? state.knownProjectWorkspaces[workspaceSelectionKey(state.config.baseUrl, projectId)] : undefined
+    return { project, cwd: workspace?.path ?? state.projectExplorerRoots[projectId] ?? project?.root_path ?? undefined }
+  }
   const openFiles = useAppStore((s) => s.openFiles)
   const browserTabs = useAppStore((s) => s.browserTabs)
   const openTerminals = useAppStore((s) => s.openTerminals)
@@ -399,13 +406,12 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
               setPlusOpen(false)
               setFocusedGroup(projectId, group.id)
               const id = `shell-${Date.now()}`
-              const proj = useAppStore.getState().projects.find((p) => p.id === projectId)
-              const cwd = proj?.root_path
-              const initialCommand = cwd ? `cd ${shellQuote(cwd)} && clear` : undefined
+              const { project: proj, cwd } = workspaceRoot()
+              const initialCommand = undefined
               const title = proj ? `${proj.name} Shell` : 'Shell'
               setOpenTerminals([
                 ...useAppStore.getState().openTerminals,
-                { id, title, projectId: proj ? projectId : undefined, cwd, initialCommand },
+                { id, title, projectId: proj?.id, cwd, initialCommand },
               ])
               addTabToGroup(projectId, { type: 'terminal', id }, group.id)
             }}
@@ -417,7 +423,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
             onClick={() => {
               setPlusOpen(false)
               setFocusedGroup(projectId, group.id)
-              openBrowserTab()
+              openBrowserTab(undefined, projectId)
             }}
           />
           <PlusMenuItem
@@ -427,8 +433,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
             onClick={async () => {
               setPlusOpen(false)
               setFocusedGroup(projectId, group.id)
-              const proj = useAppStore.getState().projects.find((p) => p.id === projectId)
-              const root = proj?.root_path || explorerRoot
+              const root = workspaceRoot().cwd || explorerRoot
               if (!root) {
                 alert('Cannot create markdown: no project root available. Open a project first.')
                 return
@@ -467,8 +472,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
                 setPlusOpen(false)
                 setFocusedGroup(projectId, group.id)
                 const id = `shell-${Date.now()}`
-                const proj = useAppStore.getState().projects.find((p) => p.id === projectId)
-                const cwd = proj?.root_path
+                const { project: proj, cwd } = workspaceRoot()
                 // `~` must stay unquoted so the shell expands it; any concrete
                 // path goes through shellQuote to defuse spaces / quotes / $.
                 const cdArg = cwd ? shellQuote(cwd) : '~'
@@ -476,7 +480,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
                 const title = `${agentLabel(agent)}${proj ? ` · ${proj.name}` : ''}`
                 setOpenTerminals([
                   ...useAppStore.getState().openTerminals,
-                  { id, title, projectId: proj ? projectId : undefined, cwd, initialCommand: cmd },
+                  { id, title, projectId: proj?.id, cwd, initialCommand: cmd },
                 ])
                 addTabToGroup(projectId, { type: 'terminal', id }, group.id)
               }}

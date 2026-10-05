@@ -23,7 +23,7 @@ const prVisualAudit = process.argv.includes('--pr-visual-fixture')
 if (workspaceAudit) {
   const projectsRoot = path.join(fixture, 'projects')
   fs.mkdirSync(projectsRoot, { recursive: true })
-  process.env.ORCHESTRA_PROJECT_ROOTS = projectsRoot
+  process.env.ORCHESTRA_PROJECT_ROOTS = [projectsRoot, path.join(fixture, 'desktop', 'workspaces')].join(',')
   const gitConfig = path.join(fixture, 'empty-gitconfig')
   fs.writeFileSync(gitConfig, '')
   process.env.GIT_CONFIG_GLOBAL = gitConfig
@@ -31,7 +31,7 @@ if (workspaceAudit) {
   process.env.ORCHESTRA_TELEMETRY_PROVIDERS = 'none'
 }
 let complete = false
-const timeout = setTimeout(() => finish(new Error('Electron smoke timed out')), 45_000)
+const timeout = setTimeout(() => finish(new Error('Electron smoke timed out')), workspaceAudit ? 120_000 : 45_000)
 
 // Production startup errors normally use a modal dialog. Preserve that error
 // as a failed smoke instead of blocking a hidden run or exiting successfully.
@@ -69,10 +69,10 @@ app.on('browser-window-created', (_, win) => {
     try {
       const result = await win.webContents.executeJavaScript(`(async () => {
         const deadline = Date.now() + 15000
-        while (!document.querySelector('[data-testid="sidebar-nav-ISSUES"], [data-testid="sidebar-back"]') && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100))
+        while (!document.querySelector('[data-testid="sidebar-nav-ISSUES"], [data-testid="sidebar-back"], [aria-label="Back to navigation"]') && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100))
         // Fresh profiles open the Console workspace drilldown. Exercise its back
         // action before requiring primary navigation; neither view is a boot failure.
-        document.querySelector('[data-testid="sidebar-back"]')?.click()
+        document.querySelector('[data-testid="sidebar-back"], [aria-label="Back to navigation"]')?.click()
         while (!document.querySelector('[data-testid="sidebar-nav-ISSUES"]') && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100))
         if (!document.querySelector('[data-testid="sidebar-nav-ISSUES"]')) throw new Error('Renderer did not mount')
         const config = await window.orchestraDesktop.getBackendConfig()
@@ -92,7 +92,7 @@ app.on('browser-window-created', (_, win) => {
             while (!predicate() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 75))
             if (!predicate()) throw new Error('Workspace audit timed out')
           }
-          const button = name => [...document.querySelectorAll('button')].find(element => element.getAttribute('aria-label') === name || element.textContent.trim() === name)
+          const button = name => [...document.querySelectorAll('button, [role="button"]')].find(element => element.getAttribute('aria-label') === name || element.textContent.trim() === name)
           document.querySelector('[data-testid="sidebar-nav-PROJECTS"]').click()
           await wait(() => button('Add project'))
           button('Add project').click()
@@ -119,7 +119,7 @@ app.on('browser-window-created', (_, win) => {
           })
           const chat = document.querySelector('[aria-label="Workspace chat pane"]')
           if (!chat || chat.getBoundingClientRect().width <= 0) throw new Error('Project did not open its workspace')
-          button('Expand Workspace audit').click()
+          button('Expand Workspace audit')?.click()
           await wait(() => button('Open Workspace audit workspace main'))
           button('Files & terminals').click()
           button('Toggle workspace files').click()
@@ -142,8 +142,37 @@ app.on('browser-window-created', (_, win) => {
           return { projectSource: 'new', workspaceOpened: true, primaryWorktreeObserved: true, fileSidebarOpened: true, maximized: true, chatRetained: true, gitAlongsideChat: true }
         })()`)
         console.log('WORKSPACE_CONTROLS_SMOKE_RESULT', JSON.stringify(workspaceResult))
+        console.log('MULTI_WORKTREE_SMOKE_RESULT', JSON.stringify(await require('./multi-worktree-audit.cjs').auditMultiWorktree(win, fixture)))
       }
       if (prVisualAudit) console.log('PR_VISUAL_FIXTURE_RESULT', JSON.stringify(await require('./pr-visual-audit.cjs').auditPRVisual(win, path.join(__dirname, '..', 'reports'))))
+      if (workspaceAudit) {
+        const tasksView = await win.webContents.executeJavaScript(`(async () => {
+          const wait = async (predicate, name) => {
+            const deadline = Date.now() + 10000
+            while (!predicate() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 75))
+            if (!predicate()) throw new Error('Tasks header capture timed out: ' + name)
+          }
+          const back = document.querySelector('[data-testid="sidebar-back"]')
+          if (back) back.click()
+          await wait(() => document.querySelector('[data-testid="sidebar-nav-ISSUES"]'), 'Tasks navigation')
+          const tasks = document.querySelector('[data-testid="sidebar-nav-ISSUES"]')
+          tasks.click()
+          await wait(() => document.querySelector('[data-testid="sidebar-nav-ISSUES"]')?.getAttribute('aria-current') === 'page', 'Tasks section active')
+          const createTask = [...document.querySelectorAll('button')].find(element => element.textContent.trim() === 'Create Task')
+          const boardTab = [...document.querySelectorAll('button')].find(element => element.textContent.trim() === 'Board')
+          const workItemsTab = [...document.querySelectorAll('button')].find(element => element.textContent.trim() === 'Work Items')
+          if (!createTask || !boardTab || !workItemsTab) throw new Error('Tasks unified toolbar is incomplete')
+          const headerBounds = createTask.parentElement.getBoundingClientRect()
+          return { section: 'Tasks', unifiedToolbarVisible: true, boardTab: true, workItemsTab: true, createTask: true, headerBounds: { top: headerBounds.top, bottom: headerBounds.bottom } }
+        })()`)
+        const tasksScreenshot = await win.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })
+        if (tasksScreenshot.isEmpty()) throw new Error('Electron returned an empty Tasks header screenshot')
+        const reportDir = path.join(__dirname, '..', 'reports')
+        fs.mkdirSync(reportDir, { recursive: true })
+        fs.writeFileSync(path.join(fixture, 'tasks-header.png'), tasksScreenshot.toPNG())
+        fs.writeFileSync(path.join(reportDir, 'electron-smoke-tasks-header.png'), tasksScreenshot.toPNG())
+        console.log('TASKS_HEADER_SCREENSHOT_RESULT', JSON.stringify(tasksView))
+      }
       console.log('ELECTRON_SMOKE_RESULT', JSON.stringify(result))
       const screenshot = await win.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })
       if (screenshot.isEmpty()) throw new Error('Electron returned an empty launch screenshot')
@@ -153,7 +182,14 @@ app.on('browser-window-created', (_, win) => {
       fs.writeFileSync(path.join(reports, 'electron-smoke-launch.png'), screenshot.toPNG())
       if (errors.length) throw new Error('Renderer logged errors')
       finish()
-    } catch (error) { finish(error) }
+    } catch (error) {
+      try {
+        console.error('ELECTRON_SMOKE_RENDERER_DIAGNOSTIC', JSON.stringify(await win.webContents.executeJavaScript(`({ testIds: [...document.querySelectorAll('[data-testid]')].map(element => element.dataset.testid).slice(0, 30), controls: [...document.querySelectorAll('button')].map(element => element.getAttribute('aria-label') || element.textContent.trim()).slice(0, 25) })`)))
+        const failureScreenshot = await win.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })
+        fs.writeFileSync(path.join(fixture, 'failure.png'), failureScreenshot.toPNG())
+      } catch { /* Preserve the original failure when the renderer is unavailable. */ }
+      finish(error)
+    }
   })
 })
 

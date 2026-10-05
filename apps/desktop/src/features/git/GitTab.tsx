@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { AppTooltip } from '@ui/tooltip-wrapper'
 import type { Project } from '@core/api/types'
@@ -39,15 +39,24 @@ function NoGitHubMessage({ kind }: { kind: 'pull requests' | 'issues' }) {
   )
 }
 
-export function GitTab({
-  project,
-  config,
-  onInspectTask,
-}: {
+type GitTabProps = {
   project: Project
-  onInspectTask?: (identifier: string) => void
   config: BackendConfig | null
-}) {
+  onInspectTask?: (identifier: string) => void
+  workspace?: { id: string; path: string; branch: string }
+}
+
+export function GitTab(props: GitTabProps) {
+  return <ScopedGitTab key={`${props.config?.baseUrl}:${props.project.id}:${props.workspace?.id ?? 'registered'}`} {...props} />
+}
+
+function ScopedGitTab({
+  project,
+  config: baseConfig,
+  onInspectTask,
+  workspace,
+}: GitTabProps) {
+  const config = useMemo(() => baseConfig && workspace ? { ...baseConfig, workspaceId: workspace.id } : baseConfig, [baseConfig, workspace])
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [selectedFileStaged, setSelectedFileStaged] = useState(false)
   const [selectedCommit, setSelectedCommit] = useState<string | null>(null)
@@ -152,7 +161,7 @@ export function GitTab({
           })}
         </div>
       </div>
-      <div title={project.root_path} className="shrink-0 truncate px-3 py-1.5 text-[10px] font-mono text-muted-foreground/60">{project.name} · {project.root_path}</div>
+      <div title={workspace?.path ?? project.root_path} className="shrink-0 truncate px-3 py-1.5 text-[10px] font-mono text-muted-foreground/60">{project.name} · {workspace?.path ?? project.root_path}</div>
 
       {activeSubTab === 'changes' && (
         <div className="flex flex-col flex-1 overflow-hidden min-h-0">

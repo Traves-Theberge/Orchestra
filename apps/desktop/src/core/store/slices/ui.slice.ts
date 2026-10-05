@@ -72,6 +72,9 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   createTaskDialogOpen: false,
   createTaskInitialState: null,
   createProjectDialogOpen: false,
+  createWorktreeDialogOpen: false,
+  createWorktreeProjectId: null,
+  createAgentWorkspace: null,
   settingsInitialTab: undefined,
   browserHomepage: getInitialHomepage(),
   sidePanelOpen: true,
@@ -126,6 +129,9 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
     set({ createTaskDialogOpen: false, createTaskInitialState: null }),
 
   setCreateProjectDialogOpen: (open) => set({ createProjectDialogOpen: open }),
+  openCreateWorktreeDialog: projectId => set({ createWorktreeDialogOpen: true, createWorktreeProjectId: projectId ?? null, createAgentWorkspace: null }),
+  closeCreateWorktreeDialog: () => set({ createWorktreeDialogOpen: false, createWorktreeProjectId: null, createAgentWorkspace: null }),
+  openCreateAgentDialog: workspace => set({ createWorktreeDialogOpen: true, createWorktreeProjectId: workspace.projectId, createAgentWorkspace: workspace }),
 
   setSettingsInitialTab: (tab) => set({ settingsInitialTab: tab }),
 

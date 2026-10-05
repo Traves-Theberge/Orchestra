@@ -40,3 +40,8 @@ Focused verification after this follow-up: hook + App smoke tests report 41 pass
 - `go test ./internal/api -run 'Test(ProjectWorktreesRealGitHTTP|ParseProjectWorktreesDetachedLockedPrunable)' -count=1`: passed. Real disposable Git repository, committed main branch, linked checkout with spaces, detached outside-root checkout, SQLite projects and HTTP router verify branch/path identity, registered linked-checkout ownership, outside-root filtering, 403/404 and detached/locked/prunable parsing.
 - `npm run test -- src/features/projects/ProjectWorkspaceTree.test.tsx src/core/store/slices/workspace.slice.test.ts`: 29 passed. Sidebar activation verifies exact backend/project/session identity, rejection of foreign-project rows, linked-task inspection, read-only unlinked checkout and protection against stale request clearing.
 - Native Electron rendering and real signed-in provider turns have not been verified by these tests. The renderer tests mock observation endpoints; the backend tests independently exercise real Git and HTTP. Root integration must verify chat request consumption and task inspection callbacks.
+
+Root integration subsequently verified real new-project registration, the main
+worktree sidebar row, right file sidebar and chat-preserving pane expansion in
+production Electron. See `ade-unified-project-workspace-2026-10-04.md` for the
+native run and captures. Actual signed-in provider activity remains unverified.

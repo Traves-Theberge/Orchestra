@@ -4,6 +4,8 @@ export type BackendConfig = {
   baseUrl: string
   /** Bearer token used to authenticate API requests. */
   apiToken: string
+  /** Optional exact Git worktree identity; never changes the owning project. */
+  workspaceId?: string
   /** Optional map of MCP server names to their connection URIs. */
   mcpServers?: Record<string, string>
 }
@@ -66,6 +68,9 @@ export type RunningEntry = {
   assignee_id?: string
   /** ID of the project this issue belongs to. */
   project_id?: string
+  worktree_path?: string
+  requested_model?: string
+  effective_model?: string
   /** Filesystem path to the session log file. */
   session_log_path?: string
   /** Tool names disabled for this run. */

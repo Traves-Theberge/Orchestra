@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import {
   Bell,
   Cable,
+  ChartNoAxesColumn,
   ChevronLeft,
   ChevronRight,
   Cpu,
@@ -17,6 +18,7 @@ import {
   Paintbrush,
   RefreshCcw,
   Search,
+  Settings,
   Terminal,
   Type,
 } from 'lucide-react'
@@ -127,6 +129,15 @@ export function AppSidebar({
   const startX = useRef(0)
   const startWidth = useRef(DEFAULT_WIDTH)
   const sidebarRef = useRef<HTMLElement>(null)
+  const config = useAppStore(s => s.config)
+
+  const openSwagger = () => {
+    if (!config) return
+    const url = `${config.baseUrl}/api/docs`
+    const bridge = (window as { orchestraDesktop?: { openExternal?: (u: string) => void } }).orchestraDesktop
+    if (bridge?.openExternal) bridge.openExternal(url)
+    else window.open(url, '_blank', 'noopener,noreferrer')
+  }
 
   const [previousSection, setPreviousSection] = useState(activeSection)
   if (previousSection !== activeSection) {
@@ -178,7 +189,7 @@ export function AppSidebar({
         >
           <ChevronRight size={15} strokeWidth={2} />
         </button>
-        {items.map((item) => {
+        {items.filter(item => !['DOCS', 'SETTINGS', 'WAREHOUSE'].includes(item.id)).map((item) => {
           const Icon = item.icon
           const active = activeSection === item.id
           return (
@@ -195,6 +206,9 @@ export function AppSidebar({
             </button>
           )
         })}
+        <div className="mt-auto w-full">
+          <SidebarFooterIcons items={items} activeSection={activeSection} onItemClick={handleItemClick} onOpenApiDocs={openSwagger} showApiDocs={Boolean(config)} collapsed />
+        </div>
       </aside>
     )
   }
@@ -206,10 +220,12 @@ export function AppSidebar({
       style={{ width }}
     >
       {/* Header */}
-      <div className="shrink-0 border-b border-border/30">
+      <div className="shrink-0">
         <div className="h-20 flex items-center gap-3 px-3">
-          <img src="./Orchesta.png" alt="Orchestra" className="size-16 dark:invert shrink-0" aria-hidden="true" />
-          <span className="text-[20px] font-bold text-foreground tracking-tight flex-1 truncate">Orchestra</span>
+          <button type="button" onClick={handleBack} aria-label="Orchestra main navigation" title="Back to main navigation" className="flex min-w-0 flex-1 items-center gap-3 rounded-md text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary">
+            <img src="./Orchesta.png" alt="Orchestra" className="size-16 dark:invert shrink-0" aria-hidden="true" />
+            <span className="truncate text-[20px] font-bold text-foreground tracking-tight">Orchestra</span>
+          </button>
           <button
             type="button"
             onClick={() => setCollapsed(true)}
@@ -219,13 +235,13 @@ export function AppSidebar({
             <ChevronLeft size={13} strokeWidth={2} />
           </button>
         </div>
-        <SidebarSearch onSearch={onSearch} onResultClick={onResultClick} />
+        {view !== 'console' && <SidebarSearch onSearch={onSearch} onResultClick={onResultClick} />}
       </div>
 
       {/* Content */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+      <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
         {view === 'primary' && (
-          <PrimaryNav items={items} activeSection={activeSection} onItemClick={handleItemClick} />
+          <PrimaryNav items={items} activeSection={activeSection} onItemClick={handleItemClick} onOpenApiDocs={openSwagger} showApiDocs={Boolean(config)} />
         )}
         {view === 'settings' && (
           <SettingsSubNav onBack={handleBack} />
@@ -240,6 +256,10 @@ export function AppSidebar({
           <DocsSubNav onBack={handleBack} />
         )}
       </div>
+
+      {view !== 'primary' && (
+        <SidebarFooterIcons items={items} activeSection={activeSection} onItemClick={handleItemClick} onOpenApiDocs={openSwagger} showApiDocs={Boolean(config)} />
+      )}
 
       {/* Drag handle */}
       <div
@@ -408,23 +428,16 @@ function PrimaryNav({
   items,
   activeSection,
   onItemClick,
+  onOpenApiDocs,
+  showApiDocs,
 }: {
   items: SidebarItem[]
   activeSection: string
   onItemClick: (id: string) => void
+  onOpenApiDocs: () => void
+  showApiDocs: boolean
 }) {
-  const config = useAppStore(s => s.config)
-  const mainItems = items.filter(i => i.id !== 'SETTINGS' && i.id !== 'DOCS')
-  const docsItem = items.find(i => i.id === 'DOCS')
-  const settingsItem = items.find(i => i.id === 'SETTINGS')
-
-  const openSwagger = () => {
-    if (!config) return
-    const url = `${config.baseUrl}/api/docs`
-    const bridge = (window as { orchestraDesktop?: { openExternal?: (u: string) => void } }).orchestraDesktop
-    if (bridge?.openExternal) bridge.openExternal(url)
-    else window.open(url, '_blank', 'noopener,noreferrer')
-  }
+  const mainItems = items.filter(i => !['SETTINGS', 'DOCS', 'WAREHOUSE'].includes(i.id))
 
   return (
     <nav className="flex flex-col h-full py-2 px-2" aria-label="Primary navigation" onKeyDown={(event) => {
@@ -442,26 +455,86 @@ function PrimaryNav({
         ))}
       </div>
 
-      <div className="shrink-0 pt-2 mt-2 border-t border-border/20 space-y-0.5">
-        {docsItem && (
-          <NavItem item={docsItem} activeSection={activeSection} onItemClick={onItemClick} />
-        )}
-        {config && (
+      <SidebarFooterIcons items={items} activeSection={activeSection} onItemClick={onItemClick} onOpenApiDocs={onOpenApiDocs} showApiDocs={showApiDocs} />
+    </nav>
+  )
+}
+
+function SidebarFooterIcons({
+  items,
+  activeSection,
+  onItemClick,
+  onOpenApiDocs,
+  showApiDocs,
+  collapsed = false,
+}: {
+  items: SidebarItem[]
+  activeSection: string
+  onItemClick: (id: string) => void
+  onOpenApiDocs: () => void
+  showApiDocs: boolean
+  collapsed?: boolean
+}) {
+  const footerItems = ['WAREHOUSE', 'DOCS', 'SETTINGS']
+    .map(id => items.find(item => item.id === id))
+    .filter((item): item is SidebarItem => Boolean(item))
+  const settingsItem = footerItems.find(item => item.id === 'SETTINGS')
+  const orderedItems = footerItems.filter(item => item.id !== 'SETTINGS')
+
+  return (
+    <div aria-label="Sidebar tools" className={`shrink-0 px-2 pt-1 pb-0.5 ${collapsed ? 'flex flex-col items-center gap-1' : 'flex items-center justify-start gap-1'}`}>
+      {orderedItems.map(item => {
+        const Icon = item.id === 'WAREHOUSE' ? ChartNoAxesColumn : item.icon
+        const active = activeSection === item.id
+        return (
+          <AppTooltip key={item.id} content={item.label} side={collapsed ? 'right' : 'top'}>
+            <button
+              type="button"
+              title={item.label}
+              aria-label={item.label}
+              aria-current={active ? 'page' : undefined}
+              data-testid={`sidebar-nav-${item.id}`}
+              onClick={() => onItemClick(item.id)}
+              className={`size-9 shrink-0 rounded-lg flex items-center justify-center transition-colors ${active ? 'bg-foreground/[0.08] text-primary' : 'text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.06]'}`}
+            >
+              <Icon className="size-[17px]" strokeWidth={active ? 2.2 : 1.8} />
+            </button>
+          </AppTooltip>
+        )
+      })}
+      {showApiDocs && (
+        <AppTooltip content="API Docs" side={collapsed ? 'right' : 'top'}>
           <button
             type="button"
-            onClick={openSwagger}
-            className="w-full flex items-center gap-3 h-11 px-3 rounded-lg text-left text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.04] transition-colors"
+            title="API Docs"
+            aria-label="API Docs"
+            onClick={onOpenApiDocs}
+            className="size-9 shrink-0 rounded-lg flex items-center justify-center text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.06] transition-colors"
           >
-            <Globe className="size-[17px] shrink-0" strokeWidth={1.8} />
-            <span className="text-[13.5px] font-medium truncate flex-1">API Docs</span>
-            <ChevronRight size={13} className="shrink-0 text-muted-foreground/30" strokeWidth={2} />
+            <Globe className="size-[17px]" strokeWidth={1.8} />
           </button>
-        )}
-        {settingsItem && (
-          <NavItem item={settingsItem} activeSection={activeSection} onItemClick={onItemClick} />
-        )}
-      </div>
-    </nav>
+        </AppTooltip>
+      )}
+      {settingsItem && (() => {
+        const Icon = Settings
+        const active = activeSection === settingsItem.id
+        return (
+          <AppTooltip key={settingsItem.id} content={settingsItem.label} side={collapsed ? 'right' : 'top'}>
+            <button
+              type="button"
+              title={settingsItem.label}
+              aria-label={settingsItem.label}
+              aria-current={active ? 'page' : undefined}
+              data-testid={`sidebar-nav-${settingsItem.id}`}
+              onClick={() => onItemClick(settingsItem.id)}
+              className={`size-9 shrink-0 rounded-lg flex items-center justify-center transition-colors ${active ? 'bg-foreground/[0.08] text-primary' : 'text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.06]'}`}
+            >
+              <Icon className="size-[17px]" strokeWidth={active ? 2.2 : 1.8} />
+            </button>
+          </AppTooltip>
+        )
+      })()}
+    </div>
   )
 }
 
@@ -548,8 +621,10 @@ function ConsoleSubNav({ onBack, onInspectTask }: { onBack: () => void; onInspec
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <SubNavHeader label="Projects" onBack={onBack} />
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex shrink-0 items-center justify-between px-3 py-3">
+        <button type="button" onClick={onBack} data-testid="sidebar-back" title="Back to navigation" className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground"><ChevronLeft size={14} />Projects</button>
+      </div>
 
       {/* Project switcher */}
       <div className="px-2 py-1.5 border-b border-border/20 shrink-0">

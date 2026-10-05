@@ -5,6 +5,7 @@
 import type { StateCreator } from 'zustand'
 import { GLOBAL_PROJECT_ID } from '../types'
 import type { AppState, BrowserSlice, WorkspaceContextID } from '../types'
+import { getActiveWorkspaceContextId } from '../workspace-context'
 
 // ---------------------------------------------------------------------------
 // Slice factory
@@ -19,7 +20,7 @@ export const createBrowserSlice: StateCreator<AppState, [], [], BrowserSlice> = 
   openBrowserTab: (url?: string, projectId?: WorkspaceContextID) => {
     const id = crypto.randomUUID()
     const state = get()
-    const targetProjectId = projectId ?? state.activeProjectId ?? GLOBAL_PROJECT_ID
+    const targetProjectId = projectId ?? getActiveWorkspaceContextId(state) ?? GLOBAL_PROJECT_ID
     const homepage = state.browserHomepage || 'about:blank'
     const newTab = {
       id,

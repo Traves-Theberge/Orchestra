@@ -22,8 +22,8 @@ function SandboxIcon({ className, size }: { className?: string; size?: number })
 }
 
 export const sidebarItems: SidebarItem[] = [
-  { id: 'PROJECTS', label: 'Projects', description: 'Chat, files, terminals, Git and tasks', icon: FolderTree },
   { id: 'ORCHESTRATOR', label: 'Orchestrator', description: 'Coordinate agents across projects and worktrees', icon: Network },
+  { id: 'PROJECTS', label: 'Projects', description: 'Chat, files, terminals, Git and tasks', icon: FolderTree },
   { id: 'ISSUES', label: 'Tasks', description: 'Task board and inspector', icon: ListTodo },
   { id: 'AGENTS', label: 'Agents', description: 'Global agent configurations', icon: Cpu },
   { id: 'WAREHOUSE', label: 'Usage', description: 'Per-agent tokens, cost, and sessions', icon: Database },

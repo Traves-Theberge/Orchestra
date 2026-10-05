@@ -13,6 +13,18 @@ beforeEach(() => { vi.stubGlobal('crypto', webcrypto); localStorage.clear(); ses
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('chat draft storage boundary', () => {
+  it('keeps child-workspace drafts and recovery identities separate from the legacy root', async () => {
+    desktop()
+    const root = await chatDraftStorageKey(config, 'project-a')
+    const child = await chatDraftStorageKey({ ...config, workspaceId: 'wt_child' }, 'project-a')
+    const other = await chatDraftStorageKey({ ...config, workspaceId: 'wt_other' }, 'project-a')
+    writeChatDraftReceipt(root, receipt)
+    expect(readChatDraftReceipt(child)).toBeNull()
+    writeChatDraftReceipt(child, { ...receipt, sessionId: 'child-session' })
+    expect(readChatDraftReceipt(root)?.sessionId).toBe('pending-chat')
+    expect(readChatDraftReceipt(child)?.sessionId).toBe('child-session')
+    expect(readChatDraftReceipt(other)).toBeNull()
+  })
   it('retains desktop drafts and pending identities after tab storage is cleared for an app restart', async () => {
     desktop()
     const key = await chatDraftStorageKey(config, 'project-a')

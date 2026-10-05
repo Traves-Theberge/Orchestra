@@ -204,6 +204,12 @@ export function normalizeSnapshotPayload(value: unknown): SnapshotPayload {
         last_message: asString(entry.last_message, ''),
         last_event_at: asString(entry.last_event_at, ''),
         started_at: asString(entry.started_at, ''),
+        provider: asString(entry.provider, ''),
+        project_id: asString(entry.project_id, ''),
+        title: asString(entry.title, ''),
+        worktree_path: asString(entry.worktree_path, ''),
+        requested_model: asString(entry.requested_model, ''),
+        effective_model: asString(entry.effective_model, ''),
       }] : [])
     : []
 
@@ -262,12 +268,20 @@ function buildHeaders(config: BackendConfig): HeadersInit {
   return headers
 }
 
+function workspaceRequestURL(config: BackendConfig, path: string): string {
+  const url = new URL(path, config.baseUrl)
+  if (config.workspaceId && /^\/api\/v1\/projects\/[^/]+\/(?:git|chat)(?:\/|$)/.test(url.pathname) && !url.pathname.endsWith('/git/worktrees')) {
+    url.searchParams.set('workspace_id', config.workspaceId)
+  }
+  return url.toString()
+}
+
 async function requestJSON<T>(config: BackendConfig, path: string, init?: RequestInit, timeoutMs = 30000): Promise<T> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
-    const response = await fetch(new URL(path, config.baseUrl).toString(), {
+    const response = await fetch(workspaceRequestURL(config, path), {
       ...init,
       signal: init?.signal ?? controller.signal,
       headers: {
@@ -318,6 +332,8 @@ export type WorkspaceChatModelCatalog = {
     default_reasoning_effort?: string; supported_reasoning_efforts?: { reasoning_effort: string; description?: string }[] }[]
 }
 export type WorkspaceChatSession = {
+  workspace_id?: string
+  workspace_path?: string
   id: string; project_id: string; provider: string; title: string
   status: 'idle' | 'running' | 'stopping' | 'failed' | 'interrupted'
   conversation_mode: string; created_at: string; updated_at: string; error?: string
@@ -357,13 +373,18 @@ export function fetchWorkspaceChatModels(config: BackendConfig, projectId: strin
 export function listWorkspaceChatSessions(config: BackendConfig, projectId: string) {
   return requestJSON<{ sessions: WorkspaceChatSession[] }>(config, `${workspaceChatPath(projectId)}/sessions`)
 }
-export function createWorkspaceChatSession(config: BackendConfig, projectId: string, provider: string, clientSessionId?: string) {
+export function createWorkspaceChatSession(config: BackendConfig, projectId: string, provider: string, clientSessionId?: string, preferences?: { requested_model?: string; requested_reasoning_effort?: string; title?: string }) {
   return requestJSON<WorkspaceChatSession>(config, `${workspaceChatPath(projectId)}/sessions`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, ...(clientSessionId ? { client_session_id: clientSessionId } : {}) }),
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, ...preferences, ...(clientSessionId ? { client_session_id: clientSessionId } : {}) }),
   })
 }
 export function fetchWorkspaceChat(config: BackendConfig, projectId: string, sessionId: string) {
   return requestJSON<WorkspaceChatSnapshot>(config, `${workspaceChatPath(projectId)}/sessions/${encodeURIComponent(sessionId)}`)
+}
+export function renameWorkspaceChatSession(config: BackendConfig, projectId: string, sessionId: string, title: string, expectedTitle: string) {
+  return requestJSON<WorkspaceChatSession>(config, `${workspaceChatPath(projectId)}/sessions/${encodeURIComponent(sessionId)}/title`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, expected_title: expectedTitle }),
+  })
 }
 export function sendWorkspaceChatMessage(config: BackendConfig, projectId: string, sessionId: string, clientMessageId: string, text: string, requestedModel?: string, requestedReasoningEffort?: string) {
   return requestJSON<{ session: WorkspaceChatSession; message: WorkspaceChatMessage }>(config,
@@ -388,7 +409,7 @@ async function requestText(config: BackendConfig, path: string, init?: RequestIn
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
-    const response = await fetch(new URL(path, config.baseUrl).toString(), {
+    const response = await fetch(workspaceRequestURL(config, path), {
       ...init,
       signal: init?.signal ?? controller.signal,
       headers: {
@@ -1143,7 +1164,19 @@ export type GitBranches = {
   remotes?: string[]
 }
 
-export type ProjectWorktree = { path: string; head: string; branch: string; primary: boolean; detached: boolean; locked: boolean; prunable: boolean }
+export type ProjectWorktree = { id: string; is_main_worktree: boolean; path: string; head: string; branch: string; primary: boolean; detached: boolean; locked: boolean; prunable: boolean }
+
+export type CreateWorktreeJobRequest = { request_id: string; name: string; branch: string; base_ref: string; provider?: string; requested_model?: string; task_id?: string }
+export type WorktreeJob = CreateWorktreeJobRequest & {
+  project_id: string; status: 'queued' | 'preparing' | 'checking_out' | 'completed' | 'failed' | 'unknown'
+  phase: string; message: string; path?: string; base_sha?: string; workspace?: ProjectWorktree
+}
+export async function createWorktreeJob(config: BackendConfig, projectId: string, request: CreateWorktreeJobRequest): Promise<WorktreeJob> {
+  return requestJSON(config, `/api/v1/projects/${encodeURIComponent(projectId)}/worktree-jobs`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request) })
+}
+export async function fetchWorktreeJob(config: BackendConfig, projectId: string, requestId: string): Promise<WorktreeJob> {
+  return requestJSON(config, `/api/v1/projects/${encodeURIComponent(projectId)}/worktree-jobs/${encodeURIComponent(requestId)}`)
+}
 export function fetchProjectWorktrees(config: BackendConfig, projectId: string) {
   return requestJSON<{ worktrees: ProjectWorktree[] }>(config, `/api/v1/projects/${encodeURIComponent(projectId)}/git/worktrees`)
 }

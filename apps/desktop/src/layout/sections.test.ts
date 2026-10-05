@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { isSectionID, getSectionVisibility, sidebarItems } from './sections'
 
 describe('sections', () => {
-  it('keeps one Projects entry first while restoring legacy Development navigation to its workspace', () => {
-    expect(sidebarItems[0].id).toBe('PROJECTS')
+  it('places Orchestrator above Projects while restoring legacy Development navigation to its workspace', () => {
+    expect(sidebarItems.slice(0, 2).map(item => item.id)).toEqual(['ORCHESTRATOR', 'PROJECTS'])
     expect(sidebarItems.some(item => item.id === 'CONSOLE')).toBe(false)
     expect(getSectionVisibility('PROJECTS').showConsole).toBe(true)
     expect(getSectionVisibility('CONSOLE').showConsole).toBe(true)
