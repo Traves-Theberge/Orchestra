@@ -1,5 +1,6 @@
 import { ExternalLink, GitPullRequest } from 'lucide-react'
 import { Badge } from '@ui/badge'
+import { MarkdownRenderer } from '@ui/MarkdownRenderer'
 import type { WorkItem, WorkItemSource } from '@/entities/tracker/types'
 import { useOpenUrl } from '@/hooks'
 
@@ -79,7 +80,7 @@ export function WorkItemDetail({ item }: Props) {
           <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
             Description
           </h3>
-          <p className="text-sm whitespace-pre-wrap leading-relaxed">{item.description}</p>
+          <MarkdownRenderer content={item.description} linkProjectId={item.project_id} className="break-words text-foreground/80 prose-headings:text-foreground prose-a:text-primary prose-pre:overflow-x-auto prose-pre:bg-muted/40" />
         </div>
       )}
 

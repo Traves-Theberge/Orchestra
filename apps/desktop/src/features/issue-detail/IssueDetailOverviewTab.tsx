@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 
 import { Badge } from '@ui/badge'
+import { MarkdownRenderer } from '@ui/MarkdownRenderer'
 import { Button } from '@ui/button'
 import { AppTooltip } from '@ui/tooltip-wrapper'
 import { CustomDropdown } from '@layout/shared/controls'
@@ -263,7 +264,7 @@ export function OverviewTab({
                   <FileText size={10} /> Description
                 </div>
                 <div className="max-h-24 overflow-auto custom-scrollbar">
-                  <p className="text-[11px] leading-relaxed text-muted-foreground/80">{description}</p>
+                  <MarkdownRenderer content={description} className="break-words text-[11px] leading-relaxed text-muted-foreground/80 prose-headings:text-sm prose-headings:text-foreground prose-a:text-primary prose-pre:overflow-x-auto prose-pre:bg-muted/40" />
                 </div>
               </div>
             )}

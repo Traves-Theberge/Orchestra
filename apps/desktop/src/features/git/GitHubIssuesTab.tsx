@@ -1,5 +1,6 @@
 import { CircleDot, ExternalLink, Plus, X } from 'lucide-react'
 import { useAppStore } from '@core/store'
+import { MarkdownRenderer } from '@ui/MarkdownRenderer'
 import type { GitHubIssue } from '@core/api/client'
 
 type IssueFilter = 'open' | 'closed' | 'all'
@@ -121,7 +122,7 @@ export function GitHubIssuesTab({
             </div>
             {expandedIssue === issue.number && (
               <div className="ml-6 px-2 py-1.5 text-[11.5px] text-muted-foreground/85">
-                <p className="mb-2 whitespace-pre-wrap leading-relaxed">{issue.body || 'No description'}</p>
+                <MarkdownRenderer content={issue.body || 'No description'} className="mb-2 break-words text-[11.5px] leading-relaxed text-muted-foreground/85 prose-headings:text-sm prose-headings:text-foreground prose-a:text-primary prose-pre:overflow-x-auto prose-pre:bg-muted/40" />
                 <button
                   onClick={() => onToggleIssueState(issue)}
                   disabled={loading}

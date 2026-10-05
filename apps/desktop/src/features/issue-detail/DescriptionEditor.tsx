@@ -58,10 +58,11 @@ export function DescriptionEditor({ value, onChange, onBlur, theme, projectId }:
   return (
     <div
       role="button"
+      aria-label="Edit description"
       tabIndex={0}
       className="flex-1 min-h-0 rounded-lg cursor-text transition-all group/md relative overflow-auto"
-      onClick={() => setEditing(true)}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setEditing(true) } }}
+      onClick={(e) => { if (!(e.target instanceof Element) || !e.target.closest('a, button, input, summary')) setEditing(true) }}
+      onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setEditing(true) } }}
     >
       <div className="absolute top-2 right-2 opacity-0 group-hover/md:opacity-100 transition-opacity">
         <div className="flex items-center gap-1 rounded-md bg-muted/80 backdrop-blur px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50 border border-border/30">

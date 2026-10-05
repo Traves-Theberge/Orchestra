@@ -460,8 +460,8 @@ export function IssueDetailView({
                   projectId={projectId}
                 />
               ) : (
-                <div className="px-4 py-3 text-base text-foreground/80 whitespace-pre-wrap leading-relaxed">
-                  {localDescription || 'No description'}
+                <div className="min-h-0 overflow-auto px-4 py-3">
+                  <MarkdownRenderer content={localDescription || 'No description'} linkProjectId={projectId || undefined} className="break-words text-foreground/80 prose-headings:text-foreground prose-a:text-primary prose-pre:overflow-x-auto prose-pre:bg-muted/40" />
                 </div>
               )}
               {(typed.feedback as string) && (
