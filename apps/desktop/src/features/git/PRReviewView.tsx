@@ -88,10 +88,10 @@ function PRReviewPanel({
   const canAct = !loading && !dataLoading && !error && snapshotPR?.state === 'open' && !snapshotPR.merged_at && !snapshotPR.draft
 
   async function handleReview(event: string) {
-    if (!canAct) return
+    if (!canAct || !snapshotPR?.head.sha) return
     setLoading(true)
     try {
-      await submitPRReview(config, projectId, pr.number, reviewBody, event)
+      await submitPRReview(config, projectId, pr.number, reviewBody, event, snapshotPR.head.sha)
       if (!mounted.current) return
       setReviewBody('')
       await loadData()

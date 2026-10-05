@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -212,7 +213,7 @@ func TestGetPRReviewsNotConfigured(t *testing.T) {
 func TestPostPRReviewNotConfigured(t *testing.T) {
 	router, projectID := newTestRouterWithGitProject(t)
 
-	body, _ := json.Marshal(map[string]string{"body": "LGTM", "event": "APPROVE"})
+	body, _ := json.Marshal(map[string]string{"body": "LGTM", "event": "APPROVE", "commit_id": strings.Repeat("a", 40)})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID+"/github/pulls/1/reviews", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()

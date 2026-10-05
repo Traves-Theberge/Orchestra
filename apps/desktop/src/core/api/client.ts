@@ -2070,8 +2070,8 @@ export async function fetchPRReviews(config: BackendConfig, projectId: string, p
  * @param body - Review body text.
  * @param event - Review event type (e.g. "APPROVE", "REQUEST_CHANGES", "COMMENT").
  */
-export async function submitPRReview(config: BackendConfig, projectId: string, prNumber: number, body: string, event: string): Promise<void> {
-  await requestJSON(config, `/api/v1/projects/${encodeURIComponent(projectId)}/github/pulls/${prNumber}/reviews`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body, event }) })
+export async function submitPRReview(config: BackendConfig, projectId: string, prNumber: number, body: string, event: string, reviewedHeadSHA: string): Promise<void> {
+  await requestJSON(config, `/api/v1/projects/${encodeURIComponent(projectId)}/github/pulls/${prNumber}/reviews`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body, event, commit_id: reviewedHeadSHA }) })
 }
 
 /**
