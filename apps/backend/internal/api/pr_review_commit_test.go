@@ -51,14 +51,18 @@ func TestPostPRReviewConfirmsExactCommitAndSubmittedState(t *testing.T) {
 	for _, scenario := range []struct {
 		name, hostBody, apiCode string
 		hostStatus, apiStatus   int
+		event                   string
 	}{
-		{"confirmed approval", `{"id":18,"state":"APPROVED","commit_id":"` + commit + `"}`, `"status":"ok"`, 200, 200},
-		{"other commit", `{"id":18,"state":"APPROVED","commit_id":"` + strings.Repeat("b", 40) + `"}`, "pr_review_unconfirmed", 200, 409},
-		{"pending is not submitted", `{"id":18,"state":"PENDING","commit_id":"` + commit + `"}`, "pr_review_unconfirmed", 200, 409},
-		{"missing review identity", `{"state":"APPROVED","commit_id":"` + commit + `"}`, "pr_review_unconfirmed", 200, 409},
-		{"malformed response", `{`, "pr_review_unconfirmed", 200, 409},
-		{"server failure is uncertain", `{}`, "pr_review_unconfirmed", 500, 409},
-		{"rejected request", `{"message":"Forbidden"}`, "github_review_failed", 403, 502},
+		{"confirmed approval", `{"id":18,"state":"APPROVED","commit_id":"` + commit + `"}`, `"status":"ok"`, 200, 200, "APPROVE"},
+		{"confirmed comment", `{"id":18,"state":"COMMENTED","commit_id":"` + commit + `"}`, `"status":"ok"`, 200, 200, "COMMENT"},
+		{"confirmed changes requested", `{"id":18,"state":"CHANGES_REQUESTED","commit_id":"` + commit + `"}`, `"status":"ok"`, 200, 200, "REQUEST_CHANGES"},
+		{"other commit", `{"id":18,"state":"APPROVED","commit_id":"` + strings.Repeat("b", 40) + `"}`, "pr_review_unconfirmed", 200, 409, "APPROVE"},
+		{"pending is not submitted", `{"id":18,"state":"PENDING","commit_id":"` + commit + `"}`, "pr_review_unconfirmed", 200, 409, "APPROVE"},
+		{"missing review identity", `{"state":"APPROVED","commit_id":"` + commit + `"}`, "pr_review_unconfirmed", 200, 409, "APPROVE"},
+		{"malformed response", `{`, "pr_review_unconfirmed", 200, 409, "APPROVE"},
+		{"server failure is uncertain", `{}`, "pr_review_unconfirmed", 500, 409, "APPROVE"},
+		{"lost response after acceptance", "", "pr_review_unconfirmed", 0, 409, "APPROVE"},
+		{"rejected request", `{"message":"Forbidden"}`, "github_review_failed", 403, 502, "APPROVE"},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -82,8 +86,17 @@ func TestPostPRReviewConfirmsExactCommitAndSubmittedState(t *testing.T) {
 				if err := json.NewDecoder(request.Body).Decode(&posted); err != nil {
 					t.Error(err)
 				}
-				if posted["commit_id"] != commit || posted["event"] != "APPROVE" {
+				if posted["commit_id"] != commit || posted["event"] != scenario.event || posted["body"] != "Fixture review" {
 					t.Errorf("unanchored review payload: %+v", posted)
+				}
+				if scenario.hostStatus == 0 {
+					connection, _, err := w.(http.Hijacker).Hijack()
+					if err != nil {
+						t.Error(err)
+						return
+					}
+					_ = connection.Close() // Received the POST, but its confirmation was lost.
+					return
 				}
 				w.WriteHeader(scenario.hostStatus)
 				_, _ = w.Write([]byte(scenario.hostBody))
@@ -95,7 +108,7 @@ func TestPostPRReviewConfirmsExactCommitAndSubmittedState(t *testing.T) {
 			http.DefaultClient = &http.Client{Transport: transport}
 			defer func() { http.DefaultClient = previous }()
 			server := &Server{logger: zerolog.Nop(), db: warehouse, config: &config.Config{}}
-			recorder := anchoredReviewRequest(server, projectID, `{"event":"APPROVE","commit_id":"`+strings.Repeat("A", 40)+`"}`)
+			recorder := anchoredReviewRequest(server, projectID, `{"event":"`+scenario.event+`","body":"Fixture review","commit_id":"`+strings.Repeat("A", 40)+`"}`)
 			if recorder.Code != scenario.apiStatus || !strings.Contains(recorder.Body.String(), scenario.apiCode) {
 				t.Fatalf("expected %d/%s, got %d %s", scenario.apiStatus, scenario.apiCode, recorder.Code, recorder.Body.String())
 			}

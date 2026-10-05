@@ -27,7 +27,17 @@ The existing expected-head merge guard remains separate.
 
 ## Verification boundary
 
-Focused native API review/merge tests and 35 renderer/client tests passed during
-implementation. Additional API response/uncertain-state tests, full suites and
-hosted CI remain pending for this package. No hosted review was posted by these
-fixtures, and the issue-to-provider-to-review lifecycle is not claimed complete.
+Focused native API review/merge tests passed. Local HTTP fixtures confirm all
+three submitted review events, exact commit/body payloads and one POST without
+automatic retry. Wrong commit, pending state, missing identity, malformed reply,
+host failure and a connection dropped after receiving the POST return an
+uncertain result; explicit host rejection remains a failure. Invalid input is
+rejected before database/token/network activity.
+
+Renderer/client regressions verify snapshot SHA rather than stale props, the
+actual request payload and preserved draft/disabled actions after uncertainty.
+The full desktop suite passed (85 files, 574 tests, two existing skips), as did
+typecheck and production build. Full Linux backend `go test -race ./...` passed.
+Hosted CI remains a merge gate. No hosted review was posted by these fixtures,
+and the issue-to-provider-to-review lifecycle is not claimed complete. Repository
+configuration revision fencing and actual hosted-provider canaries remain open.
