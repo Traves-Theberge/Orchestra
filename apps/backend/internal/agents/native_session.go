@@ -9,6 +9,7 @@ import (
 
 type NativeModelInfo struct {
 	Model           string `json:"model,omitempty"`
+	AgentID         string `json:"agent_id,omitempty"`
 	ApprovalPolicy  string `json:"approval_policy,omitempty"`
 	SandboxMode     string `json:"sandbox_mode,omitempty"`
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
@@ -36,11 +37,12 @@ type NativeModelCatalogProvider interface {
 }
 type NativeEventHandler func(NativeEvent)
 type NativeTurnResult struct {
-	TurnID          string `json:"turn_id"`
-	Status          string `json:"status"`
-	Text            string `json:"text"`
-	Model           string `json:"model,omitempty"`
-	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	TurnID              string `json:"turn_id"`
+	Status              string `json:"status"`
+	Text                string `json:"text"`
+	Model               string `json:"model,omitempty"`
+	ReasoningEffort     string `json:"reasoning_effort,omitempty"`
+	CumulativeTurnCount int64  `json:"cumulative_turn_count,omitempty"`
 }
 type NativeTurnOptions struct {
 	Model           string `json:"model,omitempty"`
@@ -66,7 +68,7 @@ func (r *Registry) SupportsNativeSession(provider Provider) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	p := NormalizeProvider(string(provider))
-	return p == ProviderCodex && strings.TrimSpace(r.nativeCommands[p]) != ""
+	return (p == ProviderCodex || p == ProviderAntigravity) && strings.TrimSpace(r.nativeCommands[p]) != ""
 }
 
 // Native control requires the interactive adapter's actual dynamic-tool protocol.
@@ -101,5 +103,8 @@ func (r *Registry) StartNativeSession(ctx context.Context, provider Provider, re
 		return nil, fmt.Errorf("native turn budgets are not supported")
 	}
 	command, _ := r.NativeCommandFor(provider)
+	if NormalizeProvider(string(provider)) == ProviderAntigravity {
+		return NewAntigravityNativeSession(ctx, command, request, threadID, onEvent)
+	}
 	return NewCodexNativeSession(ctx, command, request, threadID, onEvent)
 }

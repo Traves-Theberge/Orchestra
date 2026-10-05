@@ -207,6 +207,8 @@ func (r *Registry) SetCommand(provider Provider, command string) {
 		r.runners[p] = NewOpenCodeRunner(command)
 	case ProviderGemini:
 		r.runners[p] = NewGeminiRunner(command)
+	case ProviderAntigravity:
+		r.runners[p] = NewCommandRunner(p, command)
 	case ProviderUnsandbox:
 		client, err := unsandbox.NewClientFromEnv()
 		if err == nil {

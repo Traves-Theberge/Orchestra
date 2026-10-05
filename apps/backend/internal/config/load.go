@@ -24,16 +24,20 @@ func Load() (Config, error) {
 	agentProviderDefault := "CODEX"
 	agentMaxTurnsDefault := 25
 	agentCommandsDefault := map[string]string{
-		"CLAUDE":   "claude -p {{prompt}} --output-format stream-json --verbose --dangerously-skip-permissions",
-		"CODEX":    "codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json {{prompt}}",
-		"GEMINI":   "gemini -p {{prompt}} --output-format stream-json --approval-mode yolo",
-		"OPENCODE": "opencode -p {{prompt}} -f json",
-		"8GENT":    "8gent run --yes --output-format stream-json {{prompt}}",
+		"CLAUDE":      "claude -p {{prompt}} --output-format stream-json --verbose --dangerously-skip-permissions",
+		"CODEX":       "codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json {{prompt}}",
+		"GEMINI":      "gemini -p {{prompt}} --output-format stream-json --approval-mode yolo",
+		"ANTIGRAVITY": "agy -p {{prompt}} --output-format stream-json",
+		"OPENCODE":    "opencode -p {{prompt}} -f json",
+		"8GENT":       "8gent run --yes --output-format stream-json {{prompt}}",
 	}
-	nativeAgentCommands := map[string]string{"CODEX": "codex app-server"}
+	nativeAgentCommands := map[string]string{"CODEX": "codex app-server", "ANTIGRAVITY": "agy"}
 	// An explicitly empty value disables native Codex chat. Batch flags are not inherited.
 	if nativeCodex, explicit := os.LookupEnv("ORCHESTRA_NATIVE_COMMAND_CODEX"); explicit {
 		nativeAgentCommands["CODEX"] = strings.TrimSpace(nativeCodex)
+	}
+	if nativeAntigravity, explicit := os.LookupEnv("ORCHESTRA_NATIVE_COMMAND_ANTIGRAVITY"); explicit {
+		nativeAgentCommands["ANTIGRAVITY"] = strings.TrimSpace(nativeAntigravity)
 	}
 
 	host := getenvOrEmpty("ORCHESTRA_SERVER_HOST")

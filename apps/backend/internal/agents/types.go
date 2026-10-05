@@ -24,6 +24,9 @@ const (
 	ProviderGemini Provider = "GEMINI"
 	// Provider8gent identifies the 8gent Code open-source agent.
 	Provider8gent Provider = "8GENT"
+	// ProviderAntigravity identifies Google's Antigravity CLI independently
+	// from the legacy Gemini CLI and its account configuration.
+	ProviderAntigravity Provider = "ANTIGRAVITY"
 )
 
 // RuntimeTarget identifies where an agent turn executes.
@@ -66,7 +69,10 @@ type TurnRequest struct {
 	RequestedAgentScope       string
 	RequestedAgentContentHash string
 	RequestedAgentFormat      string
-	ProjectID                 string
+	// ProviderTurnCounter is the last durably observed cumulative provider turn
+	// count for a resumed native conversation. Zero is the fresh-thread baseline.
+	ProviderTurnCounter int64
+	ProjectID           string
 	// RequestedMaxTurns is retained for validation; its budget semantics are not implemented.
 	RequestedMaxTurns *int
 	SessionID         string

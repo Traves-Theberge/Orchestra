@@ -13,9 +13,10 @@ import (
 )
 
 type fakeNativeRegistry struct {
-	mu     sync.Mutex
-	starts []string
-	native *fakeNative
+	mu       sync.Mutex
+	starts   []string
+	native   *fakeNative
+	provider agents.Provider
 }
 
 func (r *fakeNativeRegistry) HasProvider(agents.Provider) bool { return true }
@@ -26,7 +27,7 @@ func (r *fakeNativeRegistry) RunTurn(context.Context, agents.Provider, agents.Tu
 	panic("native must not replay")
 }
 func (r *fakeNativeRegistry) SupportsNativeSession(p agents.Provider) bool {
-	return p == agents.ProviderCodex
+	return p == agents.ProviderCodex || p == r.provider
 }
 func (r *fakeNativeRegistry) StartNativeSession(_ context.Context, _ agents.Provider, _ agents.TurnRequest, id string, h agents.NativeEventHandler) (agents.NativeSession, error) {
 	r.mu.Lock()

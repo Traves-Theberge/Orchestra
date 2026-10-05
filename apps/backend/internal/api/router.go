@@ -112,7 +112,7 @@ func NewRouterWithPubSub(
 		server.workspaceChat = chat[0]
 	}
 	if warehouseDB != nil {
-		catalog, err := agentcatalog.New(warehouseDB, cfg.ProjectRoots, cfg.WorkspaceRoot, cfg.AgentCommands)
+		catalog, err := agentcatalog.New(warehouseDB, cfg.ProjectRoots, cfg.WorkspaceRoot, cfg.AgentCommands, cfg.NativeAgentCommands)
 		if err == nil {
 			server.agentCatalog = catalog
 			if server.workspaceChat != nil {

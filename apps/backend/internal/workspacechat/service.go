@@ -547,6 +547,15 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 	if req.RequestedReasoningEffort == "" {
 		req.RequestedReasoningEffort = d.Session.RequestedReasoningEffort
 	}
+	if d.Session.Provider == string(agents.ProviderAntigravity) && d.Session.ConversationMode == "native_session" {
+		// AGY pins configuration to its process. Reject a known unsupported
+		// change before recording a submission, rather than labeling an
+		// undispatched message as an uncertain provider delivery.
+		if req.RequestedReasoningEffort != "" || d.Session.ProviderThreadID != "" &&
+			d.Session.EffectiveModel != "" && req.RequestedModel != "" && req.RequestedModel != d.Session.EffectiveModel {
+			return Accepted{}, fmt.Errorf("%w: Antigravity configuration changes require a new conversation", ErrUnsupported)
+		}
+	}
 	if req.RequestedAgentID != "" {
 		if err = s.validateAgentIntent(ctx, pid, d.Session.Provider, req.RequestedAgentID, req.RequestedAgentScope, req.RequestedAgentContentHash, req.RequestedAgentFormat); err != nil {
 			return Accepted{}, err

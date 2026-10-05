@@ -161,8 +161,8 @@ func New(database *db.DB, allowedRoots []string, workspaceRoot string, commands 
 		return nil, err
 	}
 	commandMap := map[string]string{}
-	if len(commands) > 0 {
-		for key, value := range commands[0] {
+	for _, group := range commands {
+		for key, value := range group {
 			commandMap[strings.ToUpper(key)] = value
 		}
 	}
@@ -568,6 +568,11 @@ func resourceSpecs(harness string, scope resolvedScope) []resourceSpec {
 		return []resourceSpec{{scope.root, filepath.Join(scope.root, ".claude", "agents"), KindAgentDefinition, ".md", true}, {scope.root, filepath.Join(scope.root, ".claude", "skills"), KindSkill, "", true}}
 	case "CODEX":
 		return []resourceSpec{{scope.root, filepath.Join(scope.root, ".codex", "agents"), KindAgentDefinition, ".toml", false}, {scope.root, filepath.Join(scope.root, ".agents", "skills"), KindSkill, "", true}, {scope.root, filepath.Join(scope.root, ".codex", "skills"), KindSkill, ".md", false}}
+	case "ANTIGRAVITY":
+		if scope.scope == ScopeGlobal {
+			return []resourceSpec{{scope.root, filepath.Join(scope.root, ".gemini", "config", "agents"), KindAgentDefinition, ".md", true}, {scope.root, filepath.Join(scope.root, ".gemini", "antigravity-cli", "skills"), KindSkill, "", true}}
+		}
+		return []resourceSpec{{scope.root, filepath.Join(scope.root, ".agents", "agents"), KindAgentDefinition, ".md", true}, {scope.root, filepath.Join(scope.root, ".agents", "skills"), KindSkill, "", true}}
 	default:
 		return nil
 	}
@@ -619,7 +624,14 @@ func walkResources(root, dir string, kind Kind, harness string, scope Scope, cap
 		if err != nil {
 			return err
 		}
-		id := filepath.ToSlash(strings.TrimSuffix(filepath.ToSlash(strings.TrimPrefix(path, dir+string(filepath.Separator))), format))
+		name := filepath.ToSlash(strings.TrimPrefix(path, dir+string(filepath.Separator)))
+		id := filepath.ToSlash(strings.TrimSuffix(name, format))
+		if kind == KindAgentDefinition && harness == "ANTIGRAVITY" && strings.EqualFold(filepath.Base(path), "agent.md") {
+			id = filepath.ToSlash(filepath.Dir(name))
+			if id == "." {
+				id = ""
+			}
+		}
 		if kind == KindSkill && filepath.Base(path) == "SKILL.md" {
 			id = filepath.ToSlash(filepath.Dir(strings.TrimPrefix(path, dir+string(filepath.Separator))))
 			if id == "." {
@@ -693,6 +705,9 @@ func (s *Service) targetPath(ctx context.Context, req Request, kind Kind, id, fo
 		}
 		if kind == KindAgentDefinition {
 			ext := spec.ext
+			if harness == "ANTIGRAVITY" && format != "antigravity-markdown" {
+				return "", ErrInvalid
+			}
 			if harness == "OPENCODE" {
 				if format != "" && format != "opencode-v1" && format != "opencode-v2" && format != "md" {
 					return "", ErrInvalid
@@ -705,9 +720,24 @@ func (s *Service) targetPath(ctx context.Context, req Request, kind Kind, id, fo
 			if harness == "CLAUDE" && format != "md" && format != "" {
 				return "", ErrInvalid
 			}
+			if harness == "ANTIGRAVITY" {
+				directoryForm := filepath.Join(spec.dir, filepath.FromSlash(id), "agent.md")
+				fileForm := filepath.Join(spec.dir, filepath.FromSlash(id)+ext)
+				if _, err := os.Stat(directoryForm); err == nil {
+					return directoryForm, nil
+				} else if !errors.Is(err, os.ErrNotExist) {
+					return "", err
+				}
+				if _, err := os.Stat(fileForm); err == nil {
+					return fileForm, nil
+				} else if !errors.Is(err, os.ErrNotExist) {
+					return "", err
+				}
+				return directoryForm, nil
+			}
 			return filepath.Join(spec.dir, filepath.FromSlash(id)+ext), nil
 		}
-		if harness == "OPENCODE" || harness == "CLAUDE" {
+		if harness == "OPENCODE" || harness == "CLAUDE" || harness == "ANTIGRAVITY" {
 			return filepath.Join(spec.dir, filepath.FromSlash(id), "SKILL.md"), nil
 		}
 		if harness == "CODEX" {
@@ -747,6 +777,25 @@ func validateNativeContent(req MutationRequest, content string) error {
 		return ErrInvalid
 	}
 	if req.Kind == KindAgentDefinition {
+		if req.Harness == "ANTIGRAVITY" {
+			if req.Format != "antigravity-markdown" || !strings.HasPrefix(content, "---\n") {
+				return ErrInvalid
+			}
+			end := strings.Index(content[4:], "\n---")
+			if end < 0 {
+				return fmt.Errorf("Antigravity agent frontmatter is incomplete")
+			}
+			var values map[string]any
+			if err := yaml.Unmarshal([]byte(content[4:4+end]), &values); err != nil {
+				return fmt.Errorf("invalid Antigravity agent frontmatter: %w", err)
+			}
+			name, _ := values["name"].(string)
+			description, _ := values["description"].(string)
+			if strings.TrimSpace(name) == "" || strings.TrimSpace(description) == "" {
+				return fmt.Errorf("Antigravity agent frontmatter requires name and description")
+			}
+			return nil
+		}
 		if req.Harness == "OPENCODE" {
 			if req.Format != "opencode-v1" && req.Format != "opencode-v2" {
 				return ErrInvalid
@@ -788,6 +837,8 @@ func selectionStatus(harness string, kind Kind, mode, capability string) (string
 		return SelectionUnsupported, "Skills are not primary-agent profiles."
 	}
 	switch harness {
+	case "ANTIGRAVITY":
+		return SelectionConfiguredUnapplied, "The CLI exposes --agent, but effective custom-agent selection has not been verified by an isolated native canary. Profile role metadata is preserved separately."
 	case "OPENCODE":
 		if mode == "subagent" {
 			return "subagent_only", "OpenCode marks this profile as a subagent."
@@ -810,12 +861,16 @@ func selectionStatus(harness string, kind Kind, mode, capability string) (string
 }
 
 func supportsAuthoring(harness string) bool {
-	return harness == "OPENCODE" || harness == "CLAUDE" || harness == "CODEX"
+	return harness == "OPENCODE" || harness == "CLAUDE" || harness == "CODEX" || harness == "ANTIGRAVITY"
 }
 
 func (s *Service) selectionProbe(ctx context.Context, harness string) runtimeProbe {
 	if harness == "ANTIGRAVITY" {
-		return runtimeProbe{SelectionUnsupported, "", "The Antigravity ACP transport is not wired to workspace chat; native agent-definition discovery and primary selection are unavailable."}
+		command := strings.TrimSpace(s.commands[harness])
+		if command == "" {
+			return runtimeProbe{SelectionUnavailable, "", "No Antigravity CLI command is configured. Native profiles and skills can still be discovered and authored."}
+		}
+		return probeAntigravityCommand(ctx, command)
 	}
 	if harness != "OPENCODE" {
 		if harness == "CODEX" || harness == "CLAUDE" {
@@ -869,6 +924,44 @@ func probeOpenCodeCommand(ctx context.Context, command string) runtimeProbe {
 		return runtimeProbe{SelectionUnsupported, version, "The configured OpenCode CLI does not advertise run --agent."}
 	}
 	return runtimeProbe{SelectionConfiguredUnapplied, version, "The configured OpenCode CLI advertises run --agent, but Orchestra has no isolated effective-agent canary for this version."}
+}
+
+// probeAntigravityCommand performs only bounded, read-only CLI probes. Agent
+// selection remains configured-but-unapplied until a native canary verifies
+// the effective custom agent for the installed version.
+func probeAntigravityCommand(ctx context.Context, command string) runtimeProbe {
+	binary, ok := configuredExecutable(command)
+	if !ok {
+		return runtimeProbe{SelectionUnknown, "", "The configured Antigravity command is a shell expression; its executable cannot be safely probed."}
+	}
+	base := strings.ToLower(filepath.Base(binary))
+	if base != "agy" && base != "agy.exe" {
+		return runtimeProbe{SelectionUnknown, "", "The configured command does not directly identify the Antigravity CLI executable."}
+	}
+	resolved, err := exec.LookPath(binary)
+	if err != nil {
+		return runtimeProbe{SelectionUnavailable, "", "The configured Antigravity executable is not installed or not on PATH."}
+	}
+	versionCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	versionOut, versionErr := exec.CommandContext(versionCtx, resolved, "--version").CombinedOutput()
+	if versionErr != nil {
+		return runtimeProbe{SelectionUnknown, "", "Antigravity CLI version could not be observed safely."}
+	}
+	version := strings.TrimSpace(string(versionOut))
+	helpCtx, helpCancel := context.WithTimeout(ctx, 3*time.Second)
+	defer helpCancel()
+	helpOut, helpErr := exec.CommandContext(helpCtx, resolved, "--help").CombinedOutput()
+	if helpErr != nil {
+		return runtimeProbe{SelectionUnknown, version, "Antigravity CLI help could not be observed safely."}
+	}
+	help := string(helpOut)
+	for _, flag := range []string{"--agent", "--input-format", "--output-format", "--conversation"} {
+		if !strings.Contains(help, flag) {
+			return runtimeProbe{SelectionUnsupported, version, "The configured Antigravity CLI does not advertise the required native session flags."}
+		}
+	}
+	return runtimeProbe{SelectionConfiguredUnapplied, version, "The CLI advertises native agent selection and resumable stream-json sessions; effective custom-agent selection has not been verified with an isolated provider canary."}
 }
 
 func configuredExecutable(command string) (string, bool) {
@@ -945,11 +1038,23 @@ func parseMetadata(data []byte) struct{ name, description, mode string } {
 	out.name, _ = fields["name"].(string)
 	out.description, _ = fields["description"].(string)
 	out.mode, _ = fields["mode"].(string)
+	if subagent, ok := fields["subagent"].(bool); ok && subagent {
+		out.mode = "subagent"
+	} else if mainAgent, ok := fields["mainAgent"].(bool); ok {
+		if mainAgent {
+			out.mode = "primary"
+		} else {
+			out.mode = "subagent"
+		}
+	}
 	return out
 }
 func formatName(harness, ext string) string {
 	if harness == "OPENCODE" && ext == ".md" {
 		return "opencode-markdown"
+	}
+	if harness == "ANTIGRAVITY" && ext == ".md" {
+		return "antigravity-markdown"
 	}
 	return strings.TrimPrefix(ext, ".")
 }

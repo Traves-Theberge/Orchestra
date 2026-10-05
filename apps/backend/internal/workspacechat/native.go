@@ -60,7 +60,35 @@ func migrateNative(d *db.DB) error {
  CREATE TABLE IF NOT EXISTS workspace_chat_modes(session_id TEXT PRIMARY KEY,mode TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS workspace_chat_events(sequence INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL,event TEXT NOT NULL,created_at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS workspace_chat_requests(session_id TEXT NOT NULL,id TEXT NOT NULL,turn_id TEXT NOT NULL,method TEXT NOT NULL,params TEXT NOT NULL,status TEXT NOT NULL,answer TEXT NOT NULL DEFAULT '',client_response_id TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,PRIMARY KEY(session_id,id));
- UPDATE workspace_chat_requests SET status='unknown' WHERE status IN ('pending','sending');`)
+	 UPDATE workspace_chat_requests SET status='unknown' WHERE status IN ('pending','sending');`)
+	if err != nil {
+		return err
+	}
+	rows, err := d.Query(`PRAGMA table_info(workspace_chat_native)`)
+	if err != nil {
+		return err
+	}
+	hasCounter := false
+	for rows.Next() {
+		var cid, notNull, primary int
+		var name, dataType string
+		var defaultValue any
+		if err = rows.Scan(&cid, &name, &dataType, &notNull, &defaultValue, &primary); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == "cumulative_turn_count" {
+			hasCounter = true
+		}
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	if !hasCounter {
+		_, err = d.Exec(`ALTER TABLE workspace_chat_native ADD COLUMN cumulative_turn_count INTEGER`)
+	}
 	return err
 }
 func (s *Service) supportsNative(p agents.Provider) bool {
@@ -231,10 +259,28 @@ func (s *Service) runNative(ctx context.Context, cancel context.CancelFunc, sess
 	s.mu.Unlock()
 	var err error
 	if native == nil {
+		if agents.Provider(sess.Provider) == agents.ProviderAntigravity {
+			var baseline sql.NullInt64
+			var persistedThread string
+			if queryErr := s.db.QueryRowContext(ctx, `SELECT thread_id,cumulative_turn_count FROM workspace_chat_native WHERE session_id=?`, sess.ID).Scan(&persistedThread, &baseline); queryErr != nil {
+				err = queryErr
+			} else if persistedThread != "" && !baseline.Valid {
+				err = errors.New("Antigravity conversation has no durable cumulative-turn baseline; resume is unknown")
+			} else if persistedThread != "" && persistedThread != sess.ProviderThreadID {
+				err = errors.New("Antigravity persisted conversation identity changed")
+			} else if baseline.Valid {
+				turn.ProviderTurnCounter = baseline.Int64
+			}
+		}
+	}
+	if native == nil && err == nil {
 		native, err = s.registry.(nativeRegistry).StartNativeSession(context.Background(), agents.Provider(sess.Provider), turn, sess.ProviderThreadID, onEvent)
 		if err == nil {
 			info := native.ModelInfo()
 			_, err = s.db.Exec(`UPDATE workspace_chat_native SET thread_id=?,effective_model=?,approval_policy=?,sandbox_mode=? WHERE session_id=?`, native.ThreadID(), info.Model, info.ApprovalPolicy, info.SandboxMode, sess.ID)
+			if err == nil && info.AgentID != "" {
+				_, err = s.db.Exec(`UPDATE workspace_chat_agent_selection SET effective_agent_id=?,observation='runtime_reported' WHERE session_id=?`, info.AgentID, sess.ID)
+			}
 			if err == nil {
 				s.mu.Lock()
 				if s.closed {
@@ -290,6 +336,11 @@ func (s *Service) runNative(ctx context.Context, cancel context.CancelFunc, sess
 		}
 		if _, e := s.db.Exec(`UPDATE workspace_chat_efforts SET observed=? WHERE session_id=?`, effort, sess.ID); e != nil {
 			status, msgStatus, errorText = "interrupted", "unknown", "Effective reasoning configuration persistence failed."
+		}
+		if agents.Provider(sess.Provider) == agents.ProviderAntigravity && result.CumulativeTurnCount > 0 {
+			if _, e := s.db.Exec(`UPDATE workspace_chat_native SET cumulative_turn_count=? WHERE session_id=?`, result.CumulativeTurnCount, sess.ID); e != nil {
+				status, msgStatus, errorText = "interrupted", "unknown", "Antigravity turn counter persistence failed; resume is unknown."
+			}
 		}
 	}
 	if err != nil && native != nil {

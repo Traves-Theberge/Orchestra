@@ -116,17 +116,47 @@ func TestCatalogRejectsPathTraversalAndUnallowlistedConfig(t *testing.T) {
 	}
 }
 
-func TestAntigravityCatalogIsVisibleButUnsupportedAndNotGemini(t *testing.T) {
+func TestAntigravityCatalogUsesNativeCLIPathsAndPreservesProfileRole(t *testing.T) {
 	service, _, _ := testService(t)
 	catalog, err := service.List(context.Background(), Request{ProjectID: "__orchestrator__", Harness: "ANTIGRAVITY", Scope: ScopeGlobal})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if catalog.Harness != "ANTIGRAVITY" || catalog.Observation != "unsupported" || catalog.SelectionCapability != SelectionUnsupported || catalog.Capabilities.Create || len(catalog.Items) != 0 {
-		t.Fatalf("Antigravity must remain visible without being mapped to Gemini or exposed as selectable: %#v", catalog)
+	if catalog.Harness != "ANTIGRAVITY" || catalog.Observation != "observed" || catalog.SelectionCapability != SelectionUnavailable || !catalog.Capabilities.Create || catalog.Capabilities.SelectPrimary || len(catalog.Items) != 0 {
+		t.Fatalf("Antigravity authoring/discovery capability is wrong: %#v", catalog)
 	}
 	if _, err = service.List(context.Background(), Request{ProjectID: "__orchestrator__", Harness: "ANTIGRAVITY", Scope: ScopeProject}); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("orchestrator project scope should fail closed: %v", err)
+	}
+
+	content := "---\nname: security-reviewer\ndescription: Security review profile\nsubagent: true\nmainAgent: false\nmodel: pro\ncustomPermission: preserve-me\n---\n\nReview code for security issues.\n"
+	created, err := service.Mutate(context.Background(), MutationRequest{Operation: "create", ProjectID: "__orchestrator__", Harness: "ANTIGRAVITY", Scope: ScopeGlobal, Kind: KindAgentDefinition, ResourceID: "security-reviewer", RequestID: uuid.NewString(), Format: "antigravity-markdown", Content: content})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantProfile := filepath.Join(os.Getenv("USERPROFILE"), ".gemini", "config", "agents", "security-reviewer", "agent.md")
+	if filepath.Clean(created.Path) != filepath.Clean(wantProfile) {
+		t.Fatalf("profile was written outside documented AGY path: got %s want %s", created.Path, wantProfile)
+	}
+	got, err := service.Get(context.Background(), Request{ProjectID: "__orchestrator__", Harness: "ANTIGRAVITY", Scope: ScopeGlobal}, KindAgentDefinition, "security-reviewer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Harness != "ANTIGRAVITY" || got.Content != content || got.Format != "antigravity-markdown" || got.Mode != "subagent" || got.SelectionStatus != SelectionConfiguredUnapplied || got.SelectableAsPrimary {
+		t.Fatalf("profile identity, raw content, or role changed: %#v", got)
+	}
+	if _, err = service.Get(context.Background(), Request{ProjectID: "__orchestrator__", Harness: "GEMINI", Scope: ScopeGlobal}, KindAgentDefinition, "security-reviewer"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Antigravity profile appeared under legacy Gemini: %v", err)
+	}
+
+	skill := "---\nname: security-checklist\ndescription: Review guide\n---\n# Security checklist\n"
+	_, err = service.Mutate(context.Background(), MutationRequest{Operation: "create", ProjectID: "__orchestrator__", Harness: "ANTIGRAVITY", Scope: ScopeGlobal, Kind: KindSkill, ResourceID: "security-checklist", RequestID: uuid.NewString(), Content: skill})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotSkill, err := service.Get(context.Background(), Request{ProjectID: "__orchestrator__", Harness: "ANTIGRAVITY", Scope: ScopeGlobal}, KindSkill, "security-checklist")
+	if err != nil || gotSkill.Content != skill {
+		t.Fatalf("global CLI skill missing or changed: %#v %v", gotSkill, err)
 	}
 }
 
