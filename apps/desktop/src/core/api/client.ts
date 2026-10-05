@@ -2657,6 +2657,19 @@ export async function listTrackerConfigs(config: BackendConfig): Promise<Tracker
   return requestJSON<TrackerConfig[]>(config, '/api/v1/tracker/configs')
 }
 
+/** Link a project to a saved tracker connection, or clear the link with an empty config ID. */
+export async function assignProjectTrackerConfig(
+  config: BackendConfig,
+  projectId: string,
+  configId: string,
+): Promise<{ ok: boolean }> {
+  return requestJSON<{ ok: boolean }>(config, `/api/v1/projects/${encodeURIComponent(projectId)}/tracker`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ config_id: configId }),
+  })
+}
+
 export async function createTrackerConfig(
   config: BackendConfig,
   payload: { type: string; display_name: string; endpoint?: string; auth_method?: string; token?: string; extra?: Record<string, unknown> },

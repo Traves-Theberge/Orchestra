@@ -6,12 +6,39 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker/jira"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func newCloudTestClient(t *testing.T, user string, handler http.HandlerFunc) (*jira.Client, *httptest.Server) {
+	t.Helper()
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+	target, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatalf("parse fixture URL: %v", err)
+	}
+	transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		forward := req.Clone(req.Context())
+		forwardURL := *req.URL
+		forwardURL.Scheme = target.Scheme
+		forwardURL.Host = target.Host
+		forward.URL = &forwardURL
+		forward.Host = target.Host
+		return srv.Client().Transport.RoundTrip(forward)
+	})
+	c := jira.NewClient("https://acme.atlassian.net", user, "fixture-api-token", &http.Client{Transport: transport}, nil)
+	c.SetDefaultProject("PROJ")
+	return c, srv
+}
 
 // newServerClient creates a client pointed at an httptest server using Server
 // detection path (Basic auth) since httptest gives us a localhost URL.
@@ -20,10 +47,12 @@ func newServerClient(t *testing.T, h http.HandlerFunc, stateMap map[string]strin
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	c := jira.NewClient(srv.URL, "user@example.com", "pat-token", srv.Client(), stateMap)
+	c.SetDefaultProject("PROJ")
 	return c, srv
 }
 
 func TestFetch_ReturnsWorkItems(t *testing.T) {
+	var capturedJQL string
 	c, _ := newServerClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.URL.Path, "/rest/api/2/search") {
 			t.Errorf("unexpected path: %s", r.URL.Path)
@@ -33,6 +62,7 @@ func TestFetch_ReturnsWorkItems(t *testing.T) {
 		if !ok || user != "user@example.com" || pass != "pat-token" {
 			t.Errorf("basic auth: got %q/%q ok=%v", user, pass, ok)
 		}
+		capturedJQL = r.URL.Query().Get("jql")
 		json.NewEncoder(w).Encode(map[string]any{
 			"issues": []map[string]any{
 				{
@@ -43,6 +73,7 @@ func TestFetch_ReturnsWorkItems(t *testing.T) {
 						"priority": map[string]any{"name": "High"},
 						"status":   map[string]any{"name": "In Progress"},
 						"labels":   []string{"backend"},
+						"project":  map[string]any{"key": "PROJ"},
 					},
 				},
 			},
@@ -68,6 +99,53 @@ func TestFetch_ReturnsWorkItems(t *testing.T) {
 	}
 	if got.Priority != 2 {
 		t.Errorf("priority: got %d, want 2 (High)", got.Priority)
+	}
+	if got.SourceID != "10001" || got.SourceProjectID != "PROJ" {
+		t.Errorf("native identities: source_id=%q source_project_id=%q", got.SourceID, got.SourceProjectID)
+	}
+	if !strings.Contains(capturedJQL, "project = PROJ") {
+		t.Fatalf("JQL did not include configured project scope: %q", capturedJQL)
+	}
+}
+
+func TestFetchProjectsReturnsJiraProjectIDAndKeySeparately(t *testing.T) {
+	c, _ := newServerClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode([]map[string]any{{"id": "20002", "key": "PROJ", "name": "Project"}})
+	}, nil)
+	projects, err := c.FetchProjects(context.Background())
+	if err != nil {
+		t.Fatalf("FetchProjects: %v", err)
+	}
+	if len(projects) != 1 || projects[0].ID != "20002" || projects[0].Key != "PROJ" || projects[0].Name != "Project" {
+		t.Fatalf("unexpected Jira project identity: %+v", projects)
+	}
+}
+
+func TestFetch_ExplicitJQLCannotEscapeConfiguredProject(t *testing.T) {
+	var capturedJQL string
+	c, _ := newServerClient(t, func(w http.ResponseWriter, r *http.Request) {
+		capturedJQL = r.URL.Query().Get("jql")
+		json.NewEncoder(w).Encode(map[string]any{"issues": []any{}})
+	}, nil)
+	if _, err := c.Fetch(context.Background(), jira.FilterFromJQL(`project = OTHER OR text ~ "x" ORDER BY updated DESC`)); err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if !strings.Contains(capturedJQL, "project = PROJ AND (project = OTHER OR text ~") || !strings.HasSuffix(capturedJQL, "ORDER BY updated DESC") {
+		t.Fatalf("unexpected scoped JQL: %q", capturedJQL)
+	}
+}
+
+func TestFetch_OrderOnlyJQLKeepsValidProjectScope(t *testing.T) {
+	var capturedJQL string
+	c, _ := newServerClient(t, func(w http.ResponseWriter, r *http.Request) {
+		capturedJQL = r.URL.Query().Get("jql")
+		json.NewEncoder(w).Encode(map[string]any{"issues": []any{}})
+	}, nil)
+	if _, err := c.Fetch(context.Background(), jira.FilterFromJQL("ORDER BY created DESC")); err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if capturedJQL != "project = PROJ ORDER BY created DESC" {
+		t.Fatalf("unexpected order-only scoped JQL: %q", capturedJQL)
 	}
 }
 
@@ -103,10 +181,59 @@ func TestNewClient_CloudDetectionAndAuth(t *testing.T) {
 	}
 }
 
+func TestCloudSearchUsesEmailBasicAuthAndEnhancedRoute(t *testing.T) {
+	var gotPath, gotUser, gotPassword string
+	c, _ := newCloudTestClient(t, "user@example.com", func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotUser, gotPassword, _ = r.BasicAuth()
+		json.NewEncoder(w).Encode(map[string]any{"issues": []map[string]any{{
+			"id": "10001", "key": "PROJ-1",
+			"fields": map[string]any{"summary": "Cloud issue", "project": map[string]any{"key": "PROJ"}},
+		}}})
+	})
+	issues, err := c.Fetch(context.Background(), jira.FilterFromJQL("project = PROJ"))
+	if err != nil {
+		t.Fatalf("Cloud Fetch: %v", err)
+	}
+	if len(issues) != 1 || issues[0].Identifier != "PROJ-1" {
+		t.Fatalf("unexpected issues: %+v", issues)
+	}
+	if gotPath != "/rest/api/3/search/jql" {
+		t.Fatalf("Cloud issue search path = %q, want /rest/api/3/search/jql", gotPath)
+	}
+	if gotUser != "user@example.com" || gotPassword != "fixture-api-token" {
+		t.Fatalf("Cloud email/token Basic auth = %q/%q, want email/API token", gotUser, gotPassword)
+	}
+}
+
+func TestCloudWithoutEmailUsesIntentionalBearerCredential(t *testing.T) {
+	var gotPath, gotAuth string
+	c, _ := newCloudTestClient(t, "", func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		json.NewEncoder(w).Encode([]map[string]any{{"id": "20002", "key": "PROJ", "name": "Project"}})
+	})
+	projects, err := c.FetchProjects(context.Background())
+	if err != nil {
+		t.Fatalf("FetchProjects: %v", err)
+	}
+	if len(projects) != 1 || projects[0].Key != "PROJ" {
+		t.Fatalf("unexpected projects: %+v", projects)
+	}
+	if gotPath != "/rest/api/3/project" {
+		t.Fatalf("Cloud project path = %q, want /rest/api/3/project", gotPath)
+	}
+	if gotAuth != "Bearer fixture-api-token" {
+		t.Fatalf("Cloud auth = %q, want intentionally configured Bearer credential", gotAuth)
+	}
+}
+
 func TestCreate_RequiresProjectKey(t *testing.T) {
-	c, _ := newServerClient(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("server should not be called when project key is missing")
-	}, nil)
+	}))
+	defer srv.Close()
+	c := jira.NewClient(srv.URL, "user", "pat", srv.Client(), nil)
 	_, err := c.Create(context.Background(), tracker.WorkItem{Title: "no project"})
 	if err == nil {
 		t.Fatal("expected error when no project key, got nil")
@@ -139,12 +266,13 @@ func TestCreate_UsesProjectKeyFromWorkItem(t *testing.T) {
 				"fields": map[string]any{
 					"summary": "new",
 					"status":  map[string]any{"name": "To Do"},
+					"project": map[string]any{"key": "PROJ"},
 				},
 			})
 		}
 	}, nil)
 
-	created, err := c.Create(context.Background(), tracker.WorkItem{Title: "new", ProjectID: "PROJ"})
+	created, err := c.Create(context.Background(), tracker.WorkItem{Title: "new", ProjectID: "local-project-uuid"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -188,6 +316,10 @@ func TestPing_EmptyIdentity(t *testing.T) {
 func TestComment_PostsBody(t *testing.T) {
 	var captured map[string]any
 	c, _ := newServerClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(map[string]any{"id": "10001", "key": "PROJ-1", "fields": map[string]any{"project": map[string]any{"key": "PROJ"}}})
+			return
+		}
 		raw, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(raw, &captured)
 		w.WriteHeader(http.StatusCreated)
@@ -198,6 +330,67 @@ func TestComment_PostsBody(t *testing.T) {
 	if captured["body"] != "Hello team" {
 		t.Errorf("body: got %v, want %q", captured["body"], "Hello team")
 	}
+}
+
+func TestCloudCommentUsesADFAndNormalizesPrefixedID(t *testing.T) {
+	var path string
+	var request map[string]any
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path = r.URL.Path
+		if r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(map[string]any{"id": "10001", "key": "PROJ-1", "fields": map[string]any{"project": map[string]any{"key": "PROJ"}}})
+			return
+		}
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &request)
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer testServer.Close()
+	client := jira.NewClient("https://acme.atlassian.net", "", "token", &http.Client{Transport: rewriteHostRoundTripper{base: testServer.URL, next: testServer.Client().Transport}}, nil)
+	client.SetDefaultProject("PROJ")
+	if err := client.Comment(context.Background(), "jira:10001", "Hello team"); err != nil {
+		t.Fatalf("Comment: %v", err)
+	}
+	if !strings.HasSuffix(path, "/issue/10001/comment") {
+		t.Fatalf("prefixed ID was not normalized in path: %q", path)
+	}
+	body, ok := request["body"].(map[string]any)
+	if !ok || body["type"] != "doc" || body["version"] != float64(1) {
+		t.Fatalf("Cloud comment body is not ADF: %#v", request["body"])
+	}
+}
+
+func TestUpdateRejectsForeignProjectBeforeSendingMutation(t *testing.T) {
+	var mutationSent bool
+	c, _ := newServerClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			mutationSent = true
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"id": "10001", "key": "OTHER-1", "fields": map[string]any{"project": map[string]any{"key": "OTHER"}}})
+	}, nil)
+	if _, err := c.Update(context.Background(), "jira:10001", map[string]any{"title": "wrong project"}); err == nil {
+		t.Fatal("expected foreign-project update to fail")
+	}
+	if mutationSent {
+		t.Fatal("update effect was sent before project scope was confirmed")
+	}
+}
+
+type rewriteHostRoundTripper struct {
+	base string
+	next http.RoundTripper
+}
+
+func (r rewriteHostRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	clone := req.Clone(req.Context())
+	replacement, err := url.Parse(r.base)
+	if err != nil {
+		return nil, err
+	}
+	clone.URL.Scheme = replacement.Scheme
+	clone.URL.Host = replacement.Host
+	return r.next.RoundTrip(clone)
 }
 
 func TestUpdate_TransitionsState(t *testing.T) {
@@ -225,6 +418,7 @@ func TestUpdate_TransitionsState(t *testing.T) {
 				"fields": map[string]any{
 					"summary": "x",
 					"status":  map[string]any{"name": "In Progress"},
+					"project": map[string]any{"key": "PROJ"},
 				},
 			})
 		default:

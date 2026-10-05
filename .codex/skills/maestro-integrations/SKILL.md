@@ -7,7 +7,7 @@ description: Route Maestro issue-to-task-to-PR work through Orchestra's configur
 
 Use this skill for cross-project issue discovery, assignment, task execution, and PR linkage. Orchestra is the application; Maestro is the agent.
 
-Resolve the selected backend and exact registered project using `orchestra-cli` or `orchestra_control`. Read the project's issue source and tracker connection before choosing a provider. A Git remote or GitHub owner/repository does not make local SQLite tasks into GitHub issues. Blank issue source with no tracker connection currently means SQLite.
+Resolve the selected backend and exact registered project using `orchestra-cli` or `orchestra_control`. Read the project's issue source and tracker connection before choosing a provider. A Git remote or GitHub owner/repository does not make local SQLite tasks into GitHub issues. Blank issue source with no tracker connection currently means SQLite. Copy returned project/task IDs in full into commands; display abbreviations are not executable identities.
 
 Read the matching provider skill under `.agents/skills` in Maestro's control profile. Maintained repository copies live under `.codex/skills`; use the control-profile copy during a Maestro session:
 

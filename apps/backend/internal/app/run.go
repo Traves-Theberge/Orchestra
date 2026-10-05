@@ -303,24 +303,49 @@ func buildTrackerAdapterFactory(localDB *db.DB) trackerregistry.AdapterFactory {
 		switch strings.ToLower(cfg.Type) {
 		case "linear":
 			var extra struct {
+				TeamKey  string            `json:"team_key"`
+				Team     string            `json:"team"`
 				StateMap map[string]string `json:"state_map"`
 			}
 			if cfg.Extra != "" {
 				_ = json.Unmarshal([]byte(cfg.Extra), &extra)
 			}
-			return linear.NewClient(cfg.Endpoint, token, nil, "", extra.StateMap), nil
+			teamKey := strings.TrimSpace(extra.TeamKey)
+			if teamKey == "" {
+				teamKey = strings.TrimSpace(extra.Team)
+			}
+			endpoint := ""
+			if strings.HasPrefix(strings.ToLower(strings.TrimSpace(cfg.Endpoint)), "http://") || strings.HasPrefix(strings.ToLower(strings.TrimSpace(cfg.Endpoint)), "https://") {
+				endpoint = strings.TrimSpace(cfg.Endpoint)
+			} else if teamKey == "" {
+				teamKey = strings.TrimSpace(cfg.Endpoint) // legacy Team Key in endpoint field
+			}
+			if teamKey == "" {
+				return nil, fmt.Errorf("linear tracker config requires a native team key; configure a linked Linear connection with extra.team_key (legacy extra.team or endpoint team key is also supported)")
+			}
+			return linear.NewClient(teamKey, token, nil, endpoint, extra.StateMap), nil
 		case "jira":
 			var extra struct {
 				JQL         string            `json:"jql"`
 				StateMap    map[string]string `json:"state_map"`
 				DefaultProj string            `json:"default_project"`
+				JiraUser    string            `json:"jira_user"`
 			}
 			if cfg.Extra != "" {
 				_ = json.Unmarshal([]byte(cfg.Extra), &extra)
 			}
-			// Jira Server uses Basic auth with user+token; Cloud uses Bearer (user empty).
-			// We don't have a separate "user" column today — encode it in extra if Server.
-			client := jira.NewClient(cfg.Endpoint, "", token, nil, extra.StateMap)
+			if strings.TrimSpace(extra.DefaultProj) == "" {
+				return nil, fmt.Errorf("jira tracker config requires extra.default_project so issue reads and creates remain project-scoped; configure a linked Jira connection with a project key")
+			}
+			if !jira.ValidProjectKey(extra.DefaultProj) {
+				return nil, fmt.Errorf("jira tracker config has invalid extra.default_project %q", extra.DefaultProj)
+			}
+			// Jira Cloud uses email+API token Basic auth when jira_user is set;
+			// an empty Cloud username intentionally selects Bearer auth. Server uses Basic auth.
+			client := jira.NewClient(cfg.Endpoint, strings.TrimSpace(extra.JiraUser), token, nil, extra.StateMap)
+			if !client.IsCloud() && strings.TrimSpace(extra.JiraUser) == "" {
+				return nil, fmt.Errorf("jira Server/Data Center config requires extra.jira_user (username) for Basic authentication")
+			}
 			if extra.JQL != "" {
 				client.SetJQL(extra.JQL)
 			}

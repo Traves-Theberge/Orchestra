@@ -5,8 +5,10 @@ package registry
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
@@ -62,13 +64,28 @@ func (r *Registry) GetForProject(ctx context.Context, projectID string) (tracker
 	if cfg == nil {
 		return nil, fmt.Errorf("no tracker config assigned to project %q", projectID)
 	}
-	return r.clientForConfig(cfg.ID)
+	adapter, err := r.adapterForConfig(cfg.ID)
+	if err != nil {
+		return nil, err
+	}
+	scope, err := sourceScope(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &adapterClient{adapter: adapter, projectID: projectID, source: strings.ToLower(cfg.Type), sourceProjectID: scope}, nil
 }
 
 // GetAdapterForProjectDirect is like GetForProjectDirect but returns the raw
 // tracker.Adapter instead of wrapping it as a tracker.Client. Used by the
 // issue-source test endpoint which needs Ping.
 func (r *Registry) GetAdapterForProjectDirect(project db.Project) (tracker.Adapter, error) {
+	if project.TrackerConfigID != "" {
+		cfg, err := r.linkedConfig(project)
+		if err != nil {
+			return nil, err
+		}
+		return r.GetAdapter(cfg.ID)
+	}
 	if project.IssueSourceType == "" {
 		return nil, nil
 	}
@@ -90,6 +107,21 @@ func (r *Registry) GetAdapterForProjectDirect(project db.Project) (tracker.Adapt
 // should treat that as "local/sqlite only" and skip external refreshes.
 // The project's IssueSourceToken must already be decrypted (GetProjectByID does this).
 func (r *Registry) GetForProjectDirect(project db.Project) (tracker.Client, error) {
+	if project.TrackerConfigID != "" {
+		cfg, err := r.linkedConfig(project)
+		if err != nil {
+			return nil, err
+		}
+		adapter, err := r.adapterForConfig(cfg.ID)
+		if err != nil {
+			return nil, err
+		}
+		scope, err := sourceScope(cfg)
+		if err != nil {
+			return nil, err
+		}
+		return &adapterClient{adapter: adapter, projectID: project.ID, source: strings.ToLower(cfg.Type), sourceProjectID: scope}, nil
+	}
 	if project.IssueSourceType == "" {
 		return nil, nil
 	}
@@ -106,7 +138,37 @@ func (r *Registry) GetForProjectDirect(project db.Project) (tracker.Client, erro
 	if err != nil {
 		return nil, fmt.Errorf("build adapter for project %q (%s): %w", project.ID, project.IssueSourceType, err)
 	}
-	return &adapterClient{adapter: adapter}, nil
+	scope, err := sourceScope(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &adapterClient{adapter: adapter, projectID: project.ID, source: strings.ToLower(cfg.Type), sourceProjectID: scope}, nil
+}
+
+// linkedConfig resolves only the tracker config explicitly linked to this
+// project. The denormalized issue_source_* columns may be migration backfills;
+// when present, type and endpoint must still agree with the linked row.
+func (r *Registry) linkedConfig(project db.Project) (*db.TrackerConfig, error) {
+	if r.database == nil {
+		return nil, errors.New("cannot resolve linked tracker config without a database")
+	}
+	cfg, err := r.database.GetTrackerConfigForProject(context.Background(), project.ID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve tracker config linked to project %q: %w", project.ID, err)
+	}
+	if cfg == nil {
+		return nil, fmt.Errorf("project %q references tracker config %q but the database relation is missing", project.ID, project.TrackerConfigID)
+	}
+	if cfg.ID != project.TrackerConfigID {
+		return nil, fmt.Errorf("project %q tracker config identity changed: expected %q, found %q", project.ID, project.TrackerConfigID, cfg.ID)
+	}
+	if project.IssueSourceType != "" && !strings.EqualFold(project.IssueSourceType, cfg.Type) {
+		return nil, fmt.Errorf("project %q issue source type %q conflicts with linked tracker type %q", project.ID, project.IssueSourceType, cfg.Type)
+	}
+	if project.IssueSourceEndpoint != "" && project.IssueSourceEndpoint != cfg.Endpoint {
+		return nil, fmt.Errorf("project %q issue source endpoint conflicts with linked tracker config %q", project.ID, cfg.ID)
+	}
+	return cfg, nil
 }
 
 // GetAdapter returns the raw Adapter for the given config ID (used by browse/viewer endpoints).
@@ -163,14 +225,56 @@ func (r *Registry) DefaultClient() tracker.Client {
 }
 
 // clientForConfig wraps the configID's adapter as a tracker.Client.
-func (r *Registry) clientForConfig(configID string) (tracker.Client, error) {
+func (r *Registry) adapterForConfig(configID string) (tracker.Adapter, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	a, ok := r.adapters[configID]
 	if !ok {
 		return nil, fmt.Errorf("tracker adapter %q not loaded (build error or unsupported type)", configID)
 	}
-	return &adapterClient{adapter: a}, nil
+	return a, nil
+}
+
+func sourceScope(cfg *db.TrackerConfig) (string, error) {
+	if cfg == nil {
+		return "", errors.New("tracker config missing")
+	}
+	switch strings.ToLower(cfg.Type) {
+	case "github":
+		if strings.TrimSpace(cfg.Endpoint) == "" {
+			return "", errors.New("github tracker config has no repository scope")
+		}
+		return strings.TrimSpace(cfg.Endpoint), nil
+	case "linear":
+		var extra struct {
+			TeamKey string `json:"team_key"`
+			Team    string `json:"team"`
+		}
+		_ = json.Unmarshal([]byte(cfg.Extra), &extra)
+		scope := strings.TrimSpace(extra.TeamKey)
+		if scope == "" {
+			scope = strings.TrimSpace(extra.Team)
+		}
+		endpoint := strings.TrimSpace(cfg.Endpoint)
+		if scope == "" && !strings.HasPrefix(strings.ToLower(endpoint), "http://") && !strings.HasPrefix(strings.ToLower(endpoint), "https://") {
+			scope = endpoint // legacy configs stored the team key in endpoint
+		}
+		if scope == "" {
+			return "", errors.New("linear tracker config has no confirmed team key")
+		}
+		return scope, nil
+	case "jira":
+		var extra struct {
+			DefaultProject string `json:"default_project"`
+		}
+		_ = json.Unmarshal([]byte(cfg.Extra), &extra)
+		if strings.TrimSpace(extra.DefaultProject) == "" {
+			return "", errors.New("jira tracker config has no confirmed default_project")
+		}
+		return strings.TrimSpace(extra.DefaultProject), nil
+	default:
+		return "", nil
+	}
 }
 
 // loadAll instantiates an adapter for every row in tracker_configs.
@@ -206,11 +310,54 @@ func (r *Registry) buildAdapter(cfg *db.TrackerConfig) (tracker.Adapter, error) 
 // This is the single seam between the new Adapter-based world and the legacy
 // Client-based callers (orchestrator, API handlers, tool executor).
 type adapterClient struct {
-	adapter tracker.Adapter
+	adapter         tracker.Adapter
+	projectID       string
+	source          string
+	sourceProjectID string
+}
+
+func (c *adapterClient) bind(items []tracker.WorkItem) ([]tracker.WorkItem, error) {
+	source := strings.ToLower(c.source)
+	for i := range items {
+		if c.sourceProjectID != "" {
+			if items[i].SourceProjectID != "" && !strings.EqualFold(items[i].SourceProjectID, c.sourceProjectID) {
+				return nil, fmt.Errorf("tracker scope conflict: issue %s belongs to %s, selected source scope is %s", items[i].Identifier, items[i].SourceProjectID, c.sourceProjectID)
+			}
+			if items[i].SourceProjectID == "" && (source == "linear" || source == "jira") {
+				return nil, fmt.Errorf("tracker scope unconfirmed: %s issue %s omitted its native project identity", source, items[i].Identifier)
+			}
+			items[i].SourceProjectID = c.sourceProjectID
+		}
+		if c.projectID != "" {
+			if items[i].ProjectID != "" && items[i].ProjectID != c.projectID {
+				return nil, fmt.Errorf("tracker scope conflict: issue %s belongs to local project %s, selected project is %s", items[i].Identifier, items[i].ProjectID, c.projectID)
+			}
+			items[i].ProjectID = c.projectID
+		}
+	}
+	return items, nil
+}
+
+func (c *adapterClient) bindOne(item *tracker.WorkItem, err error) (*tracker.Issue, error) {
+	if err != nil {
+		return nil, err
+	}
+	if item == nil {
+		return nil, errors.New("tracker adapter returned an empty issue")
+	}
+	items, err := c.bind([]tracker.WorkItem{*item})
+	if err != nil {
+		return nil, err
+	}
+	return &items[0], nil
 }
 
 func (c *adapterClient) FetchCandidateIssues(ctx context.Context, activeStates []string) ([]tracker.Issue, error) {
-	return c.adapter.Fetch(ctx, tracker.Filter{States: activeStates})
+	items, err := c.adapter.Fetch(ctx, tracker.Filter{States: activeStates})
+	if err != nil {
+		return nil, err
+	}
+	return c.bind(items)
 }
 
 func (c *adapterClient) FetchIssuesByIDs(ctx context.Context, ids []string) ([]tracker.Issue, error) {
@@ -218,15 +365,23 @@ func (c *adapterClient) FetchIssuesByIDs(ctx context.Context, ids []string) ([]t
 	for _, id := range ids {
 		item, err := c.adapter.FetchByID(ctx, id)
 		if err != nil {
-			continue // skip individual failures; matches existing GitHub client behaviour
+			continue // preserve legacy GitHub omission for individually unavailable IDs
 		}
-		out = append(out, *item)
+		bound, err := c.bindOne(item, nil)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *bound)
 	}
 	return out, nil
 }
 
 func (c *adapterClient) FetchIssuesByStates(ctx context.Context, states []string) ([]tracker.Issue, error) {
-	return c.adapter.Fetch(ctx, tracker.Filter{States: states})
+	items, err := c.adapter.Fetch(ctx, tracker.Filter{States: states})
+	if err != nil {
+		return nil, err
+	}
+	return c.bind(items)
 }
 
 func (c *adapterClient) FetchIssueStatesByIDs(ctx context.Context, ids []string) (map[string]string, error) {
@@ -242,36 +397,79 @@ func (c *adapterClient) FetchIssueStatesByIDs(ctx context.Context, ids []string)
 }
 
 func (c *adapterClient) FetchIssues(ctx context.Context, filter tracker.IssueFilter) ([]tracker.Issue, error) {
-	// IssueFilter is a type alias for Filter — pass through directly.
-	return c.adapter.Fetch(ctx, filter)
+	if filter.ProjectID != "" && c.projectID != "" && filter.ProjectID != c.projectID {
+		return nil, fmt.Errorf("requested local project %s does not match selected project %s", filter.ProjectID, c.projectID)
+	}
+	if source := strings.ToLower(c.source); source == "github" || source == "linear" || source == "jira" {
+		filter.ProjectID = ""
+	}
+	items, err := c.adapter.Fetch(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	return c.bind(items)
 }
 
 func (c *adapterClient) SearchIssues(ctx context.Context, query string) ([]tracker.Issue, error) {
-	return c.adapter.Search(ctx, query)
+	items, err := c.adapter.Search(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	return c.bind(items)
 }
 
 func (c *adapterClient) FetchIssueByIdentifier(ctx context.Context, identifier string) (*tracker.Issue, error) {
-	return c.adapter.FetchByID(ctx, identifier)
+	return c.bindOne(c.adapter.FetchByID(ctx, identifier))
 }
 
 func (c *adapterClient) CreateIssue(ctx context.Context, title, description, state string, priority int, assigneeID, projectID, provider string, disabledTools []string) (*tracker.Issue, error) {
-	item := tracker.WorkItem{
-		Title:         title,
-		Description:   description,
-		State:         state,
-		Priority:      priority,
-		AssigneeID:    assigneeID,
-		ProjectID:     projectID,
-		Provider:      provider,
-		DisabledTools: disabledTools,
+	if projectID != "" && c.projectID != "" && projectID != c.projectID {
+		return nil, fmt.Errorf("requested local project %s does not match selected project %s", projectID, c.projectID)
 	}
-	return c.adapter.Create(ctx, item)
+	localProjectID := projectID
+	if c.projectID != "" {
+		localProjectID = c.projectID
+	}
+	adapterProjectID := localProjectID
+	if source := strings.ToLower(c.source); source == "github" || source == "linear" || source == "jira" {
+		adapterProjectID = ""
+	}
+	item := tracker.WorkItem{
+		Title:           title,
+		Description:     description,
+		State:           state,
+		Priority:        priority,
+		AssigneeID:      assigneeID,
+		ProjectID:       adapterProjectID,
+		SourceProjectID: c.sourceProjectID,
+		Provider:        provider,
+		DisabledTools:   disabledTools,
+	}
+	return c.bindOne(c.adapter.Create(ctx, item))
 }
 
 func (c *adapterClient) UpdateIssue(ctx context.Context, identifier string, updates map[string]any) (*tracker.Issue, error) {
-	return c.adapter.Update(ctx, identifier, updates)
+	if _, err := c.FetchIssueByIdentifier(ctx, identifier); err != nil {
+		return nil, fmt.Errorf("refusing hosted update before selected source scope is confirmed: %w", err)
+	}
+	return c.bindOne(c.adapter.Update(ctx, identifier, updates))
 }
 
 func (c *adapterClient) DeleteIssue(ctx context.Context, identifier string) error {
+	if _, err := c.FetchIssueByIdentifier(ctx, identifier); err != nil {
+		return fmt.Errorf("refusing hosted delete before selected source scope is confirmed: %w", err)
+	}
 	return c.adapter.Delete(ctx, identifier)
+}
+
+// AddAssignee forwards an optional additive assignment capability without
+// widening tracker.Client for sources that do not support it.
+func (c *adapterClient) AddAssignee(ctx context.Context, identifier, assigneeID string) (*tracker.Issue, error) {
+	capability, ok := c.adapter.(interface {
+		AddAssignee(context.Context, string, string) (*tracker.Issue, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("tracker %s does not support additive assignee updates", c.source)
+	}
+	return c.bindOne(capability.AddAssignee(ctx, identifier, assigneeID))
 }

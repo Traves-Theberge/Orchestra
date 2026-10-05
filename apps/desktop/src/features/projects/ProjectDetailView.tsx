@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import {
     ArrowLeft, Globe, ExternalLink,
     GitBranch, RefreshCcw, Trash2, Github,
@@ -17,16 +17,20 @@ import {
     updateProjectIssueSource,
     testProjectIssueSource,
     listIssueSourceProjects,
+    listTrackerConfigs,
+    assignProjectTrackerConfig,
     type BackendConfig,
     type GitHubIssue,
     type IssueListItem,
     type IssueUpdatePayload,
     type ProjectTreeNode,
+    type TrackerConfig,
 } from '@core/api/client'
 import { EditorContent } from '@features/workspace/editor/EditorContent'
 import { useAppStore } from '@core/store'
 import { AppTooltip } from '@ui/tooltip-wrapper'
 import { Skeleton } from '@ui/skeleton'
+import { CustomDropdown } from '@layout/shared/controls'
 import { FileTree, injectTreeChildren, filterTreeNodes, flattenVisibleTree } from './FileTree'
 
 import {
@@ -45,6 +49,24 @@ function sshToHttps(url: string): string {
         return url.replace(/^git@([^:]+):/, 'https://$1/').replace(/\.git$/, '')
     }
     return url.replace(/\.git$/, '')
+}
+
+function trackerConfigScopeLabel(config: TrackerConfig): string {
+    let extra: Record<string, unknown> = {}
+    try {
+        const parsed = typeof config.extra === 'string' ? JSON.parse(config.extra) : config.extra
+        if (parsed && typeof parsed === 'object') extra = parsed as Record<string, unknown>
+    } catch { /* An older or malformed config has no displayable native scope. */ }
+    if (config.type === 'linear') {
+        const teamKey = String(extra.team_key ?? extra.team ?? '').trim()
+        return teamKey ? `Team ${teamKey}` : 'Team key missing'
+    }
+    if (config.type === 'jira') {
+        const projectKey = String(extra.default_project ?? '').trim()
+        const baseUrl = config.endpoint.trim()
+        return [baseUrl, projectKey ? `Project ${projectKey}` : 'Project key missing'].filter(Boolean).join(' · ')
+    }
+    return config.endpoint
 }
 
 /** Props for the {@link ProjectDetailView} component. */
@@ -117,6 +139,11 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     const [projectsLoading, setProjectsLoading] = useState(false)
     const [projectsError, setProjectsError] = useState('')
     const [showProjectPicker, setShowProjectPicker] = useState(false)
+    const [trackerConfigs, setTrackerConfigs] = useState<TrackerConfig[]>([])
+    const [trackerConfigsLoading, setTrackerConfigsLoading] = useState(false)
+    const [trackerConfigsError, setTrackerConfigsError] = useState('')
+    const [trackerConfigSelection, setTrackerConfigSelection] = useState(project.tracker_config_id ?? '')
+    const sourceTypeChangedByUser = useRef(false)
 
     const pathExists = project.path_exists !== false
     const isGitHub = !!project.github_owner && !!project.github_repo
@@ -157,16 +184,43 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         setGithubError('')
     }, [project.id])
 
-    // Sync issue source fields when project changes
+    // Sync issue source fields when refreshed project metadata changes, including a link
+    // made while this view remains mounted.
     useEffect(() => {
+        sourceTypeChangedByUser.current = false
         setSourceType(project.issue_source_type ?? '')
         setSourceEndpoint(project.issue_source_endpoint ?? '')
+        setTrackerConfigSelection(project.tracker_config_id ?? '')
         setSourceToken('')
         setSourceTestResult(null)
         setTrackerProjects([])
         setShowProjectPicker(false)
         setProjectsError('')
-    }, [project.id])
+    }, [project.id, project.issue_source_type, project.issue_source_endpoint, project.tracker_config_id])
+
+    useEffect(() => {
+        if (!config || !showSourceEditor) return
+        let cancelled = false
+        setTrackerConfigsLoading(true)
+        setTrackerConfigsError('')
+        listTrackerConfigs(config)
+            .then((items) => {
+                if (cancelled) return
+                const loaded = items ?? []
+                setTrackerConfigs(loaded)
+                if (!sourceTypeChangedByUser.current && project.tracker_config_id) {
+                    const linked = loaded.find((item) => item.id === project.tracker_config_id)
+                    if (linked) setSourceType(linked.type)
+                }
+            })
+            .catch((err: unknown) => {
+                if (cancelled) return
+                setTrackerConfigs([])
+                setTrackerConfigsError(err instanceof Error ? err.message : 'Unable to load tracker connections')
+            })
+            .finally(() => { if (!cancelled) setTrackerConfigsLoading(false) })
+        return () => { cancelled = true }
+    }, [config, showSourceEditor, project.tracker_config_id])
 
     // Subscribe to the global editor store so the file shows up in the
     // Development workspace too, and we get save/revert/jump-to-line for free.
@@ -174,6 +228,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     const openFiles = useAppStore((s) => s.openFiles)
     const openBrowserTab = useAppStore((s) => s.openBrowserTab)
     const setActiveSection = useAppStore((s) => s.setActiveSection)
+    const setSettingsInitialTab = useAppStore((s) => s.setSettingsInitialTab)
     const openUrl = (url: string) => { setActiveSection('CONSOLE'); openBrowserTab(url) }
     const activeOpenFile = useMemo(() => {
         if (!selectedFile) return null
@@ -268,6 +323,36 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         } finally {
             setSourceSaving(false)
         }
+    }
+
+    const handleTrackerConfigLink = async () => {
+        if (!config) return
+        setSourceError('')
+        setSourceSaving(true)
+        try {
+            await assignProjectTrackerConfig(config, project.id, trackerConfigSelection)
+            setShowSourceEditor(false)
+            await onRefreshProjects()
+        } catch (err) {
+            setSourceError(err instanceof Error ? err.message : 'Failed to link tracker connection')
+        } finally {
+            setSourceSaving(false)
+        }
+    }
+
+    const handleSourceTypeChange = (nextType: string) => {
+        sourceTypeChangedByUser.current = true
+        setSourceType(nextType)
+        setSourceTestResult(null)
+        setTrackerProjects([])
+        setShowProjectPicker(false)
+        setSourceEndpoint('')
+        setTrackerConfigSelection(nextType === project.issue_source_type ? (project.tracker_config_id ?? '') : '')
+    }
+
+    const handleManageTrackerConnections = () => {
+        setSettingsInitialTab('integrations')
+        setActiveSection('SETTINGS')
     }
 
     const handleSourceTest = async () => {
@@ -536,25 +621,24 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
                     {/* Row 1: type + token */}
                     <div className="flex items-center gap-2 flex-wrap">
-                        <select
-                            value={sourceType}
-                            onChange={(e) => {
-                                setSourceType(e.target.value)
-                                setSourceTestResult(null)
-                                setTrackerProjects([])
-                                setShowProjectPicker(false)
-                                setSourceEndpoint('')
-                            }}
-                            className="h-7 px-2 rounded-md text-[11px] bg-background border border-border/40 text-foreground/80 focus:outline-none focus:ring-1 focus:ring-ring"
-                        >
-                            <option value="">None</option>
-                            <option value="github">GitHub</option>
-                            <option value="linear">Linear</option>
-                            <option value="jira">Jira</option>
-                            <option value="sqlite">SQLite</option>
-                        </select>
+                        <div role="group" aria-label="Issue source type">
+                            <CustomDropdown
+                                value={sourceType}
+                                options={[
+                                    { value: '', label: 'None' },
+                                    { value: 'github', label: 'GitHub' },
+                                    { value: 'linear', label: 'Linear' },
+                                    { value: 'jira', label: 'Jira' },
+                                    { value: 'sqlite', label: 'SQLite' },
+                                ]}
+                                onChange={handleSourceTypeChange}
+                                disabled={sourceSaving}
+                                placeholder="Select an issue source"
+                                className="min-w-28"
+                            />
+                        </div>
 
-                        {sourceType && sourceType !== 'sqlite' && (
+                        {sourceType && sourceType !== 'sqlite' && sourceType !== 'linear' && sourceType !== 'jira' && (
                             <input
                                 type="password"
                                 value={sourceToken}
@@ -564,49 +648,69 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                             />
                         )}
 
-                        {/* Jira needs the base URL before we can browse */}
-                        {sourceType === 'jira' && (
-                            <input
-                                type="text"
-                                value={sourceEndpoint}
-                                onChange={(e) => { setSourceEndpoint(e.target.value); setTrackerProjects([]); setShowProjectPicker(false) }}
-                                placeholder="https://yourco.atlassian.net"
-                                className="h-7 px-2 rounded-md text-[11px] bg-background border border-border/40 text-foreground/80 focus:outline-none focus:ring-1 focus:ring-ring w-52 placeholder:text-muted-foreground/40"
-                            />
-                        )}
                     </div>
 
                     {/* Row 2: project picker (GitHub owner/repo text fallback, Linear/Jira browse) */}
-                    {sourceType && sourceType !== 'sqlite' && (
+                    {(sourceType === 'linear' || sourceType === 'jira') && (
                         <div className="flex items-center gap-2 flex-wrap">
-                            {sourceType === 'github' ? (
-                                <input
-                                    type="text"
-                                    value={sourceEndpoint}
-                                    onChange={(e) => { setSourceEndpoint(e.target.value); setSourceTestResult(null) }}
-                                    placeholder="owner/repo  (or browse →)"
-                                    className="h-7 px-2 rounded-md text-[11px] bg-background border border-border/40 text-foreground/80 focus:outline-none focus:ring-1 focus:ring-ring w-48 placeholder:text-muted-foreground/40"
-                                />
-                            ) : sourceType !== 'jira' ? (
-                                /* Linear: endpoint = team key, can be typed or browsed */
-                                <input
-                                    type="text"
-                                    value={sourceEndpoint}
-                                    onChange={(e) => { setSourceEndpoint(e.target.value); setSourceTestResult(null) }}
-                                    placeholder="team key  (or browse →)"
-                                    className="h-7 px-2 rounded-md text-[11px] bg-background border border-border/40 text-foreground/80 focus:outline-none focus:ring-1 focus:ring-ring w-40 placeholder:text-muted-foreground/40"
-                                />
-                            ) : null}
+                            <div role="group" aria-label={sourceType === 'linear' ? 'Linear tracker connection' : 'Jira tracker connection'} className="flex items-center gap-2 flex-wrap">
+                            <span id="project-tracker-connection-label" className="text-[11px] text-muted-foreground/70">
+                                {sourceType === 'linear' ? 'Team connection' : 'Jira site and project'}
+                            </span>
+                            <CustomDropdown
+                                value={trackerConfigSelection}
+                                options={[
+                                    { value: '', label: 'No connection linked' },
+                                    ...trackerConfigs.filter((item) => item.type === sourceType).map((item) => ({
+                                        value: item.id,
+                                        label: `${item.display_name} · ${trackerConfigScopeLabel(item)}`,
+                                    })),
+                                ]}
+                                onChange={setTrackerConfigSelection}
+                                disabled={trackerConfigsLoading || sourceSaving}
+                                placeholder={sourceType === 'linear' ? 'Choose a Linear connection' : 'Choose a Jira connection'}
+                                className="min-w-64 max-w-full"
+                            />
+                            {trackerConfigsLoading && <Loader2 size={12} className="animate-spin text-muted-foreground" />}
+                            {trackerConfigsError && <span role="alert" className="text-[11px] text-destructive">{trackerConfigsError}</span>}
+                            {!trackerConfigsLoading && !trackerConfigs.some((item) => item.type === sourceType) && (
+                                <span className="text-[11px] text-muted-foreground/60">No saved {sourceType === 'linear' ? 'Linear' : 'Jira'} connections.</span>
+                            )}
+                            <button
+                                onClick={handleManageTrackerConnections}
+                                className="h-7 px-2.5 rounded-md text-[11px] font-medium bg-muted hover:bg-muted/80 text-foreground/70 transition-colors"
+                            >
+                                Manage connections
+                            </button>
+                            </div>
+                        </div>
+                    )}
+                    {trackerConfigsError && sourceType !== 'linear' && sourceType !== 'jira' && project.tracker_config_id && (
+                        <p role="alert" className="text-[11px] text-destructive">
+                            Could not load the linked tracker connection: {trackerConfigsError}
+                        </p>
+                    )}
+
+                    {sourceType === 'github' && (
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <input
+                                type="text"
+                                value={sourceEndpoint}
+                                onChange={(e) => { setSourceEndpoint(e.target.value); setSourceTestResult(null) }}
+                                placeholder="owner/repo (or browse)"
+                                aria-label="GitHub repository"
+                                className="h-7 px-2 rounded-md text-[11px] bg-background border border-border/40 text-foreground/80 focus:outline-none focus:ring-1 focus:ring-ring w-48 placeholder:text-muted-foreground/40"
+                            />
 
                             {/* Browse button — enabled once we have a token (and URL for Jira) */}
                             <button
                                 onClick={() => void handleBrowseProjects()}
-                                disabled={projectsLoading || !sourceType || !(sourceToken || project.issue_source_has_token) || (sourceType === 'jira' && !sourceEndpoint)}
+                                disabled={projectsLoading || !(sourceToken || project.issue_source_has_token)}
                                 className="h-7 px-2.5 rounded-md text-[11px] font-medium bg-muted hover:bg-muted/80 text-foreground/70 disabled:opacity-40 transition-colors inline-flex items-center gap-1.5"
-                                title="Fetch available projects from this tracker"
+                                title="Fetch available repositories from this tracker"
                             >
                                 {projectsLoading ? <Loader2 size={10} className="animate-spin" /> : <ListFilter size={10} />}
-                                Browse projects
+                                Browse repositories
                                 <ChevronDown size={10} />
                             </button>
                         </div>
@@ -635,6 +739,16 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
                     {/* Row 3: actions */}
                     <div className="flex items-center gap-2">
+                        {(sourceType === 'linear' || sourceType === 'jira') ? (
+                            <button
+                                onClick={() => void handleTrackerConfigLink()}
+                                disabled={(!trackerConfigSelection && !project.tracker_config_id) || sourceSaving || trackerConfigsLoading || (!!trackerConfigSelection && !trackerConfigs.some((item) => item.id === trackerConfigSelection && item.type === sourceType))}
+                                className="h-7 px-3 rounded-md text-[11px] font-semibold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition-colors inline-flex items-center gap-1.5"
+                            >
+                                {sourceSaving ? <Loader2 size={10} className="animate-spin" /> : null}
+                                {trackerConfigSelection ? 'Link connection' : 'Unlink connection'}
+                            </button>
+                        ) : <>
                         <button
                             onClick={() => void handleSourceTest()}
                             disabled={!sourceType || sourceTesting}
@@ -645,12 +759,13 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                         </button>
                         <button
                             onClick={() => void handleSourceSave()}
-                            disabled={sourceSaving}
+                            disabled={sourceSaving || (!!project.tracker_config_id && !!trackerConfigsError)}
                             className="h-7 px-3 rounded-md text-[11px] font-semibold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition-colors inline-flex items-center gap-1.5"
                         >
                             {sourceSaving ? <Loader2 size={10} className="animate-spin" /> : null}
                             Save
                         </button>
+                        </>}
                         {sourceTestResult && (
                             <span className={`flex items-center gap-1.5 text-[11px] ${sourceTestResult.ok ? 'text-green-500' : 'text-destructive'}`}>
                                 <CheckCircle2 size={11} />

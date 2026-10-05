@@ -450,6 +450,9 @@ components:
       properties:
         id:
           type: string
+        key:
+          type: string
+          description: Native scope key, such as a Linear team key or Jira project key.
         name:
           type: string
 

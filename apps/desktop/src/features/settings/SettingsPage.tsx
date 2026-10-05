@@ -2294,6 +2294,7 @@ const PROVIDER_META: Record<string, { label: string; color: string; authFields: 
     color: 'text-purple-400',
     authFields: [
       { key: 'display_name', label: 'Connection name', type: 'text', placeholder: 'My Linear', required: true },
+      { key: 'team_key', label: 'Team key', type: 'text', placeholder: 'ENG', required: true },
       { key: 'token', label: 'API key', type: 'password', placeholder: 'lin_api_…', required: true },
     ],
   },
@@ -2303,10 +2304,18 @@ const PROVIDER_META: Record<string, { label: string; color: string; authFields: 
     authFields: [
       { key: 'display_name', label: 'Connection name', type: 'text', placeholder: 'My Jira', required: true },
       { key: 'endpoint', label: 'Base URL', type: 'text', placeholder: 'https://yourcompany.atlassian.net', required: true },
+      { key: 'default_project', label: 'Project key', type: 'text', placeholder: 'PROJ', required: true },
       { key: 'jira_user', label: 'Email (Cloud) or username (Server)', type: 'text', placeholder: 'user@example.com' },
       { key: 'token', label: 'API token or PAT', type: 'password', placeholder: 'token…', required: true },
     ],
   },
+}
+
+function requiredTrackerAuthFields(type: string, values: Record<string, string>): AuthField[] {
+  const fields = PROVIDER_META[type]?.authFields ?? []
+  const endpoint = String(values.endpoint ?? '').trim().toLowerCase()
+  const jiraServerNeedsUser = type === 'jira' && endpoint !== '' && !endpoint.includes('.atlassian.net')
+  return fields.filter(field => field.required || jiraServerNeedsUser && field.key === 'jira_user')
 }
 
 type TestResult = { ok: boolean; latency_ms?: number; error?: string }
@@ -2421,6 +2430,13 @@ function IntegrationsPane({ config }: { config: BackendConfig | null }) {
 
   const handleSave = async () => {
     if (!config) return
+    const type = addingType ?? configs.find(c => c.id === editingId)?.type
+    const meta = type ? PROVIDER_META[type] : null
+    const missingRequired = requiredTrackerAuthFields(type ?? '', formValues).filter(field =>
+      !(field.key === 'token' && editingId && configs.find(c => c.id === editingId)?.has_token) &&
+      !String(formValues[field.key] ?? '').trim(),
+    )
+    if (missingRequired.length > 0) return
     setSavePending(true)
     try {
       if (addingType) {
@@ -2491,22 +2507,33 @@ function IntegrationsPane({ config }: { config: BackendConfig | null }) {
   const renderForm = (type: string, isEdit: boolean, tc?: TrackerConfig) => {
     const meta = PROVIDER_META[type]
     if (!meta) return null
+    const requiredFields = requiredTrackerAuthFields(type, formValues)
+    const requiredKeys = new Set(requiredFields.map(field => field.key))
+    const missingRequired = requiredFields.filter(field =>
+      !(field.key === 'token' && isEdit && tc?.has_token) &&
+      !String(formValues[field.key] ?? '').trim(),
+    )
     return (
       <div className="mt-2 rounded-xl border border-border/50 bg-muted/20 p-4 space-y-3">
         {meta.authFields.map(f => (
           <TrackerAuthField
             key={f.key}
-            field={f}
+            field={{ ...f, required: requiredKeys.has(f.key) }}
             value={formValues[f.key] ?? ''}
             isEdit={isEdit}
             hasToken={!!tc?.has_token}
             onChange={(value) => setFormValues(prev => ({ ...prev, [f.key]: value }))}
           />
         ))}
+        {missingRequired.length > 0 && (
+          <p role="alert" className="text-[11px] text-destructive/90">
+            Complete the required fields: {missingRequired.map(field => field.label).join(', ')}.
+          </p>
+        )}
         <div className="flex items-center gap-2 pt-1">
           <button
             onClick={() => void handleSave()}
-            disabled={savePending}
+            disabled={savePending || missingRequired.length > 0}
             className="h-7 px-3 rounded-md bg-foreground text-background text-[12px] font-medium hover:bg-foreground/90 disabled:opacity-50 transition-colors"
           >
             {savePending ? 'Saving…' : 'Save'}

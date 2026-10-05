@@ -34,6 +34,10 @@ type linearIssueNode struct {
 	} `json:"assignee"`
 	CreatedAt string `json:"createdAt"`
 	UpdatedAt string `json:"updatedAt"`
+	Team      struct {
+		ID  string `json:"id"`
+		Key string `json:"key"`
+	} `json:"team"`
 }
 
 // mapNode converts a Linear GraphQL issue node into a tracker.WorkItem.
@@ -62,17 +66,19 @@ func mapNode(n linearIssueNode, stateMap map[string]string) tracker.WorkItem {
 		assigneeID = n.Assignee.ID
 	}
 	return tracker.WorkItem{
-		ID:          "linear:" + n.ID,
-		Identifier:  n.Identifier,
-		Source:      "linear",
-		Title:       n.Title,
-		Description: n.Description,
-		Priority:    n.Priority,
-		State:       state,
-		URL:         n.URL,
-		Labels:      labels,
-		AssigneeID:  assigneeID,
-		CreatedAt:   n.CreatedAt,
-		UpdatedAt:   n.UpdatedAt,
+		ID:              "linear:" + n.ID,
+		SourceID:        n.ID,
+		Identifier:      n.Identifier,
+		Source:          "linear",
+		SourceProjectID: n.Team.Key,
+		Title:           n.Title,
+		Description:     n.Description,
+		Priority:        n.Priority,
+		State:           state,
+		URL:             n.URL,
+		Labels:          labels,
+		AssigneeID:      assigneeID,
+		CreatedAt:       n.CreatedAt,
+		UpdatedAt:       n.UpdatedAt,
 	}
 }

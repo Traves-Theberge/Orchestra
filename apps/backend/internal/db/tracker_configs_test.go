@@ -112,8 +112,28 @@ func TestTrackerConfigGetForProject(t *testing.T) {
 	if err := d.UpsertTrackerConfig(ctx, tc); err != nil {
 		t.Fatalf("upsert tracker config: %v", err)
 	}
+	if _, err := d.ExecContext(ctx, `UPDATE projects SET issue_source_type='github', issue_source_endpoint='owner/repo', issue_source_token='old-secret' WHERE id='proj-1'`); err != nil {
+		t.Fatalf("set legacy embedded source: %v", err)
+	}
+	if err := d.SetProjectTrackerConfig(ctx, "proj-1", "missing-config"); !errors.Is(err, ErrTrackerConfigNotFound) {
+		t.Fatalf("link unknown config: got %v, want ErrTrackerConfigNotFound", err)
+	}
+	var unchangedType, unchangedEndpoint, unchangedToken string
+	if err := d.QueryRowContext(ctx, `SELECT issue_source_type, issue_source_endpoint, issue_source_token FROM projects WHERE id='proj-1'`).Scan(&unchangedType, &unchangedEndpoint, &unchangedToken); err != nil {
+		t.Fatalf("read project after rejected link: %v", err)
+	}
+	if unchangedType != "github" || unchangedEndpoint != "owner/repo" || unchangedToken != "old-secret" {
+		t.Fatalf("unknown config link changed active source: %q %q %q", unchangedType, unchangedEndpoint, unchangedToken)
+	}
 	if err := d.SetProjectTrackerConfig(ctx, "proj-1", "tc-proj"); err != nil {
 		t.Fatalf("set project tracker config: %v", err)
+	}
+	var linkedID, issueType, endpoint, token string
+	if err := d.QueryRowContext(ctx, `SELECT COALESCE(tracker_config_id,''), issue_source_type, issue_source_endpoint, issue_source_token FROM projects WHERE id='proj-1'`).Scan(&linkedID, &issueType, &endpoint, &token); err != nil {
+		t.Fatalf("read project after link: %v", err)
+	}
+	if linkedID != "tc-proj" || issueType != "" || endpoint != "" || token != "" {
+		t.Fatalf("link must atomically select only linked config; got id=%q type=%q endpoint=%q token=%q", linkedID, issueType, endpoint, token)
 	}
 
 	cfg, err = d.GetTrackerConfigForProject(ctx, "proj-1")
@@ -137,6 +157,42 @@ func TestTrackerConfigGetForProject(t *testing.T) {
 	}
 	if cfg != nil {
 		t.Errorf("expected nil after clear, got %+v", cfg)
+	}
+	if err := d.SetProjectTrackerConfig(ctx, "proj-1", "tc-proj"); err != nil {
+		t.Fatalf("relink tracker config: %v", err)
+	}
+	if err := d.UpdateProjectIssueSource(ctx, "proj-1", "github", "owner/repo", "new-secret"); err != nil {
+		t.Fatalf("switch to embedded source: %v", err)
+	}
+	var switchedID, switchedType, switchedEndpoint, switchedToken string
+	if err := d.QueryRowContext(ctx, `SELECT COALESCE(tracker_config_id,''), issue_source_type, issue_source_endpoint, issue_source_token FROM projects WHERE id='proj-1'`).Scan(&switchedID, &switchedType, &switchedEndpoint, &switchedToken); err != nil {
+		t.Fatalf("read project after source switch: %v", err)
+	}
+	if switchedID != "" || switchedType != "github" || switchedEndpoint != "owner/repo" {
+		t.Fatalf("embedded source update must atomically clear linked config; got id=%q type=%q endpoint=%q", switchedID, switchedType, switchedEndpoint)
+	}
+	if switchedToken == "" {
+		t.Fatal("embedded source update did not store its encrypted token")
+	}
+	if err := d.UpdateProjectIssueSource(ctx, "proj-1", "github", "owner/repo", ""); err != nil {
+		t.Fatalf("preserve same-provider token: %v", err)
+	}
+	var sameProviderToken string
+	if err := d.QueryRowContext(ctx, `SELECT issue_source_token FROM projects WHERE id='proj-1'`).Scan(&sameProviderToken); err != nil {
+		t.Fatalf("read same-provider token: %v", err)
+	}
+	if sameProviderToken != switchedToken {
+		t.Fatal("same-provider edit should retain an omitted token")
+	}
+	if err := d.UpdateProjectIssueSource(ctx, "proj-1", "linear", "https://api.linear.app/graphql", ""); err != nil {
+		t.Fatalf("switch provider without token: %v", err)
+	}
+	var switchedProviderToken string
+	if err := d.QueryRowContext(ctx, `SELECT issue_source_token FROM projects WHERE id='proj-1'`).Scan(&switchedProviderToken); err != nil {
+		t.Fatalf("read token after provider switch: %v", err)
+	}
+	if switchedProviderToken != "" {
+		t.Fatal("provider switch should not retain the previous provider token")
 	}
 
 	// SetProjectTrackerConfig on a missing project must return sql.ErrNoRows

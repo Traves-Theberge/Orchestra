@@ -552,6 +552,13 @@ func toWorkItem(i tracker.Issue, repo string) tracker.WorkItem {
 	_ = repo                 // repo is embedded in Identifier already; kept for signature clarity
 	w := tracker.WorkItem(i) // Issue is a type alias for WorkItem
 	w.Source = "github"
+	if w.SourceID == "" {
+		nativeID := strings.TrimPrefix(w.ID, "gh:")
+		if separator := strings.LastIndex(nativeID, "-"); separator >= 0 {
+			nativeID = nativeID[separator+1:]
+		}
+		w.SourceID = nativeID
+	}
 	if !strings.HasPrefix(w.ID, "gh:") {
 		// Legacy IDs are bare numbers; convert to "gh:<repo>-<number>" for adapter use.
 		// Identifier (already "<repo>-<number>") is preserved as-is.

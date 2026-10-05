@@ -1,6 +1,10 @@
 package jira
 
-import "github.com/orchestra/orchestra/apps/backend/internal/tracker"
+import (
+	"strings"
+
+	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
+)
 
 // jiraIssue is the REST response shape for a single issue.
 // Field types match both v2 (description as string) and v3 (description as ADF object).
@@ -20,6 +24,9 @@ type jiraIssue struct {
 		Assignee *struct {
 			AccountID string `json:"accountId"`
 		} `json:"assignee"`
+		Project struct {
+			Key string `json:"key"`
+		} `json:"project"`
 		Created string `json:"created"`
 		Updated string `json:"updated"`
 	} `json:"fields"`
@@ -56,26 +63,54 @@ func mapIssue(i jiraIssue, stateMap map[string]string, baseURL string) tracker.W
 	if i.Fields.Assignee != nil {
 		assigneeID = i.Fields.Assignee.AccountID
 	}
-	desc := ""
-	if s, ok := i.Fields.Description.(string); ok {
-		desc = s
-	}
+	desc := descriptionText(i.Fields.Description)
 	labels := i.Fields.Labels
 	if labels == nil {
 		labels = []string{}
 	}
 	return tracker.WorkItem{
-		ID:          "jira:" + i.ID,
-		Identifier:  i.Key,
-		Source:      "jira",
-		Title:       i.Fields.Summary,
-		Description: desc,
-		Priority:    priority,
-		State:       state,
-		URL:         baseURL + "/browse/" + i.Key,
-		Labels:      labels,
-		AssigneeID:  assigneeID,
-		CreatedAt:   i.Fields.Created,
-		UpdatedAt:   i.Fields.Updated,
+		ID:              "jira:" + i.ID,
+		SourceID:        i.ID,
+		Identifier:      i.Key,
+		Source:          "jira",
+		SourceProjectID: i.Fields.Project.Key,
+		Title:           i.Fields.Summary,
+		Description:     desc,
+		Priority:        priority,
+		State:           state,
+		URL:             baseURL + "/browse/" + i.Key,
+		Labels:          labels,
+		AssigneeID:      assigneeID,
+		CreatedAt:       i.Fields.Created,
+		UpdatedAt:       i.Fields.Updated,
 	}
+}
+
+func descriptionText(value any) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case map[string]any:
+		if text, ok := v["text"].(string); ok {
+			return text
+		}
+		var parts []string
+		if children, ok := v["content"].([]any); ok {
+			for _, child := range children {
+				if text := descriptionText(child); text != "" {
+					parts = append(parts, text)
+				}
+			}
+		}
+		return strings.Join(parts, "\n")
+	case []any:
+		var parts []string
+		for _, child := range v {
+			if text := descriptionText(child); text != "" {
+				parts = append(parts, text)
+			}
+		}
+		return strings.Join(parts, "\n")
+	}
+	return ""
 }

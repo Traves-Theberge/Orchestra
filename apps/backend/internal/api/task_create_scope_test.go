@@ -38,6 +38,10 @@ func (a *createScopeAdapter) Create(context.Context, tracker.WorkItem) (*tracker
 	return a.result, nil
 }
 
+func (a *createScopeAdapter) FetchByID(context.Context, string) (*tracker.WorkItem, error) {
+	return a.result, nil
+}
+
 func (a *createScopeAdapter) Update(context.Context, string, map[string]any) (*tracker.WorkItem, error) {
 	a.updates++
 	return a.updated, nil

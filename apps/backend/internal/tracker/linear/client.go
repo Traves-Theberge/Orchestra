@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
 )
@@ -100,6 +101,7 @@ func (c *Client) Fetch(ctx context.Context, _ tracker.Filter) ([]tracker.WorkIte
 			nodes {
 				id identifier title description priority url createdAt updatedAt
 				state { type name }
+				team { id key }
 				labels { nodes { name } }
 				assignee { id }
 			}
@@ -117,16 +119,25 @@ func (c *Client) Fetch(ctx context.Context, _ tracker.Filter) ([]tracker.WorkIte
 	}
 	items := make([]tracker.WorkItem, 0, len(resp.Data.Issues.Nodes))
 	for _, n := range resp.Data.Issues.Nodes {
-		items = append(items, mapNode(n, c.stateMap))
+		item, err := c.scopedItem(n)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
 	}
 	return items, nil
 }
 
 func (c *Client) FetchByID(ctx context.Context, id string) (*tracker.WorkItem, error) {
+	nativeID, err := nativeIssueID(id)
+	if err != nil {
+		return nil, err
+	}
 	const q = `query($id: String!) {
 		issue(id: $id) {
 			id identifier title description priority url createdAt updatedAt
 			state { type name }
+			team { id key }
 			labels { nodes { name } }
 			assignee { id }
 		}
@@ -136,13 +147,16 @@ func (c *Client) FetchByID(ctx context.Context, id string) (*tracker.WorkItem, e
 			Issue linearIssueNode `json:"issue"`
 		} `json:"data"`
 	}
-	if err := c.graphql(ctx, q, map[string]any{"id": id}, &resp); err != nil {
+	if err := c.graphql(ctx, q, map[string]any{"id": nativeID}, &resp); err != nil {
 		return nil, err
 	}
 	if resp.Data.Issue.ID == "" {
 		return nil, fmt.Errorf("linear: issue %q not found", id)
 	}
-	item := mapNode(resp.Data.Issue, c.stateMap)
+	item, err := c.scopedItem(resp.Data.Issue)
+	if err != nil {
+		return nil, err
+	}
 	return &item, nil
 }
 
@@ -152,6 +166,7 @@ func (c *Client) Search(ctx context.Context, query string) ([]tracker.WorkItem, 
 			nodes {
 				id identifier title description priority url createdAt updatedAt
 				state { type name }
+				team { id key }
 				labels { nodes { name } }
 				assignee { id }
 			}
@@ -169,23 +184,27 @@ func (c *Client) Search(ctx context.Context, query string) ([]tracker.WorkItem, 
 	}
 	items := make([]tracker.WorkItem, 0, len(resp.Data.Issues.Nodes))
 	for _, n := range resp.Data.Issues.Nodes {
-		items = append(items, mapNode(n, c.stateMap))
+		item, err := c.scopedItem(n)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
 	}
 	return items, nil
 }
 
 // Create creates a new Linear issue.
-//
-// IMPORTANT: Linear's issueCreate mutation requires the team UUID, not the team
-// key. If teamKey holds a key like "ENG" (rather than a UUID), this call will
-// fail with a Linear GraphQL error. Resolve the UUID via FetchProjects and
-// store it in teamKey before calling Create.
 func (c *Client) Create(ctx context.Context, item tracker.WorkItem) (*tracker.WorkItem, error) {
-	const q = `mutation($title: String!, $description: String, $teamId: String!) {
-		issueCreate(input: { title: $title, description: $description, teamId: $teamId }) {
+	teamID, err := c.resolveTeamID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	const q = `mutation($title: String!, $description: String, $teamId: String!, $stateId: String, $assigneeId: String, $priority: Int) {
+		issueCreate(input: { title: $title, description: $description, teamId: $teamId, stateId: $stateId, assigneeId: $assigneeId, priority: $priority }) {
 			issue {
 				id identifier title description priority url createdAt updatedAt
 				state { type name }
+				team { id key }
 				labels { nodes { name } }
 				assignee { id }
 			}
@@ -198,14 +217,42 @@ func (c *Client) Create(ctx context.Context, item tracker.WorkItem) (*tracker.Wo
 			} `json:"issueCreate"`
 		} `json:"data"`
 	}
-	if err := c.graphql(ctx, q, map[string]any{
+	variables := map[string]any{
 		"title":       item.Title,
 		"description": item.Description,
-		"teamId":      c.teamKey,
-	}, &resp); err != nil {
+		"teamId":      teamID,
+		"stateId":     nil,
+		"assigneeId":  nil,
+		"priority":    nil,
+	}
+	if item.AssigneeID != "" {
+		variables["assigneeId"] = item.AssigneeID
+	}
+	if item.State != "" {
+		states, err := c.FetchStates(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, state := range states {
+			if strings.EqualFold(state.Name, item.State) {
+				variables["stateId"] = state.ID
+				break
+			}
+		}
+		if variables["stateId"] == nil {
+			return nil, fmt.Errorf("linear: workflow state %q not found for team %s", item.State, c.teamKey)
+		}
+	}
+	if item.Priority > 0 {
+		variables["priority"] = item.Priority
+	}
+	if err := c.graphql(ctx, q, variables, &resp); err != nil {
 		return nil, err
 	}
-	created := mapNode(resp.Data.IssueCreate.Issue, c.stateMap)
+	created, err := c.scopedItem(resp.Data.IssueCreate.Issue)
+	if err != nil {
+		return nil, fmt.Errorf("linear: create result scope not confirmed: %w", err)
+	}
 	return &created, nil
 }
 
@@ -218,11 +265,19 @@ func (c *Client) Create(ctx context.Context, item tracker.WorkItem) (*tracker.Wo
 // Recognised update keys: "state" (UUID string), "assignee_id", "priority",
 // "title", "description". Unknown keys are silently ignored.
 func (c *Client) Update(ctx context.Context, id string, updates map[string]any) (*tracker.WorkItem, error) {
+	nativeID, err := nativeIssueID(id)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := c.FetchByID(ctx, nativeID); err != nil {
+		return nil, fmt.Errorf("linear: refusing update before selected-team scope is confirmed: %w", err)
+	}
 	const q = `mutation($id: String!, $input: IssueUpdateInput!) {
 		issueUpdate(id: $id, input: $input) {
 			issue {
 				id identifier title description priority url createdAt updatedAt
 				state { type name }
+				team { id key }
 				labels { nodes { name } }
 				assignee { id }
 			}
@@ -251,32 +306,101 @@ func (c *Client) Update(ctx context.Context, id string, updates map[string]any) 
 			} `json:"issueUpdate"`
 		} `json:"data"`
 	}
-	if err := c.graphql(ctx, q, map[string]any{"id": id, "input": input}, &resp); err != nil {
+	if err := c.graphql(ctx, q, map[string]any{"id": nativeID, "input": input}, &resp); err != nil {
 		return nil, err
 	}
-	updated := mapNode(resp.Data.IssueUpdate.Issue, c.stateMap)
+	updated, err := c.scopedItem(resp.Data.IssueUpdate.Issue)
+	if err != nil {
+		return nil, err
+	}
 	return &updated, nil
 }
 
 func (c *Client) Delete(ctx context.Context, id string) error {
+	nativeID, err := nativeIssueID(id)
+	if err != nil {
+		return err
+	}
+	if _, err := c.FetchByID(ctx, nativeID); err != nil {
+		return fmt.Errorf("linear: refusing delete before selected-team scope is confirmed: %w", err)
+	}
 	const q = `mutation($id: String!) { issueDelete(id: $id) { success } }`
-	return c.graphql(ctx, q, map[string]any{"id": id}, nil)
+	return c.graphql(ctx, q, map[string]any{"id": nativeID}, nil)
 }
 
 func (c *Client) Comment(ctx context.Context, id, body string) error {
+	nativeID, err := nativeIssueID(id)
+	if err != nil {
+		return err
+	}
+	if _, err := c.FetchByID(ctx, nativeID); err != nil {
+		return fmt.Errorf("linear: refusing comment before selected-team scope is confirmed: %w", err)
+	}
 	const q = `mutation($issueId: String!, $body: String!) {
 		commentCreate(input: { issueId: $issueId, body: $body }) { comment { id } }
 	}`
-	return c.graphql(ctx, q, map[string]any{"issueId": id, "body": body}, nil)
+	return c.graphql(ctx, q, map[string]any{"issueId": nativeID, "body": body}, nil)
+}
+
+func nativeIssueID(id string) (string, error) {
+	if strings.HasPrefix(id, "linear:") {
+		id = strings.TrimPrefix(id, "linear:")
+	} else if strings.Contains(id, ":") {
+		return "", fmt.Errorf("linear: issue ID %q belongs to another source", id)
+	}
+	if id == "" {
+		return "", fmt.Errorf("linear: empty issue ID")
+	}
+	return id, nil
+}
+
+func (c *Client) scopedItem(n linearIssueNode) (tracker.WorkItem, error) {
+	if c.teamKey == "" {
+		return tracker.WorkItem{}, fmt.Errorf("linear: configured team key is required to confirm issue scope")
+	}
+	if n.Team.Key == "" {
+		return tracker.WorkItem{}, fmt.Errorf("linear: issue %s omitted its team identity; refusing to claim configured team scope", n.Identifier)
+	}
+	if !strings.EqualFold(n.Team.Key, c.teamKey) {
+		return tracker.WorkItem{}, fmt.Errorf("linear: issue %s belongs to team %s, configured team is %s", n.Identifier, n.Team.Key, c.teamKey)
+	}
+	item := mapNode(n, c.stateMap)
+	item.SourceProjectID = n.Team.Key
+	return item, nil
+}
+
+func (c *Client) resolveTeamID(ctx context.Context) (string, error) {
+	if strings.TrimSpace(c.teamKey) == "" {
+		return "", fmt.Errorf("linear: configured team key is required for issue creation")
+	}
+	const q = `query($teamKey: String!) { teams(filter: { key: { eq: $teamKey } }) { nodes { id key } } }`
+	var resp struct {
+		Data struct {
+			Teams struct {
+				Nodes []struct {
+					ID  string `json:"id"`
+					Key string `json:"key"`
+				} `json:"nodes"`
+			} `json:"teams"`
+		} `json:"data"`
+	}
+	if err := c.graphql(ctx, q, map[string]any{"teamKey": c.teamKey}, &resp); err != nil {
+		return "", err
+	}
+	if len(resp.Data.Teams.Nodes) != 1 || resp.Data.Teams.Nodes[0].ID == "" || !strings.EqualFold(resp.Data.Teams.Nodes[0].Key, c.teamKey) {
+		return "", fmt.Errorf("linear: configured team key %q did not resolve to exactly one team", c.teamKey)
+	}
+	return resp.Data.Teams.Nodes[0].ID, nil
 }
 
 func (c *Client) FetchProjects(ctx context.Context) ([]tracker.TrackerProject, error) {
-	const q = `{ teams { nodes { id name } } }`
+	const q = `{ teams { nodes { id key name } } }`
 	var resp struct {
 		Data struct {
 			Teams struct {
 				Nodes []struct {
 					ID   string `json:"id"`
+					Key  string `json:"key"`
 					Name string `json:"name"`
 				} `json:"nodes"`
 			} `json:"teams"`
@@ -287,7 +411,7 @@ func (c *Client) FetchProjects(ctx context.Context) ([]tracker.TrackerProject, e
 	}
 	out := make([]tracker.TrackerProject, 0, len(resp.Data.Teams.Nodes))
 	for _, n := range resp.Data.Teams.Nodes {
-		out = append(out, tracker.TrackerProject{ID: n.ID, Name: n.Name})
+		out = append(out, tracker.TrackerProject{ID: n.ID, Key: n.Key, Name: n.Name})
 	}
 	return out, nil
 }

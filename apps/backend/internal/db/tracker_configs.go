@@ -7,6 +7,11 @@ import (
 	"time"
 )
 
+// ErrTrackerConfigNotFound is returned when a project is linked to a config ID
+// that does not exist. It is distinct from sql.ErrNoRows, which means the
+// project itself was not found.
+var ErrTrackerConfigNotFound = errors.New("tracker config not found")
+
 // TrackerConfig holds the configuration for a single tracker connection.
 type TrackerConfig struct {
 	ID          string
@@ -114,17 +119,28 @@ func (d *DB) DeleteTrackerConfig(ctx context.Context, id string) error {
 // Pass an empty configID to clear the assignment.
 // Returns sql.ErrNoRows if the project does not exist.
 func (d *DB) SetProjectTrackerConfig(ctx context.Context, projectID, configID string) error {
-	var (
-		res sql.Result
-		err error
-	)
-	if configID == "" {
-		res, err = d.ExecContext(ctx,
-			`UPDATE projects SET tracker_config_id = NULL WHERE id = ?`, projectID)
-	} else {
-		res, err = d.ExecContext(ctx,
-			`UPDATE projects SET tracker_config_id = ? WHERE id = ?`, configID, projectID)
+	var linked any
+	if configID != "" {
+		linked = configID
 	}
+	tx, err := d.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if configID != "" {
+		var exists int
+		if err := tx.QueryRowContext(ctx, `SELECT 1 FROM tracker_configs WHERE id = ?`, configID).Scan(&exists); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrTrackerConfigNotFound
+			}
+			return err
+		}
+	}
+	res, err := tx.ExecContext(ctx,
+		`UPDATE projects SET tracker_config_id = ?,
+			issue_source_type = '', issue_source_endpoint = '', issue_source_token = ''
+			WHERE id = ?`, linked, projectID)
 	if err != nil {
 		return err
 	}
@@ -132,7 +148,7 @@ func (d *DB) SetProjectTrackerConfig(ctx context.Context, projectID, configID st
 	if n == 0 {
 		return sql.ErrNoRows
 	}
-	return nil
+	return tx.Commit()
 }
 
 type trackerConfigScanner interface {

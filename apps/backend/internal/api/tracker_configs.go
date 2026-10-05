@@ -304,6 +304,10 @@ func (s *Server) PostProjectTrackerConfig(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if err := s.db.SetProjectTrackerConfig(r.Context(), projectID, req.ConfigID); err != nil {
+		if errors.Is(err, db.ErrTrackerConfigNotFound) {
+			writeJSONError(w, http.StatusNotFound, "tracker_config_not_found", "tracker config not found")
+			return
+		}
 		if errors.Is(err, sql.ErrNoRows) {
 			writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
 			return

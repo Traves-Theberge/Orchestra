@@ -467,23 +467,53 @@ func (db *DB) GetProjectByID(ctx context.Context, id string) (Project, error) {
 }
 
 // UpdateProjectIssueSource sets the per-project issue source fields.
-// tokenPlaintext is encrypted before storage; pass an empty string to leave
-// the existing token unchanged.
+// tokenPlaintext is encrypted before storage. An empty token preserves the
+// stored token only when the source type is unchanged; provider switches clear it.
 func (db *DB) UpdateProjectIssueSource(ctx context.Context, id, sourceType, endpoint, tokenPlaintext string) error {
+	if sourceType == "" {
+		res, err := db.ExecContext(ctx,
+			`UPDATE projects SET tracker_config_id = NULL,
+				issue_source_type = '', issue_source_endpoint = '', issue_source_token = ''
+				WHERE id = ?`, id)
+		if err != nil {
+			return err
+		}
+		n, _ := res.RowsAffected()
+		if n == 0 {
+			return sql.ErrNoRows
+		}
+		return nil
+	}
 	if tokenPlaintext != "" {
 		enc, err := EncryptToken(tokenPlaintext)
 		if err != nil {
 			return fmt.Errorf("encrypt issue source token: %w", err)
 		}
-		_, err = db.ExecContext(ctx,
-			"UPDATE projects SET issue_source_type = ?, issue_source_endpoint = ?, issue_source_token = ? WHERE id = ?",
+		res, err := db.ExecContext(ctx,
+			"UPDATE projects SET tracker_config_id = NULL, issue_source_type = ?, issue_source_endpoint = ?, issue_source_token = ? WHERE id = ?",
 			sourceType, endpoint, enc, id)
+		if err != nil {
+			return err
+		}
+		n, _ := res.RowsAffected()
+		if n == 0 {
+			return sql.ErrNoRows
+		}
+		return nil
+	}
+	res, err := db.ExecContext(ctx,
+		`UPDATE projects SET tracker_config_id = NULL, issue_source_type = ?, issue_source_endpoint = ?,
+			issue_source_token = CASE WHEN LOWER(COALESCE(issue_source_type, '')) = LOWER(?) THEN issue_source_token ELSE '' END
+			WHERE id = ?`,
+		sourceType, endpoint, sourceType, id)
+	if err != nil {
 		return err
 	}
-	_, err := db.ExecContext(ctx,
-		"UPDATE projects SET issue_source_type = ?, issue_source_endpoint = ? WHERE id = ?",
-		sourceType, endpoint, id)
-	return err
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 // UpdateProjectGitHubInfo sets the GitHub owner and repo for an existing project.

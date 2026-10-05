@@ -13,7 +13,10 @@ type Attachment struct {
 
 // WorkItem is the canonical domain type for a tracked work item across all backends.
 type WorkItem struct {
-	ID          string `json:"id"`
+	ID string `json:"id"`
+	// SourceID is the identifier expected by the source API. ID may include
+	// Orchestra's source prefix (for example, "linear:<uuid>").
+	SourceID    string `json:"source_id,omitempty"`
 	Identifier  string `json:"identifier"`
 	Source      string `json:"source,omitempty"` // "github"|"linear"|"jira"|"sqlite"|"memory"
 	Title       string `json:"title"`
@@ -22,7 +25,10 @@ type WorkItem struct {
 	State       string `json:"state"`
 	BranchName  string `json:"branch_name,omitempty"`
 	URL         string `json:"url,omitempty"`
-	ProjectID   string `json:"project_id,omitempty"`
+	// SourceProjectID identifies the native container (Linear team, Jira project,
+	// GitHub repository) independently from Orchestra's local project UUID.
+	SourceProjectID string `json:"source_project_id,omitempty"`
+	ProjectID       string `json:"project_id,omitempty"`
 	// AssigneeID is the single primary assignee — set by all backends.
 	AssigneeID string `json:"assignee_id,omitempty"`
 	// Assignees is the full set of assignees for backends that support multiple
@@ -61,6 +67,7 @@ type Filter struct {
 // TrackerProject is a top-level container in a tracker (Linear team, Jira project, GitHub repo).
 type TrackerProject struct {
 	ID   string `json:"id"`
+	Key  string `json:"key,omitempty"`
 	Name string `json:"name"`
 }
 

@@ -5,6 +5,8 @@ export type WorkItemSource = 'github' | 'linear' | 'jira' | 'sqlite' | 'memory'
 export interface WorkItem {
   /** Tracker-prefixed unique ID, e.g. "linear:abc-123", "jira:10001", "gh:42". */
   id: string
+  /** Native identifier sent to the source API, without Orchestra's source prefix. */
+  source_id?: string
   /** Human-readable identifier as displayed by the source tracker, e.g. "ENG-42". */
   identifier: string
   source: WorkItemSource
@@ -13,6 +15,8 @@ export interface WorkItem {
   state: string
   priority: number
   url: string
+  /** Native container key or ID, such as a Linear team or Jira project key. */
+  source_project_id?: string
   labels: string[]
   assignees: string[]
   /** Single primary assignee — set by all backends. */

@@ -22,6 +22,7 @@ import {
   sendWorkspaceChatMessage,
   replyWorkspaceChatRequest,
   stopWorkspaceChatTurn,
+  assignProjectTrackerConfig,
   toDisplayError,
   type BackendConfig,
 } from '@core/api/client'
@@ -91,6 +92,19 @@ it('labels every chat mutation as JSON for the real HTTP content-type guard', as
     expect(new Headers(init.headers).get('Authorization')).toBe('Bearer token-123')
   }
   expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ client_session_id: 'a5639609-2861-4a70-b6a4-5a97c26132c8' })
+})
+
+it('links or clears a project tracker config by exact config ID', async () => {
+  const fetchMock = vi.fn(async () => new Response('{"ok":true}', { status: 200, headers: { 'Content-Type': 'application/json' } }))
+  vi.stubGlobal('fetch', fetchMock)
+  await assignProjectTrackerConfig(config, 'project/id', 'tracker-config-id')
+  await assignProjectTrackerConfig(config, 'project/id', '')
+  const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit]>
+  expect(new URL(calls[0][0]).pathname).toBe('/api/v1/projects/project%2Fid/tracker')
+  expect(calls.map(([, init]) => JSON.parse(String(init.body)))).toEqual([
+    { config_id: 'tracker-config-id' },
+    { config_id: '' },
+  ])
 })
 
 it('routes global orchestrator chat independently from registered projects', async () => {

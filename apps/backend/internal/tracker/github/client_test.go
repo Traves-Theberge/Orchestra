@@ -98,6 +98,9 @@ func TestFetch_ReturnsWorkItems(t *testing.T) {
 	if items[0].ID != "gh:repo-42" {
 		t.Errorf("ID: got %q, want gh:repo-42", items[0].ID)
 	}
+	if items[0].SourceID != "42" {
+		t.Errorf("source_id: got %q, want 42", items[0].SourceID)
+	}
 	if items[0].Identifier != "repo-42" {
 		t.Errorf("identifier: got %q, want repo-42", items[0].Identifier)
 	}

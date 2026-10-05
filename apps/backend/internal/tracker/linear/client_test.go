@@ -38,6 +38,7 @@ func TestFetch_ReturnsWorkItems(t *testing.T) {
 							"priority":   2,
 							"url":        "https://linear.app/eng/issue/ENG-42",
 							"labels":     map[string]any{"nodes": []map[string]any{{"name": "bug"}}},
+							"team":       map[string]any{"id": "team-uuid", "key": "ENG"},
 						},
 					},
 				},
@@ -66,6 +67,19 @@ func TestFetch_ReturnsWorkItems(t *testing.T) {
 	}
 	if len(items[0].Labels) != 1 || items[0].Labels[0] != "bug" {
 		t.Errorf("labels: got %+v, want [bug]", items[0].Labels)
+	}
+}
+
+func TestFetchProjectsReturnsTeamKeyAndIDSeparately(t *testing.T) {
+	c, _ := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"teams": map[string]any{"nodes": []map[string]any{{"id": "team-uuid", "key": "ENG", "name": "Engineering"}}}}})
+	})
+	projects, err := c.FetchProjects(context.Background())
+	if err != nil {
+		t.Fatalf("FetchProjects: %v", err)
+	}
+	if len(projects) != 1 || projects[0].ID != "team-uuid" || projects[0].Key != "ENG" || projects[0].Name != "Engineering" {
+		t.Fatalf("unexpected team identity: %+v", projects)
 	}
 }
 
@@ -123,15 +137,98 @@ func TestComment_PostsBody(t *testing.T) {
 	var capturedBody []byte
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		capturedBody, _ = io.ReadAll(r.Body)
-		json.NewEncoder(w).Encode(map[string]any{
-			"data": map[string]any{"commentCreate": map[string]any{"comment": map[string]any{"id": "c1"}}},
-		})
+		if strings.Contains(string(capturedBody), "commentCreate") {
+			json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"commentCreate": map[string]any{"comment": map[string]any{"id": "c1"}}}})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"issue": map[string]any{
+			"id": "issue-1", "identifier": "ENG-1", "team": map[string]any{"id": "team-uuid", "key": "ENG"},
+		}}})
 	})
 	if err := c.Comment(context.Background(), "issue-1", "Hello"); err != nil {
 		t.Fatalf("Comment: %v", err)
 	}
 	if !strings.Contains(string(capturedBody), "Hello") {
 		t.Errorf("body did not contain comment: %s", capturedBody)
+	}
+}
+
+func TestCreateResolvesTeamKeyAndConfirmsReturnedScope(t *testing.T) {
+	var createdTeamID string
+	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		switch {
+		case strings.Contains(string(body), "teams(filter"):
+			json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"teams": map[string]any{"nodes": []map[string]any{{"id": "team-uuid", "key": "ENG"}}}}})
+		case strings.Contains(string(body), "issueCreate"):
+			var request struct {
+				Variables map[string]any `json:"variables"`
+			}
+			_ = json.Unmarshal(body, &request)
+			createdTeamID, _ = request.Variables["teamId"].(string)
+			json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"issueCreate": map[string]any{"issue": map[string]any{
+				"id": "created-id", "identifier": "ENG-43", "title": "Create me", "team": map[string]any{"id": "team-uuid", "key": "ENG"},
+			}}}})
+		default:
+			t.Errorf("unexpected request: %s", body)
+		}
+	})
+
+	created, err := c.Create(context.Background(), tracker.WorkItem{Title: "Create me"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if createdTeamID != "team-uuid" {
+		t.Fatalf("teamId sent: %q, want resolved UUID", createdTeamID)
+	}
+	if created.SourceProjectID != "ENG" || created.SourceID != "created-id" {
+		t.Fatalf("source identities not retained: %+v", created)
+	}
+}
+
+func TestPrefixedIDsAreNormalizedAndForeignTeamMutationIsRefused(t *testing.T) {
+	var gotNativeID string
+	var mutationSent bool
+	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		switch {
+		case strings.Contains(string(body), "issue(id: $id)"):
+			var request struct {
+				Variables map[string]any `json:"variables"`
+			}
+			_ = json.Unmarshal(body, &request)
+			gotNativeID, _ = request.Variables["id"].(string)
+			json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"issue": map[string]any{
+				"id": "abc-123", "identifier": "MKT-9", "team": map[string]any{"id": "other-team", "key": "MKT"},
+			}}})
+		case strings.Contains(string(body), "issueUpdate") || strings.Contains(string(body), "issueDelete") || strings.Contains(string(body), "commentCreate"):
+			mutationSent = true
+			json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{}})
+		default:
+			t.Errorf("unexpected request: %s", body)
+		}
+	})
+
+	if _, err := c.FetchByID(context.Background(), "linear:abc-123"); err == nil {
+		t.Fatal("expected prefixed ID read to reject issue from another team")
+	}
+	if gotNativeID != "abc-123" {
+		t.Fatalf("native issue ID sent: %q", gotNativeID)
+	}
+	for _, mutate := range []func() error{
+		func() error {
+			_, err := c.Update(context.Background(), "linear:abc-123", map[string]any{"title": "changed"})
+			return err
+		},
+		func() error { return c.Delete(context.Background(), "linear:abc-123") },
+		func() error { return c.Comment(context.Background(), "linear:abc-123", "hi") },
+	} {
+		if err := mutate(); err == nil {
+			t.Fatal("expected foreign-team mutation to be refused")
+		}
+	}
+	if mutationSent {
+		t.Fatal("mutation sent before selected team scope was confirmed")
 	}
 }
 
