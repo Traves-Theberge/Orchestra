@@ -17,6 +17,7 @@ var ErrCreateUnconfirmed = errors.New("task creation may have landed; inspect se
 func (s *Service) clientForCreation(ctx context.Context, projectID string) (tracker.Client, string, error) {
 	s.mu.RLock()
 	database, registry, global := s.db, s.trackerReg, s.trackerClient
+	workerIDs := append([]string(nil), s.trackerWorkerAssigneeIDs...)
 	s.mu.RUnlock()
 	if projectID == "" {
 		return global, "", nil
@@ -29,7 +30,7 @@ func (s *Service) clientForCreation(ctx context.Context, projectID string) (trac
 		return nil, "", ErrCreateSourceUnavailable
 	}
 	if project.IssueSourceType == "" && project.TrackerConfigID == "" {
-		return trackersqlite.NewClient(database, nil), "sqlite", nil
+		return trackersqlite.NewClient(database, workerIDs), "sqlite", nil
 	}
 	if registry == nil {
 		return nil, "", ErrCreateSourceUnavailable

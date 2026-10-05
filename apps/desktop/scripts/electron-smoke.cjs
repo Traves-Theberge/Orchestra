@@ -4,11 +4,16 @@ const { app, dialog } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
 const os = require('node:os')
+const hostOrcaRuntimeEnvironment = { APPDATA: process.env.APPDATA, LOCALAPPDATA: process.env.LOCALAPPDATA }
 
 const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-electron-smoke-'))
 app.setPath('userData', path.join(fixture, 'desktop'))
 process.env.ORCHESTRA_MANAGED_BACKEND = '1'
 process.env.ORCHESTRA_SERVER_PORT = '4110'
+// This run is intentionally incapable of dispatching its Backlog fixture: the
+// only recognized worker identity is a synthetic allowlist entry, while the
+// audit task uses a distinct person-smoke-* assignee.
+process.env.ORCHESTRA_TRACKER_WORKER_ASSIGNEE_IDS = 'agent-fixture-codex'
 delete process.env.VITE_DEV_SERVER_URL
 const errors = []
 fs.mkdirSync(path.join(fixture, 'home'), { recursive: true })
@@ -19,6 +24,7 @@ for (const [key, directory] of Object.entries({ APPDATA: 'appdata', LOCALAPPDATA
   fs.mkdirSync(process.env[key], { recursive: true })
 }
 const workspaceAudit = process.argv.includes('--workspace-controls')
+const backlogOnlyAudit = process.argv.includes('--backlog-only')
 const prVisualAudit = process.argv.includes('--pr-visual-fixture')
 if (workspaceAudit) {
   const projectsRoot = path.join(fixture, 'projects')
@@ -85,7 +91,7 @@ app.on('browser-window-created', (_, win) => {
       })()`)
       if (!result.bridge || !result.state) throw new Error('Missing bridge or state')
       if (prVisualAudit) await require('./pr-visual-audit.cjs').installPRVisualFixture(win)
-      if (workspaceAudit) {
+      if (workspaceAudit && !backlogOnlyAudit) {
         const workspaceResult = await win.webContents.executeJavaScript(`(async () => {
           const wait = async (predicate, name) => {
             const deadline = Date.now() + 15000
@@ -144,7 +150,41 @@ app.on('browser-window-created', (_, win) => {
           return { projectSource: 'new', workspaceOpened: true, primaryWorktreeObserved: true, fullPaneFilesOpened: true, maximized: true, chatRetained: true, gitAlongsideChat: true }
         })()`)
         console.log('WORKSPACE_CONTROLS_SMOKE_RESULT', JSON.stringify(workspaceResult))
-        console.log('MULTI_WORKTREE_SMOKE_RESULT', JSON.stringify(await require('./multi-worktree-audit.cjs').auditMultiWorktree(win, fixture)))
+        if (!backlogOnlyAudit) console.log('MULTI_WORKTREE_SMOKE_RESULT', JSON.stringify(await require('./multi-worktree-audit.cjs').auditMultiWorktree(win, fixture)))
+      }
+      if (workspaceAudit && backlogOnlyAudit) {
+        await win.webContents.executeJavaScript(`(async () => {
+          const wait = async (predicate, name) => {
+            const deadline = Date.now() + 15000
+            while (!predicate() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 75))
+            if (!predicate()) throw new Error('Backlog setup timed out waiting for ' + name)
+          }
+          const button = name => [...document.querySelectorAll('button, [role="button"]')].find(element => element.getAttribute('aria-label') === name || element.textContent.trim() === name)
+          document.querySelector('[data-testid="sidebar-nav-PROJECTS"]').click()
+          await wait(() => button('Add project'), 'Add project control')
+          button('Add project').click()
+          await wait(() => document.querySelector('[role="option"]'), 'project source list')
+          const source = [...document.querySelectorAll('[role="option"]')].find(element => element.textContent.includes('New project'))
+          if (!source) throw new Error('New project source missing')
+          source.click()
+          await wait(() => [...document.querySelectorAll('label')].some(element => element.textContent === 'Project name'), 'new project form')
+          const setInput = (label, value) => {
+            const controlLabel = [...document.querySelectorAll('label')].find(element => element.textContent === label)
+            const input = controlLabel && document.getElementById(controlLabel.htmlFor)
+            if (!input) throw new Error('Missing ' + label)
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value)
+            input.dispatchEvent(new Event('input', { bubbles: true }))
+          }
+          setInput('Project name', 'Workspace audit')
+          setInput('Parent folder', ${JSON.stringify(path.join(fixture, 'projects'))})
+          await wait(() => button('Create project') && !button('Create project').disabled, 'enabled Create project control')
+          button('Create project').click()
+          await wait(() => document.querySelector('[role="tab"][aria-selected="true"]') && !document.querySelector('[role="dialog"]'), 'project workspace')
+          const back = document.querySelector('[data-testid="sidebar-back"]')
+          if (!back) throw new Error('Backlog setup could not return from the new workspace')
+          back.click()
+          await wait(() => document.querySelector('[data-testid="sidebar-nav-ISSUES"]'), 'Tasks navigation')
+        })()`)
       }
       if (prVisualAudit) console.log('PR_VISUAL_FIXTURE_RESULT', JSON.stringify(await require('./pr-visual-audit.cjs').auditPRVisual(win, path.join(__dirname, '..', 'reports'))))
       if (workspaceAudit) {
@@ -174,6 +214,9 @@ app.on('browser-window-created', (_, win) => {
         fs.writeFileSync(path.join(fixture, 'tasks-header.png'), tasksScreenshot.toPNG())
         fs.writeFileSync(path.join(reportDir, 'electron-smoke-tasks-header.png'), tasksScreenshot.toPNG())
         console.log('TASKS_HEADER_SCREENSHOT_RESULT', JSON.stringify(tasksView))
+        if (hostOrcaRuntimeEnvironment.APPDATA) process.env.ORCHESTRA_SMOKE_HOST_APPDATA = hostOrcaRuntimeEnvironment.APPDATA
+        if (hostOrcaRuntimeEnvironment.LOCALAPPDATA) process.env.ORCHESTRA_SMOKE_HOST_LOCALAPPDATA = hostOrcaRuntimeEnvironment.LOCALAPPDATA
+        console.log('BACKLOG_KANBAN_AUDIT_RESULT', JSON.stringify(await require('./backlog-kanban-audit.cjs').auditBacklogKanban(win, fixture)))
       }
       console.log('ELECTRON_SMOKE_RESULT', JSON.stringify(result))
       const screenshot = await win.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })

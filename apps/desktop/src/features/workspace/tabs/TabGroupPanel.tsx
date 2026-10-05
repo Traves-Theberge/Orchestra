@@ -483,11 +483,17 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
             }}
           />
           <div className="my-1 h-px bg-border/60" />
-          {(['claude', 'codex', 'opencode', 'gemini', '8gent'] as const).map((agent) => (
+          {[
+            { id: 'claude', label: 'Claude', command: 'claude' },
+            { id: 'codex', label: 'Codex', command: 'codex' },
+            { id: 'antigravity', label: 'Antigravity', command: 'agy' },
+            { id: 'opencode', label: 'OpenCode', command: 'opencode' },
+            { id: '8gent', label: '8gent', command: '8gent' },
+          ].map((agent) => (
             <PlusMenuItem
-              key={agent}
-              icon={getAgentIcon(agent, 13)}
-              label={agentLabel(agent)}
+              key={agent.id}
+              icon={getAgentIcon(agent.id, 13)}
+              label={agent.label}
               onClick={() => {
                 closePlusMenu()
                 setFocusedGroup(projectId, group.id)
@@ -496,8 +502,8 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
                 // `~` must stay unquoted so the shell expands it; any concrete
                 // path goes through shellQuote to defuse spaces / quotes / $.
                 const cdArg = cwd ? shellQuote(cwd) : '~'
-                const cmd = `cd ${cdArg} && clear && ${agent}`
-                const title = `${agentLabel(agent)}${proj ? ` · ${proj.name}` : ''}`
+                const cmd = `cd ${cdArg} && clear && ${agent.command}`
+                const title = `${agent.label}${proj ? ` · ${proj.name}` : ''}`
                 setOpenTerminals([
                   ...useAppStore.getState().openTerminals,
                   { id, title, projectId: proj?.id, cwd, initialCommand: cmd },
@@ -599,19 +605,4 @@ function PlusMenuItem({
       )}
     </button>
   )
-}
-
-function agentLabel(id: 'claude' | 'codex' | 'opencode' | 'gemini' | '8gent'): string {
-  switch (id) {
-    case 'claude':
-      return 'Claude'
-    case 'codex':
-      return 'Codex'
-    case 'opencode':
-      return 'OpenCode'
-    case 'gemini':
-      return 'Gemini'
-    case '8gent':
-      return '8gent'
-  }
 }

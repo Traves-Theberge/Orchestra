@@ -17,9 +17,16 @@ type Registry struct {
 	mu             sync.Mutex
 	runners        map[Provider]Runner
 	commands       map[Provider]string
+	readOnlyStages map[string]readOnlyStageCapability
 	nativeCommands map[Provider]string
 	transports     map[RuntimeTarget]RuntimeTransport
 	termManager    *terminal.Manager
+}
+
+type readOnlyStageCapability struct {
+	provider     Provider
+	executionCmd string
+	refCount     int
 }
 
 // NewRegistry creates a Registry with the given provider-to-command mapping
@@ -34,6 +41,7 @@ func NewRegistryWithTerminal(commandByProvider map[string]string, tm *terminal.M
 	r := &Registry{
 		runners:        map[Provider]Runner{},
 		commands:       map[Provider]string{},
+		readOnlyStages: map[string]readOnlyStageCapability{},
 		nativeCommands: map[Provider]string{},
 		transports:     map[RuntimeTarget]RuntimeTransport{},
 		termManager:    tm,
@@ -49,6 +57,14 @@ func NewRegistryWithTerminal(commandByProvider map[string]string, tm *terminal.M
 // the registered RuntimeTransport instead of the default runner.
 func (r *Registry) RunTurn(ctx context.Context, provider Provider, request TurnRequest, onEvent EventHandler) (TurnResult, error) {
 	provider = NormalizeProvider(string(provider))
+	if request.PlanOnly {
+		if !r.isPreparedReadOnlyStage(provider, request.CommandOverride) || NormalizeRuntimeTarget(string(request.RuntimeTarget)) != RuntimeLocal {
+			return TurnResult{}, fmt.Errorf("read-only stage is not supported for provider %s and runtime %s", provider, NormalizeRuntimeTarget(string(request.RuntimeTarget)))
+		}
+		request.ToolExecutor = nil
+		request.ToolSpecs = nil
+		request.ResourceSpecs = nil
+	}
 	r.mu.Lock()
 	runner, ok := r.runners[provider]
 	cmd := r.commands[provider]
@@ -75,6 +91,11 @@ func (r *Registry) RunTurn(ctx context.Context, provider Provider, request TurnR
 // This is a capability boundary, not a frozen or persisted configuration snapshot.
 func (r *Registry) ValidateTurnOptions(provider Provider, request TurnRequest) error {
 	provider = NormalizeProvider(string(provider))
+	if request.PlanOnly {
+		if !r.isPreparedReadOnlyStage(provider, request.CommandOverride) || NormalizeRuntimeTarget(string(request.RuntimeTarget)) != RuntimeLocal {
+			return fmt.Errorf("read-only stage is not supported for provider %s and runtime %s", provider, NormalizeRuntimeTarget(string(request.RuntimeTarget)))
+		}
+	}
 	r.mu.Lock()
 	runner, ok := r.runners[provider]
 	transport := r.transports[request.RuntimeTarget]
@@ -83,6 +104,13 @@ func (r *Registry) ValidateTurnOptions(provider Provider, request TurnRequest) e
 		return fmt.Errorf("provider not configured: %s", provider)
 	}
 	return validateTurnOptions(context.Background(), provider, runner, transport, request)
+}
+
+func (r *Registry) isPreparedReadOnlyStage(provider Provider, command string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	capability, ok := r.readOnlyStages[command]
+	return ok && capability.provider == provider && r.commands[provider] == capability.executionCmd
 }
 
 func validateTurnOptions(ctx context.Context, provider Provider, runner Runner, transport RuntimeTransport, request TurnRequest) error {
@@ -170,6 +198,84 @@ func (r *Registry) CommandFor(provider Provider) (string, bool) {
 	return cmd, ok
 }
 
+// ReadOnlyPlanCommandFor returns only explicitly reviewed per-provider command
+// variants, and only when the execution command is Orchestra's exact default.
+// A planning prompt or arbitrary custom command never grants read-only safety.
+func (r *Registry) ReadOnlyPlanCommandFor(provider Provider) (string, bool) {
+	provider = NormalizeProvider(string(provider))
+	r.mu.Lock()
+	command := strings.TrimSpace(r.commands[provider])
+	r.mu.Unlock()
+	return safeStageCommand(provider, command)
+}
+
+// ReadOnlyStageCommandFor is the shared capability boundary for read-only
+// planning and review turns. The returned command is a fresh stage-specific
+// invocation; callers must still supply no tool executor/specs and use LOCAL.
+func (r *Registry) ReadOnlyStageCommandFor(provider Provider) (string, bool) {
+	return r.ReadOnlyPlanCommandFor(provider)
+}
+
+// CanReadOnlyStage reports whether the currently configured exact provider
+// command has a reviewed read-only stage adapter. It performs no preparation
+// and writes no policy files; callers must still prepare the command before
+// dispatch with PrepareReadOnlyStageCommandFor.
+func (r *Registry) CanReadOnlyStage(provider Provider) bool {
+	_, ok := r.ReadOnlyPlanCommandFor(provider)
+	return ok
+}
+
+// PrepareReadOnlyStageCommandFor creates any per-turn policy artifact required
+// by a reviewed provider adapter and registers the exact command as a capability.
+// cleanup must be called when the turn completes or is rejected.
+func (r *Registry) PrepareReadOnlyStageCommandFor(provider Provider) (command string, cleanup func(), ok bool) {
+	provider = NormalizeProvider(string(provider))
+	raw, exists := r.CommandFor(provider)
+	if !exists {
+		return "", func() {}, false
+	}
+	if command, supported := safeStageCommand(provider, raw); supported {
+		r.mu.Lock()
+		capability := r.readOnlyStages[command]
+		if capability.provider != provider || capability.executionCmd != raw {
+			capability = readOnlyStageCapability{provider: provider, executionCmd: raw}
+		}
+		capability.refCount++
+		r.readOnlyStages[command] = capability
+		r.mu.Unlock()
+		var once sync.Once
+		return command, func() { once.Do(func() { r.releaseReadOnlyStage(command) }) }, true
+	}
+	return "", func() {}, false
+}
+
+func (r *Registry) releaseReadOnlyStage(command string) {
+	r.mu.Lock()
+	if capability, ok := r.readOnlyStages[command]; ok {
+		capability.refCount--
+		if capability.refCount <= 0 {
+			delete(r.readOnlyStages, command)
+		} else {
+			r.readOnlyStages[command] = capability
+		}
+	}
+	r.mu.Unlock()
+}
+
+func safeStageCommand(provider Provider, raw string) (string, bool) {
+	switch provider {
+	case ProviderCodex:
+		if raw == "codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json {{prompt}}" {
+			return "codex exec --skip-git-repo-check --ignore-user-config --sandbox read-only --json {{prompt}}", true
+		}
+	case ProviderClaude:
+		if raw == "claude -p {{prompt}} --output-format stream-json --verbose --dangerously-skip-permissions" {
+			return "claude -p {{prompt}} --output-format stream-json --verbose --permission-mode plan --tools Read,Grep,Glob --disallowedTools mcp__*", true
+		}
+	}
+	return "", false
+}
+
 // SetTransport registers or replaces the RuntimeTransport for the given target.
 func (r *Registry) SetTransport(target RuntimeTarget, transport RuntimeTransport) {
 	r.mu.Lock()
@@ -182,12 +288,26 @@ func (r *Registry) SetTransport(target RuntimeTarget, transport RuntimeTransport
 // implementation (ClaudeRunner, GeminiRunner, CodexAppServerRunner, etc.)
 // based on the provider and command string. Empty commands are ignored.
 func (r *Registry) SetCommand(provider Provider, command string) {
+	p := NormalizeProvider(string(provider))
+	if p == ProviderGemini {
+		// Gemini remains only as an archived provider identity. New execution
+		// configuration is Antigravity-only. Clear an older active registration.
+		r.mu.Lock()
+		delete(r.commands, p)
+		delete(r.runners, p)
+		for capabilityCommand, capability := range r.readOnlyStages {
+			if capability.provider == p {
+				delete(r.readOnlyStages, capabilityCommand)
+			}
+		}
+		r.mu.Unlock()
+		return
+	}
 	if strings.TrimSpace(command) == "" {
 		return
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	p := NormalizeProvider(string(provider))
 	r.commands[p] = command
 	if p == ProviderCodex {
 		if _, configured := r.nativeCommands[p]; !configured {
@@ -205,8 +325,6 @@ func (r *Registry) SetCommand(provider Provider, command string) {
 		r.runners[p] = NewEightgentRunner(command)
 	case ProviderOpenCode:
 		r.runners[p] = NewOpenCodeRunner(command)
-	case ProviderGemini:
-		r.runners[p] = NewGeminiRunner(command)
 	case ProviderAntigravity:
 		r.runners[p] = NewCommandRunner(p, command)
 	case ProviderUnsandbox:

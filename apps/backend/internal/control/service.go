@@ -16,6 +16,7 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/agents"
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
 	"github.com/orchestra/orchestra/apps/backend/internal/orchestrator"
+	"github.com/orchestra/orchestra/apps/backend/internal/plangate"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
 	trackerregistry "github.com/orchestra/orchestra/apps/backend/internal/tracker/registry"
 	trackersqlite "github.com/orchestra/orchestra/apps/backend/internal/tracker/sqlite"
@@ -23,16 +24,22 @@ import (
 )
 
 type Request struct {
-	Operation     string `json:"operation"`
-	ProjectID     string `json:"project_id,omitempty"`
-	TaskID        string `json:"task_id,omitempty"`
-	RequestID     string `json:"request_id,omitempty"`
-	ExpectedState string `json:"expected_state,omitempty"`
-	Title         string `json:"title,omitempty"`
-	Description   string `json:"description,omitempty"`
-	AssigneeID    string `json:"assignee_id,omitempty"`
-	Provider      string `json:"provider,omitempty"`
-	Unassigned    bool   `json:"unassigned,omitempty"`
+	Operation        string `json:"operation"`
+	ProjectID        string `json:"project_id,omitempty"`
+	TaskID           string `json:"task_id,omitempty"`
+	RequestID        string `json:"request_id,omitempty"`
+	ExpectedState    string `json:"expected_state,omitempty"`
+	Title            string `json:"title,omitempty"`
+	Description      string `json:"description,omitempty"`
+	AssigneeID       string `json:"assignee_id,omitempty"`
+	Provider         string `json:"provider,omitempty"`
+	ExpectedPlanHash string `json:"expected_plan_hash,omitempty"`
+	Feedback         string `json:"feedback,omitempty"`
+	ExpectedPRURL    string `json:"expected_pr_url,omitempty"`
+	ExpectedHeadSHA  string `json:"expected_head_sha,omitempty"`
+	ReviewAttemptID  string `json:"review_attempt_id,omitempty"`
+	ReviewerAgentID  string `json:"reviewer_agent_id,omitempty"`
+	Unassigned       bool   `json:"unassigned,omitempty"`
 }
 type Service struct {
 	db               *db.DB
@@ -41,6 +48,7 @@ type Service struct {
 	mu               sync.Mutex
 	roots            []string
 	resourceExecutor func(context.Context, map[string]any) map[string]any
+	reviewExecutor   func(context.Context, Request) map[string]any
 }
 
 func New(database *db.DB, orchestratorService *orchestrator.Service, registry *trackerregistry.Registry, roots ...[]string) (*Service, error) {
@@ -52,6 +60,7 @@ func New(database *db.DB, orchestratorService *orchestrator.Service, registry *t
 		return nil, err
 	}
 	service := &Service{db: database, orchestrator: orchestratorService, registry: registry}
+	orchestratorService.SetDB(database)
 	if len(roots) > 0 {
 		service.roots = append([]string(nil), roots[0]...)
 	}
@@ -104,6 +113,12 @@ func (s *Service) Execute(ctx context.Context, name string, arguments map[string
 	if req.Operation == "receipt" {
 		return s.receipt(ctx, req.RequestID)
 	}
+	if req.Operation == "reviewers" {
+		if s.reviewExecutor == nil {
+			return failure("review_unavailable", "PR reviewer stage is not configured")
+		}
+		return s.reviewExecutor(ctx, req)
+	}
 	if req.Operation == "worktrees" {
 		project, err := s.db.GetProjectByID(ctx, req.ProjectID)
 		if err != nil {
@@ -115,8 +130,8 @@ func (s *Service) Execute(ctx context.Context, name string, arguments map[string
 		}
 		return success(map[string]any{"project_id": project.ID, "worktrees": rows, "observation": "git_registry_only"})
 	}
-	if req.Operation != "tasks" && req.Operation != "create" && req.Operation != "queue" && req.Operation != "assign" {
-		return failure("unsupported_operation", "Supported operations: projects, tasks, worktrees, status, create, assign, queue, receipt; pause/stop/delete are unavailable")
+	if req.Operation != "tasks" && req.Operation != "create" && req.Operation != "queue" && req.Operation != "assign" && req.Operation != "approve_plan" && req.Operation != "replan" && !reviewMutation(req.Operation) {
+		return failure("unsupported_operation", "Supported operations: projects, tasks, worktrees, status, create, assign, queue, approve_plan, replan, receipt; pause/stop/delete are unavailable")
 	}
 	client, err := s.projectClient(ctx, req.ProjectID)
 	if err != nil {
@@ -139,6 +154,8 @@ func (s *Service) Execute(ctx context.Context, name string, arguments map[string
 			if req.Unassigned && strings.TrimSpace(task.AssigneeID) != "" || req.AssigneeID != "" && task.AssigneeID != req.AssigneeID {
 				continue
 			}
+			task.PlanGate = planGatePointer(s.orchestrator.PlanGate(ctx, task))
+			task.ReviewGate = s.orchestrator.ReviewGate(ctx, task)
 			scoped = append(scoped, task)
 		}
 		return success(map[string]any{"project_id": req.ProjectID, "tasks": scoped})
@@ -146,14 +163,36 @@ func (s *Service) Execute(ctx context.Context, name string, arguments map[string
 	if id, err := uuid.Parse(req.RequestID); err != nil || id == uuid.Nil || id.String() != req.RequestID {
 		return failure("invalid_request", "Mutations require a canonical UUID request_id; retain it for reconciliation")
 	}
+	if reviewMutation(req.Operation) {
+		if err := ValidateReviewRequest(req); err != nil {
+			return failure("invalid_request", err.Error())
+		}
+		if s.reviewExecutor == nil {
+			return failure("review_unavailable", "PR reviewer stage is not configured")
+		}
+	} else if req.ExpectedPRURL != "" || req.ExpectedHeadSHA != "" || req.ReviewAttemptID != "" || req.ReviewerAgentID != "" {
+		return failure("invalid_request", "Review identity fields require a review control operation")
+	}
 	if req.Operation == "create" && (strings.TrimSpace(req.Title) == "" || len(req.Title) > 500 || len(req.Description) > 65536 || req.TaskID != "" || req.ExpectedState != "") {
 		return failure("invalid_request", "Create requires a title and no existing task/state identity")
+	}
+	if req.Operation == "create" && req.Provider != "" {
+		req.Provider = string(agents.NormalizeProvider(req.Provider))
+		if !validAssignmentProvider(agents.Provider(req.Provider)) {
+			return failure("invalid_request", "Task provider must be a registered harness name")
+		}
 	}
 	if req.Operation == "queue" && (req.TaskID == "" || req.ExpectedState != "Backlog" || req.Title != "" || req.Description != "" || req.AssigneeID != "" || req.Provider != "") {
 		return failure("invalid_request", "Queue requires exact project/task IDs and expected_state Backlog; metadata edits are unavailable")
 	}
 	if req.Operation == "assign" && (req.TaskID == "" || req.ExpectedState != "Backlog" || strings.TrimSpace(req.AssigneeID) == "" || req.Title != "" || req.Description != "" || req.Unassigned) {
 		return failure("invalid_request", "Assign requires exact project/task IDs, assignee_id and expected_state Backlog")
+	}
+	if req.Operation == "approve_plan" && (req.TaskID == "" || req.ExpectedState != "Todo" || req.ExpectedPlanHash == "" || req.Feedback != "" || req.Title != "" || req.Description != "" || req.AssigneeID != "" || req.Provider != "") {
+		return failure("invalid_request", "Approve plan requires exact project/task IDs, expected_state Todo, expected_plan_hash, and no task metadata edits")
+	}
+	if req.Operation == "replan" && (req.TaskID == "" || (req.ExpectedState != "Todo" && req.ExpectedState != "In Progress" && req.ExpectedState != "Review") || req.ExpectedPlanHash == "" || strings.TrimSpace(req.Feedback) == "" || len(req.Feedback) > 65536 || req.Title != "" || req.Description != "" || req.AssigneeID != "" || req.Provider != "") {
+		return failure("invalid_request", "Replan requires exact project/task IDs, expected_state Todo/In Progress/Review, expected_plan_hash, nonblank feedback, and no task metadata edits")
 	}
 	if req.Operation == "assign" && req.Provider != "" {
 		req.Provider = string(agents.NormalizeProvider(req.Provider))
@@ -198,6 +237,7 @@ func (s *Service) Execute(ctx context.Context, name string, arguments map[string
 		return failure("mutation_unknown", "Mutation may have landed; inspect tasks and this request_id before retrying")
 	}
 	out["request_id"] = req.RequestID
+	out["receipt_status"] = state
 	return out
 }
 
@@ -216,7 +256,11 @@ func (s *Service) projectClient(ctx context.Context, pid string) (tracker.Client
 		return nil, errors.New("Registered project unavailable")
 	}
 	if p.IssueSourceType == "" && p.TrackerConfigID == "" {
-		return trackersqlite.NewClient(s.db, nil), nil
+		client := s.orchestrator.LocalSQLiteClient()
+		if client == nil {
+			return nil, errors.New("Local project tracker unavailable")
+		}
+		return client, nil
 	}
 	if s.registry == nil {
 		return nil, errors.New("Project tracker unavailable; global tracker fallback prohibited")
@@ -233,6 +277,9 @@ func (s *Service) projectClient(ctx context.Context, pid string) (tracker.Client
 	return client, nil
 }
 func (s *Service) mutate(ctx context.Context, client tracker.Client, req Request) map[string]any {
+	if reviewMutation(req.Operation) {
+		return s.reviewExecutor(ctx, req)
+	}
 	if req.Operation == "create" {
 		task, err := client.CreateIssue(ctx, req.Title, req.Description, "Backlog", 0, req.AssigneeID, req.ProjectID, req.Provider, nil)
 		if err != nil || task == nil {
@@ -242,6 +289,9 @@ func (s *Service) mutate(ctx context.Context, client tracker.Client, req Request
 			return failure("mutation_unknown", "Created task scope not confirmed; inspect selected tracker before repeating")
 		}
 		return success(map[string]any{"task": task, "effect": "backlog_created", "execution": "not_started"})
+	}
+	if req.Operation == "approve_plan" || req.Operation == "replan" {
+		return s.mutatePlanGate(ctx, client, req)
 	}
 	if req.Operation == "assign" {
 		if _, local := client.(*trackersqlite.Client); !local {
@@ -340,9 +390,118 @@ func (s *Service) mutate(ctx context.Context, client tracker.Client, req Request
 	return success(map[string]any{"task": updated, "effect": "queued", "execution": "not_observed", "worktree": "not_observed"})
 }
 
+func (s *Service) mutatePlanGate(ctx context.Context, client tracker.Client, req Request) map[string]any {
+	if _, local := client.(*trackersqlite.Client); !local {
+		return failure("unsupported_transition", "Durable plan approval is available only for project-local SQLite tasks")
+	}
+	err := s.orchestrator.WithSettledTask(req.TaskID, func() error {
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		var sourceType, trackerConfigID sql.NullString
+		if err := tx.QueryRowContext(ctx, `SELECT issue_source_type,tracker_config_id FROM projects WHERE id=?`, req.ProjectID).Scan(&sourceType, &trackerConfigID); err != nil || strings.TrimSpace(sourceType.String) != "" || strings.TrimSpace(trackerConfigID.String) != "" {
+			return errors.New("plan approval is available only for source-empty local projects")
+		}
+		issue, updatedAt, err := plangate.LoadLocalTask(ctx, tx, req.TaskID, req.ProjectID)
+		if err != nil {
+			return err
+		}
+		if issue.State != req.ExpectedState {
+			return errControlStateConflict
+		}
+		currentHash := plangate.Fingerprint(*issue)
+		if currentHash != req.ExpectedPlanHash {
+			return errControlPlanConflict
+		}
+		if req.Operation == "approve_plan" {
+			gate, err := plangate.Status(ctx, tx, *issue)
+			if err != nil {
+				return err
+			}
+			if gate.Status != "awaiting_approval" || strings.TrimSpace(issue.Plan) == "" {
+				return errControlPlanConflict
+			}
+			result, err := tx.ExecContext(ctx, `UPDATE issues SET state='In Progress',updated_at=datetime('now') WHERE id=? AND project_id=? AND state='Todo' AND updated_at=?`, req.TaskID, req.ProjectID, updatedAt)
+			if err != nil {
+				return err
+			}
+			if rows, _ := result.RowsAffected(); rows != 1 {
+				return errControlStateConflict
+			}
+			if err := insertControlHistory(ctx, tx, req.TaskID, "User", "plan_approved", "", currentHash); err != nil {
+				return err
+			}
+			if err := insertControlHistory(ctx, tx, req.TaskID, "User", "state_change", "Todo", "In Progress"); err != nil {
+				return err
+			}
+		} else {
+			if issue.State != "Todo" && issue.State != "In Progress" && issue.State != "Review" {
+				return errControlStateConflict
+			}
+			oldState, oldFeedback := issue.State, issue.Feedback
+			issue.Feedback = strings.TrimSpace(req.Feedback)
+			newHash := plangate.Fingerprint(*issue)
+			result, err := tx.ExecContext(ctx, `UPDATE issues SET state='Todo',feedback=?,updated_at=datetime('now') WHERE id=? AND project_id=? AND state=? AND updated_at=?`, issue.Feedback, req.TaskID, req.ProjectID, oldState, updatedAt)
+			if err != nil {
+				return err
+			}
+			if rows, _ := result.RowsAffected(); rows != 1 {
+				return errControlStateConflict
+			}
+			if err := insertControlHistory(ctx, tx, req.TaskID, "User", "replan_requested", oldFeedback, newHash); err != nil {
+				return err
+			}
+			if oldState != "Todo" {
+				if err := insertControlHistory(ctx, tx, req.TaskID, "User", "state_change", oldState, "Todo"); err != nil {
+					return err
+				}
+			}
+		}
+		return tx.Commit()
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, orchestrator.ErrTaskUnsettled):
+			return failure("task_unsettled", "Task has an active or unresolved run; approval or replan was not applied")
+		case errors.Is(err, errControlPlanConflict):
+			return failure("plan_conflict", "Plan or execution context changed; reload the task and use its current plan_hash")
+		case errors.Is(err, errControlStateConflict):
+			return failure("state_conflict", "Task is no longer in the expected state; mutation was not applied")
+		case errors.Is(err, sql.ErrNoRows):
+			return failure("task_not_found", "Exact local task not found in selected project")
+		default:
+			return failure("mutation_rejected", err.Error())
+		}
+	}
+	updated, err := client.FetchIssueByIdentifier(ctx, req.TaskID)
+	if err != nil || updated == nil || updated.ID != req.TaskID || updated.ProjectID != req.ProjectID {
+		return failure("mutation_unknown", "Plan gate may have changed; inspect the exact task and request receipt before retrying")
+	}
+	updated.PlanGate = planGatePointer(s.orchestrator.PlanGate(ctx, *updated))
+	s.orchestrator.QueueRefresh()
+	if req.Operation == "approve_plan" {
+		return success(map[string]any{"task": updated, "effect": "plan_approved", "execution": "queued"})
+	}
+	return success(map[string]any{"task": updated, "effect": "replan_requested", "execution": "not_started"})
+}
+
+var (
+	errControlPlanConflict  = errors.New("plan fingerprint conflict")
+	errControlStateConflict = errors.New("task state conflict")
+)
+
+func insertControlHistory(ctx context.Context, tx *sql.Tx, taskID, userID, action, oldValue, newValue string) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO issue_history(id,issue_id,user_id,action,old_value,new_value) VALUES(?,?,?,?,?,?)`, "hist_"+uuid.NewString(), taskID, userID, action, oldValue, newValue)
+	return err
+}
+
+func planGatePointer(gate tracker.PlanGate) *tracker.PlanGate { return &gate }
+
 func validAssignmentProvider(provider agents.Provider) bool {
 	switch provider {
-	case agents.ProviderCodex, agents.ProviderClaude, agents.ProviderOpenCode, agents.ProviderGemini, agents.Provider8gent, agents.ProviderAntigravity:
+	case agents.ProviderCodex, agents.ProviderClaude, agents.ProviderOpenCode, agents.Provider8gent, agents.ProviderAntigravity:
 		return true
 	default:
 		return false
@@ -374,9 +533,9 @@ func ToolSpecs() []map[string]any {
 	stringField := func(description string) map[string]any {
 		return map[string]any{"type": "string", "description": description}
 	}
-	return []map[string]any{{"type": "function", "name": "orchestra_control", "description": "Observe all registered projects, exact issue-backed tasks and authorized Git worktree registry. Create Backlog tasks, assign an explicit worker to an unassigned Backlog task, or queue complete Backlog tasks through Orchestra. Assignment never infers a provider or starts execution. Never infer running/worktree readiness from queued state. Mutations require stable UUID request_id; inspect receipts and tasks after uncertainty. No pause/stop/delete/PR mutations.", "inputSchema": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"operation"}, "properties": map[string]any{
-		"operation":  map[string]any{"type": "string", "enum": []string{"projects", "tasks", "worktrees", "status", "create", "assign", "queue", "receipt"}},
-		"project_id": stringField("Exact registered project ID; required for tasks/create/assign/queue"), "task_id": stringField("Exact task ID; required for assign/queue"), "request_id": stringField("Canonical UUID retained for mutation reconciliation"), "expected_state": stringField("Assign/queue require Backlog"), "title": stringField("New Backlog task title"), "description": stringField("New Backlog task description"), "assignee_id": stringField("Exact task owner identity; assignment does not infer it from provider"), "provider": stringField("Provider harness for task creation or explicit assignment only"), "unassigned": map[string]any{"type": "boolean", "description": "Return only tasks with no assignee; mutually exclusive with assignee_id on tasks operation"},
+	return []map[string]any{{"type": "function", "name": "orchestra_control", "description": "Observe all registered projects, exact issue-backed tasks and authorized Git worktree registry. Create Backlog tasks, assign an explicit worker to an unassigned Backlog task, queue complete Backlog tasks, explicitly approve a ready local plan, or request a replan with feedback. Assignment never infers a provider or starts execution. Planning remains read-only in Todo until explicit approval. Never infer running/worktree readiness from state alone. Mutations require stable UUID request_id; inspect receipts and tasks after uncertainty. PR review controls bind exact task, PR, head and reviewer attempt; clean review requires explicit human approval, and completion requires fresh merged evidence. No pause/stop/delete or PR publication mutations.", "inputSchema": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"operation"}, "properties": map[string]any{
+		"operation":  map[string]any{"type": "string", "enum": []string{"projects", "tasks", "worktrees", "status", "create", "assign", "queue", "approve_plan", "replan", "reviewers", "request_review", "approve_review", "complete_review", "receipt"}},
+		"project_id": stringField("Exact registered project ID; required for tasks/create/assign/queue/approve_plan/replan"), "task_id": stringField("Exact task ID; required for assign/queue/approve_plan/replan"), "request_id": stringField("Canonical UUID retained for mutation reconciliation"), "expected_state": stringField("Assign/queue require Backlog; approve_plan requires Todo; replan requires Todo, In Progress or Review"), "expected_plan_hash": stringField("Opaque exact current plan/context fingerprint required for approve_plan/replan"), "feedback": stringField("Nonblank durable human or agent feedback required for replan"), "title": stringField("New Backlog task title"), "description": stringField("New Backlog task description"), "assignee_id": stringField("Exact task owner identity; assignment does not infer it from provider"), "provider": stringField("Provider harness for task creation, explicit assignment or request_review"), "expected_pr_url": stringField("Exact stored canonical PR URL required for review controls"), "expected_head_sha": stringField("Fresh full PR head SHA required for review controls"), "review_attempt_id": stringField("Exact reviewer attempt UUID required for approval/completion"), "reviewer_agent_id": stringField("Supported provider-default native profile required for request_review"), "unassigned": map[string]any{"type": "boolean", "description": "Return only tasks with no assignee; mutually exclusive with assignee_id on tasks operation"},
 	}}}}
 }
 

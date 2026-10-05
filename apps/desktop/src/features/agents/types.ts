@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
 
 export type Provider = 'claude' | 'codex' | 'antigravity' | 'gemini' | 'opencode' | '8gent'
+export type ActiveAgentProvider = Exclude<Provider, 'gemini'>
 export type CategoryId =
   | 'overview'
   | 'settings'

@@ -21,7 +21,7 @@ const agentCommands = [
     { id: '8gent', label: '8gent', cmd: '8gent', color: 'text-orange-500' },
     { id: 'claude', label: 'Claude', cmd: 'claude', color: 'text-orange-400' },
     { id: 'codex', label: 'Codex', cmd: 'codex', color: 'text-emerald-400' },
-    { id: 'gemini', label: 'Gemini', cmd: 'gemini', color: 'text-blue-400' },
+    { id: 'antigravity', label: 'Antigravity', cmd: 'agy', color: 'text-violet-400' },
     { id: 'opencode', label: 'OpenCode', cmd: 'opencode', color: 'text-purple-400' },
 ]
 

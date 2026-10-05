@@ -34,7 +34,7 @@ export function HarnessPicker({ providers, provider, disabled, locked, catalog, 
   return <>
     <button ref={button} type="button" aria-label="Choose harness and model" aria-haspopup="dialog" aria-expanded={open} disabled={disabled}
       onClick={event => { const bounds = event.currentTarget.getBoundingClientRect(); setRect({ left: bounds.left, top: bounds.top }); setSearch(''); setOpen(value => !value) }} className="flex min-w-0 max-w-48 items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1 text-[11px] disabled:opacity-40">
-      <Terminal className="size-3.5 shrink-0" /><span className="truncate">{selectedModel?.display_name || selectedModel?.model || selected?.label || provider || 'Choose harness'}</span>{selectedModel && <span className="truncate text-[10px] text-muted-foreground">{selected?.label}</span>}<ChevronDown className="size-3 shrink-0" />
+      <Terminal className="size-3.5 shrink-0" /><span className="truncate">{selectedModel?.display_name || selectedModel?.model || selected?.label || (provider.toLowerCase() === 'gemini' ? 'Gemini' : provider) || 'Choose harness'}</span>{selectedModel && <span className="truncate text-[10px] text-muted-foreground">{selected?.label}</span>}<ChevronDown className="size-3 shrink-0" />
     </button>
     {open && !disabled && rect && createPortal(<div ref={popup} role="dialog" aria-label="Harnesses and models" className="fixed z-[100] flex overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
       style={{ left: Math.max(8, Math.min(rect.left, window.innerWidth - 468)), bottom: Math.max(8, window.innerHeight - rect.top + 8), width: Math.min(460, window.innerWidth - 16), maxHeight: Math.min(420, Math.max(180, rect.top - 16)) }}>

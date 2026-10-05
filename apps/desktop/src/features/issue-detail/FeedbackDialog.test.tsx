@@ -42,14 +42,15 @@ describe('FeedbackDialog', () => {
     expect(onSubmit).toHaveBeenCalledWith('Fix the tests')
   })
 
-  it('shows Update PR button copy when hasPR is true', () => {
+  it('describes replanning with the existing PR context when hasPR is true', () => {
     render(<FeedbackDialog onSubmit={vi.fn()} onCancel={vi.fn()} hasPR />)
-    expect(screen.getByRole('button', { name: /update pr/i })).toBeTruthy()
+    expect(screen.getByText(/return the task to planning with your feedback and current pull request context/i)).toBeTruthy()
+    expect(getSubmitButton()).toBeTruthy()
   })
 
   it('renders replanning copy when hasPR is false', () => {
     render(<FeedbackDialog onSubmit={vi.fn()} onCancel={vi.fn()} />)
-    expect(screen.getByText(/re-plan with your feedback/i)).toBeTruthy()
+    expect(screen.getByText(/return the task to planning with your feedback and prior task context/i)).toBeTruthy()
   })
 
   it('calls onCancel when Cancel clicked', async () => {

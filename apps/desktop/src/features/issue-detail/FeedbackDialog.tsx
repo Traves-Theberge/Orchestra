@@ -1,18 +1,28 @@
 import { useState } from 'react'
 
 interface FeedbackDialogProps {
-  onSubmit: (feedback: string) => void
+  onSubmit: (feedback: string) => void | Promise<void>
   onCancel: () => void
   hasPR?: boolean
 }
 
 export function FeedbackDialog({ onSubmit, onCancel, hasPR }: FeedbackDialogProps) {
   const [feedback, setFeedback] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
 
-  const handleSubmit = () => {
-    if (!feedback.trim()) return
-    onSubmit(feedback.trim())
-    setFeedback('')
+  const handleSubmit = async () => {
+    if (!feedback.trim() || submitting) return
+    setSubmitting(true)
+    setError('')
+    try {
+      await onSubmit(feedback.trim())
+      setFeedback('')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'The replan request was not confirmed. Reconcile its receipt before trying again.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -21,8 +31,8 @@ export function FeedbackDialog({ onSubmit, onCancel, hasPR }: FeedbackDialogProp
         <h3 className="text-sm font-semibold text-foreground mb-3">Request Changes</h3>
         <p className="text-[11px] text-muted-foreground mb-3">
           {hasPR
-            ? 'Describe what needs to change. The agent will make the changes directly and update the PR.'
-            : 'Describe what needs to change. The agent will re-plan with your feedback and prior work context.'}
+            ? 'Describe what needs to change. Orchestra will return the task to planning with your feedback and current pull request context.'
+            : 'Describe what needs to change. Orchestra will return the task to planning with your feedback and prior task context.'}
         </p>
         <textarea
           value={feedback}
@@ -31,6 +41,7 @@ export function FeedbackDialog({ onSubmit, onCancel, hasPR }: FeedbackDialogProp
           rows={4}
           className="w-full bg-muted/10 border border-border/40 rounded-lg px-3 py-2 text-[11px] text-foreground placeholder:text-muted-foreground/40 resize-none outline-none focus:border-primary/60"
         />
+        {error && <p role="alert" className="text-[11px] text-red-500 mt-2">{error}</p>}
         <div className="flex justify-end gap-2 mt-3">
           <button
             onClick={onCancel}
@@ -40,10 +51,10 @@ export function FeedbackDialog({ onSubmit, onCancel, hasPR }: FeedbackDialogProp
           </button>
           <button
             onClick={handleSubmit}
-            disabled={!feedback.trim()}
+            disabled={!feedback.trim() || submitting}
             className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
           >
-            {hasPR ? 'Update PR' : 'Send Feedback'}
+            {submitting ? 'Requesting replan…' : 'Send Feedback'}
           </button>
         </div>
       </div>

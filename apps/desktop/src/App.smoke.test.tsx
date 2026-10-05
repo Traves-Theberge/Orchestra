@@ -522,7 +522,7 @@ describe('App smoke render', () => {
       })
     })
 
-    it('changes task state', async () => {
+    it('does not complete a Review task without an approved review gate and merged PR evidence', async () => {
       setupDesktopBridge()
       const issues = [
         {
@@ -569,16 +569,12 @@ describe('App smoke render', () => {
         expect(screen.getByText(/Issue Inspector/i)).toBeTruthy()
       })
 
-      // The issue is in Review state — close the task from the review actions
       const dialog = screen.getByRole('dialog')
-      const closeBtn = within(dialog).getByRole('button', { name: /close/i })
-      fireEvent.click(closeBtn)
-
-      await waitFor(() => {
-        expect(fetchMock.mock.calls.some(
-          (call) => String(call[0]).includes('/api/v1/issues/OPS-60') && call[1]?.method === 'PATCH',
-        )).toBe(true)
-      })
+      expect(within(dialog).queryByRole('button', { name: /complete task/i })).toBeNull()
+      expect(within(dialog).getByText(/awaiting a linked pull request/i)).toBeTruthy()
+      expect(fetchMock.mock.calls.some(
+        (call) => String(call[0]).includes('/api/v1/issues/OPS-60') && call[1]?.method === 'PATCH',
+      )).toBe(false)
     })
 
     it('requires project for task creation', async () => {

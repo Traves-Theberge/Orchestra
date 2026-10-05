@@ -26,7 +26,6 @@ func Load() (Config, error) {
 	agentCommandsDefault := map[string]string{
 		"CLAUDE":      "claude -p {{prompt}} --output-format stream-json --verbose --dangerously-skip-permissions",
 		"CODEX":       "codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json {{prompt}}",
-		"GEMINI":      "gemini -p {{prompt}} --output-format stream-json --approval-mode yolo",
 		"ANTIGRAVITY": "agy -p {{prompt}} --output-format stream-json",
 		"OPENCODE":    "opencode -p {{prompt}} -f json",
 		"8GENT":       "8gent run --yes --output-format stream-json {{prompt}}",
@@ -53,7 +52,6 @@ func Load() (Config, error) {
 	agentCommandCodex := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_CODEX")
 	agentCommandClaude := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_CLAUDE")
 	agentCommandOpenCode := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_OPENCODE")
-	agentCommandGemini := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_GEMINI")
 	agentCommand8gent := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_8GENT")
 	agentCommandUnsandbox := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_UNSANDBOX")
 	trackerType := getenvOrEmpty("ORCHESTRA_TRACKER_TYPE")
@@ -181,9 +179,6 @@ func Load() (Config, error) {
 	if value := strings.TrimSpace(workflowOverrides.AgentCommandOpenCode); value != "" {
 		agentCommands["OPENCODE"] = value
 	}
-	if value := strings.TrimSpace(workflowOverrides.AgentCommandGemini); value != "" {
-		agentCommands["GEMINI"] = value
-	}
 	if value := strings.TrimSpace(workflowOverrides.AgentCommand8gent); value != "" {
 		agentCommands["8GENT"] = value
 	}
@@ -196,9 +191,6 @@ func Load() (Config, error) {
 	}
 	if value := strings.TrimSpace(agentCommandOpenCode); value != "" {
 		agentCommands["OPENCODE"] = value
-	}
-	if value := strings.TrimSpace(agentCommandGemini); value != "" {
-		agentCommands["GEMINI"] = value
 	}
 	if value := strings.TrimSpace(agentCommand8gent); value != "" {
 		agentCommands["8GENT"] = value
@@ -254,7 +246,7 @@ func Load() (Config, error) {
 	}
 	telemetryProviders := parseStateList(telemetryProvidersRaw)
 	if len(telemetryProviders) == 0 {
-		telemetryProviders = []string{"CLAUDE", "CODEX", "GEMINI", "OPENCODE"}
+		telemetryProviders = []string{"CLAUDE", "CODEX", "ANTIGRAVITY", "OPENCODE"}
 	}
 	telemetryRetentionDays := 7
 	if strings.TrimSpace(telemetryRetentionDaysRaw) != "" {
@@ -565,9 +557,7 @@ func loadWorkflowOverrides(path string) workflowConfigOverrides {
 		AgentCommandOpenCode: firstStringValue(
 			lookupNested(doc.Config, []string{"agent", "commands", "opencode"}),
 		),
-		AgentCommandGemini: firstStringValue(
-			lookupNested(doc.Config, []string{"agent", "commands", "gemini"}),
-		),
+		AgentCommandGemini: firstStringValue(),
 		AgentCommand8gent: firstStringValue(
 			lookupNested(doc.Config, []string{"agent", "commands", "8gent"}),
 		),

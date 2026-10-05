@@ -136,3 +136,63 @@ func TestIssueAuthoringMetadataHTTPRoundTrip(t *testing.T) {
 		t.Fatalf("cleared requested config not reloaded: %+v", detail)
 	}
 }
+
+func TestPatchIssueRequiresDurableReplanForTaskReopening(t *testing.T) {
+	ctx := t.Context()
+	database, err := db.Connect(filepath.Join(t.TempDir(), "state-gates.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	projectID, err := database.UpsertProject(ctx, filepath.Join(t.TempDir(), "project"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := sqlitetracker.NewClient(database, nil)
+	service := orchestrator.NewService()
+	service.SetTrackerClient(client)
+	service.SetDB(database)
+	router := NewRouter(zerolog.Nop(), service, &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1"})
+	patchState := func(issue *tracker.Issue, state string, feedback string) *httptest.ResponseRecorder {
+		t.Helper()
+		body, err := json.Marshal(map[string]any{"state": state, "feedback": feedback})
+		if err != nil {
+			t.Fatal(err)
+		}
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodPatch, "/api/v1/issues/"+issue.Identifier, bytes.NewReader(body)))
+		return response
+	}
+
+	for _, state := range []string{"Todo", "Backlog"} {
+		t.Run("review to "+state, func(t *testing.T) {
+			review, err := client.CreateIssue(ctx, "Review task", "Review context", "Review", 0, "worker-1", projectID, "CODEX", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response := patchState(review, state, "please revise")
+			if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), `"code":"replan_required"`) {
+				t.Fatalf("Review→%s bypass response: %d %s", state, response.Code, response.Body.String())
+			}
+			stored, err := client.FetchIssueByIdentifier(ctx, review.ID)
+			if err != nil || stored.State != "Review" {
+				t.Fatalf("blocked reopening mutated state: %+v %v", stored, err)
+			}
+		})
+	}
+
+	backlog, err := client.CreateIssue(ctx, "Ready intake", "Has required context", "Backlog", 0, "worker-1", projectID, "CODEX", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response := patchState(backlog, "Todo", ""); response.Code != http.StatusOK {
+		t.Fatalf("ordinary Backlog→Todo admission was blocked: %d %s", response.Code, response.Body.String())
+	}
+	todo, err := client.FetchIssueByIdentifier(ctx, backlog.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response := patchState(todo, "Backlog", ""); response.Code != http.StatusOK {
+		t.Fatalf("ordinary Todo→Backlog transition was blocked: %d %s", response.Code, response.Body.String())
+	}
+}

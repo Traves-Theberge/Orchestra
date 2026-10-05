@@ -19,6 +19,8 @@ export type IssueDetailResult = {
   pr_url?: string
   feedback?: string
   plan?: string
+  plan_gate?: { status: 'planning' | 'awaiting_approval' | 'approved' | 'stale' | 'failed' | 'unsupported'; plan_hash?: string; reason?: string }
+  review_gate?: { status: 'not_reviewed' | 'running' | 'awaiting_human_approval' | 'changes_requested' | 'approved' | 'stale' | 'interrupted' | 'failed'; head_sha?: string; pr_url?: string; attempt_id?: string; reviewer_provider?: string; reviewer_agent_id?: string; feedback?: string }
   base_sha?: string
   [key: string]: unknown
 }

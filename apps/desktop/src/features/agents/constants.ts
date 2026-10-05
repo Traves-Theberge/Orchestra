@@ -1,11 +1,10 @@
 import { Settings2, FileText, Zap, Plug, Scale, Sparkles, Bot, ScrollText, TerminalSquare, Shield, Cpu, FolderTree, LayoutDashboard } from 'lucide-react'
-import type { Provider, CategoryDef } from './types'
+import type { ActiveAgentProvider, Provider, CategoryDef } from './types'
 
-export const PROVIDERS: { id: Provider; label: string; description: string }[] = [
+export const PROVIDERS: { id: ActiveAgentProvider; label: string; description: string }[] = [
   { id: 'claude', label: 'Claude', description: "Anthropic's Claude Code — deep reasoning and careful analysis" },
   { id: 'codex', label: 'Codex', description: "OpenAI's Codex — fast iteration and broad knowledge" },
   { id: 'antigravity', label: 'Antigravity', description: 'Google Antigravity harness — independent configuration and capabilities' },
-  { id: 'gemini', label: 'Gemini', description: "Google's Gemini CLI — multimodal and context-aware" },
   { id: 'opencode', label: 'OpenCode', description: 'Community-driven — flexible and extensible' },
   { id: '8gent', label: '8gent', description: 'Open-source autonomous coding agent — local-first, self-evolving' },
 ]

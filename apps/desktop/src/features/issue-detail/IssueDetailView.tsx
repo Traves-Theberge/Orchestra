@@ -2,8 +2,8 @@ import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState, t
 import { CheckCircle2, FileText, GitPullRequest, Github, Info, Loader2, Pencil, Terminal, X } from 'lucide-react'
 import { MarkdownRenderer } from '@ui/MarkdownRenderer'
 
-import type { BackendConfig, IssueUpdatePayload } from '@core/api/client'
-import { fetchIssueHistory, fetchIssueDiff, fetchIssueLogs, stopIssue, createGitHubPR } from '@core/api/client'
+import type { BackendConfig, IssueUpdatePayload, GitHubPR } from '@core/api/client'
+import { fetchIssueHistory, fetchIssueDiff, fetchIssueLogs, fetchPRSnapshot, postOrchestratorControl, stopIssue, createGitHubPR } from '@core/api/client'
 import type { SnapshotPayload } from '@core/api/types'
 import type { TimelineItem } from '@layout/types'
 import { AgentSelector } from '@layout/shared/controls'
@@ -12,7 +12,7 @@ import type { IssueDetailResult } from './types'
 import { FeedbackDialog } from './FeedbackDialog'
 import { PRCreateDialog } from './PRCreateDialog'
 import { extractPlanFromText, parseDiff, type DiffFile, type PlanItem } from './IssueDetailUtils'
-import { setCachedPlan, clearCachedPlan } from './plan-cache'
+import { setCachedPlan } from './plan-cache'
 import { SessionTimeline } from './SessionTimeline'
 import { DescriptionEditor } from './DescriptionEditor'
 import { useAppStore } from '@core/store'
@@ -28,6 +28,17 @@ function SidebarRow({ label, content }: { label: string; content: React.ReactNod
       {content}
     </div>
   )
+}
+
+function parsePullRequestIdentity(prUrl: string): { number: number; canonicalUrl: string } | null {
+  try {
+    const url = new URL(prUrl)
+    const match = url.pathname.match(/^\/([^/]+)\/([^/]+)\/pull\/(\d+)\/?$/)
+    if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'github.com' || url.username || url.password || url.search || url.hash || !match) return null
+    return { number: Number(match[3]), canonicalUrl: `https://github.com/${match[1]}/${match[2]}/pull/${match[3]}` }
+  } catch {
+    return null
+  }
 }
 
 type SessionState = {
@@ -77,8 +88,28 @@ type WorkflowState = {
   prUrl: string | null
 }
 
+type PlanApprovalRequest = {
+  operation: 'approve_plan'
+  project_id: string
+  task_id: string
+  expected_state: 'Todo'
+  expected_plan_hash: string
+  request_id: string
+}
+
+type PlanReplanRequest = {
+  operation: 'replan'
+  project_id: string
+  task_id: string
+  expected_state: 'Todo' | 'In Progress' | 'Review'
+  expected_plan_hash: string
+  feedback: string
+  request_id: string
+}
+
+type ReviewCapability = { provider: string; available: boolean; reason?: string; reviewer_agent_id: 'provider-default' }
+
 type WorkflowAction =
-  | { type: 'set-state'; value: string }
   | { type: 'set-assignee'; value: string }
   | { type: 'set-title'; value: string }
   | { type: 'set-description'; value: string }
@@ -87,8 +118,6 @@ type WorkflowAction =
 
 const workflowReducer: Reducer<WorkflowState, WorkflowAction> = (state, action) => {
   switch (action.type) {
-    case 'set-state':
-      return { ...state, state: action.value }
     case 'set-assignee':
       return { ...state, assignee: action.value }
     case 'set-title':
@@ -138,6 +167,11 @@ export function IssueDetailView({
   onStopSession,
   config,
   snapshot,
+  onApprovePlan,
+  onReplan,
+  onRequestReview,
+  onApproveReview,
+  onCompleteReview,
   timeline: _timeline = EMPTY_TIMELINE,
   availableAgents = EMPTY_AGENTS,
   theme,
@@ -147,6 +181,11 @@ export function IssueDetailView({
   onStopSession?: (provider?: string) => Promise<void>
   config: BackendConfig | null
   snapshot: SnapshotPayload | null
+  onApprovePlan?: (request: PlanApprovalRequest) => Promise<void>
+  onReplan?: (request: PlanReplanRequest) => Promise<void>
+  onRequestReview?: (provider: string) => Promise<void>
+  onApproveReview?: () => Promise<void>
+  onCompleteReview?: () => Promise<void>
   timeline?: readonly TimelineItem[]
   availableAgents?: readonly string[]
   theme?: 'light' | 'dark'
@@ -180,6 +219,20 @@ export function IssueDetailView({
   })
   const { state: localState, assignee: localAssignee, title: localTitle, description: localDescription, prUrl } = workflow
   const isEditable = localState === 'Backlog'
+  const [stateUpdateError, setStateUpdateError] = useState('')
+  const [approvalError, setApprovalError] = useState('')
+  const [stopError, setStopError] = useState('')
+  const [approvalBusy, setApprovalBusy] = useState(false)
+  const [confirmedApprovalKey, setConfirmedApprovalKey] = useState('')
+  const approvalRequestRef = useRef<{ key: string; requestId: string } | null>(null)
+  const replanRequestRef = useRef<{ key: string; requestId: string } | null>(null)
+  const [reviewCapabilities, setReviewCapabilities] = useState<ReviewCapability[]>([])
+  const [reviewCapabilitiesLoading, setReviewCapabilitiesLoading] = useState(false)
+  const [reviewCapabilitiesError, setReviewCapabilitiesError] = useState('')
+  const [selectedReviewerProvider, setSelectedReviewerProvider] = useState('')
+  const [reviewActionError, setReviewActionError] = useState('')
+  const [reviewActionBusy, setReviewActionBusy] = useState(false)
+  const [freshReviewSnapshot, setFreshReviewSnapshot] = useState<{ headSha: string; prUrl: string; merged: boolean } | null>(null)
 
   const [ui, dispatchUI] = useReducer(uiReducer, {
     bottomTab: 'details',
@@ -201,19 +254,34 @@ export function IssueDetailView({
   // issueHistory was fetched but never rendered — kept in a ref so the fetch is preserved without re-renders.
   const issueHistoryRef = useRef<unknown[]>([])
 
+  const incomingWorkflow: WorkflowState = {
+    state: (typed.state as string) || 'Todo',
+    assignee: (typed.assignee_id as string) || '',
+    title: (typed.title as string) || 'No Title',
+    description: (typed.description as string) || '',
+    prUrl: (typed.pr_url as string) || null,
+  }
+  const syncedResult = useRef({ resultId, value: incomingWorkflow })
   useEffect(() => {
-    dispatchWorkflow({
-      type: 'sync-from-result',
-      value: {
-        state: (typed.state as string) || 'Todo',
-        assignee: (typed.assignee_id as string) || '',
-        title: (typed.title as string) || 'No Title',
-        description: (typed.description as string) || '',
-        prUrl: (typed.pr_url as string) || null,
-      },
-    })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resultId])
+    const previous = syncedResult.current
+    const sameTask = previous.resultId === resultId
+    const next = { ...incomingWorkflow }
+    if (sameTask) {
+      for (const key of ['assignee', 'title', 'description'] as const) {
+        const localValue = workflow[key]
+        const previousValue = previous.value[key]
+        const incomingValue = incomingWorkflow[key]
+        // Keep an unsaved local edit, but accept server updates to fields the user has not changed.
+        if (localValue !== previousValue && localValue !== incomingValue) next[key] = localValue as never
+      }
+    } else {
+      setStateUpdateError('')
+    }
+    syncedResult.current = { resultId, value: incomingWorkflow }
+    if (Object.keys(next).some(key => next[key as keyof WorkflowState] !== workflow[key as keyof WorkflowState])) {
+      dispatchWorkflow({ type: 'sync-from-result', value: next })
+    }
+  }, [resultId, typed.state, typed.assignee_id, typed.title, typed.description, typed.pr_url, workflow.state, workflow.assignee, workflow.title, workflow.description, workflow.prUrl])
 
   // Extract operational plan from the most recent agent message that contains checkboxes.
   // Agent restates the plan with updated checkboxes as it progresses — we want the LATEST version.
@@ -241,7 +309,73 @@ export function IssueDetailView({
   }, [issueId, identifier, planItems])
 
   const completedCount = planItems.filter(i => i.done).length
-  const isRunning = snapshot?.running?.some(r => r.issue_id === issueId || r.issue_identifier === identifier) ?? false
+  const matchesTask = (entry: { issue_id: string; issue_identifier: string }) =>
+    (!!issueId && entry.issue_id === issueId) || (!!identifier && entry.issue_identifier === identifier)
+  const runningEntry = snapshot?.running?.find(matchesTask)
+  const retryEntry = snapshot?.retrying?.find(matchesTask)
+  const isRunning = !!runningEntry
+  const retryStatus = retryEntry ? `Retry scheduled${retryEntry.attempt > 0 ? ` · attempt ${retryEntry.attempt}` : ''}` : ''
+  const queuedRun = !!runningEntry && (runningEntry.last_event === 'dispatch_queued' || runningEntry.last_event === 'retry_due' || !runningEntry.last_event)
+  const claimedRun = !!runningEntry && runningEntry.last_event === 'run_claimed'
+  const plannerHasStarted = isRunning && !queuedRun && !claimedRun
+  const planGate = typed.plan_gate as { status?: string; plan_hash?: string; reason?: string } | undefined
+  const gateStatus = planGate?.status || ''
+  const unsupportedPlanReason = planGate?.reason || 'Plan approval is unavailable for this task source or harness'
+  const planHash = planGate?.plan_hash || ''
+  const approvalKey = `${projectId}\u0000${issueId}\u0000${planHash}`
+  const canApprovePlan = localState === 'Todo' && gateStatus === 'awaiting_approval' && !!planHash && !!projectId && !!issueId && !!config && !!onApprovePlan && confirmedApprovalKey !== approvalKey
+  const executionApprovalObserved = gateStatus === 'approved'
+  const reviewGate = typed.review_gate as { status?: string; head_sha?: string; pr_url?: string; attempt_id?: string; reviewer_provider?: string; reviewer_agent_id?: string; feedback?: string } | undefined
+  const reviewGateStatus = reviewGate?.status || 'not_reviewed'
+  const reviewPRIdentity = parsePullRequestIdentity(prUrl || '')
+  const canRequestReplan = !!config && !!projectId && !!issueId && !!onReplan && !!planHash && gateStatus !== 'unsupported' && !isRunning && !retryEntry &&
+    ['Todo', 'In Progress', 'Review'].includes(localState) &&
+    (localState === 'Review' || ['stale', 'failed', 'awaiting_approval', 'approved'].includes(gateStatus))
+  const availableReviewers = reviewCapabilities.filter(capability => capability.available)
+  const selectedReviewer = availableReviewers.find(capability => capability.provider === selectedReviewerProvider)
+  const canRequestReview = localState === 'Review' && !!config && !!projectId && !!issueId && !!reviewPRIdentity && !!selectedReviewer && !!onRequestReview && !reviewActionBusy && !['running', 'awaiting_human_approval', 'approved'].includes(reviewGateStatus)
+  const canApproveReview = localState === 'Review' && reviewGateStatus === 'awaiting_human_approval' && !!reviewGate?.attempt_id && !!reviewGate.head_sha && !!reviewGate.pr_url && !!onApproveReview && !reviewActionBusy
+  const canCompleteReview = localState === 'Review' && reviewGateStatus === 'approved' && !!reviewGate?.attempt_id && !!reviewGate.head_sha && !!reviewGate.pr_url && freshReviewSnapshot?.merged === true && freshReviewSnapshot.headSha === reviewGate.head_sha && freshReviewSnapshot.prUrl === reviewGate.pr_url && !!onCompleteReview && !reviewActionBusy
+
+  useEffect(() => {
+    let active = true
+    setReviewCapabilities([])
+    setSelectedReviewerProvider('')
+    setReviewCapabilitiesError('')
+    if (!config || localState !== 'Review') return () => { active = false }
+    setReviewCapabilitiesLoading(true)
+    void postOrchestratorControl(config, { operation: 'reviewers' })
+      .then(response => {
+        if (!active) return
+        if (!response.success) throw new Error(response.error?.message || 'Review capability was not confirmed.')
+        const providers = response.data?.providers
+        if (!Array.isArray(providers)) throw new Error('Review capability response did not include registered provider options.')
+        setReviewCapabilities(providers)
+      })
+      .catch(error => { if (active) setReviewCapabilitiesError(error instanceof Error ? error.message : 'Review capability could not be checked.') })
+      .finally(() => { if (active) setReviewCapabilitiesLoading(false) })
+    return () => { active = false }
+  }, [config, localState, projectId, issueId])
+
+  useEffect(() => {
+    let active = true
+    setFreshReviewSnapshot(null)
+    setReviewActionError('')
+    if (!config || localState !== 'Review' || reviewGateStatus !== 'approved' || !projectId || !reviewGate?.head_sha || !reviewGate.pr_url) return () => { active = false }
+    const identity = parsePullRequestIdentity(reviewGate.pr_url)
+    if (!identity || identity.canonicalUrl !== reviewGate.pr_url) return () => { active = false }
+    void fetchPRSnapshot(config, projectId, identity.number)
+      .then(snapshot => {
+        if (!active) return
+        if (snapshot.pr.html_url !== reviewGate.pr_url || snapshot.pr.head.sha?.toLowerCase() !== reviewGate.head_sha?.toLowerCase()) {
+          setReviewActionError('The pull request URL or head changed after review. This approval cannot complete the task.')
+          return
+        }
+        setFreshReviewSnapshot({ headSha: snapshot.pr.head.sha || '', prUrl: snapshot.pr.html_url, merged: !!snapshot.pr.merged_at })
+      })
+      .catch(error => { if (active) setReviewActionError(error instanceof Error ? error.message : 'Current pull request merge state could not be confirmed.') })
+    return () => { active = false }
+  }, [config, localState, projectId, reviewGateStatus, reviewGate?.head_sha, reviewGate?.pr_url])
 
   useEffect(() => {
     if (!config || !identifier) return
@@ -286,19 +420,47 @@ export function IssueDetailView({
     }
   }, [bottomTab, config, identifier, provider, localState, isRunning])
 
-  const handleStateChange = async (newState: string) => {
-    dispatchWorkflow({ type: 'set-state', value: newState })
-    if (newState !== 'In Progress' && isRunning && onStopSession) {
-      await onStopSession(provider)
+  const updateTaskState = async (newState: string) => {
+    if (!onUpdate) {
+      setStateUpdateError('Task status updates are unavailable. The task state has not changed.')
+      return
     }
-    if (newState === 'Backlog' || newState === 'Todo') {
-      issueHistoryRef.current = []
-      dispatchSession({ type: 'reset' })
+    setStateUpdateError('')
+    try {
+      await onUpdate({ state: newState })
+    } catch {
+      setStateUpdateError('Task status was not updated. Refresh the task before trying again.')
     }
-    if (newState === 'Backlog') {
-      clearCachedPlan(identifier)
+  }
+
+  const approveCurrentPlan = async () => {
+    if (!onApprovePlan || gateStatus !== 'awaiting_approval' || !planHash || !projectId || !issueId || approvalBusy) return
+    const key = `${projectId}\u0000${issueId}\u0000${planHash}`
+    if (confirmedApprovalKey === key) return
+    let request = approvalRequestRef.current
+    if (!request || request.key !== key) {
+      request = { key, requestId: crypto.randomUUID() }
+      approvalRequestRef.current = request
     }
-    if (onUpdate) await onUpdate({ state: newState })
+    setApprovalBusy(true)
+    setApprovalError('')
+    try {
+      await onApprovePlan({
+        operation: 'approve_plan',
+        project_id: projectId,
+        task_id: issueId,
+        expected_state: 'Todo',
+        expected_plan_hash: planHash,
+        request_id: request.requestId,
+      })
+      setConfirmedApprovalKey(key)
+    } catch (error) {
+      const code = (error as { code?: string })?.code
+      if (code && code !== 'mutation_unknown' && code !== 'request_failed' && code !== 'receipt_unavailable') approvalRequestRef.current = null
+      setApprovalError(error instanceof Error ? error.message : 'Approval was not confirmed. Reconcile the request receipt before trying again.')
+    } finally {
+      setApprovalBusy(false)
+    }
   }
 
   const handleAssigneeChange = async (newAssignee: string) => {
@@ -309,27 +471,54 @@ export function IssueDetailView({
 
   const confirmStop = async () => {
     if (!config) return
+    setStopError('')
     try {
-      await stopIssue(config, identifier)
+      if (onStopSession) await onStopSession()
+      else {
+        if (!issueId || !projectId) throw new Error('Reopen this task in its project before stopping it.')
+        const stopped = await stopIssue(config, issueId || identifier)
+        if ((stopped.id || stopped.issue_id) !== issueId || stopped.project_id !== projectId || stopped.state !== 'Backlog') throw new Error('Stop was not confirmed for this task. Refresh before continuing.')
+        dispatchWorkflow({ type: 'sync-from-result', value: { ...workflow, state: stopped.state } })
+      }
       dispatchUI({ type: 'set-stop-confirm', value: false })
-      dispatchWorkflow({ type: 'set-state', value: 'Backlog' })
-      issueHistoryRef.current = []
-      dispatchSession({ type: 'reset' })
-      clearCachedPlan(issueId || identifier)
-      onUpdate?.({ state: 'Backlog', feedback: '' })
     } catch (err) {
-      console.error('stop failed', err)
+      setStopError(err instanceof Error ? err.message : 'Stop was not confirmed. Refresh before continuing.')
     }
   }
 
   const handleReject = async (feedback: string) => {
-    dispatchUI({ type: 'set-feedback', value: false })
-    if (prUrl) {
-      dispatchWorkflow({ type: 'set-state', value: 'In Progress' })
-      onUpdate?.({ state: 'In Progress', feedback })
-    } else {
-      dispatchWorkflow({ type: 'set-state', value: 'Todo' })
-      onUpdate?.({ state: 'Todo', feedback })
+    if (!canRequestReplan || !onReplan || !['Todo', 'In Progress', 'Review'].includes(localState)) throw new Error('Replanning is not available for this task state or planning capability.')
+    const key = `${projectId}\u0000${issueId}\u0000${localState}\u0000${planHash}\u0000${feedback.trim()}`
+    let request = replanRequestRef.current
+    if (!request || request.key !== key) {
+      request = { key, requestId: crypto.randomUUID() }
+      replanRequestRef.current = request
+    }
+    setApprovalError('')
+    try {
+      await onReplan({
+        operation: 'replan', project_id: projectId, task_id: issueId,
+        expected_state: localState as PlanReplanRequest['expected_state'],
+        expected_plan_hash: planHash, feedback: feedback.trim(), request_id: request.requestId,
+      })
+      dispatchUI({ type: 'set-feedback', value: false })
+    } catch (error) {
+      const code = (error as { code?: string })?.code
+      if (code && code !== 'mutation_unknown' && code !== 'request_failed' && code !== 'receipt_unavailable') replanRequestRef.current = null
+      setApprovalError(error instanceof Error ? error.message : 'Replan outcome was not confirmed. Reconcile the same request receipt before trying again.')
+      throw error
+    }
+  }
+
+  const runReviewAction = async (action: () => Promise<void>) => {
+    setReviewActionBusy(true)
+    setReviewActionError('')
+    try {
+      await action()
+    } catch (error) {
+      setReviewActionError(error instanceof Error ? error.message : 'Review action was not confirmed. Inspect its receipt before trying again.')
+    } finally {
+      setReviewActionBusy(false)
     }
   }
 
@@ -358,7 +547,7 @@ export function IssueDetailView({
           <span className="shrink-0 font-mono text-[11px] font-bold text-primary bg-primary/10 px-2.5 py-1 rounded-lg border border-primary/15">{identifier}</span>
           <h2 className="text-base font-semibold truncate flex-1 min-w-0">{localTitle}</h2>
           <div className="flex items-center gap-2 shrink-0">
-          {localState === 'Review' && config && projectId && onUpdate && (
+          {localState === 'Review' && projectId && (
             <>
               {prUrl ? (
                 <AppTooltip content="Open pull request in internal browser" side="bottom">
@@ -370,7 +559,7 @@ export function IssueDetailView({
                     View PR
                   </button>
                 </AppTooltip>
-              ) : (
+              ) : config && onUpdate ? (
                 <AppTooltip content="Push branch and create a GitHub pull request" side="bottom">
                   <button
                     className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[11px] font-bold uppercase tracking-widest bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all"
@@ -380,8 +569,8 @@ export function IssueDetailView({
                     Create PR
                   </button>
                 </AppTooltip>
-              )}
-              <AppTooltip content="Send feedback and re-dispatch the agent to make changes" side="bottom">
+              ) : null}
+              {canRequestReplan && <AppTooltip content="Return this task to planning with your feedback and existing task context" side="bottom">
                 <button
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest bg-muted/20 text-muted-foreground border border-border/30 hover:bg-muted/40 transition-colors"
                   onClick={() => dispatchUI({ type: 'set-feedback', value: true })}
@@ -389,16 +578,8 @@ export function IssueDetailView({
                   <Pencil size={12} />
                   Request Changes
                 </button>
-              </AppTooltip>
-              <AppTooltip content="Move this task to Done and retain its worktree" side="bottom">
-                <button
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest text-red-500 border border-red-500/30 hover:bg-red-500/10 transition-colors"
-                  onClick={async () => { await onUpdate({ state: 'Done' }); dispatchWorkflow({ type: 'set-state', value: 'Done' }) }}
-                >
-                  <X size={12} />
-                  Close
-                </button>
-              </AppTooltip>
+              </AppTooltip>}
+              {canCompleteReview && <button type="button" disabled={reviewActionBusy} onClick={() => { if (onCompleteReview) void runReviewAction(onCompleteReview) }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-40 transition-colors">{reviewActionBusy ? 'Confirming merge…' : 'Complete task'}</button>}
             </>
           )}
           {localState === 'Done' && onUpdate && (
@@ -501,11 +682,7 @@ export function IssueDetailView({
                         <span className="text-[11px] text-muted-foreground/60">Draft</span>
                       </div>
                       <button
-                        onClick={async () => {
-                          if (!canMove) return
-                          dispatchWorkflow({ type: 'set-state', value: 'Todo' })
-                          if (onUpdate) await onUpdate({ state: 'Todo' })
-                        }}
+                        onClick={() => { if (canMove) void updateTaskState('Todo') }}
                         disabled={!canMove}
                         className="w-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                       >
@@ -525,20 +702,23 @@ export function IssueDetailView({
                   {localState === 'Todo' && (
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
-                        <span className="size-2 rounded-full bg-blue-500" />
-                        <span className="text-[11px] text-blue-400">Planning</span>
+                        <span className={`size-2 rounded-full ${retryEntry || gateStatus === 'failed' ? 'bg-amber-500' : plannerHasStarted ? 'bg-blue-500 animate-pulse' : 'bg-muted-foreground/40'}`} />
+                        <span role="status" aria-label="Task runtime status" className={`text-[11px] ${retryEntry || gateStatus === 'failed' ? 'text-amber-400' : plannerHasStarted ? 'text-blue-400' : 'text-muted-foreground/60'}`}>
+                          {retryEntry ? retryStatus
+                            : gateStatus === 'awaiting_approval' ? (confirmedApprovalKey === approvalKey ? 'Approval recorded · refreshing task state' : 'Plan ready · awaiting approval')
+                              : gateStatus === 'approved' ? 'Plan approved · waiting for execution'
+                                : gateStatus === 'stale' ? 'Plan changed · approval must be renewed'
+                                  : gateStatus === 'failed' ? 'Planning failed'
+                                    : gateStatus === 'unsupported' ? 'Planning capability unavailable'
+                                      : queuedRun ? 'Queued for planning' : claimedRun ? 'Worker claimed · planning starting' : plannerHasStarted ? 'Planning' : 'Todo · no active run observed'}
+                        </span>
                       </div>
-                      <button
-                        onClick={async () => {
-                          dispatchWorkflow({ type: 'set-state', value: 'In Progress' })
-                          if (onUpdate) await onUpdate({ state: 'In Progress' })
-                        }}
-                        className="w-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-all"
-                      >
-                        Start Execution
-                      </button>
+                      {retryEntry?.error && <p className="text-[10px] text-amber-400/80 break-words">{retryEntry.error}</p>}
+                      {canApprovePlan && <button type="button" onClick={() => { void approveCurrentPlan() }} disabled={approvalBusy} className="w-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40 transition-all">{approvalBusy ? 'Recording approval…' : 'Approve plan'}</button>}
+                      {canRequestReplan && <button type="button" onClick={() => dispatchUI({ type: 'set-feedback', value: true })} className="w-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg border border-border/40 text-muted-foreground hover:bg-muted/20 transition-all">Request replan with feedback</button>}
+                      {approvalError && <p role="alert" className="text-[10px] text-red-400 break-words">{approvalError}</p>}
                       <button onClick={() => dispatchUI({ type: 'set-stop-confirm', value: true })} className="w-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all">
-                        Stop &amp; Reset
+                        Stop task
                       </button>
                     </div>
                   )}
@@ -546,11 +726,15 @@ export function IssueDetailView({
                   {localState === 'In Progress' && (
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
-                        <span className="size-2 rounded-full bg-amber-500 animate-pulse" />
-                        <span className="text-[11px] text-amber-400">Executing</span>
+                        <span className={`size-2 rounded-full ${retryEntry || !executionApprovalObserved ? 'bg-amber-500' : plannerHasStarted ? 'animate-pulse bg-amber-500' : 'bg-muted-foreground/40'}`} />
+                        <span role="status" aria-label="Task runtime status" className={`text-[11px] ${retryEntry || !executionApprovalObserved ? 'text-amber-400' : plannerHasStarted ? 'text-amber-400' : 'text-muted-foreground/60'}`}>
+                          {!executionApprovalObserved ? (gateStatus === 'unsupported' ? 'Execution blocked · planning capability unavailable' : 'Execution blocked · plan approval not observed')
+                            : retryEntry ? retryStatus : queuedRun ? 'Queued for execution' : claimedRun ? 'Worker claimed · execution starting' : plannerHasStarted ? 'Executing' : 'Approved · awaiting execution'}
+                        </span>
                       </div>
+                      {retryEntry?.error && <p className="text-[10px] text-amber-400/80 break-words">{retryEntry.error}</p>}
                       <button onClick={() => dispatchUI({ type: 'set-stop-confirm', value: true })} className="w-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all">
-                        Stop &amp; Reset
+                        Stop task
                       </button>
                     </div>
                   )}
@@ -558,9 +742,42 @@ export function IssueDetailView({
                   {localState === 'Review' && (
                     <div className="space-y-3">
                       <div className="flex items-center gap-2">
-                        <span className="size-2 rounded-full bg-purple-500" />
-                        <span className="text-[11px] text-purple-400">{prUrl ? 'PR Created' : 'Awaiting Review'}</span>
+                        <span className={`size-2 rounded-full ${reviewGateStatus === 'failed' || reviewGateStatus === 'interrupted' || reviewGateStatus === 'stale' ? 'bg-amber-500' : reviewGateStatus === 'running' ? 'bg-blue-500 animate-pulse' : 'bg-purple-500'}`} />
+                        <span role="status" aria-label="Review gate status" className={`text-[11px] ${reviewGateStatus === 'failed' || reviewGateStatus === 'interrupted' || reviewGateStatus === 'stale' ? 'text-amber-400' : reviewGateStatus === 'running' ? 'text-blue-400' : 'text-purple-400'}`}>
+                          {reviewGateStatus === 'running' ? 'PR review running'
+                            : reviewGateStatus === 'awaiting_human_approval' ? 'Review complete · awaiting your approval'
+                              : reviewGateStatus === 'approved' ? (freshReviewSnapshot?.merged ? 'Review approved · merged PR observed' : 'Review approved · waiting for PR merge')
+                                : reviewGateStatus === 'changes_requested' ? 'Changes requested · returned to planning'
+                                  : reviewGateStatus === 'stale' ? 'PR head changed · review must be renewed'
+                                    : reviewGateStatus === 'interrupted' ? 'PR review interrupted · retry available'
+                                      : reviewGateStatus === 'failed' ? 'PR review failed · retry available'
+                                        : prUrl ? 'PR ready for registered review' : 'Awaiting a linked pull request'}
+                        </span>
                       </div>
+                      {reviewGate?.feedback && <p className="text-[10px] text-amber-400/80 break-words">{reviewGate.feedback}</p>}
+                      {canRequestReplan && <button type="button" onClick={() => dispatchUI({ type: 'set-feedback', value: true })} className="w-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg border border-border/40 text-muted-foreground hover:bg-muted/20 transition-all">Request changes with feedback</button>}
+                      {approvalError && <p role="alert" className="text-[10px] text-red-400 break-words">{approvalError}</p>}
+                      {prUrl && config && (
+                        <div className="space-y-2 border-t border-border/30 pt-3">
+                          {reviewCapabilitiesLoading ? <p className="text-[10px] text-muted-foreground">Checking registered review capability…</p>
+                            : reviewCapabilitiesError ? <p role="alert" className="text-[10px] text-amber-400 break-words">{reviewCapabilitiesError}</p>
+                              : reviewCapabilities.length === 0 || availableReviewers.length === 0 ? <p className="text-[10px] text-muted-foreground/70">No registered verified PR reviewer is available. Review has not been started.</p>
+                                : <>
+                                  <label className="block text-[9px] font-bold uppercase tracking-widest text-muted-foreground" htmlFor="issue-reviewer-provider">Reviewer provider</label>
+                                  <select id="issue-reviewer-provider" aria-label="Reviewer provider" value={selectedReviewerProvider} onChange={event => setSelectedReviewerProvider(event.target.value)} className="w-full rounded-lg border border-border/40 bg-background px-2 py-1.5 text-[11px] text-foreground">
+                                    <option value="">Select a registered provider</option>
+                                    {availableReviewers.map(capability => <option key={capability.provider} value={capability.provider}>{capability.provider} · provider default</option>)}
+                                  </select>
+                                  <button type="button" onClick={() => { if (selectedReviewerProvider && onRequestReview) void runReviewAction(() => onRequestReview(selectedReviewerProvider)) }} disabled={!canRequestReview} className="w-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40 transition-all">
+                                    {reviewActionBusy ? 'Requesting review…' : reviewGateStatus === 'failed' || reviewGateStatus === 'interrupted' || reviewGateStatus === 'stale' ? 'Retry PR review' : 'Request PR review'}
+                                  </button>
+                                  {reviewCapabilities.filter(capability => !capability.available).map(capability => <p key={capability.provider} className="text-[9px] text-muted-foreground/60">{capability.provider}: {capability.reason || 'review unavailable'}</p>)}
+                                </>}
+                          {canApproveReview && <button type="button" onClick={() => { if (onApproveReview) void runReviewAction(onApproveReview) }} disabled={reviewActionBusy} className="w-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40 transition-all">Approve clean review</button>}
+                          {reviewGateStatus === 'approved' && !freshReviewSnapshot?.merged && <p className="text-[10px] text-muted-foreground/70">Task remains in Review until the same pull request head is observed merged.</p>}
+                          {reviewActionError && <p role="alert" className="text-[10px] text-red-400 break-words">{reviewActionError}</p>}
+                        </div>
+                      )}
                       {prUrl && (
                         <button
                           onClick={() => openInInternalBrowser(prUrl)}
@@ -579,6 +796,7 @@ export function IssueDetailView({
                       <span className="text-[11px] text-emerald-400">Completed</span>
                     </div>
                   )}
+                  {stateUpdateError && <p role="alert" className="mt-2 text-[10px] text-red-400">{stateUpdateError}</p>}
                 </div>
               </div>
               {[
@@ -649,9 +867,9 @@ export function IssueDetailView({
               <div className="h-full flex flex-col items-center justify-center text-muted-foreground/20 gap-3">
                 <CheckCircle2 size={36} />
                 <p className="text-[10px] font-bold uppercase tracking-[0.2em]">
-                  {isRunning ? 'Waiting for agent to create plan...' : localState === 'Todo' ? 'Plan will appear when agent starts' : 'No plan recorded'}
+                  {gateStatus === 'awaiting_approval' ? 'Plan ready · human approval is required before execution' : gateStatus === 'stale' ? 'Plan context changed · a fresh plan must be reviewed' : gateStatus === 'unsupported' ? unsupportedPlanReason : !executionApprovalObserved && localState === 'In Progress' ? 'Execution is blocked until plan approval is observed' : retryEntry ? `A retry is scheduled after the last error${retryEntry.error ? `: ${retryEntry.error}` : ''}` : queuedRun ? `Run queued; ${localState === 'In Progress' ? 'execution' : 'planning'} has not started` : claimedRun ? `Worker claimed; waiting for ${localState === 'In Progress' ? 'execution' : 'planner'} output` : plannerHasStarted ? (localState === 'In Progress' ? 'Waiting for execution output...' : 'Waiting for agent to create plan...') : localState === 'Todo' ? 'No active run or plan observed' : 'No plan recorded'}
                 </p>
-                {isRunning && <Loader2 size={14} className="animate-spin-smooth text-primary/30" />}
+                {plannerHasStarted && <Loader2 size={14} className="animate-spin-smooth text-primary/30" />}
               </div>
             )}
           </div>
@@ -725,16 +943,17 @@ export function IssueDetailView({
       {showStopConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-card border border-border/40 rounded-xl shadow-lg p-6 max-w-sm">
-            <h3 className="text-sm font-semibold text-foreground mb-2">Stop &amp; Reset Task?</h3>
+            <h3 className="text-sm font-semibold text-foreground mb-2">Stop task?</h3>
             <p className="text-[11px] text-muted-foreground mb-4">
-              This will clear the plan and all changes. The task will return to Backlog for editing.
+              Stop active work and return to Backlog. Your plan, feedback, files, branch and PR stay intact. Starting again requires a new plan approval.
             </p>
+            {stopError && <p role="alert" className="mb-3 text-xs text-destructive">{stopError}</p>}
             <div className="flex justify-end gap-2">
               <button onClick={() => dispatchUI({ type: 'set-stop-confirm', value: false })} className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg text-muted-foreground hover:text-foreground transition-all">
                 Cancel
               </button>
               <button onClick={confirmStop} className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all">
-                Stop &amp; Reset
+                Stop task
               </button>
             </div>
           </div>
@@ -760,7 +979,6 @@ export function IssueDetailView({
             dispatchWorkflow({ type: 'set-pr-url', value: url })
             dispatchUI({ type: 'set-pr-dialog', value: false })
             if (onUpdate) await onUpdate({ pr_url: url, state: 'Done' })
-            dispatchWorkflow({ type: 'set-state', value: 'Done' })
           }}
           issueTitle={localTitle}
           issueDescription={description}

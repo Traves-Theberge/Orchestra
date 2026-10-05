@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertCircle, CheckCircle2, CircleDashed, Loader2, RefreshCw, Save } from 'lucide-react'
-import { fetchAgentConfig, fetchAgents, fetchWorkspaceChatProviders, updateAgentConfig, type WorkspaceChatProvider } from '@core/api/client'
+import { AlertCircle, CheckCircle2, CircleDashed, Copy, Loader2, RefreshCw, Save } from 'lucide-react'
+import { fetchAgentConfig, fetchAgents, fetchHarnessSetup, fetchWorkspaceChatProviders, updateAgentConfig, type HarnessSetupObservation, type WorkspaceChatProvider } from '@core/api/client'
 import type { BackendConfig } from '@core/api/types'
 import { Button } from '@ui/button'
+import { useAppStore } from '@core/store'
 import { CustomDropdown } from '@layout/shared/controls'
 import { PanelHeader } from '../components/PanelHeader'
 import type { Provider } from '../types'
-import { buildCommandRegistrationPatch, getRegisteredCommand, isHarnessRegistered, KNOWN_HARNESSES, normalizeHarnessId } from './harness-setup'
+import { buildCommandRegistrationPatch, getRegisteredCommand, HARNESS_SIGN_IN_COMMANDS, isHarnessRegistered, KNOWN_HARNESSES, normalizeHarnessId } from './harness-setup'
 
 type AgentConfig = Awaited<ReturnType<typeof fetchAgentConfig>>
 
-const labelFor = (id: string) => KNOWN_HARNESSES.find((item) => item.id === normalizeHarnessId(id))?.label ?? id
+const labelFor = (id: string) => normalizeHarnessId(id) === 'GEMINI' ? 'Gemini' : KNOWN_HARNESSES.find((item) => item.id === normalizeHarnessId(id))?.label ?? id
 const guideFor = (id: string) => KNOWN_HARNESSES.find((item) => item.id === normalizeHarnessId(id))?.helpUrl
 
 export function HarnessSetupPanel({ config, provider, projectId }: {
@@ -20,12 +21,15 @@ export function HarnessSetupPanel({ config, provider, projectId }: {
 }) {
   const harnessId = normalizeHarnessId(provider)
   const chatScope = projectId ?? '__orchestrator__'
+  const profileKey = JSON.stringify([config?.baseUrl, config?.apiToken])
+  const [loadedProfileKey, setLoadedProfileKey] = useState<string | null>(null)
   const [selectedHarness, setSelectedHarness] = useState(harnessId)
   const [loading, setLoading] = useState(false)
   const [savingCommand, setSavingCommand] = useState(false)
   const [savingDefault, setSavingDefault] = useState(false)
   const [registered, setRegistered] = useState<string[]>([])
   const [chatProviders, setChatProviders] = useState<WorkspaceChatProvider[]>([])
+  const [setupObservations, setSetupObservations] = useState<HarnessSetupObservation[]>([])
   const [agentConfig, setAgentConfig] = useState<AgentConfig | null>(null)
   const [commandDraft, setCommandDraft] = useState('')
   const [defaultDraft, setDefaultDraft] = useState('')
@@ -43,7 +47,9 @@ export function HarnessSetupPanel({ config, provider, projectId }: {
     if (!config) {
       setRegistered([])
       setChatProviders([])
+      setSetupObservations([])
       setAgentConfig(null)
+      setLoadedProfileKey(null)
       setLoading(false)
       setError('Connect to a backend to inspect harness registration and configuration.')
       return () => { active = false }
@@ -54,22 +60,26 @@ export function HarnessSetupPanel({ config, provider, projectId }: {
       fetchAgents(config),
       fetchAgentConfig(config),
       fetchWorkspaceChatProviders(config, chatScope),
-    ]).then(([agentsResult, configResult, chatResult]) => {
+      fetchHarnessSetup(config),
+    ]).then(([agentsResult, configResult, chatResult, setupResult]) => {
       if (!active) return
       const problems: string[] = []
-      if (agentsResult.status === 'fulfilled') setRegistered(agentsResult.value)
+      if (agentsResult.status === 'fulfilled') setRegistered(agentsResult.value.filter(id => normalizeHarnessId(id) !== 'GEMINI'))
       else problems.push('registered harnesses')
       if (configResult.status === 'fulfilled') {
         setAgentConfig(configResult.value)
         setDefaultDraft(configResult.value.agent_provider ?? '')
       } else problems.push('agent command configuration')
-      if (chatResult.status === 'fulfilled') setChatProviders(chatResult.value.providers ?? [])
+      if (chatResult.status === 'fulfilled') setChatProviders((chatResult.value.providers ?? []).filter(item => normalizeHarnessId(item.id) !== 'GEMINI'))
       else setChatProviders([])
+      if (setupResult.status === 'fulfilled') setSetupObservations(setupResult.value)
+      else { setSetupObservations([]); problems.push('harness installation and sign-in status') }
       if (problems.length) setError(`Could not read ${problems.join(' and ')}. Retry to refresh this view.`)
+      setLoadedProfileKey(profileKey)
       setLoading(false)
     })
     return () => { active = false }
-  }, [config, chatScope, refreshKey])
+  }, [config, chatScope, refreshKey, profileKey])
 
   const registeredHarnesses = useMemo(() => {
     const ids = new Set(registered.map(normalizeHarnessId))
@@ -81,6 +91,27 @@ export function HarnessSetupPanel({ config, provider, projectId }: {
   const command = getRegisteredCommand(agentConfig?.commands ?? {}, selectedHarness)
   const currentLabel = labelFor(selectedHarness)
   const currentGuide = guideFor(selectedHarness)
+  const selectedSetup = setupObservations.find((item) => normalizeHarnessId(item.id) === selectedHarness)
+  const signInCommand = HARNESS_SIGN_IN_COMMANDS[selectedHarness]
+
+  const canOpenSignInTerminal = Boolean(config && selectedSetup?.installation === 'detected' && selectedSetup.terminal_supported)
+  const openSignInTerminal = (launchCommand = signInCommand) => {
+    if (!canOpenSignInTerminal || !launchCommand) return
+    const state = useAppStore.getState()
+    const id = `harness-sign-in-${selectedHarness.toLowerCase()}-${Date.now()}`
+    state.setOpenTerminals([...state.openTerminals, { id, title: `${currentLabel} sign-in`, initialCommand: launchCommand }])
+    state.setActiveSection('CONSOLE')
+  }
+
+  const copySignInCommand = async (command = signInCommand) => {
+    if (!command) return
+    try {
+      await navigator.clipboard.writeText(command)
+      setMessage(`Copied ${currentLabel} sign-in command. Run it on the backend host, then refresh this view.`)
+    } catch {
+      setError(`Could not copy the command. Run ${command} on the backend host.`)
+    }
+  }
 
   const refresh = useCallback(() => {
     setError('')
@@ -139,12 +170,16 @@ export function HarnessSetupPanel({ config, provider, projectId }: {
     }
   }
 
+  if (config && loadedProfileKey !== profileKey) {
+    return <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Checking harnesses on the connected backend…</div>
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto p-6">
       <PanelHeader
         eyebrow={`${currentLabel} / Harness`}
         title="Harness setup"
-        sub="Inspect registered runtimes and configure the command Orchestra uses for task runs. Installation and account sign-in are not changed here."
+        sub="Inspect backend runtimes, sign in through a provider CLI, and configure the command Orchestra uses for task runs."
       />
 
       {error && <p role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"><AlertCircle className="mt-0.5 size-3.5 shrink-0" />{error}</p>}
@@ -172,8 +207,8 @@ export function HarnessSetupPanel({ config, provider, projectId }: {
                 <button type="button" onClick={() => setSelectedHarness(id)} className="min-w-0 truncate text-left hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">{labelFor(id)}</button>
                 <span className="ml-auto text-[10px] text-muted-foreground">{isRegistered ? 'registered' : 'not registered'}</span>
               </div>
-              <p className="mt-2 text-[10px] text-muted-foreground">Installation: not observed</p>
-              <p className="mt-1 text-[10px] text-muted-foreground">Authentication: not observed</p>
+              <p className="mt-2 text-[10px] text-muted-foreground">Installation: {setupObservations.find((item) => normalizeHarnessId(item.id) === id)?.installation === 'detected' ? 'detected on backend' : setupObservations.find((item) => normalizeHarnessId(item.id) === id)?.installation === 'missing' ? 'CLI not found on backend PATH' : 'not observed'}</p>
+              <p className="mt-1 text-[10px] text-muted-foreground">Authentication: {setupObservations.find((item) => normalizeHarnessId(item.id) === id)?.authentication === 'signed_in' ? 'signed in (Codex CLI status)' : setupObservations.find((item) => normalizeHarnessId(item.id) === id)?.authentication === 'signed_out' ? 'signed out (Codex CLI status)' : 'not verified'}</p>
               <p className="mt-1 text-[10px] text-muted-foreground">
                 {chat ? chat.conversation_mode === 'native_session' ? `Chat: native session${chat.provider_resume ? ' · resume supported' : ''}` : 'Chat: transcript replay' : isRegistered ? 'Chat capability: not observed' : 'Runtime capability: unavailable until registered'}
               </p>
@@ -181,6 +216,19 @@ export function HarnessSetupPanel({ config, provider, projectId }: {
             </div>
           ))}
         </div>
+      </section>
+
+      <section className="rounded-xl border border-border/50 bg-card/40 p-4" aria-label={`${currentLabel} onboarding`}>
+        <h3 className="text-sm font-semibold">Set up {currentLabel}</h3>
+        <p className="mt-1 text-[11px] text-muted-foreground">These observations come from the connected backend host. Registration, installation and sign-in are checked separately.</p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          <p className="rounded-lg border border-border/40 bg-background/50 p-3 text-xs"><span className="block text-[10px] uppercase tracking-wide text-muted-foreground">Runner</span>{currentRegistered ? 'Registered' : 'Not registered'}</p>
+          <p className="rounded-lg border border-border/40 bg-background/50 p-3 text-xs"><span className="block text-[10px] uppercase tracking-wide text-muted-foreground">CLI</span>{selectedSetup?.installation === 'detected' ? 'Detected on backend' : selectedSetup?.installation === 'missing' ? 'Not found on backend PATH' : 'Not observed'}</p>
+          <p className="rounded-lg border border-border/40 bg-background/50 p-3 text-xs"><span className="block text-[10px] uppercase tracking-wide text-muted-foreground">Sign-in</span>{selectedSetup?.authentication === 'signed_in' ? 'Verified by Codex CLI' : selectedSetup?.authentication === 'signed_out' ? 'Codex CLI reports signed out' : 'Not verified'}</p>
+        </div>
+        {signInCommand && <div className="mt-3 flex flex-wrap items-center gap-2"><code className="rounded-lg border border-border bg-background px-3 py-2 text-xs">{signInCommand}</code>{canOpenSignInTerminal && <Button type="button" size="sm" onClick={() => openSignInTerminal()}>Open sign-in terminal</Button>}{selectedHarness === 'CODEX' && (canOpenSignInTerminal ? <Button type="button" size="sm" variant="outline" onClick={() => openSignInTerminal('codex login --device-auth')}>Use device code</Button> : <Button type="button" size="sm" variant="outline" onClick={() => void copySignInCommand('codex login --device-auth')}><Copy className="size-3.5" /> Copy device-code command</Button>)}<Button type="button" size="sm" variant="outline" onClick={() => void copySignInCommand()}><Copy className="size-3.5" /> Copy command</Button><span className="text-[11px] text-muted-foreground">{selectedSetup?.installation !== 'detected' ? 'Install the CLI on the backend host before signing in.' : selectedSetup.terminal_supported ? 'Runs on the backend host. Return here and Refresh after signing in.' : 'Interactive backend terminals are unavailable on this host. Run the copied command in a terminal on the backend host, then Refresh.'}</span></div>}
+        {!signInCommand && <p className="mt-3 text-[11px] text-muted-foreground">Use the provider setup guide for this harness. Orchestra does not have a verified sign-in command for it.</p>}
+        {currentGuide && <a href={currentGuide} target="_blank" rel="noreferrer" className="mt-3 inline-flex text-xs font-medium text-primary hover:underline">Open {currentLabel} setup guide ↗</a>}
       </section>
 
       <section className="rounded-xl border border-border/50 bg-card/40 p-4">
@@ -206,7 +254,7 @@ export function HarnessSetupPanel({ config, provider, projectId }: {
         </div>
       </section>
 
-      <section className="rounded-xl border border-border/50 bg-card/40 p-4">
+      <section aria-label="Default task harness" className="rounded-xl border border-border/50 bg-card/40 p-4">
         <h3 className="text-sm font-semibold">Backend-wide default task harness</h3>
         <p className="mt-1 text-[11px] text-muted-foreground">Used when a new task run does not specify a provider. It does not change existing workspace-chat sessions.</p>
         <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -216,6 +264,7 @@ export function HarnessSetupPanel({ config, provider, projectId }: {
           </Button>
           <span className="text-[10px] text-muted-foreground">Current: {agentConfig?.agent_provider ? labelFor(agentConfig.agent_provider) : 'unknown'}</span>
         </div>
+        {normalizeHarnessId(agentConfig?.agent_provider ?? '') === 'GEMINI' && <p role="status" className="text-[10px] text-muted-foreground">The stored Gemini task default is preserved. Gemini is no longer offered for new task runs; select a currently registered harness to replace it.</p>}
       </section>
     </div>
   )

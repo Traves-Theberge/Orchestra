@@ -1,0 +1,17 @@
+# Antigravity active harness UI handoff (2026-10-05)
+
+## Pinned reference observations
+
+- T3 Code pinned at `737993303d36e10674c54b95e5bd3826682c99c7`: inspected `apps/web/src/components/chat/ChatComposer.tsx` and its provider/model/runtime-mode imports. The composer treats provider selection as a user-facing routing choice and composes it with model, runtime mode, and send readiness. The inspected pattern does not establish that a provider is installed, authenticated, or runnable merely because it appears in a selector.
+- Orca pinned at `3284b4c70c901402831bb4ccc5576ea083d2e5ae`: inspected `src/main/native-chat/agent-model-catalog/agent-project-model-override.ts` and its tests. It checks project/worktree configuration layers when account model defaults may be overridden; the check is explicitly only evidence that a project may override a default, not evidence of the effective value. The tests include linked worktrees and repository-boundary behavior.
+- Adaptation: Orchestra's active harness picker now offers Antigravity in place of Gemini CLI. The backend provider catalog remains authoritative for enabled chat options, while the onboarding form separately filters retired Gemini registration/default choices. A stored Gemini task default is shown as preserved and is changed only after a deliberate user selection and save. No provider files, credentials, account state, or prior session identity are copied or rewritten.
+- Historical sessions keep their original Gemini provider identity and transcript. The desktop opens them read-only and retains the Gemini label; new conversation selectors do not offer Gemini. Usage data and Gemini model names under other model services remain as historical/independent identities.
+- Deliberate deviation: the UI does not infer Antigravity installation, authentication, or usable runtime from its catalog entry. It uses the existing verified Antigravity setup guide and backend observations. T3 provider-selection UI and Orca model-override discovery have no direct Gemini-to-Antigravity migration equivalent.
+
+## Changed surface and verification
+
+- The Agents tab and known harness/registration selectors no longer offer Gemini. Stale active tab and ordinary saved-draft provider state are normalized to an enabled Antigravity choice when available; stored provider config is untouched. Uncertain creation identity remains bound to its original provider.
+- Workspace chat filters Gemini out of the active provider picker, prefers an enabled Antigravity option when the saved choice is retired, and keeps existing Gemini conversations visible but read-only. The stored session provider remains `gemini`.
+- Workspace terminal menus and the default architecture graph replace Gemini CLI with Antigravity. The terminal action uses the observed `agy` executable.
+- Focused desktop typecheck passed. Focused Vitest passed: 6 files, 74 tests, covering Agents provider normalization, registration/default filtering without config mutation, active workspace chat selection, legacy Gemini transcript readability/read-only behavior, and terminal menu routing. After adding saved-draft normalization, the three directly affected suites were rerun: 56 tests passed.
+- No provider sign-in, task dispatch, credential change, or native-provider session was run. These checks establish renderer behavior only; backend Antigravity registration and runtime capability remain the backend owner's verification boundary.

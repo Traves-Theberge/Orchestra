@@ -619,6 +619,21 @@ export async function fetchAgents(config: BackendConfig): Promise<string[]> {
   return payload.agents || []
 }
 
+export type HarnessSetupObservation = {
+  id: string
+  registered: boolean
+  command_configured: boolean
+  installation: 'detected' | 'missing' | 'unknown'
+  authentication: 'signed_in' | 'signed_out' | 'unknown'
+  executable?: string
+  terminal_supported: boolean
+}
+
+export async function fetchHarnessSetup(config: BackendConfig): Promise<HarnessSetupObservation[]> {
+  const payload = await requestJSON<{ harnesses: HarnessSetupObservation[] }>(config, '/api/v1/agents/setup')
+  return payload.harnesses ?? []
+}
+
 /**
  * Fetches the global agent configuration (commands, provider, max turns).
  * @param config - Backend connection configuration.
@@ -758,6 +773,46 @@ export async function fetchIssueDetail(config: BackendConfig, issueIdentifier: s
     throw new APIError('invalid_request', 'issue identifier is required')
   }
   return requestJSON<IssueListItem>(config, `/api/v1/issues/${encodeURIComponent(normalized)}`)
+}
+
+export type OrchestratorControlRequest =
+  | { operation: 'approve_plan'; project_id: string; task_id: string; expected_state: 'Todo'; expected_plan_hash: string; request_id: string }
+  | { operation: 'replan'; project_id: string; task_id: string; expected_state: 'Todo' | 'In Progress' | 'Review'; expected_plan_hash: string; feedback: string; request_id: string }
+  | { operation: 'reviewers' }
+  | { operation: 'request_review'; project_id: string; task_id: string; request_id: string; expected_state: 'Review'; expected_pr_url: string; expected_head_sha: string; provider: string; reviewer_agent_id: 'provider-default' }
+  | { operation: 'approve_review'; project_id: string; task_id: string; request_id: string; expected_state: 'Review'; expected_pr_url: string; expected_head_sha: string; review_attempt_id: string }
+  | { operation: 'complete_review'; project_id: string; task_id: string; request_id: string; expected_state: 'Review'; expected_pr_url: string; expected_head_sha: string; review_attempt_id: string }
+  | { operation: 'receipt'; request_id: string }
+
+export type OrchestratorControlResponse = {
+  success: boolean
+  data?: {
+    task?: IssueListItem
+    effect?: string
+    execution?: string
+    review_gate?: { status: string; head_sha?: string; pr_url?: string; attempt_id?: string; reviewer_provider?: string; reviewer_agent_id?: string; feedback?: string }
+    status?: string
+    head_sha?: string
+    pr_url?: string
+    attempt_id?: string
+    reviewer_provider?: string
+    reviewer_agent_id?: string
+    feedback?: string
+    task_state?: string
+    providers?: { provider: string; available: boolean; reason?: string; reviewer_agent_id: 'provider-default' }[]
+  }
+  request_id?: string
+  receipt_status?: 'pending' | 'completed' | 'rejected' | 'unknown'
+  error?: { code: string; message: string }
+}
+
+/** Sends one exact, receipt-backed Orchestra control operation. Mutations are never retried here. */
+export async function postOrchestratorControl(config: BackendConfig, request: OrchestratorControlRequest): Promise<OrchestratorControlResponse> {
+  return requestJSON<OrchestratorControlResponse>(config, '/api/v1/orchestrator/control', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
 }
 
 /**

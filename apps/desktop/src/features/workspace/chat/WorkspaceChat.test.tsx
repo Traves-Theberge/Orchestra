@@ -52,6 +52,42 @@ async function selectConversation(title = 'Review changes') {
 }
 
 describe('WorkspaceChat', () => {
+  it('offers Antigravity instead of Gemini for new workspace conversations', async () => {
+    vi.mocked(api.fetchWorkspaceChatProviders).mockResolvedValue({ providers: [
+      { id: 'GEMINI', label: 'Gemini', enabled: true, provider_resume: false, conversation_mode: 'transcript_replay' },
+      { id: 'ANTIGRAVITY', label: 'Antigravity', enabled: true, provider_resume: true, conversation_mode: 'native_session' },
+    ] })
+    open()
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Choose harness and model' })).toHaveTextContent('Antigravity'))
+    fireEvent.click(screen.getByRole('button', { name: 'Choose harness and model' }))
+    expect(await screen.findByRole('button', { name: 'Use Antigravity' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Use Gemini' })).not.toBeInTheDocument()
+  })
+
+  it('keeps historical Gemini conversation content readable and read-only', async () => {
+    const legacySession: api.WorkspaceChatSession = { ...session, id: 'legacy-gemini', provider: 'gemini', title: 'Old Gemini chat' }
+    vi.mocked(api.fetchWorkspaceChatProviders).mockResolvedValue({ providers: [
+      { id: 'antigravity', label: 'Antigravity', enabled: true, provider_resume: true, conversation_mode: 'native_session' },
+      { id: 'gemini', label: 'Gemini', enabled: true, provider_resume: false, conversation_mode: 'transcript_replay' },
+    ] })
+    vi.mocked(api.listWorkspaceChatSessions).mockResolvedValue({ sessions: [legacySession] })
+    vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({ session: legacySession, messages: [{ ...message, id: 'legacy-message', session_id: legacySession.id, text: 'Historical Gemini message' }] })
+    open()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle conversations' }))
+    await screen.findByRole('button', { name: 'Open conversation: Old Gemini chat' })
+    fireEvent.click(screen.getByRole('button', { name: 'Open conversation: Old Gemini chat' }))
+    expect(await screen.findByText('Historical Gemini message')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Gemini conversation history is preserved and read-only')
+    expect(screen.getByRole('button', { name: 'Choose harness and model' })).toHaveTextContent('Gemini')
+    expect(screen.getByRole('textbox', { name: 'Message agent' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Choose harness and model' }))
+    expect(await screen.findByRole('button', { name: 'Use Antigravity' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Use Gemini' })).not.toBeInTheDocument()
+  })
   it('opens and closes the conversation list with Escape and restores trigger focus', async () => {
     open()
     await openThreadList()

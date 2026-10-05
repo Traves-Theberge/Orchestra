@@ -107,6 +107,8 @@ export function WorkspaceChat(props: WorkspaceChatProps) {
 function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, headerNavigation, refreshToolbarTarget, contentOverride, onShowChat, active = true }: WorkspaceChatProps) {
   const requestedConversation = useAppStore(state => state.requestedWorkspaceConversation)
   const [providers, setProviders] = useState<WorkspaceChatProvider[]>([])
+  const providersRef = useRef(providers)
+  providersRef.current = providers
   const [sessions, setSessions] = useState<WorkspaceChatSession[]>([])
   const [provider, setProvider] = useState('')
   const [agentSelections, setAgentSelections] = useState<Record<string, AgentSelection | null>>({})
@@ -146,6 +148,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
   const [showJump, setShowJump] = useState(false)
   const working = isWorking(snapshot?.session)
   const selectedProvider = providers.find(p => p.id === provider)
+  const legacyGeminiSession = snapshot?.session.id === sessionId && snapshot.session.provider.toLowerCase() === 'gemini'
   const agentHarness = snapshot?.session.provider || creating.current?.provider || provider
   const agentKey = JSON.stringify([sessionId, agentHarness])
   const inheritedAgent = snapshot?.session.requested_agent_id && snapshot.session.requested_agent_scope ? { agent_id: snapshot.session.requested_agent_id, agent_scope: snapshot.session.requested_agent_scope, agent_content_hash: snapshot.session.requested_agent_content_hash ?? '', agent_format: snapshot.session.requested_agent_format ?? '' } : undefined
@@ -193,7 +196,11 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
         setBlockedRequests(saved.blockedRequests)
         const recoveredId = saved.creation?.sessionId || saved.submission?.sessionId || saved.reply?.sessionId || saved.sessionId
         setSessionId(recoveredId)
-        setProvider(saved.creation?.provider || saved.provider)
+        const restoredProvider = saved.creation?.provider || saved.provider
+        const activeProvider = restoredProvider.toLowerCase() === 'gemini' && !saved.creation
+          ? providersRef.current.find(item => item.enabled && item.id.toLowerCase() === 'antigravity')?.id ?? ''
+          : restoredProvider
+        setProvider(activeProvider)
         setDraft(drafts.current[recoveredId] ?? '')
         if (saved.creation || saved.submission || saved.reply || saved.uncertainSession) {
           setUncertainSession(saved.creation?.sessionId || saved.submission?.sessionId || saved.reply?.sessionId || saved.uncertainSession)
@@ -229,10 +236,11 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
         if (cancelled || generation.current !== epoch) return
         if (!Array.isArray(catalog.providers) || !Array.isArray(history.sessions)) throw new Error('Workspace chat returned an invalid provider or session catalog. Refresh before continuing.')
         if (history.sessions.some(session => session.project_id !== projectId || (config.workspaceId && session.workspace_id !== config.workspaceId))) throw new Error('Conversation history belongs to another workspace.')
-        setProviders(catalog.providers)
+        const activeProviders = catalog.providers.filter(item => item.id.toLowerCase() !== 'gemini')
+        setProviders(activeProviders)
         setSessions(history.sessions)
-        setProvider(previous => catalog.providers.some(p => p.id === previous && p.enabled)
-          ? previous : catalog.providers.find(p => p.enabled)?.id ?? '')
+        setProvider(previous => activeProviders.some(p => p.id === previous && p.enabled)
+          ? previous : activeProviders.find(p => p.id.toLowerCase() === 'antigravity' && p.enabled)?.id ?? activeProviders.find(p => p.enabled)?.id ?? '')
       })
       .catch(err => { if (!cancelled) setError(errorText(err)) })
       .finally(() => { if (!cancelled) setLoading(false) })
@@ -369,7 +377,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
     })
   }
   const send = () => {
-    if (!storageReady || creating.current || submitted.current || !draft.trim() || working || pending || mutationPending.current || observationError || (sessionId && uncertainSession === sessionId) || (sessionId ? snapshot?.session.id !== sessionId : !selectedProvider?.enabled || loading)) return
+    if (!storageReady || legacyGeminiSession || creating.current || submitted.current || !draft.trim() || working || pending || mutationPending.current || observationError || (sessionId && uncertainSession === sessionId) || (sessionId ? snapshot?.session.id !== sessionId : !selectedProvider?.enabled || loading)) return
     const text = draft
     const messageId = crypto.randomUUID()
     const targetId = sessionId || crypto.randomUUID()
@@ -513,10 +521,11 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
       <footer data-chat-composer-placement={draftHero ? 'centered' : 'docked'} className={`${draftHero ? 'absolute left-1/2 top-[45%] -translate-x-1/2 -translate-y-1/2' : 'mx-auto shrink-0'} w-full max-w-[808px] px-4 pb-3 pt-1 sm:px-6`}>
         {draftHero && <div className="mb-5 px-1"><h3 className="mb-2 text-2xl font-semibold tracking-tight">What would you like to build?</h3><p className="text-[13px] text-muted-foreground">Ask your agent to work in {projectName}.</p></div>}
         <div aria-label="Agent decisions" className="mb-2 max-h-[40vh] space-y-2 overflow-auto">{snapshot?.requests?.filter(request => request.status === 'pending').map(request => <RuntimeRequestCard key={`${sessionId}:${request.id}`} request={request} disabled={pending || !working || !!observationError || !!blockedRequests[request.id]} onReply={answer => reply(request, answer)} />)}</div>
+        {legacyGeminiSession && <p role="status" className="mb-2 text-xs text-muted-foreground">Gemini conversation history is preserved and read-only. Choose a current harness to start a new conversation.</p>}
         {uncertainSession === sessionId && sessionId && <p role="status" className="mb-2 text-xs text-destructive">Delivery is uncertain. Your draft is retained; inspect the conversation before starting a new turn.</p>}
         {creating.current && creating.current.sessionId !== sessionId && <p role="status" className="mb-2 text-xs text-muted-foreground">Recover the pending chat from Conversations before sending another message.</p>}{submitted.current && submitted.current.sessionId !== sessionId && <p role="status" className="mb-2 text-xs text-muted-foreground">Resolve the pending message in its conversation before sending another message.</p>}{storageWarning && <p role="status" className="mb-2 text-xs text-muted-foreground">{storageWarning}</p>}{snapshot?.session.error && <p role="status" className="mb-2 text-xs text-destructive">{snapshot.session.error}</p>}
         <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm transition-colors focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/5">
-          <textarea ref={textareaRef} aria-label="Message agent" value={draft} onChange={e => { setDraft(e.target.value); drafts.current[sessionId] = e.target.value; persist() }} rows={3} disabled={pending} placeholder={working ? 'Draft your next message while the agent works…' : 'Ask anything, or describe a change…'} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send() } }} className="block max-h-60 min-h-[88px] w-full resize-none bg-transparent px-4 pt-3 text-[15px] leading-6 outline-none placeholder:text-muted-foreground/60 disabled:opacity-50" />
+          <textarea ref={textareaRef} aria-label="Message agent" value={draft} onChange={e => { setDraft(e.target.value); drafts.current[sessionId] = e.target.value; persist() }} rows={3} disabled={pending || legacyGeminiSession} placeholder={working ? 'Draft your next message while the agent works…' : 'Ask anything, or describe a change…'} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send() } }} className="block max-h-60 min-h-[88px] w-full resize-none bg-transparent px-4 pt-3 text-[15px] leading-6 outline-none placeholder:text-muted-foreground/60 disabled:opacity-50" />
           <div aria-label="Main agent controls" className="flex min-w-0 items-center gap-2 px-3 pb-2.5 pt-1">
             <HarnessPicker providers={providers} provider={snapshot?.session.provider || creating.current?.provider || provider} disabled={loading || pending || working} locked={!!creating.current || !!submitted.current || !!submittedReply.current || !!uncertainSession}
               catalog={catalog} model={selectedModel} onModel={value => setModelSelection({ key: catalogKey, model: value })} onProvider={id => {
@@ -529,11 +538,11 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
                 }
                 setProvider(id)
               }} />
-            <AgentPicker config={config} projectId={projectId} harness={agentHarness} selection={selectedAgent} disabled={loading || pending || working || !!creating.current || !!submitted.current || !!submittedReply.current || !!uncertainSession} onChange={value => setAgentSelections(previous => ({ ...previous, [agentKey]: value ?? null }))} />
+            <AgentPicker config={config} projectId={projectId} harness={agentHarness} selection={selectedAgent} disabled={loading || pending || working || !!creating.current || !!submitted.current || !!submittedReply.current || !!uncertainSession || legacyGeminiSession} onChange={value => setAgentSelections(previous => ({ ...previous, [agentKey]: value ?? null }))} />
             {selectedModel && effortOptions.length > 0 && <select aria-label="Reasoning effort for next turn" value={selectedEffort} disabled={pending || working} onChange={e => setEffortSelection({ key: catalogKey, model: effortModel?.model ?? '', effort: e.target.value })} className="min-w-0 max-w-32 rounded-md border-0 bg-transparent py-1 text-[11px] text-muted-foreground"><option value="">Inherit provider setting</option>{effortOptions.map(e => <option key={e.reasoning_effort} value={e.reasoning_effort}>{e.reasoning_effort}</option>)}</select>}
             <span className="flex-1" />
             {working ? <button aria-label="Stop current turn" title="Interrupt current turn (Escape)" disabled={pending || snapshot?.session.status === 'stopping'} onClick={interrupt} className="shrink-0 rounded-full border border-border bg-background p-2 disabled:opacity-40"><Square className="size-3.5" /></button>
-              : <button aria-label="Send message" title="Send message" disabled={!storageReady || !!creating.current || !!submitted.current || !draft.trim() || pending || !!observationError || (sessionId ? !snapshot || uncertainSession === sessionId : loading || !selectedProvider?.enabled)} onClick={send} className="shrink-0 rounded-full bg-foreground p-2 text-background disabled:opacity-25"><ArrowUp className="size-3.5" /></button>}
+              : <button aria-label="Send message" title="Send message" disabled={!storageReady || legacyGeminiSession || !!creating.current || !!submitted.current || !draft.trim() || pending || !!observationError || (sessionId ? !snapshot || uncertainSession === sessionId : loading || !selectedProvider?.enabled)} onClick={send} className="shrink-0 rounded-full bg-foreground p-2 text-background disabled:opacity-25"><ArrowUp className="size-3.5" /></button>}
           </div>
           {nativeComposer && <div className="px-4 pb-2 text-[10px] text-muted-foreground"><ChatUsage events={events} /></div>}
         </div>

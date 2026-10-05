@@ -3,6 +3,7 @@
 package terminal
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"os/exec"
@@ -27,6 +28,8 @@ type Session struct {
 	OutputChan    chan []byte
 	mu            sync.Mutex
 	Closed        bool
+	envScoped     bool
+	envSignature  [32]byte
 }
 
 // Manager maintains a registry of active terminal sessions and provides
@@ -48,9 +51,24 @@ func NewManager() *Manager {
 // CreateSession starts a new pseudo-terminal session running the given command
 // in the specified directory. Returns the existing session if one with the same ID is still open.
 func (m *Manager) CreateSession(id string, dir string, command string, args ...string) (*Session, error) {
+	return m.createSession(id, dir, nil, command, args...)
+}
+
+// CreateSessionWithEnv starts a shell with an explicit process environment.
+// An existing session can only be reused with the same environment context.
+func (m *Manager) CreateSessionWithEnv(id string, dir string, env []string, command string, args ...string) (*Session, error) {
+	if env == nil {
+		return nil, fmt.Errorf("explicit terminal environment is required")
+	}
+	return m.createSession(id, dir, env, command, args...)
+}
+
+func (m *Manager) createSession(id string, dir string, env []string, command string, args ...string) (*Session, error) {
 	if runtime.GOOS == "windows" {
 		return nil, fmt.Errorf("interactive PTY terminals are unavailable on Windows: a ConPTY adapter is required; agent subprocess execution remains supported")
 	}
+	scoped := env != nil
+	signature := terminalEnvSignature(env)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, removing := m.removingDirectories[canonicalDirectory(dir)]; removing {
@@ -62,13 +80,20 @@ func (m *Manager) CreateSession(id string, dir string, command string, args ...s
 		closed := s.Closed
 		s.mu.Unlock()
 		if !closed {
+			if s.envScoped != scoped || (scoped && s.envSignature != signature) {
+				return nil, fmt.Errorf("terminal session environment changed; close the existing terminal before continuing")
+			}
 			return s, nil
 		}
 	}
 
 	c := exec.Command(command, args...)
 	c.Dir = dir
-	c.Env = os.Environ()
+	if scoped {
+		c.Env = append([]string(nil), env...)
+	} else {
+		c.Env = os.Environ()
+	}
 
 	f, err := pty.Start(c)
 	if err != nil {
@@ -76,11 +101,13 @@ func (m *Manager) CreateSession(id string, dir string, command string, args ...s
 	}
 
 	session := &Session{
-		ID:         id,
-		PTY:        f,
-		Cmd:        c,
-		Handlers:   make(map[int]func([]byte)),
-		OutputChan: make(chan []byte, 100),
+		ID:           id,
+		PTY:          f,
+		Cmd:          c,
+		Handlers:     make(map[int]func([]byte)),
+		OutputChan:   make(chan []byte, 100),
+		envScoped:    scoped,
+		envSignature: signature,
 	}
 
 	m.sessions[id] = session
@@ -102,6 +129,18 @@ func (m *Manager) CreateSession(id string, dir string, command string, args ...s
 	}()
 
 	return session, nil
+}
+
+func terminalEnvSignature(env []string) [32]byte {
+	// ORCHESTRA_SESSION_ID can change between turns in one persistent issue
+	// shell. The provider credential context must remain stable.
+	var values []string
+	for _, entry := range env {
+		if !strings.HasPrefix(entry, "ORCHESTRA_SESSION_ID=") {
+			values = append(values, entry)
+		}
+	}
+	return sha256.Sum256([]byte(strings.Join(values, "\x00")))
 }
 
 // ActiveDirectories returns the exact working directories of current PTY sessions.
@@ -171,6 +210,10 @@ func canonicalDirectory(dir string) string {
 // in the given directory.
 func (m *Manager) GetOrCreateSession(id string, dir string) (*Session, error) {
 	return m.CreateSession(id, dir, "/bin/bash")
+}
+
+func (m *Manager) GetOrCreateSessionWithEnv(id string, dir string, env []string) (*Session, error) {
+	return m.CreateSessionWithEnv(id, dir, env, "/bin/bash")
 }
 
 // GetSession returns the session with the given ID, or nil if not found.

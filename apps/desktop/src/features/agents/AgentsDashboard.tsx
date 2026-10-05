@@ -147,10 +147,17 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
     }
   }, [provider])
   useEffect(() => {
+    // Old UI state can still carry Gemini from an earlier release. Move only
+    // the active tab to Antigravity; provider files and stored configuration
+    // remain untouched and Gemini transcript history remains readable.
+    if (provider === 'gemini') {
+      setProvider('antigravity')
+      return
+    }
     const registered = availableAgents.map(id => id.toLowerCase())
     if (registered.length && !registered.includes(provider)) {
-      const next = registered.find(id => ['codex', 'antigravity', 'claude', 'opencode', 'gemini', '8gent'].includes(id))
-      if (next) setProvider(next as Provider)
+      const next = registered.find(id => ['antigravity', 'codex', 'claude', 'opencode', '8gent'].includes(id))
+      if (next) setProvider(next as Exclude<Provider, 'gemini'>)
     }
   }, [availableAgents, provider, setProvider])
 

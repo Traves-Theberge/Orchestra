@@ -1,0 +1,17 @@
+# Planning hook safety handoff
+
+Planning (`Todo`) prepares the task worktree without running configured `after_create`, `before_run`, or `after_run` shell hooks. `before_run` and `after_run` run during approved execution. When planning creates a checkout, it records the `after_create` hook identity even when the configured command is empty. A nonempty command also gets a pending receipt under the workspace root's `.orchestra-hook-receipts` directory. The first approved execution checks that the hook identity still matches and claims the receipt before invoking the hook. Successful completion records `.completed`; failure records `.unknown`, blocks the provider turn, and blocks automatic replay. A hook configuration change after planning blocks execution until the setup state is inspected. Unexpected checkout `Stat` errors also stop planning before worktree preparation.
+
+## Reference patterns
+
+- T3 Code at [`737993303d36e10674c54b95e5bd3826682c99c7`](https://github.com/pingdotgg/t3code/tree/737993303d36e10674c54b95e5bd3826682c99c7): `RunFinalizationService.ts` performs checkpoint capture before refresh, scopes refresh to the observed thread/run/workspace, and models failures by operation. Orchestra follows the explicit stage boundary and scoped failure reporting. T3 has no corresponding configured workspace shell-hook lifecycle or preapproval planning stage, so there was no direct hook runner pattern to adopt.
+- Orca at [`3284b4c70c901402831bb4ccc5576ea083d2e5ae`](https://github.com/stablyai/orca/tree/3284b4c70c901402831bb4ccc5576ea083d2e5ae): `mutation-request.ts` reuses one request ID across retries and surfaces recovery state when a mutation may have landed. This implementation applies the same uncertainty principle to shell hooks: a claim is durable before shell execution, and an unresolved claim blocks replay. Orca's orchestration mutation layer does not run project workspace hooks; no direct hook implementation was found.
+
+These are design comparisons only; neither reference's passing tests establish Orchestra runtime reliability. The adaptation uses filesystem receipts beside, rather than inside, the tracked checkout. A hook-command change leaves the original pending receipt visible and blocks execution until resolved. A `.claimed` or `.unknown` receipt is never retried automatically.
+
+## Verification
+
+- `go test ./internal/app -run 'Test(PlanningDefersConfiguredWorkspaceHooksUntilPlanApproval|FailedDeferredAfterCreateBlocksProviderAndCannotReplayUnknownReceipt|ChangedAfterCreateHookAfterPlanningBlocksProvider|AfterCreateReceiptClaimIsSingleOwnerAndUnknownBlocksRetry|PlanningCheckoutStatFailureBlocksProvider|PlanningCheckoutStatClassificationKeepsPermissionErrorsDistinctFromMissingPaths)$' -count=1`
+- `go test ./internal/app -count=1`
+
+The fixtures use a temporary SQLite database and temporary Git checkout. They verify no shell markers appear during planning; approved execution runs all configured hooks; a hook that writes then exits unsuccessfully blocks the provider and leaves an unreplayable unknown receipt; empty-to-configured hook drift blocks the approved provider turn; non-directory and non-NotExist stat outcomes fail closed; and receipt claims reject concurrent or unresolved retries. The turn context derives from the orchestrator stage context, so backend shutdown cancellation propagates to the runner. No live task, real workspace, or provider turn was used.

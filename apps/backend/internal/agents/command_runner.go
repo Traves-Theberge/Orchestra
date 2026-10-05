@@ -118,7 +118,7 @@ func (r *CommandRunner) RunTurn(ctx context.Context, request TurnRequest, onEven
 	if err != nil {
 		return TurnResult{}, err
 	}
-	cmd.Env = safeSubprocessEnv(sessionID)
+	cmd.Env = safeSubprocessEnv(sessionID, r.provider)
 	cmd.Dir = request.Workspace
 
 	// Copying subprocess output must not wait for event callbacks: WaitDelay
@@ -456,7 +456,7 @@ func (r *CommandRunner) runInPTY(
 ) (TurnResult, error) {
 	// Create or attach to a persistent PTY session for this issue/project
 	terminalID := fmt.Sprintf("issue-%s", request.IssueIdentifier)
-	session, err := r.termManager.GetOrCreateSession(terminalID, request.Workspace)
+	session, err := r.termManager.GetOrCreateSessionWithEnv(terminalID, request.Workspace, safeSubprocessEnv(sessionID, r.provider))
 	if err != nil {
 		return TurnResult{}, fmt.Errorf("failed to create terminal session: %w", err)
 	}
@@ -989,7 +989,7 @@ func firstInt64(payload map[string]any, keys ...string) int64 {
 
 // safeSubprocessEnv returns a whitelist of environment variables for agent
 // subprocesses, avoiding leaking secrets from the parent process.
-func safeSubprocessEnv(sessionID string) []string {
+func safeSubprocessEnv(sessionID string, provider Provider) []string {
 	allowed := []string{
 		"PATH", "HOME", "USER", "SHELL", "LANG", "LC_ALL",
 		"TMPDIR", "TEMP", "TMP", "SYSTEMROOT", "WINDIR", "COMSPEC", "USERPROFILE", "APPDATA", "LOCALAPPDATA",
@@ -1001,7 +1001,23 @@ func safeSubprocessEnv(sessionID string) []string {
 			env = append(env, key+"="+val)
 		}
 	}
+	// Keep a provider's configured credential home consistent between read-only
+	// setup probes, usage readers, and batch runs without exposing it to other
+	// providers. Managed account overrides will be resolved per run here.
+	authHomeKey := ""
+	switch NormalizeProvider(string(provider)) {
+	case ProviderCodex:
+		authHomeKey = "CODEX_HOME"
+	case ProviderClaude:
+		authHomeKey = "CLAUDE_CONFIG_DIR"
+	}
+	if authHomeKey != "" {
+		if val, ok := os.LookupEnv(authHomeKey); ok && strings.TrimSpace(val) != "" {
+			env = append(env, authHomeKey+"="+val)
+		}
+	}
 	env = append(env, "ORCHESTRA_SESSION_ID="+sessionID)
+	env = append(env, "ORCHESTRA_PROVIDER="+string(NormalizeProvider(string(provider))))
 	return env
 }
 

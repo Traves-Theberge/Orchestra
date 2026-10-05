@@ -5,15 +5,21 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/orchestra/orchestra/apps/backend/internal/agents"
 	"github.com/orchestra/orchestra/apps/backend/internal/config"
+	"github.com/orchestra/orchestra/apps/backend/internal/control"
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
 	"github.com/orchestra/orchestra/apps/backend/internal/observability"
 	"github.com/orchestra/orchestra/apps/backend/internal/orchestrator"
+	"github.com/orchestra/orchestra/apps/backend/internal/plangate"
+	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker/memory"
+	trackersqlite "github.com/orchestra/orchestra/apps/backend/internal/tracker/sqlite"
 	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
 	"github.com/rs/zerolog"
 )
@@ -50,6 +56,173 @@ func testProjectSetup(t *testing.T) (workspaceRoot string, projectID string, war
 		t.Fatal(err)
 	}
 	return workspaceRoot, projectID, warehouseDB
+}
+
+func setupApprovedLocalTask(t *testing.T, service *orchestrator.Service, warehouseDB *db.DB, projectID string) *tracker.Issue {
+	t.Helper()
+	ctx := context.Background()
+	service.SetDB(warehouseDB)
+	client := trackersqlite.NewClient(warehouseDB, []string{"agent-opencode"})
+	service.SetTrackerClient(client)
+	issue, err := client.CreateIssue(ctx, "Lifecycle test", "Exercise the execution stage", "Todo", 0, "agent-opencode", projectID, "OPENCODE", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.RecordPlanResult(ctx, projectID, issue.ID, "- [ ] inspect\n- [ ] implement", plangate.Fingerprint(*issue)); err != nil {
+		t.Fatalf("record planning result: %v", err)
+	}
+	issue, err = client.FetchIssueByIdentifier(ctx, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate := service.PlanGate(ctx, *issue)
+	if gate.Status != "awaiting_approval" || gate.PlanHash == "" {
+		t.Fatalf("expected exact persisted plan awaiting approval, got %+v", gate)
+	}
+	controlService, err := control.New(warehouseDB, service, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := controlService.Execute(ctx, "orchestra_control", map[string]any{
+		"operation": "approve_plan", "project_id": projectID, "task_id": issue.ID,
+		"expected_state": "Todo", "expected_plan_hash": gate.PlanHash, "request_id": uuid.NewString(),
+	})
+	if ok, _ := result["success"].(bool); !ok {
+		t.Fatalf("approve exact persisted plan: %+v", result)
+	}
+	approved, err := client.FetchIssueByIdentifier(ctx, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if approved.State != "In Progress" || service.PlanGate(ctx, *approved).Status != "approved" {
+		t.Fatalf("expected exact local task to be approved for execution, state=%q gate=%+v", approved.State, service.PlanGate(ctx, *approved))
+	}
+	return approved
+}
+
+type fakeLifecycleRunner struct {
+	requests []agents.TurnRequest
+}
+
+func (r *fakeLifecycleRunner) RunTurn(_ context.Context, request agents.TurnRequest, _ agents.EventHandler) (agents.TurnResult, error) {
+	r.requests = append(r.requests, request)
+	output := "- [ ] inspect\n- [ ] implement"
+	if !request.PlanOnly {
+		output = "- [x] inspect\n- [x] implement"
+	}
+	return agents.TurnResult{Provider: agents.ProviderCodex, SessionID: request.SessionID, ExitCode: 0, Output: output}, nil
+}
+
+func TestLocalTwoTaskLifecycleIsBoundedAndRequiresPlanApproval(t *testing.T) {
+	ctx := context.Background()
+	workspaceRoot, projectID, warehouseDB := testProjectSetup(t)
+	service := orchestrator.NewService()
+	service.SetDB(warehouseDB)
+	service.SetStateSets([]string{"Todo", "In Progress"}, []string{"Done", "Cancelled"})
+	service.SetMaxConcurrent(2)
+	client := trackersqlite.NewClient(warehouseDB, []string{"agent-CODEX"})
+	service.SetTrackerClient(client)
+
+	var tasks []*tracker.Issue
+	for _, owner := range []string{"agent-CODEX", "agent-CODEX", "person-smoke"} {
+		task, err := client.CreateIssue(ctx, "Concurrent lifecycle", "Bounded local dispatch fixture", "Todo", 0, owner, projectID, "CODEX", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tasks = append(tasks, task)
+	}
+
+	registry := agents.NewRegistry(map[string]string{
+		"CODEX": "codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json {{prompt}}",
+	})
+	fake := &fakeLifecycleRunner{}
+	registry.SetRunner(agents.ProviderCodex, fake)
+	pubsub := observability.NewPubSub()
+	if err := service.PerformRefreshForClient(ctx, client); err != nil {
+		t.Fatalf("initial local refresh: %v", err)
+	}
+	queued := service.Snapshot().Running
+	if len(queued) != 2 || queued[0].IssueID != tasks[0].ID || queued[1].IssueID != tasks[1].ID {
+		t.Fatalf("expected exactly the two worker-assigned local tasks queued under capacity 2, got %+v", queued)
+	}
+
+	process := func() {
+		processExecutionTick(service, workspace.Service{Root: workspaceRoot}, registry, agents.ProviderCodex, "codex", workspaceRoot, "missing-workflow.md", 0, nil, nil, workspace.Hooks{}, pubsub, warehouseDB, nil, nil, &config.Config{}, nil, zerolog.Nop())
+	}
+	process()
+	process()
+	for _, task := range tasks[:2] {
+		current, err := client.FetchIssueByIdentifier(ctx, task.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gate := service.PlanGate(ctx, *current)
+		if current.State != "Todo" || gate.Status != "awaiting_approval" || gate.PlanHash == "" {
+			t.Fatalf("planning must persist a reviewable plan and halt in Todo: state=%q gate=%+v", current.State, gate)
+		}
+	}
+	if len(service.Snapshot().Running) != 0 {
+		t.Fatalf("planning runs did not settle independently: %+v", service.Snapshot().Running)
+	}
+	humanTask, err := client.FetchIssueByIdentifier(ctx, tasks[2].ID)
+	if err != nil || humanTask.AssignedToWorker {
+		t.Fatalf("human-owned candidate became worker-routable: task=%+v err=%v", humanTask, err)
+	}
+
+	controls, err := control.New(warehouseDB, service, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, task := range tasks[:2] {
+		current, err := client.FetchIssueByIdentifier(ctx, task.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gate := service.PlanGate(ctx, *current)
+		result := controls.Execute(ctx, "orchestra_control", map[string]any{
+			"operation": "approve_plan", "project_id": projectID, "task_id": task.ID,
+			"expected_state": "Todo", "expected_plan_hash": gate.PlanHash, "request_id": uuid.NewString(),
+		})
+		if result["success"] != true {
+			t.Fatalf("approve task %d plan: %+v", i+1, result)
+		}
+	}
+	if err := service.PerformRefreshForClient(ctx, client); err != nil {
+		t.Fatalf("refresh after exact human approvals: %v", err)
+	}
+	queued = service.Snapshot().Running
+	if len(queued) != 2 {
+		t.Fatalf("expected two approved tasks within configured concurrency, got %+v", queued)
+	}
+	process()
+	if len(service.Snapshot().Running) != 1 {
+		t.Fatalf("one execution should settle while the other remains admitted: %+v", service.Snapshot().Running)
+	}
+	process()
+	if len(service.Snapshot().Running) != 0 || len(service.Snapshot().Retrying) != 0 {
+		t.Fatalf("both approved executions should settle independently: %+v", service.Snapshot())
+	}
+	for _, task := range tasks[:2] {
+		current, err := client.FetchIssueByIdentifier(ctx, task.ID)
+		if err != nil || current.State != "Review" {
+			t.Fatalf("approved task did not settle in Review: task=%+v err=%v", current, err)
+		}
+	}
+	if len(fake.requests) != 4 {
+		t.Fatalf("expected two plan-only and two execution turns, got %d: %+v", len(fake.requests), fake.requests)
+	}
+	for i, request := range fake.requests {
+		if request.RuntimeTarget != agents.RuntimeLocal {
+			t.Fatalf("turn %d ran outside LOCAL: %s", i, request.RuntimeTarget)
+		}
+		if i < 2 {
+			if !request.PlanOnly || request.CommandOverride != "codex exec --skip-git-repo-check --ignore-user-config --sandbox read-only --json {{prompt}}" || len(request.ToolSpecs) != 0 || len(request.ResourceSpecs) != 0 {
+				t.Fatalf("turn %d was not routed through the read-only planning command: %+v", i, request)
+			}
+		} else if request.PlanOnly {
+			t.Fatalf("execution turn %d incorrectly retained plan-only mode", i)
+		}
+	}
 }
 
 func TestLegacyTrackerClientUsesMemoryWhenEndpointUnset(t *testing.T) {
@@ -111,12 +284,13 @@ func TestPublishLifecycleEventPublishesTypedEnvelope(t *testing.T) {
 func TestProcessExecutionTickPublishesSuccessLifecycleEvents(t *testing.T) {
 	workspaceRoot, projectID, warehouseDB := testProjectSetup(t)
 	service := orchestrator.NewService()
+	issue := setupApprovedLocalTask(t, service, warehouseDB, projectID)
 	now := time.Now().UTC().Format(time.RFC3339)
 	service.SetRunningForTest([]orchestrator.RunningEntry{{
-		IssueID:         "1",
-		IssueIdentifier: "ORC-1",
+		IssueID:         issue.ID,
+		IssueIdentifier: issue.Identifier,
 		ProjectID:       projectID,
-		State:           "Todo",
+		State:           issue.State,
 		StartedAt:       now,
 		LastEventAt:     now,
 	}})
@@ -158,12 +332,13 @@ func TestProcessExecutionTickPublishesSuccessLifecycleEvents(t *testing.T) {
 func TestProcessExecutionTickPublishesFailureAndRetryLifecycleEvents(t *testing.T) {
 	workspaceRoot, projectID, warehouseDB := testProjectSetup(t)
 	service := orchestrator.NewService()
+	issue := setupApprovedLocalTask(t, service, warehouseDB, projectID)
 	now := time.Now().UTC().Format(time.RFC3339)
 	service.SetRunningForTest([]orchestrator.RunningEntry{{
-		IssueID:         "1",
-		IssueIdentifier: "ORC-1",
+		IssueID:         issue.ID,
+		IssueIdentifier: issue.Identifier,
 		ProjectID:       projectID,
-		State:           "Todo",
+		State:           issue.State,
 		StartedAt:       now,
 		LastEventAt:     now,
 	}})
@@ -238,13 +413,14 @@ func TestProcessExecutionTickPublishesFailureAndRetryLifecycleEvents(t *testing.
 func TestProcessExecutionTickDoesNotPublishRetryWhenAttemptExceedsMax(t *testing.T) {
 	workspaceRoot, projectID, warehouseDB := testProjectSetup(t)
 	service := orchestrator.NewService()
+	issue := setupApprovedLocalTask(t, service, warehouseDB, projectID)
 	service.SetRetryPolicy(1, 1*time.Second, 1*time.Minute)
 	now := time.Now().UTC().Format(time.RFC3339)
 	service.SetRunningForTest([]orchestrator.RunningEntry{{
-		IssueID:         "1",
-		IssueIdentifier: "ORC-1",
+		IssueID:         issue.ID,
+		IssueIdentifier: issue.Identifier,
 		ProjectID:       projectID,
-		State:           "Todo",
+		State:           issue.State,
 		TurnCount:       1,
 		StartedAt:       now,
 		LastEventAt:     now,
@@ -388,12 +564,13 @@ func TestClassifyRefreshRetryCause(t *testing.T) {
 func TestProcessExecutionTickPreservesRateLimitsFromMixedNestedEnvelope(t *testing.T) {
 	workspaceRoot, projectID, warehouseDB := testProjectSetup(t)
 	service := orchestrator.NewService()
+	issue := setupApprovedLocalTask(t, service, warehouseDB, projectID)
 	now := time.Now().UTC().Format(time.RFC3339)
 	service.SetRunningForTest([]orchestrator.RunningEntry{{
-		IssueID:         "1",
-		IssueIdentifier: "ORC-1",
+		IssueID:         issue.ID,
+		IssueIdentifier: issue.Identifier,
 		ProjectID:       projectID,
-		State:           "Todo",
+		State:           issue.State,
 		StartedAt:       now,
 		LastEventAt:     now,
 	}})
@@ -435,10 +612,11 @@ func TestProcessExecutionTickPreservesRateLimitsFromMixedNestedEnvelope(t *testi
 func TestProcessExecutionTickSkipsBeforeRunHookAfterFirstTurn(t *testing.T) {
 	workspaceRoot, projectID, warehouseDB := testProjectSetup(t)
 	service := orchestrator.NewService()
+	issue := setupApprovedLocalTask(t, service, warehouseDB, projectID)
 	now := time.Now().UTC().Format(time.RFC3339)
 	service.SetRunningForTest([]orchestrator.RunningEntry{{
-		IssueID:         "1",
-		IssueIdentifier: "ORC-1",
+		IssueID:         issue.ID,
+		IssueIdentifier: issue.Identifier,
 		ProjectID:       projectID,
 		State:           "In Progress",
 		TurnCount:       1,
@@ -473,7 +651,7 @@ func TestProcessExecutionTickSkipsBeforeRunHookAfterFirstTurn(t *testing.T) {
 
 	// The worktree path is now under workspaceRoot/<projectID>/orc-1, not workspaceRoot/ORC-1.
 	// Check that before-run.txt does NOT exist in the worktree.
-	branchName := "orc-1"
+	branchName := strings.ToLower(strings.ReplaceAll(issue.Identifier, " ", "-"))
 	workspacePath := filepath.Join(workspaceRoot, projectID, branchName)
 	if _, err := os.Stat(filepath.Join(workspacePath, "before-run.txt")); !os.IsNotExist(err) {
 		t.Fatalf("expected before_run hook to be skipped after first turn, stat err=%v", err)
@@ -483,12 +661,13 @@ func TestProcessExecutionTickSkipsBeforeRunHookAfterFirstTurn(t *testing.T) {
 func TestProcessExecutionTickPublishesBeforeRunHookFailureCause(t *testing.T) {
 	workspaceRoot, projectID, warehouseDB := testProjectSetup(t)
 	service := orchestrator.NewService()
+	issue := setupApprovedLocalTask(t, service, warehouseDB, projectID)
 	now := time.Now().UTC().Format(time.RFC3339)
 	service.SetRunningForTest([]orchestrator.RunningEntry{{
-		IssueID:         "1",
-		IssueIdentifier: "ORC-1",
+		IssueID:         issue.ID,
+		IssueIdentifier: issue.Identifier,
 		ProjectID:       projectID,
-		State:           "Todo",
+		State:           issue.State,
 		TurnCount:       0,
 		StartedAt:       now,
 		LastEventAt:     now,

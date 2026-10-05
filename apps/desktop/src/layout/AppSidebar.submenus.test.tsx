@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Bot, Settings } from 'lucide-react'
 import { resetAppStore, useAppStore } from '@core/store'
@@ -53,6 +53,16 @@ describe('sidebar Agents and Settings submenus', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Alpha' }))
     expect(useAppStore.getState().activeAgentScope).toBe('PROJECT')
     expect(useAppStore.getState().activeAgentProjectId).toBe('project-a')
+  })
+
+  it('exposes Antigravity as the active Google harness and hides Gemini CLI', () => {
+    mount('AGENTS')
+    act(() => useAppStore.getState().setAvailableAgents(['gemini', 'antigravity']))
+
+    expect(screen.getByRole('button', { name: 'Antigravity' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Gemini' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Antigravity' }))
+    expect(useAppStore.getState().activeAgentProvider).toBe('antigravity')
   })
 
   it('resets Settings to the top on entry and routes a subsection choice to its scroll target', () => {

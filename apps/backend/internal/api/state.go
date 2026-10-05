@@ -289,6 +289,11 @@ func (s *Server) GetIssues(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	for i := range issues {
+		gate := s.orchestrator.PlanGate(r.Context(), issues[i])
+		issues[i].PlanGate = &gate
+		issues[i].ReviewGate = s.orchestrator.ReviewGate(r.Context(), issues[i])
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"issues": issues, "total": total})
 }
 
@@ -406,6 +411,7 @@ func (s *Server) GetIssue(w http.ResponseWriter, r *http.Request) {
 			"feedback":         issue.Feedback,
 			"pr_url":           issue.PRURL,
 			"plan":             issue.Plan,
+			"plan_gate":        s.orchestrator.PlanGate(r.Context(), *issue),
 			"status":           "IDLE",
 			"history":          history,
 			"attempts": map[string]any{
@@ -424,6 +430,7 @@ func (s *Server) GetIssue(w http.ResponseWriter, r *http.Request) {
 			},
 		}
 		mergeIssueAuthoringMetadata(response, issue)
+		response["review_gate"] = s.orchestrator.ReviewGate(r.Context(), *issue)
 		writeJSON(w, http.StatusOK, response)
 		return
 	}
@@ -502,8 +509,9 @@ func (s *Server) GetIssue(w http.ResponseWriter, r *http.Request) {
 		"workspace": map[string]any{
 			"path": workspacePath,
 		},
-		"running": presented["running"],
-		"retry":   presented["retry"],
+		"running":   presented["running"],
+		"retry":     presented["retry"],
+		"plan_gate": tracker.PlanGate{Status: "unsupported"},
 		"logs": map[string]any{
 			"codex_session_logs": []map[string]any{
 				{
@@ -549,7 +557,9 @@ func (s *Server) GetIssue(w http.ResponseWriter, r *http.Request) {
 		response["feedback"] = issueDetails.Feedback
 		response["pr_url"] = issueDetails.PRURL
 		response["plan"] = issueDetails.Plan
+		response["plan_gate"] = s.orchestrator.PlanGate(r.Context(), *issueDetails)
 		mergeIssueAuthoringMetadata(response, issueDetails)
+		response["review_gate"] = s.orchestrator.ReviewGate(r.Context(), *issueDetails)
 	}
 
 	writeJSON(w, http.StatusOK, response)
@@ -651,6 +661,18 @@ func validateStateTransition(current, next string, issue *tracker.Issue, updates
 	return ""
 }
 
+func requiresReplanControl(current, next string) bool {
+	current = strings.ToLower(strings.TrimSpace(current))
+	next = strings.ToLower(strings.TrimSpace(next))
+	if next == "in progress" {
+		return current != "todo"
+	}
+	if next == "todo" || next == "backlog" {
+		return current != "todo" && current != "backlog"
+	}
+	return false
+}
+
 // validateFieldLocking rejects updates to locked fields when the issue is not in Backlog.
 // Returns an error string if a locked field is being updated, or "" if ok.
 func validateFieldLocking(currentState string, updates map[string]any) string {
@@ -709,15 +731,36 @@ func (s *Server) PatchIssue(w http.ResponseWriter, r *http.Request) {
 
 	// Validate state transition if state is being changed
 	if newState, ok := updates["state"].(string); ok && newState != currentIssue.State {
+		if strings.EqualFold(newState, "Done") {
+			writeJSONError(w, http.StatusConflict, "review_approval_required", "Completion requires human approval of the exact PR review and fresh merged-head evidence through the review control")
+			return
+		}
+		if requiresReplanControl(currentIssue.State, newState) {
+			writeJSONError(w, http.StatusConflict, "replan_required", "Execution and task reopening require the durable replan control so feedback, plan invalidation, and settled-run checks are recorded atomically")
+			return
+		}
 		if errMsg := validateStateTransition(currentIssue.State, newState, currentIssue, updates); errMsg != "" {
 			writeJSONError(w, http.StatusBadRequest, "invalid_transition", errMsg)
+			return
+		}
+		if strings.EqualFold(newState, "In Progress") && s.orchestrator.PlanGate(r.Context(), *currentIssue).Status != "approved" {
+			writeJSONError(w, http.StatusConflict, "plan_approval_required", "In Progress requires explicit approval of the current plan through the plan approval control")
 			return
 		}
 	}
 
 	issue, err := s.orchestrator.UpdateIssue(r.Context(), identifier, updates)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "update_failed", "update failed")
+		switch {
+		case errors.Is(err, orchestrator.ErrReplanRequired):
+			writeJSONError(w, http.StatusConflict, "replan_required", "Execution and task reopening require the durable replan control")
+		case errors.Is(err, orchestrator.ErrPlanApprovalRequired):
+			writeJSONError(w, http.StatusConflict, "plan_approval_required", "In Progress requires explicit approval of the current plan through the plan approval control")
+		case errors.Is(err, orchestrator.ErrReviewApprovalRequired):
+			writeJSONError(w, http.StatusConflict, "review_approval_required", "Completion requires human approval of the exact PR review and fresh merged-head evidence through the review control")
+		default:
+			writeJSONError(w, http.StatusInternalServerError, "update_failed", "update failed")
+		}
 		return
 	}
 
@@ -1083,13 +1126,16 @@ func (s *Server) PatchAgentConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteIssueSession handles DELETE /api/v1/issues/{issue_identifier}/session
-// by stopping the active agent session(s) for the identified issue and resetting
-// the issue state to "Todo".
+// by stopping the active agent session(s) and holding the task in Backlog.
 func (s *Server) DeleteIssueSession(w http.ResponseWriter, r *http.Request) {
 	identifier := chi.URLParam(r, "issue_identifier")
 	provider := r.URL.Query().Get("provider")
 
 	runtime, ok := s.orchestrator.LookupIssue(identifier)
+	if provider != "" && (!ok || runtime.Running == nil || !s.orchestrator.CanStopSession(runtime.IssueID, provider)) {
+		writeJSONError(w, http.StatusConflict, "no_active_session", "no active session for this provider to stop")
+		return
+	}
 	if !ok {
 		issue, err := s.orchestrator.FetchIssueByIdentifier(r.Context(), identifier)
 		if err != nil {
@@ -1101,76 +1147,63 @@ func (s *Server) DeleteIssueSession(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if _, err := s.orchestrator.UpdateIssue(r.Context(), identifier, map[string]any{"state": "Todo"}); err != nil {
-			s.logger.Warn().Err(err).Str("issue_identifier", identifier).Msg("failed to set issue to todo when stopping without active runtime")
+		if _, err := s.orchestrator.StopIssue(r.Context(), identifier); err != nil {
+			s.logger.Warn().Err(err).Str("issue_identifier", identifier).Msg("failed to hold issue after stop without active runtime")
+			writeJSONError(w, http.StatusConflict, "stop_failed", "task could not be safely held after stop")
+			return
 		}
 
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
-	// If provider is specified, stop only that one. Otherwise stop all for this issue.
+	if _, err := s.orchestrator.StopIssue(r.Context(), identifier); err != nil {
+		s.logger.Warn().Err(err).Str("issue_identifier", identifier).Msg("failed to hold issue after stop")
+		writeJSONError(w, http.StatusConflict, "stop_failed", "task could not be safely held after stop")
+		return
+	}
 	if provider != "" {
-		if stopped := s.orchestrator.StopSession(runtime.IssueID, provider); !stopped {
-			writeJSONError(w, http.StatusConflict, "no_active_session", "no active session for this provider to stop")
-			return
-		}
+		// A session may have completed between the preflight and durable hold;
+		// either way the task is safely held and should report success.
+		s.orchestrator.StopSession(runtime.IssueID, provider)
 	} else {
 		s.orchestrator.StopAllSessionsForIssue(runtime.IssueID)
-	}
-
-	if _, err := s.orchestrator.UpdateIssue(r.Context(), identifier, map[string]any{"state": "Todo"}); err != nil {
-		s.logger.Warn().Err(err).Str("issue_identifier", identifier).Msg("failed to set issue to todo after stop")
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
 
 // PostIssueStop handles POST /api/v1/issues/{issue_identifier}/stop by stopping
-// all active sessions and resetting the issue to Backlog with empty feedback.
-// This bypasses normal state transition validation as a special reset operation.
+// active sessions and durably holding the task in Backlog. The explicit stop
+// operation invalidates local plan approval while preserving task and workspace
+// context; it does not delete the worktree or branch.
 func (s *Server) PostIssueStop(w http.ResponseWriter, r *http.Request) {
 	identifier := chi.URLParam(r, "issue_identifier")
+	existing, lookupErr := s.orchestrator.FetchIssueByIdentifier(r.Context(), identifier)
+	if lookupErr != nil {
+		writeJSONError(w, http.StatusInternalServerError, "issue_lookup_failed", "failed to lookup issue")
+		return
+	}
+	if existing == nil {
+		writeJSONError(w, http.StatusNotFound, "issue_not_found", "issue not found")
+		return
+	}
 
-	// Look up issue to get branch/project info for cleanup
-	issueData, _ := s.orchestrator.FetchIssueByIdentifier(r.Context(), identifier)
-
-	// Stop all sessions if the issue has an active runtime
+	// Read runtime identity before the hold, but do not signal cancellation
+	// until the durable Backlog transition and plan invalidation have committed.
 	runtime, ok := s.orchestrator.LookupIssue(identifier)
-	if ok {
-		s.orchestrator.StopAllSessionsForIssue(runtime.IssueID)
-	}
 
-	// Clean up worktree and branch
-	if issueData != nil && issueData.BranchName != "" && issueData.ProjectID != "" {
-		if project, projErr := s.db.GetProjectByID(r.Context(), issueData.ProjectID); projErr == nil && project.RootPath != "" {
-			wtPath := filepath.Join(s.worktreeRoot, issueData.ProjectID, issueData.BranchName)
-			_ = os.RemoveAll(wtPath)
-			pruneCmd := exec.CommandContext(r.Context(), "git", "worktree", "prune")
-			pruneCmd.Dir = project.RootPath
-			_ = pruneCmd.Run()
-			delCmd := exec.CommandContext(r.Context(), "git", "branch", "-D", issueData.BranchName)
-			delCmd.Dir = project.RootPath
-			_ = delCmd.Run()
-			s.logger.Info().Str("branch", issueData.BranchName).Msg("cleaned up worktree on stop & reset")
-		}
-	}
-
-	// Reset state to Backlog and clear feedback, plan, branch, base_sha
-	issue, err := s.orchestrator.UpdateIssue(r.Context(), identifier, map[string]any{
-		"state":       "Backlog",
-		"feedback":    "",
-		"plan":        "",
-		"branch_name": "",
-		"base_sha":    "",
-	})
+	issue, err := s.orchestrator.StopIssue(r.Context(), identifier)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "update_failed", "failed to reset issue")
+		writeJSONError(w, http.StatusConflict, "stop_failed", "task could not be safely held after stop")
 		return
 	}
 	if issue == nil {
 		writeJSONError(w, http.StatusNotFound, "issue_not_found", "issue not found")
 		return
+	}
+	if ok {
+		s.orchestrator.StopAllSessionsForIssue(runtime.IssueID)
 	}
 
 	writeJSON(w, http.StatusOK, issue)
@@ -1313,7 +1346,10 @@ func (s *Server) PostAgentConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.orchestrator.UpdateAgentConfig(body.Commands, body.AgentProvider)
+	if err := s.orchestrator.UpdateAgentConfig(body.Commands, body.AgentProvider); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "retired_provider", err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

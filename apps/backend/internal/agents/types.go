@@ -86,10 +86,13 @@ type TurnRequest struct {
 	Attempt              int
 	Timeout              time.Duration
 	CommandOverride      string
-	AutoApprove          bool
-	ToolExecutor         ToolExecutor
-	ToolSpecs            []map[string]any
-	ResourceSpecs        []map[string]any
+	// PlanOnly requests a read-only planning turn. Runners do not infer safety
+	// from prompt text; the application must select a verified read-only command.
+	PlanOnly      bool
+	AutoApprove   bool
+	ToolExecutor  ToolExecutor
+	ToolSpecs     []map[string]any
+	ResourceSpecs []map[string]any
 	// DeveloperInstructions are scoped to this provider thread, never account settings.
 	DeveloperInstructions string
 	RuntimeTarget         RuntimeTarget

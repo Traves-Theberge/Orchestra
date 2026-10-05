@@ -32,7 +32,7 @@ const DEFAULT_DATA: GraphData = {
         { id: 'store', group: 'ui', label: 'Zustand Store' },
         
         { id: 'claude', group: 'agent', label: 'Claude Code' },
-        { id: 'gemini', group: 'agent', label: 'Gemini CLI' },
+        { id: 'antigravity', group: 'agent', label: 'Antigravity' },
         { id: 'codex', group: 'agent', label: 'Codex Server' },
         { id: 'opencode', group: 'agent', label: 'OpenCode' },
     ],
@@ -48,7 +48,7 @@ const DEFAULT_DATA: GraphData = {
         { source: 'react', target: 'store', value: 3 },
         
         { source: 'orchestrator', target: 'claude', value: 1 },
-        { source: 'orchestrator', target: 'gemini', value: 1 },
+        { source: 'orchestrator', target: 'antigravity', value: 1 },
         { source: 'orchestrator', target: 'codex', value: 1 },
         { source: 'orchestrator', target: 'opencode', value: 1 },
     ]

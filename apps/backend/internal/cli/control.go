@@ -16,10 +16,18 @@ func controlRequest(ctx context.Context, client *http.Client, base *url.URL, tok
 	if c.name == "task assign" {
 		args["expected_state"] = "Backlog"
 	}
+	if c.name == "task approve-plan" {
+		args["operation"] = "approve_plan"
+		args["expected_state"] = "Todo"
+	}
+	if reviewCommand(c.name) {
+		args["operation"] = strings.ReplaceAll(strings.TrimPrefix(c.name, "task "), "-", "_")
+		args["expected_state"] = "Review"
+	}
 	if c.requestID != "" {
 		args["request_id"] = c.requestID
 	}
-	for key, value := range map[string]string{"project_id": c.project, "task_id": c.id, "expected_state": c.expectedState, "title": c.title, "description": c.description, "assignee_id": c.assignee, "provider": c.provider} {
+	for key, value := range map[string]string{"project_id": c.project, "task_id": c.id, "expected_state": c.expectedState, "title": c.title, "description": c.description, "assignee_id": c.assignee, "provider": c.provider, "expected_plan_hash": c.expectedPlanHash, "feedback": c.feedback, "expected_pr_url": c.expectedPRURL, "expected_head_sha": c.expectedHeadSHA, "review_attempt_id": c.reviewAttemptID, "reviewer_agent_id": c.reviewerAgentID} {
 		if value != "" {
 			args[key] = value
 		}

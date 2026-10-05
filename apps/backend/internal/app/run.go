@@ -4,6 +4,8 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
@@ -27,6 +29,7 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/mcp"
 	"github.com/orchestra/orchestra/apps/backend/internal/observability"
 	"github.com/orchestra/orchestra/apps/backend/internal/orchestrator"
+	"github.com/orchestra/orchestra/apps/backend/internal/plangate"
 	"github.com/orchestra/orchestra/apps/backend/internal/prompt"
 	"github.com/orchestra/orchestra/apps/backend/internal/runtime"
 	"github.com/orchestra/orchestra/apps/backend/internal/sessionlogger"
@@ -76,6 +79,10 @@ func Run(logger zerolog.Logger) error {
 	defer warehouseDB.Close()
 
 	orchestratorService := orchestrator.NewService()
+	orchestratorService.SetTrackerWorkerAssigneeIDs(cfg.TrackerWorkerAssigneeIDs)
+	stageContext, cancelStages := context.WithCancel(context.Background())
+	defer cancelStages()
+	orchestratorService.SetStageContext(stageContext)
 	orchestratorService.SetDB(warehouseDB)
 	if err := orchestratorService.RestoreStateFromDB(context.Background()); err != nil {
 		return fmt.Errorf("restore orchestrator state from DB: %w", err)
@@ -219,7 +226,8 @@ func Run(logger zerolog.Logger) error {
 	observeRetainedTerminalWorkspaces(orchestratorService, trackerClient, logger)
 
 	go startGarbageCollector(orchestratorService, warehouseDB, workspaceService, cfg.TelemetryRetentionDays, logger)
-	go startRefreshWorker(orchestratorService, trackerRegistry, warehouseDB, pubsub, logger)
+	localSQLiteClient := trackersqlite.NewClient(warehouseDB, cfg.TrackerWorkerAssigneeIDs)
+	go startRefreshWorker(orchestratorService, trackerRegistry, localSQLiteClient, warehouseDB, pubsub, logger)
 	go startDailyMetricsRollup(warehouseDB, logger)
 	go telemetry.StartWatcher(context.Background(), warehouseDB, cfg.ProjectRoots, telemetry.Options{
 		Providers:       cfg.TelemetryProviders,
@@ -256,6 +264,7 @@ func Run(logger zerolog.Logger) error {
 		signal.Notify(sig, syscall.SIGTERM, syscall.SIGINT)
 		<-sig
 		logger.Info().Msg("shutting down orchestrad")
+		cancelStages()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = server.Shutdown(ctx)
@@ -496,6 +505,28 @@ func processExecutionTick(
 	activeProviderName := string(activeProvider)
 	selectionCause := "provider_not_configured"
 	requestedOptions := dispatchRequestedOptions(entry)
+	planOnly := strings.EqualFold(strings.TrimSpace(entry.State), "Todo")
+	worktreeHooks := workspaceHooks
+	if planOnly {
+		// Planning can prepare a checkout, but configured shell hooks can mutate it before human approval.
+		worktreeHooks = workspace.Hooks{}
+	}
+	commandOverride := ""
+	stageCleanup := func() {}
+	if planOnly && selectionErr == nil {
+		var supported bool
+		commandOverride, stageCleanup, supported = registry.PrepareReadOnlyStageCommandFor(activeProvider)
+		if !supported || agents.NormalizeRuntimeTarget(entry.RuntimeTarget) != agents.RuntimeLocal {
+			stageCleanup()
+			stageCleanup = func() {}
+			selectionErr = fmt.Errorf("safe read-only planning is unavailable for provider %s and runtime %s", activeProvider, agents.NormalizeRuntimeTarget(entry.RuntimeTarget))
+			selectionCause = "readonly_planning_unavailable"
+		} else {
+			defer stageCleanup()
+			requestedOptions.PlanOnly = true
+			requestedOptions.CommandOverride = commandOverride
+		}
+	}
 	if selectionErr == nil {
 		selectionErr = registry.ValidateTurnOptions(activeProvider, requestedOptions)
 		selectionCause = "requested_config_unsupported"
@@ -581,7 +612,75 @@ func processExecutionTick(
 	if existingIssue, lookupErr := service.FetchIssueByID(context.Background(), entry.IssueID); lookupErr == nil && existingIssue.BranchName != "" {
 		branchName = existingIssue.BranchName
 	}
-	publishLifecycleEvent(pubsub, "HOOK_STARTED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create"})
+	deferredAfterCreatePending := ""
+	if planOnly {
+		plannedPath := workspaceService.WorktreePath(project.ID, branchName)
+		plannedInfo, readErr := os.Stat(plannedPath)
+		worktreeExists, statErr := classifyPlanningCheckoutStat(plannedInfo, readErr)
+		if statErr != nil {
+			logger.Error().Err(statErr).Str("issue_id", entry.IssueID).Str("worktree", plannedPath).Msg("could not inspect planning checkout")
+			service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, entry.TurnCount+1, service.NextRetryDue(entry.IssueID, entry.TurnCount+1), statErr)
+			publishSnapshot(pubsub, service)
+			return
+		}
+		if !worktreeExists {
+			identityPath := planningAfterCreateIdentityPath(workspaceService.Root, project.ID, entry.IssueID, branchName)
+			if mkdirErr := os.MkdirAll(filepath.Dir(identityPath), 0o700); mkdirErr != nil {
+				logger.Error().Err(mkdirErr).Str("issue_id", entry.IssueID).Msg("could not record planning hook configuration")
+				service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, entry.TurnCount+1, service.NextRetryDue(entry.IssueID, entry.TurnCount+1), mkdirErr)
+				publishSnapshot(pubsub, service)
+				return
+			}
+			if identityErr := recordPlanningAfterCreateIdentity(identityPath, workspaceHooks.AfterCreate); identityErr != nil {
+				logger.Error().Err(identityErr).Str("issue_id", entry.IssueID).Msg("could not record planning hook configuration")
+				service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, entry.TurnCount+1, service.NextRetryDue(entry.IssueID, entry.TurnCount+1), identityErr)
+				publishSnapshot(pubsub, service)
+				return
+			}
+			if workspaceHooks.AfterCreate != "" {
+				pendingPath, _, _, _ := afterCreateReceiptPaths(workspaceService.Root, project.ID, branchName, workspaceHooks.AfterCreate)
+				if mkdirErr := os.MkdirAll(filepath.Dir(pendingPath), 0o700); mkdirErr != nil {
+					logger.Error().Err(mkdirErr).Str("issue_id", entry.IssueID).Msg("could not record deferred after_create hook")
+					service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, entry.TurnCount+1, service.NextRetryDue(entry.IssueID, entry.TurnCount+1), mkdirErr)
+					publishSnapshot(pubsub, service)
+					return
+				}
+				receipt, receiptErr := os.OpenFile(pendingPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+				if receiptErr != nil && !os.IsExist(receiptErr) {
+					logger.Error().Err(receiptErr).Str("issue_id", entry.IssueID).Msg("could not record deferred after_create hook")
+					service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, entry.TurnCount+1, service.NextRetryDue(entry.IssueID, entry.TurnCount+1), receiptErr)
+					publishSnapshot(pubsub, service)
+					return
+				}
+				if receiptErr == nil {
+					_, _ = fmt.Fprintf(receipt, "project_id=%s\nbranch=%s\n", project.ID, branchName)
+					_ = receipt.Close()
+				}
+				deferredAfterCreatePending = pendingPath
+			}
+		}
+	}
+	if !planOnly {
+		identityPath := planningAfterCreateIdentityPath(workspaceService.Root, project.ID, entry.IssueID, branchName)
+		if plannedIdentity, identityErr := os.ReadFile(identityPath); identityErr == nil {
+			if string(plannedIdentity) != afterCreateHookIdentity(workspaceHooks.AfterCreate) {
+				blockErr := fmt.Errorf("after_create hook configuration changed after planning; inspect the planned setup receipt before retrying")
+				publishLifecycleEvent(pubsub, "HOOK_FAILED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create", "error": blockErr.Error()})
+				service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, entry.TurnCount+1, service.NextRetryDue(entry.IssueID, entry.TurnCount+1), blockErr)
+				publishSnapshot(pubsub, service)
+				return
+			}
+		} else if !os.IsNotExist(identityErr) {
+			blockErr := fmt.Errorf("after_create planning receipt could not be read; execution is held for inspection: %w", identityErr)
+			publishLifecycleEvent(pubsub, "HOOK_FAILED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create", "error": blockErr.Error()})
+			service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, entry.TurnCount+1, service.NextRetryDue(entry.IssueID, entry.TurnCount+1), blockErr)
+			publishSnapshot(pubsub, service)
+			return
+		}
+	}
+	if !planOnly {
+		publishLifecycleEvent(pubsub, "HOOK_STARTED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create"})
+	}
 
 	// Clean up stale worktree refs and branches before creating
 	pruneCmd := exec.CommandContext(context.Background(), "git", "worktree", "prune")
@@ -590,7 +689,7 @@ func processExecutionTick(
 
 	var wtPath string
 	var baseSHA string
-	wtPath, baseSHA, created, err = workspaceService.EnsureWorktree(project.RootPath, project.ID, branchName, workspaceHooks)
+	wtPath, baseSHA, created, err = workspaceService.EnsureWorktree(project.RootPath, project.ID, branchName, worktreeHooks)
 	if err == nil {
 		workspacePath = wtPath
 		service.SetWorktreePath(entry.IssueID, wtPath)
@@ -603,7 +702,9 @@ func processExecutionTick(
 		}
 	}
 	if err != nil {
-		publishLifecycleEvent(pubsub, "HOOK_FAILED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create", "error": err.Error(), "output": createRes.Output})
+		if !planOnly {
+			publishLifecycleEvent(pubsub, "HOOK_FAILED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create", "error": err.Error(), "output": createRes.Output})
+		}
 		attempt := entry.TurnCount + 1
 		dueAt := service.NextRetryDue(entry.IssueID, attempt)
 		publishLifecycleEvent(pubsub, "RUN_FAILED", map[string]any{
@@ -629,26 +730,76 @@ func processExecutionTick(
 		publishSnapshot(pubsub, service)
 		return
 	}
-	if created {
-		publishLifecycleEvent(pubsub, "HOOK_COMPLETED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create", "output": createRes.Output})
-	} else {
-		// Even if not created, we mark it as completed since we "ensured" it exists
-		publishLifecycleEvent(pubsub, "HOOK_COMPLETED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create", "reused": true})
+	if !planOnly {
+		if created {
+			publishLifecycleEvent(pubsub, "HOOK_COMPLETED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create", "output": createRes.Output})
+		} else if workspaceHooks.AfterCreate != "" && deferredAfterCreatePending == "" {
+			pendingPath, claimedPath, unknownPath, completedPath := afterCreateReceiptPaths(workspaceService.Root, project.ID, branchName, workspaceHooks.AfterCreate)
+			issue, issueErr := service.FetchIssueByID(context.Background(), entry.IssueID)
+			if issueErr == nil && issue != nil && service.PlanGate(context.Background(), *issue).Status == "approved" {
+				staleErr := rejectStaleAfterCreateReceipt(workspaceService.Root, project.ID, branchName, workspaceHooks.AfterCreate)
+				if staleErr != nil {
+					blockErr := fmt.Errorf("after_create hook configuration changed after planning; inspect deferred setup receipts before retrying: %w", staleErr)
+					publishLifecycleEvent(pubsub, "HOOK_FAILED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create", "error": blockErr.Error()})
+					service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, entry.TurnCount+1, service.NextRetryDue(entry.IssueID, entry.TurnCount+1), blockErr)
+					publishSnapshot(pubsub, service)
+					return
+				}
+				shouldRun, claimErr := claimAfterCreateReceipt(pendingPath, claimedPath, unknownPath, completedPath)
+				if claimErr != nil {
+					blockErr := fmt.Errorf("after_create hook outcome is unknown; inspect receipt %s before retrying: %w", claimedPath, claimErr)
+					publishLifecycleEvent(pubsub, "HOOK_FAILED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create", "error": blockErr.Error()})
+					service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, entry.TurnCount+1, service.NextRetryDue(entry.IssueID, entry.TurnCount+1), blockErr)
+					publishSnapshot(pubsub, service)
+					return
+				}
+				if shouldRun {
+					publishLifecycleEvent(pubsub, "HOOK_STARTED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create"})
+					res, hookErr := workspace.RunHook("after_create", workspaceHooks.AfterCreate, workspacePath, 60*time.Second)
+					if hookErr != nil {
+						_ = os.Rename(claimedPath, unknownPath)
+						blockErr := fmt.Errorf("after_create hook failed with an uncertain workspace outcome: %w", hookErr)
+						publishLifecycleEvent(pubsub, "HOOK_FAILED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create", "error": blockErr.Error(), "output": res.Output})
+						service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, entry.TurnCount+1, service.NextRetryDue(entry.IssueID, entry.TurnCount+1), blockErr)
+						publishSnapshot(pubsub, service)
+						return
+					}
+					if err := os.Rename(claimedPath, completedPath); err != nil {
+						blockErr := fmt.Errorf("after_create completed but its receipt could not be finalized; inspect receipt %s before retrying: %w", claimedPath, err)
+						publishLifecycleEvent(pubsub, "HOOK_FAILED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create", "error": blockErr.Error(), "output": res.Output})
+						service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, entry.TurnCount+1, service.NextRetryDue(entry.IssueID, entry.TurnCount+1), blockErr)
+						publishSnapshot(pubsub, service)
+						return
+					}
+					publishLifecycleEvent(pubsub, "HOOK_COMPLETED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create", "output": res.Output})
+				} else {
+					publishLifecycleEvent(pubsub, "HOOK_COMPLETED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create", "reused": true})
+				}
+			} else {
+				// Existing worktrees without an approved planning receipt already passed their setup lifecycle.
+				publishLifecycleEvent(pubsub, "HOOK_COMPLETED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create", "reused": true})
+			}
+		} else {
+			publishLifecycleEvent(pubsub, "HOOK_COMPLETED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create", "reused": true})
+		}
 	}
 	runAfterHook := func() {
+		if planOnly {
+			return
+		}
 		publishLifecycleEvent(pubsub, "HOOK_STARTED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_run"})
-		if res, err := workspaceService.RunAfterRunHook(workspacePath, workspaceHooks); err != nil {
+		if res, err := workspaceService.RunAfterRunHook(workspacePath, worktreeHooks); err != nil {
 			publishLifecycleEvent(pubsub, "HOOK_FAILED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_run", "error": err.Error(), "output": res.Output})
 		} else {
 			publishLifecycleEvent(pubsub, "HOOK_COMPLETED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_run", "output": res.Output})
 		}
 	}
 
-	if entry.TurnCount == 0 {
+	if entry.TurnCount == 0 && !planOnly {
 		// Branch creation and base SHA recording are handled by EnsureWorktree above.
 
 		publishLifecycleEvent(pubsub, "HOOK_STARTED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "before_run"})
-		if res, err := workspaceService.RunBeforeRunHook(workspacePath, workspaceHooks); err != nil {
+		if res, err := workspaceService.RunBeforeRunHook(workspacePath, worktreeHooks); err != nil {
 			publishLifecycleEvent(pubsub, "HOOK_FAILED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "before_run", "error": err.Error(), "output": res.Output})
 			runAfterHook()
 			attempt := entry.TurnCount + 1
@@ -712,7 +863,7 @@ func processExecutionTick(
 		}
 	}
 
-	runCtx, cancel := context.WithCancel(context.Background())
+	runCtx, cancel := context.WithCancel(service.StageContext())
 	defer cancel()
 	service.RegisterCancel(entry.IssueID, activeProviderName, cancel)
 	defer service.DeregisterCancel(entry.IssueID, activeProviderName)
@@ -732,6 +883,24 @@ func processExecutionTick(
 		mcpResources, _ := mcpReg.ListResources(runCtx)
 		allResourceSpecs = append(allResourceSpecs, mcpResources...)
 	}
+	if planOnly {
+		// A read-only plan turn cannot call state-changing native or MCP tools.
+		allToolSpecs = nil
+		allResourceSpecs = nil
+	}
+	expectedPlanFingerprint := ""
+	if planOnly {
+		planningIssue, issueErr := service.FetchIssueByID(context.Background(), entry.IssueID)
+		if issueErr != nil || planningIssue == nil || planningIssue.ProjectID != entry.ProjectID {
+			planErr := fmt.Errorf("exact task context unavailable for read-only planning")
+			dueAt := service.NextRetryDue(entry.IssueID, attempt)
+			service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, attempt, dueAt, planErr)
+			logger.Error().Err(planErr).Str("issue_id", entry.IssueID).Msg("planning rejected before provider execution")
+			publishSnapshot(pubsub, service)
+			return
+		}
+		expectedPlanFingerprint = plangate.Fingerprint(*planningIssue)
+	}
 
 	// Tool executor that first tries MCP routing, then falls back to the
 	// tracker / linear executor. Context flows from the active turn so a
@@ -742,6 +911,9 @@ func processExecutionTick(
 		}
 		return nil, fmt.Errorf("MCP registry unavailable")
 	}, toolExecutor)
+	if planOnly {
+		mcpAwareExecutor = nil
+	}
 
 	sessionID := fmt.Sprintf("%s-%d", entry.IssueIdentifier, time.Now().UnixNano())
 	_ = logfile.ResetLatestLog(workspaceRoot, entry.IssueIdentifier, sessionID)
@@ -771,7 +943,9 @@ func processExecutionTick(
 		IssueIdentifier:   entry.IssueIdentifier,
 		Attempt:           int(attempt),
 		Timeout:           30 * time.Minute,
-		AutoApprove:       true,
+		CommandOverride:   commandOverride,
+		PlanOnly:          planOnly,
+		AutoApprove:       !planOnly,
 		ToolExecutor:      mcpAwareExecutor,
 		ToolSpecs:         allToolSpecs,
 		ResourceSpecs:     allResourceSpecs,
@@ -783,7 +957,7 @@ func processExecutionTick(
 
 		// Live plan update: if this event contains checkboxes with [x] marks,
 		// update the issue's plan field so the UI reflects progress in real-time.
-		if msg := strings.TrimSpace(event.Message); msg != "" && strings.Contains(msg, "- [x]") {
+		if msg := strings.TrimSpace(event.Message); !planOnly && msg != "" && strings.Contains(msg, "- [x]") {
 			checkboxCount := 0
 			for _, line := range strings.Split(msg, "\n") {
 				t := strings.TrimSpace(line)
@@ -838,6 +1012,28 @@ func processExecutionTick(
 				Msg(event.Message)
 		}
 	})
+	// A stop can race with a provider that returns success after cancellation.
+	// Settle the claimed runtime entry, but never let that late result proceed to
+	// plan persistence, task advancement, or Git side effects.
+	discardLateTurn := func(reason string) {
+		service.RecordRunSuccess(entry.IssueID, activeProviderName)
+		if sessionLog != nil {
+			_ = sessionLog.CloseSession(sessionID, &sessionlogger.Usage{
+				InputTokens:  result.Usage.InputTokens,
+				OutputTokens: result.Usage.OutputTokens,
+				TotalTokens:  result.Usage.TotalTokens,
+			})
+		}
+		publishLifecycleEvent(pubsub, "RUN_DISCARDED", map[string]any{
+			"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier,
+			"provider": activeProviderName, "reason": reason,
+		})
+		publishSnapshot(pubsub, service)
+	}
+	if runCtx.Err() != nil {
+		discardLateTurn("run_context_cancelled")
+		return
+	}
 
 	if runErr != nil {
 		runAfterHook()
@@ -863,6 +1059,15 @@ func processExecutionTick(
 		service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, attempt, dueAt, runErr)
 		logger.Error().Err(runErr).Str("issue_id", entry.IssueID).Str("provider", activeProviderName).Msg("agent run failed")
 		publishSnapshot(pubsub, service)
+		return
+	}
+
+	// The admitted stage is immutable for this turn. A stop/reset or other
+	// transition while the provider was running invalidates its result even when
+	// the subprocess returned success.
+	currentIssue, currentIssueErr := service.FetchIssueByID(context.Background(), entry.IssueID)
+	if currentIssueErr != nil || currentIssue == nil || currentIssue.ProjectID != entry.ProjectID || !strings.EqualFold(strings.TrimSpace(currentIssue.State), strings.TrimSpace(entry.State)) {
+		discardLateTurn("task_stage_changed_during_run")
 		return
 	}
 
@@ -900,6 +1105,15 @@ func processExecutionTick(
 		publishSnapshot(pubsub, service)
 		return
 	}
+	if runCtx.Err() != nil {
+		discardLateTurn("run_context_cancelled_after_continuation_check")
+		return
+	}
+	continuedIssue, continuedIssueErr := service.FetchIssueByID(context.Background(), entry.IssueID)
+	if continuedIssueErr != nil || continuedIssue == nil || continuedIssue.ProjectID != entry.ProjectID || !strings.EqualFold(strings.TrimSpace(continuedIssue.State), strings.TrimSpace(entry.State)) {
+		discardLateTurn("task_stage_changed_after_continuation_check")
+		return
+	}
 
 	if continueTurn {
 		service.PrepareNextTurn(entry.IssueID, activeProviderName, attempt)
@@ -925,12 +1139,42 @@ func processExecutionTick(
 	}
 
 	service.RecordRunSuccess(entry.IssueID, activeProviderName)
+	// Recheck immediately before finalization to catch a stop that landed after
+	// the provider-return check. Planning is determined by the admitted turn,
+	// never inferred from a later task state.
+	if runCtx.Err() != nil {
+		publishLifecycleEvent(pubsub, "RUN_DISCARDED", map[string]any{
+			"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier,
+			"provider": activeProviderName, "reason": "run_context_cancelled_before_finalization",
+		})
+		publishSnapshot(pubsub, service)
+		return
+	}
+	liveIssue, liveErr := service.FetchIssueByID(context.Background(), entry.IssueID)
+	if liveErr != nil || liveIssue == nil || liveIssue.ProjectID != entry.ProjectID || !strings.EqualFold(strings.TrimSpace(liveIssue.State), strings.TrimSpace(entry.State)) {
+		logger.Warn().Str("issue_id", entry.IssueID).Str("identifier", entry.IssueIdentifier).Msg("task stage changed or task disappeared after run — skipping post-run actions")
+		publishLifecycleEvent(pubsub, "RUN_DISCARDED", map[string]any{
+			"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier,
+			"provider": activeProviderName, "reason": "task_stage_changed_before_finalization",
+		})
+		publishSnapshot(pubsub, service)
+		return
+	}
+	planningResult := planOnly
 
-	// Auto-commit agent work on the task branch
-	if workspacePath != "" {
+	// Auto-commit agent work on the task branch after execution turns only.
+	if !planningResult && workspacePath != "" {
 		commitMsg := fmt.Sprintf("feat(%s): %s\n\nImplemented by %s agent via Orchestra",
 			entry.IssueIdentifier, entry.Title, activeProviderName)
-		if commitErr := gitutil.Commit(context.Background(), workspacePath, commitMsg); commitErr != nil {
+		if runCtx.Err() != nil {
+			publishLifecycleEvent(pubsub, "RUN_DISCARDED", map[string]any{
+				"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier,
+				"provider": activeProviderName, "reason": "run_context_cancelled_before_commit",
+			})
+			publishSnapshot(pubsub, service)
+			return
+		}
+		if commitErr := gitutil.Commit(runCtx, workspacePath, commitMsg); commitErr != nil {
 			logger.Warn().Err(commitErr).Str("issue_id", entry.IssueID).Msg("auto-commit failed (may have no changes)")
 		} else {
 			logger.Info().Str("issue_id", entry.IssueID).Msg("auto-committed agent work")
@@ -938,10 +1182,20 @@ func processExecutionTick(
 	}
 
 	// Push the task branch to remote
-	if pushErr := gitutil.Push(context.Background(), workspacePath, "origin", branchName); pushErr != nil {
-		logger.Warn().Err(pushErr).Msg("auto-push failed (remote may not be configured)")
-	} else {
-		logger.Info().Str("branch", branchName).Msg("auto-pushed task branch")
+	if !planningResult {
+		if runCtx.Err() != nil {
+			publishLifecycleEvent(pubsub, "RUN_DISCARDED", map[string]any{
+				"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier,
+				"provider": activeProviderName, "reason": "run_context_cancelled_before_push",
+			})
+			publishSnapshot(pubsub, service)
+			return
+		}
+		if pushErr := gitutil.Push(runCtx, workspacePath, "origin", branchName); pushErr != nil {
+			logger.Warn().Err(pushErr).Msg("auto-push failed (remote may not be configured)")
+		} else {
+			logger.Info().Str("branch", branchName).Msg("auto-pushed task branch")
+		}
 	}
 
 	// Close the agent's terminal session now that it's done
@@ -951,14 +1205,27 @@ func processExecutionTick(
 		logger.Info().Str("terminal_id", terminalID).Msg("closed agent terminal session")
 	}
 
-	// Auto-advance on successful completion — use live DB state to avoid stale dispatch entry.
-	// If the issue was deleted while the agent was running, bail out silently.
-	liveIssue, liveErr := service.FetchIssueByID(context.Background(), entry.IssueID)
-	if liveErr != nil {
-		logger.Warn().Str("issue_id", entry.IssueID).Str("identifier", entry.IssueIdentifier).Msg("issue no longer exists after run — skipping post-run actions")
+	if runCtx.Err() != nil {
+		publishLifecycleEvent(pubsub, "RUN_DISCARDED", map[string]any{
+			"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier,
+			"provider": activeProviderName, "reason": "run_context_cancelled_before_task_finalization",
+		})
+		publishSnapshot(pubsub, service)
 		return
 	}
-	currentState := liveIssue.State
+	latestIssue, latestIssueErr := service.FetchIssueByID(context.Background(), entry.IssueID)
+	if latestIssueErr != nil || latestIssue == nil || latestIssue.ProjectID != entry.ProjectID || !strings.EqualFold(strings.TrimSpace(latestIssue.State), strings.TrimSpace(entry.State)) {
+		publishLifecycleEvent(pubsub, "RUN_DISCARDED", map[string]any{
+			"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier,
+			"provider": activeProviderName, "reason": "task_stage_changed_before_task_finalization",
+		})
+		publishSnapshot(pubsub, service)
+		return
+	}
+	liveIssue = latestIssue
+
+	// The admitted stage decides whether this result is a plan or execution.
+	currentState := entry.State
 	if strings.EqualFold(currentState, "Todo") {
 		// Extract the plan from the agent's output and store it on the issue
 		// so the execution phase can include it in the prompt.
@@ -969,16 +1236,12 @@ func processExecutionTick(
 			time.Sleep(500 * time.Millisecond)
 			plan = extractOriginalPlan(warehouseDB, entry.IssueID)
 		}
-		updateFields := map[string]any{"state": "In Progress"}
-		if plan != "" {
-			updateFields["plan"] = plan
-			logger.Info().Str("issue_id", entry.IssueID).Int("plan_length", len(plan)).Msg("extracted plan from planning phase")
+		if err := service.RecordPlanResult(runCtx, entry.ProjectID, entry.IssueID, plan, expectedPlanFingerprint); err != nil {
+			logger.Error().Err(err).Str("issue_id", entry.IssueID).Msg("failed to persist plan gate result")
+		} else if plan != "" {
+			logger.Info().Str("issue_id", entry.IssueID).Int("plan_length", len(plan)).Msg("plan is ready for human approval; task remains in Todo")
 		} else {
-			logger.Warn().Str("issue_id", entry.IssueID).Msg("no plan found — agent may not have output checkboxes")
-		}
-		logger.Info().Str("issue_id", entry.IssueID).Msg("planning complete; auto-advancing to In Progress")
-		if _, err := service.UpdateIssue(context.Background(), entry.IssueIdentifier, updateFields); err != nil {
-			logger.Error().Err(err).Str("issue_id", entry.IssueID).Msg("FAILED to auto-advance to In Progress")
+			logger.Warn().Str("issue_id", entry.IssueID).Msg("planning produced no plan; task remains in Todo pending explicit replan")
 		}
 	} else if strings.EqualFold(currentState, "In Progress") {
 		// Extract updated plan with checked-off items from the execution output.
@@ -987,15 +1250,6 @@ func processExecutionTick(
 			time.Sleep(500 * time.Millisecond)
 			updatedPlan = extractOriginalPlan(warehouseDB, entry.IssueID)
 		}
-		// If the extracted plan has no checked items, the agent didn't restate
-		// the plan with [x] marks. Since the run completed successfully, mark
-		// all checkboxes as done as a fallback.
-		if updatedPlan != "" && !strings.Contains(updatedPlan, "- [x]") && !strings.Contains(updatedPlan, "- [X]") {
-			updatedPlan = strings.ReplaceAll(updatedPlan, "- [ ]", "- [x]")
-			updatedPlan = strings.ReplaceAll(updatedPlan, "* [ ]", "* [x]")
-			logger.Info().Str("issue_id", entry.IssueID).Msg("auto-checked plan items — agent completed without restating checkboxes")
-		}
-
 		// Gate: if the plan still has unchecked items, don't advance to Review.
 		// Save progress and stay in In Progress so the orchestrator dispatches
 		// another turn to finish the remaining steps.
@@ -1003,7 +1257,7 @@ func processExecutionTick(
 		if hasUnchecked && entry.TurnCount < 20 {
 			logger.Info().Str("issue_id", entry.IssueID).Int64("turn", entry.TurnCount).Msg("plan has unchecked items — staying in In Progress for another turn")
 			if updatedPlan != "" {
-				if _, err := service.UpdateIssue(context.Background(), entry.IssueIdentifier, map[string]any{"plan": updatedPlan}); err != nil {
+				if _, err := service.UpdateIssue(runCtx, entry.IssueIdentifier, map[string]any{"plan": updatedPlan}); err != nil {
 					logger.Warn().Err(err).Msg("failed to save partial plan progress")
 				}
 			}
@@ -1017,7 +1271,15 @@ func processExecutionTick(
 			logger.Info().Str("issue_id", entry.IssueID).Int("plan_length", len(updatedPlan)).Msg("updated plan with execution progress")
 		}
 		logger.Info().Str("issue_id", entry.IssueID).Msg("execution complete; auto-advancing to Review")
-		if _, err := service.UpdateIssue(context.Background(), entry.IssueIdentifier, updateFields); err != nil {
+		if runCtx.Err() != nil {
+			publishLifecycleEvent(pubsub, "RUN_DISCARDED", map[string]any{
+				"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier,
+				"provider": activeProviderName, "reason": "run_context_cancelled_before_state_update",
+			})
+			publishSnapshot(pubsub, service)
+			return
+		}
+		if _, err := service.UpdateIssue(runCtx, entry.IssueIdentifier, updateFields); err != nil {
 			logger.Error().Err(err).Str("issue_id", entry.IssueID).Msg("FAILED to auto-advance to Review")
 		}
 
@@ -1027,7 +1289,7 @@ func processExecutionTick(
 			if branchName == "" {
 				branchName = strings.ToLower(strings.ReplaceAll(entry.IssueIdentifier, " ", "-"))
 			}
-			pushCmd := exec.CommandContext(context.Background(), "git", "push", "--force-with-lease", "-u", "origin", branchName)
+			pushCmd := exec.CommandContext(runCtx, "git", "push", "--force-with-lease", "-u", "origin", branchName)
 			pushCmd.Dir = workspacePath
 			if pushOut, pushErr := pushCmd.CombinedOutput(); pushErr != nil {
 				logger.Warn().Err(pushErr).Str("output", string(pushOut)).Str("branch", branchName).Msg("failed to push branch after feedback cycle")
@@ -1149,6 +1411,137 @@ func processExecutionTick(
 
 	logger.Info().Str("issue_id", entry.IssueID).Str("session_id", result.SessionID).Msg("agent run completed — issue moved to Review")
 	publishSnapshot(pubsub, service)
+}
+
+// afterCreateReceiptPaths stores deferred setup state beside worktrees rather
+// than inside the tracked checkout. The hook text is part of the identity so a
+// deliberate hook change has its own lifecycle receipt.
+func afterCreateReceiptPaths(workspaceRoot, projectID, branchName, hook string) (pending, claimed, unknown, completed string) {
+	branchIdentity := sha256.Sum256([]byte(projectID + "\x00" + branchName))
+	hookIdentity := sha256.Sum256([]byte(hook))
+	base := filepath.Join(workspaceRoot, ".orchestra-hook-receipts", projectID, hex.EncodeToString(branchIdentity[:]), hex.EncodeToString(hookIdentity[:]))
+	return base + ".pending", base + ".claimed", base + ".unknown", base + ".completed"
+}
+
+func classifyPlanningCheckoutStat(info os.FileInfo, statErr error) (bool, error) {
+	if statErr != nil {
+		if os.IsNotExist(statErr) {
+			return false, nil
+		}
+		return false, statErr
+	}
+	if info == nil || !info.IsDir() {
+		return false, fmt.Errorf("planning checkout path exists but is not a directory")
+	}
+	return true, nil
+}
+
+func planningAfterCreateIdentityPath(workspaceRoot, projectID, taskID, branchName string) string {
+	identity := sha256.Sum256([]byte(projectID + "\x00" + taskID + "\x00" + branchName))
+	return filepath.Join(workspaceRoot, ".orchestra-hook-receipts", projectID, hex.EncodeToString(identity[:]), "planned-after-create")
+}
+
+func afterCreateHookIdentity(hook string) string {
+	identity := sha256.Sum256([]byte(hook))
+	return hex.EncodeToString(identity[:])
+}
+
+func recordPlanningAfterCreateIdentity(path, hook string) error {
+	expected := afterCreateHookIdentity(hook)
+	receipt, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err == nil {
+		if _, writeErr := receipt.WriteString(expected); writeErr != nil {
+			_ = receipt.Close()
+			return writeErr
+		}
+		return receipt.Close()
+	}
+	if !os.IsExist(err) {
+		return err
+	}
+	prior, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if string(prior) != expected {
+		return fmt.Errorf("existing planning hook identity differs; unresolved workspace setup requires inspection")
+	}
+	return nil
+}
+
+func rejectStaleAfterCreateReceipt(workspaceRoot, projectID, branchName, hook string) error {
+	pending, claimed, unknown, completed := afterCreateReceiptPaths(workspaceRoot, projectID, branchName, hook)
+	current := map[string]bool{pending: true, claimed: true, unknown: true, completed: true}
+	entries, err := os.ReadDir(filepath.Dir(pending))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		path := filepath.Join(filepath.Dir(pending), entry.Name())
+		if current[path] {
+			continue
+		}
+		if strings.HasSuffix(entry.Name(), ".pending") || strings.HasSuffix(entry.Name(), ".claimed") || strings.HasSuffix(entry.Name(), ".unknown") {
+			return fmt.Errorf("unresolved setup receipt exists for a different hook command: %s", path)
+		}
+	}
+	return nil
+}
+
+// claimAfterCreateReceipt gives one execution the right to run deferred setup.
+// A claimed or unknown receipt blocks retries because the shell effect may have
+// started before the previous process stopped.
+func claimAfterCreateReceipt(pending, claimed, unknown, completed string) (bool, error) {
+	if _, err := os.Stat(completed); err == nil {
+		return false, nil
+	} else if !os.IsNotExist(err) {
+		return false, err
+	}
+	for _, unresolved := range []string{claimed, unknown} {
+		if _, err := os.Stat(unresolved); err == nil {
+			return false, fmt.Errorf("unresolved receipt exists: %s", unresolved)
+		} else if !os.IsNotExist(err) {
+			return false, err
+		}
+	}
+	if _, err := os.Stat(pending); err != nil {
+		if !os.IsNotExist(err) {
+			return false, err
+		}
+		// Recheck after observing no pending receipt: another execution may
+		// have claimed it between the initial status checks and this point.
+		for _, unresolved := range []string{claimed, unknown} {
+			if _, checkErr := os.Stat(unresolved); checkErr == nil {
+				return false, fmt.Errorf("unresolved receipt exists: %s", unresolved)
+			} else if !os.IsNotExist(checkErr) {
+				return false, checkErr
+			}
+		}
+		if _, checkErr := os.Stat(completed); checkErr == nil {
+			return false, nil
+		} else if !os.IsNotExist(checkErr) {
+			return false, checkErr
+		}
+		return false, nil
+	}
+	claimFile, err := os.OpenFile(claimed, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return false, fmt.Errorf("could not acquire setup receipt claim: %w", err)
+	}
+	if _, err := claimFile.WriteString("claimed\n"); err != nil {
+		_ = claimFile.Close()
+		return false, fmt.Errorf("could not persist setup receipt claim: %w", err)
+	}
+	if err := claimFile.Close(); err != nil {
+		return false, fmt.Errorf("could not close setup receipt claim: %w", err)
+	}
+	if err := os.Remove(pending); err != nil {
+		return false, fmt.Errorf("claimed setup receipt but could not consume pending receipt: %w", err)
+	}
+	return true, nil
 }
 
 // buildExecutionPrompt constructs a fallback prompt for the agent when the
@@ -1402,6 +1795,7 @@ func pruneAllWorktrees(warehouseDB *db.DB, workspaceService workspace.Service, l
 func startRefreshWorker(
 	service *orchestrator.Service,
 	registry *trackerregistry.Registry,
+	localSQLiteClient tracker.Client,
 	warehouseDB *db.DB,
 	pubsub *observability.PubSub,
 	logger zerolog.Logger,
@@ -1430,10 +1824,13 @@ func startRefreshWorker(
 		} else {
 			ranAtLeastOne := false
 			for _, proj := range projects {
-				if proj.IssueSourceType == "" {
-					continue // no external source; stall reconciliation runs via nil path below
+				var client tracker.Client
+				var clientErr error
+				if proj.IssueSourceType == "" && proj.TrackerConfigID == "" {
+					client = projectCandidateClient{Client: localSQLiteClient, projectID: proj.ID}
+				} else {
+					client, clientErr = registry.GetForProjectDirect(proj)
 				}
-				client, clientErr := registry.GetForProjectDirect(proj)
 				if clientErr != nil || client == nil {
 					if clientErr != nil {
 						logger.Warn().Err(clientErr).Str("project_id", proj.ID).Msg("refresh worker: failed to build tracker client")
@@ -1446,7 +1843,7 @@ func startRefreshWorker(
 					refreshErr = err
 				}
 			}
-			// Ensure stall reconciliation + retry releases run even when no project has an external source
+			// Ensure stall reconciliation + retry releases run when there are no projects.
 			if !ranAtLeastOne {
 				refreshErr = service.PerformRefreshForClient(ctx, nil)
 			}
@@ -1469,6 +1866,38 @@ func startRefreshWorker(
 			}
 		}
 	}
+}
+
+// projectCandidateClient exposes local SQLite candidates only for the exact
+// source-empty project being refreshed. Local tasks must not leak into hosted
+// project queues merely because they share the warehouse database.
+type projectCandidateClient struct {
+	tracker.Client
+	projectID string
+}
+
+func (c projectCandidateClient) FetchCandidateIssues(ctx context.Context, states []string) ([]tracker.Issue, error) {
+	if c.Client == nil || strings.TrimSpace(c.projectID) == "" {
+		return nil, fmt.Errorf("local candidate refresh requires exact project identity")
+	}
+	return c.Client.FetchIssues(ctx, tracker.IssueFilter{States: states, ProjectID: c.projectID})
+}
+
+func (c projectCandidateClient) FetchIssuesByIDs(ctx context.Context, ids []string) ([]tracker.Issue, error) {
+	if c.Client == nil {
+		return nil, fmt.Errorf("local candidate refresh client unavailable")
+	}
+	issues, err := c.Client.FetchIssuesByIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]tracker.Issue, 0, len(issues))
+	for _, issue := range issues {
+		if issue.ProjectID == c.projectID {
+			filtered = append(filtered, issue)
+		}
+	}
+	return filtered, nil
 }
 
 // publishSnapshot broadcasts the current orchestrator snapshot to all SSE subscribers.

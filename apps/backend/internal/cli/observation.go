@@ -3,6 +3,7 @@ package cli
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,12 +27,17 @@ const Help = `usage: orchestra <command>
   task create --project <project-id> --request-id <uuid> --title <title> [--description <text>] [--assignee <id>] [--provider <harness>] --json
   task assign --project <project-id> --id <task-id> --request-id <uuid> --assignee <worker-id> [--provider <harness>] [--json]
   task queue --project <project-id> --id <task-id> --request-id <uuid> --expected-state Backlog --json
+  task approve-plan --project <project-id> --id <task-id> --request-id <uuid> --expected-plan-hash <sha256> --json
+  task replan --project <project-id> --id <task-id> --request-id <uuid> --expected-state <Todo|In Progress|Review> --expected-plan-hash <sha256> --feedback <text> --json
+  task request-review --project <project-id> --id <task-id> --request-id <uuid> --expected-pr-url <url> --expected-head-sha <sha> --provider <harness> --reviewer-agent provider-default --json
+  task approve-review|complete-review --project <project-id> --id <task-id> --request-id <uuid> --expected-pr-url <url> --expected-head-sha <sha> --review-attempt <uuid> --json
+  control reviewers --json
   control receipt --request-id <uuid> --json
   control projects --json
   control tasks --project <project-id> [--json]
   control worktrees --project <project-id> --json
   control status --json
-  agent|skill list --project <project-id> --harness <CODEX|CLAUDE|OPENCODE|GEMINI|8GENT> --scope <effective|project|global> [--workspace <workspace-id>] --json
+  agent|skill list --project <project-id> --harness <CODEX|CLAUDE|OPENCODE|ANTIGRAVITY|8GENT> --scope <effective|project|global> [--workspace <workspace-id>] --json
   agent|skill show --project <project-id> --harness <harness> --scope <scope> [--workspace <workspace-id>] --id <exact-native-id> --json
   agent|skill create|update|delete --project <project-id> --harness <harness> --scope <project|global> [--workspace <workspace-id>] --id <exact-native-id> --request-id <uuid> [--expected-hash <sha256>] [--format <native-format>] [--content-file <path>]
   agent|skill receipt --project <project-id> --request-id <uuid> --json
@@ -42,9 +48,10 @@ Only HTTPS or loopback HTTP origins are accepted. Requests time out after 10 sec
 Task list/show/assign and control tasks print human-readable rows by default; use --json for the versioned JSON envelope. Other successful commands print that envelope. Failures print a JSON error on stderr and return nonzero.
 Task show returns the tracked task, not a guessed worktree, run or provider session.
 Create makes a Backlog task. Queue requests Todo admission, not an observed agent/worktree.
+Planning remains in Todo until an explicit approve-plan request accepts the exact current plan hash. Replan retains feedback and returns an inactive task to Todo; it does not approve execution. Maestro may approve only when explicitly instructed by the human.
 Task assignment changes the explicit assignee on an unassigned local SQLite Backlog task and may set an explicitly requested provider. It never infers a provider or queues the task; hosted assignment is unavailable. Use --unassigned or --assignee on task list to filter the tracker inventory. Human task output prints a stored PR URL or says none; it does not verify the PR externally.
 Mutations persist request identity; unknown outcomes require receipt/task reconciliation.
-No task stop/reset/delete, project deletion, worktree create/removal, terminal send/wait or PR mutations are exposed. Agent/skill file deletion is hash-guarded and scoped.`
+No task stop/reset/delete, project deletion, worktree create/removal, terminal send/wait or PR publication/merge mutations are exposed. Review controls only run, approve and complete the gated task journey. Agent/skill file deletion is hash-guarded and scoped.`
 
 const maxResponseBytes = 8 << 20
 
@@ -52,6 +59,20 @@ type command struct {
 	name, baseURL, project, states, id, identifier                   string
 	show, unassigned, jsonOutput                                     bool
 	requestID, title, description, assignee, provider, expectedState string
+	expectedPlanHash, feedback                                       string
+	expectedPRURL, expectedHeadSHA, reviewAttemptID, reviewerAgentID string
+}
+
+func taskMutation(name string) bool {
+	switch name {
+	case "task create", "task queue", "task assign", "task approve-plan", "task replan", "task request-review", "task approve-review", "task complete-review":
+		return true
+	}
+	return false
+}
+
+func reviewCommand(name string) bool {
+	return name == "task request-review" || name == "task approve-review" || name == "task complete-review"
 }
 
 type envelope struct {
@@ -105,7 +126,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	client := &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
 	var data any
 	var code string
-	if c.name == "task create" || c.name == "task queue" || c.name == "task assign" || strings.HasPrefix(c.name, "control ") {
+	if taskMutation(c.name) || strings.HasPrefix(c.name, "control ") {
 		data, code, err = controlRequest(ctx, client, u, token, c)
 	} else {
 		data, code, err = observe(ctx, client, u, token, c)
@@ -142,7 +163,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	if c.name == "status" {
 		scope = map[string]string{"source": "backend_snapshot"}
 	}
-	if strings.HasPrefix(c.name, "control ") || c.name == "task create" || c.name == "task queue" || c.name == "task assign" {
+	if strings.HasPrefix(c.name, "control ") || taskMutation(c.name) {
 		scope["source"] = "orchestra_control"
 		if c.requestID != "" {
 			scope["request_id"] = c.requestID
@@ -173,8 +194,8 @@ func parse(args []string) (command, error) {
 	c.name = args[0]
 	args = args[1:]
 	if c.name == "project" || c.name == "task" || c.name == "control" {
-		if len(args) == 0 || !((c.name == "project" && (args[0] == "list" || args[0] == "show")) || (c.name == "task" && (args[0] == "list" || args[0] == "show" || args[0] == "create" || args[0] == "queue" || args[0] == "assign")) || (c.name == "control" && (args[0] == "receipt" || args[0] == "projects" || args[0] == "tasks" || args[0] == "worktrees" || args[0] == "status"))) {
-			return c, errors.New("use project list/show, task list/show/create/queue/assign, or control projects/tasks/worktrees/status/receipt")
+		if len(args) == 0 || !((c.name == "project" && (args[0] == "list" || args[0] == "show")) || (c.name == "task" && (args[0] == "list" || args[0] == "show" || taskMutation("task "+args[0]))) || (c.name == "control" && (args[0] == "receipt" || args[0] == "projects" || args[0] == "tasks" || args[0] == "worktrees" || args[0] == "status" || args[0] == "reviewers"))) {
+			return c, errors.New("use project list/show, task list/show/create/queue/assign/approve-plan/replan, or control projects/tasks/worktrees/status/receipt")
 		}
 		c.show = args[0] == "show"
 		c.name += " " + args[0]
@@ -235,8 +256,8 @@ func parse(args []string) (command, error) {
 			}
 			c.states = value
 		case "--id":
-			if c.name != "task show" && c.name != "task queue" && c.name != "task assign" {
-				return c, errors.New("--id is only supported for task show/queue/assign")
+			if c.name != "task show" && !taskMutation(c.name) || c.name == "task create" {
+				return c, errors.New("--id is only supported for task show/queue/assign/approve-plan/replan")
 			}
 			c.id = value
 		case "--identifier":
@@ -245,7 +266,7 @@ func parse(args []string) (command, error) {
 			}
 			c.identifier = value
 		case "--request-id":
-			if c.name != "task create" && c.name != "task queue" && c.name != "task assign" && c.name != "control receipt" {
+			if !taskMutation(c.name) && c.name != "control receipt" {
 				return c, errors.New("--request-id only supports mutations/receipt")
 			}
 			c.requestID = value
@@ -265,15 +286,50 @@ func parse(args []string) (command, error) {
 			}
 			c.assignee = value
 		case "--provider":
-			if c.name != "task create" && c.name != "task assign" {
+			if c.name != "task create" && c.name != "task assign" && c.name != "task request-review" {
 				return c, errors.New("--provider is only supported for task create/assign")
+			}
+			if strings.EqualFold(strings.TrimSpace(value), "GEMINI") {
+				return c, errors.New("Gemini is no longer selectable; use the separately configured Antigravity harness")
 			}
 			c.provider = value
 		case "--expected-state":
-			if c.name != "task queue" || value != "Backlog" {
-				return c, errors.New("queue requires --expected-state Backlog")
+			if c.name == "task queue" && value == "Backlog" {
+				c.expectedState = value
+				continue
+			}
+			if c.name != "task replan" || (value != "Todo" && value != "In Progress" && value != "Review") {
+				return c, errors.New("queue requires Backlog; replan requires Todo, In Progress or Review as --expected-state")
 			}
 			c.expectedState = value
+		case "--expected-plan-hash":
+			if c.name != "task approve-plan" && c.name != "task replan" {
+				return c, errors.New("--expected-plan-hash is only supported for task approve-plan/replan")
+			}
+			decoded, err := hex.DecodeString(value)
+			if err != nil || len(decoded) != 32 || strings.ToLower(value) != value {
+				return c, errors.New("--expected-plan-hash requires the exact lowercase SHA256 hash from the task gate")
+			}
+			c.expectedPlanHash = value
+		case "--feedback":
+			if c.name != "task replan" {
+				return c, errors.New("--feedback is only supported for task replan")
+			}
+			c.feedback = value
+		case "--expected-pr-url", "--expected-head-sha", "--review-attempt", "--reviewer-agent":
+			if !reviewCommand(c.name) {
+				return c, errors.New("review identity options require a review command")
+			}
+			switch arg {
+			case "--expected-pr-url":
+				c.expectedPRURL = value
+			case "--expected-head-sha":
+				c.expectedHeadSHA = value
+			case "--review-attempt":
+				c.reviewAttemptID = value
+			case "--reviewer-agent":
+				c.reviewerAgentID = value
+			}
 		default:
 			return c, errors.New("unknown option or unexpected positional argument")
 		}
@@ -293,7 +349,18 @@ func parse(args []string) (command, error) {
 	if c.name == "task assign" && (c.project == "" || c.id == "" || c.requestID == "" || strings.TrimSpace(c.assignee) == "") {
 		return c, errors.New("task assign requires --project, --id, --request-id and --assignee")
 	}
-	if c.name == "task create" || c.name == "task queue" || c.name == "task assign" || c.name == "control receipt" {
+	if c.name == "task approve-plan" && (c.project == "" || c.id == "" || c.requestID == "" || c.expectedPlanHash == "") {
+		return c, errors.New("task approve-plan requires --project, --id, --request-id and --expected-plan-hash")
+	}
+	if c.name == "task replan" && (c.project == "" || c.id == "" || c.requestID == "" || c.expectedState == "" || c.expectedPlanHash == "" || strings.TrimSpace(c.feedback) == "") {
+		return c, errors.New("task replan requires --project, --id, --request-id, --expected-state, --expected-plan-hash and --feedback")
+	}
+	if reviewCommand(c.name) {
+		if err := validateCLIReview(c); err != nil {
+			return c, err
+		}
+	}
+	if taskMutation(c.name) || c.name == "control receipt" {
 		if id, err := uuid.Parse(c.requestID); err != nil || id == uuid.Nil || id.String() != c.requestID {
 			return c, errors.New("mutations and receipt lookup require a canonical UUID --request-id")
 		}

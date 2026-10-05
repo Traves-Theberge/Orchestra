@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AgentsDashboard } from './AgentsDashboard'
 import { resetAppStore, useAppStore } from '@core/store'
@@ -108,76 +108,14 @@ describe('AgentsDashboard', () => {
     expect(screen.queryByText(/Project MCP configuration is read-only here/)).toBeNull()
   })
 
-  it('routes Gemini categories to provider-specific panels', () => {
-    mockUseClaudeConfig.mockReturnValue({
-      ...makeCommonState(),
-      settings: {},
-      settingsPath: '',
-      settingsExists: false,
-      instructions: '',
-      instructionsPath: '',
-      instructionsExists: false,
-      rules: [],
-      skills: [],
-      subagents: [],
-      saveSettings: vi.fn(),
-      saveInstructions: vi.fn(),
-      deleteInstructions: vi.fn(),
-      saveRule: vi.fn(),
-      removeRule: vi.fn(),
-      saveSkill: vi.fn(),
-      removeSkill: vi.fn(),
-      saveSubAgent: vi.fn(),
-      removeSubAgent: vi.fn(),
-    })
-    mockUseCodexConfig.mockReturnValue({
-      ...makeCommonState(),
-      config: [],
-      instructions: [],
-      subagents: [],
-      skills: [],
-      rules: [],
-    })
-    mockUseGeminiConfig.mockReturnValue({
-      ...makeCommonState(),
-      settings: [{ path: '/tmp/settings.json', content: '{}', name: 'settings.json' }],
-      context: [{ path: '/tmp/GEMINI.md', content: '# Context', name: 'GEMINI.md' }],
-      commands: [{ path: '/tmp/cmd.toml', content: 'description = "x"', name: 'cmd.toml' }],
-      saveSettingsFile: vi.fn(),
-      saveContextFile: vi.fn(),
-      saveCommandFile: vi.fn(),
-      deleteCommandFile: vi.fn(),
-      createSettingsResource: vi.fn(),
-      createContextResource: vi.fn(),
-      createCommandResource: vi.fn(),
-    })
-    mockUseOpenCodeConfig.mockReturnValue({
-      ...makeCommonState(),
-      config: [],
-      agents: [],
-      commands: [],
-      skills: [],
-    })
+  it('normalizes stale Gemini tab state to Antigravity without exposing Gemini as an active tab', async () => {
+    useAppStore.setState({ activeAgentProvider: 'gemini', availableAgents: ['gemini', 'antigravity'] } as never)
+    render(<AgentsDashboard config={null} />)
 
-    render(<AgentsDashboard config={{ baseUrl: 'http://localhost:4010', apiToken: 'dev-token' }} />)
-
-    act(() => useAppStore.getState().setActiveAgentProvider('gemini'))
-    act(() => useAppStore.getState().setActiveAgentCategory('settings'))
-    expect(screen.getByText('Gemini Settings')).toBeTruthy()
-
-    act(() => useAppStore.getState().setActiveAgentCategory('models'))
-    expect(screen.getByText('Gemini Model Panel')).toBeTruthy()
-
-    act(() => useAppStore.getState().setActiveAgentCategory('permissions'))
-    expect(screen.getByText('Gemini Permissions Panel')).toBeTruthy()
-
-    act(() => useAppStore.getState().setActiveAgentCategory('context'))
-    expect(screen.getByText('Gemini Context Panel')).toBeTruthy()
-
-    act(() => useAppStore.getState().setActiveAgentCategory('commands'))
-    expect(screen.getByText('Gemini Commands Panel')).toBeTruthy()
+    await waitFor(() => expect(useAppStore.getState().activeAgentProvider).toBe('antigravity'))
+    expect(screen.getByRole('heading', { name: 'Antigravity' })).toBeInTheDocument()
+    expect(screen.queryByText('Gemini Settings')).not.toBeInTheDocument()
   })
-
   it('routes OpenCode categories to provider-specific panels', () => {
     mockUseClaudeConfig.mockReturnValue({
       ...makeCommonState(),

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
+	"github.com/orchestra/orchestra/apps/backend/internal/plangate"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker/memory"
 	trackersqlite "github.com/orchestra/orchestra/apps/backend/internal/tracker/sqlite"
@@ -22,10 +23,40 @@ func assertRequestedEntry(t *testing.T, entry RunningEntry) {
 }
 
 func TestRequestedConfigAdmissionClaimFailureAndRetryStayFrozen(t *testing.T) {
+	ctx := context.Background()
+	database, err := db.Connect(filepath.Join(t.TempDir(), "approved-task.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	projectID, err := database.UpsertProject(ctx, filepath.Join(t.TempDir(), "project"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	turns := 7
 	tools := []string{"shell"}
-	client := memory.NewClient([]tracker.Issue{{ID: "task", Identifier: "OPS-1", State: "In Progress", Provider: "CODEX", RuntimeTarget: "TAILSCALE", RequestedModel: "frozen-model", RequestedMaxTurns: &turns, DisabledTools: tools}})
+	client := trackersqlite.NewClient(database, []string{"agent-codex"})
+	issue, err := client.CreateIssue(ctx, "Task", "Execute the approved request", "Todo", 0, "agent-codex", projectID, "CODEX", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = client.UpdateIssue(ctx, issue.ID, map[string]any{"runtime_target": "TAILSCALE", "requested_model": "frozen-model", "requested_max_turns": turns, "disabled_tools": tools, "plan": "Use the frozen execution configuration."}); err != nil {
+		t.Fatal(err)
+	}
+	approved, _, err := plangate.LoadLocalTask(ctx, database, issue.ID, projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// This transport fixture starts with a durable approval, rather than
+	// bypassing the gate by putting an unapproved task in In Progress.
+	if _, err = database.ExecContext(ctx, `INSERT INTO issue_history(id,issue_id,user_id,action,new_value) VALUES('approval-fixture',?,'Human fixture','plan_approved',?)`, issue.ID, plangate.Fingerprint(*approved)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = client.UpdateIssue(ctx, issue.ID, map[string]any{"state": "In Progress"}); err != nil {
+		t.Fatal(err)
+	}
 	svc := NewService()
+	svc.SetDB(database)
 	svc.SetTrackerClient(client)
 	if err := svc.PerformRefresh(context.Background()); err != nil {
 		t.Fatal(err)
@@ -41,7 +72,7 @@ func TestRequestedConfigAdmissionClaimFailureAndRetryStayFrozen(t *testing.T) {
 	*claimed.RequestedMaxTurns = 88
 	claimed.DisabledTools[0] = "changed"
 	assertRequestedEntry(t, svc.Snapshot().Running[0])
-	svc.RecordRunFailure("task", "CODEX", "OPS-1", 1, time.Now().Add(-time.Second), errors.New("retry fixture"))
+	svc.RecordRunFailure(issue.ID, "CODEX", issue.Identifier, 1, time.Now().Add(-time.Second), errors.New("retry fixture"))
 	retry := svc.Snapshot().Retrying[0]
 	if retry.RequestedModel != "frozen-model" || retry.RequestedMaxTurns == nil || *retry.RequestedMaxTurns != 7 {
 		t.Fatalf("lost retry config: %+v", retry)
@@ -49,11 +80,16 @@ func TestRequestedConfigAdmissionClaimFailureAndRetryStayFrozen(t *testing.T) {
 	*retry.RequestedMaxTurns = 66
 	retry.DisabledTools[0] = "changed"
 	// New task config cannot replace the admitted request during retry.
-	svc.SetTrackerClient(memory.NewClient([]tracker.Issue{{ID: "task", Identifier: "OPS-1", State: "In Progress", RequestedModel: "new-model", RequestedMaxTurns: &turns}}))
+	svc.SetTrackerClient(memory.NewClient([]tracker.Issue{{ID: issue.ID, Identifier: issue.Identifier, ProjectID: projectID, State: "In Progress", AssignedToWorker: true, RequestedModel: "new-model", RequestedMaxTurns: &turns}}))
 	if err := svc.PerformRefresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	assertRequestedEntry(t, svc.Snapshot().Running[0])
+	// Frozen retry configuration does not grant approval for changed task
+	// context: the execution boundary must reject it before another turn.
+	if proceed, err := svc.RevalidateClaimedIssue(ctx, issue.ID); err != nil || proceed {
+		t.Fatalf("changed task context was permitted to execute: proceed=%v err=%v", proceed, err)
+	}
 }
 
 func TestRequestedConfigSnapshotsLookupsAndSetterInputsDoNotAlias(t *testing.T) {

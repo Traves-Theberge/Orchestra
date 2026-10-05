@@ -1,18 +1,24 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '@core/api/client'
+import { useAppStore } from '@core/store'
 import { HarnessSetupPanel } from './HarnessSetupPanel'
 
 vi.mock('@core/api/client', async (importOriginal) => {
   const original = await importOriginal<typeof import('@core/api/client')>()
-  return { ...original, fetchAgents: vi.fn(), fetchAgentConfig: vi.fn(), fetchWorkspaceChatProviders: vi.fn(), updateAgentConfig: vi.fn() }
+  return { ...original, fetchAgents: vi.fn(), fetchAgentConfig: vi.fn(), fetchHarnessSetup: vi.fn(), fetchWorkspaceChatProviders: vi.fn(), updateAgentConfig: vi.fn() }
 })
 
 const config = { baseUrl: 'http://localhost:4014', apiToken: 'fixture' }
 
 beforeEach(() => {
   vi.clearAllMocks()
+  useAppStore.setState({ openTerminals: [], activeSection: 'AGENTS' })
   vi.mocked(api.fetchAgents).mockResolvedValue(['CODEX', 'CLAUDE'])
+  vi.mocked(api.fetchHarnessSetup).mockResolvedValue([
+    { id: 'CODEX', registered: true, command_configured: true, installation: 'detected', authentication: 'signed_in', executable: '/bin/codex', terminal_supported: true },
+    { id: 'CLAUDE', registered: true, command_configured: true, installation: 'missing', authentication: 'unknown', terminal_supported: true },
+  ])
   vi.mocked(api.fetchAgentConfig).mockResolvedValue({ commands: { CODEX: 'codex exec {{prompt}}', CLAUDE: 'claude -p {{prompt}}' }, agent_provider: 'CODEX', max_turns: 20 })
   vi.mocked(api.fetchWorkspaceChatProviders).mockResolvedValue({ providers: [
     { id: 'CODEX', label: 'Codex', enabled: true, conversation_mode: 'native_session', provider_resume: true },
@@ -24,13 +30,50 @@ beforeEach(() => {
 afterEach(() => cleanup())
 
 describe('HarnessSetupPanel', () => {
+  it('separates backend discovery from registration and verified sign-in', async () => {
+    render(<HarnessSetupPanel config={config} provider="codex" projectId={null} />)
+    const setup = await screen.findByRole('region', { name: 'Codex onboarding' })
+    expect(within(setup).getByText('Detected on backend')).toBeInTheDocument()
+    expect(within(setup).getByText('Verified by Codex CLI')).toBeInTheDocument()
+    expect(within(setup).getByRole('button', { name: 'Copy command' })).toBeInTheDocument()
+    fireEvent.click(within(setup).getByRole('button', { name: 'Open sign-in terminal' }))
+    expect(useAppStore.getState().openTerminals).toMatchObject([{ title: 'Codex sign-in', initialCommand: 'codex login' }])
+    expect(useAppStore.getState().activeSection).toBe('CONSOLE')
+  })
+  it('offers a device-code flow for a remote Codex backend', async () => {
+    render(<HarnessSetupPanel config={config} provider="codex" projectId={null} />)
+    const setup = await screen.findByRole('region', { name: 'Codex onboarding' })
+    fireEvent.click(within(setup).getByRole('button', { name: 'Use device code' }))
+    expect(useAppStore.getState().openTerminals).toMatchObject([{ initialCommand: 'codex login --device-auth' }])
+  })
+  it('offers copy-and-run setup when the backend has no interactive terminal', async () => {
+    vi.mocked(api.fetchHarnessSetup).mockResolvedValue([{ id: 'CODEX', registered: true, command_configured: true, installation: 'detected', authentication: 'unknown', terminal_supported: false }])
+    render(<HarnessSetupPanel config={config} provider="codex" projectId={null} />)
+    const setup = await screen.findByRole('region', { name: 'Codex onboarding' })
+    expect(within(setup).queryByRole('button', { name: 'Open sign-in terminal' })).not.toBeInTheDocument()
+    expect(within(setup).getByRole('button', { name: 'Copy device-code command' })).toBeInTheDocument()
+    expect(setup).toHaveTextContent('Interactive backend terminals are unavailable on this host')
+  })
   it('shows observed native chat separately from command registration and leaves auth unknown', async () => {
     render(<HarnessSetupPanel config={config} provider="codex" projectId={null} />)
     expect(await screen.findByText('Chat: native session · resume supported')).toBeInTheDocument()
     expect(screen.getAllByText('Installation: not observed').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Authentication: not observed').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Authentication: not verified').length).toBeGreaterThan(0)
     expect(screen.getByText(/Codex chat uses the separately registered native app-server/)).toBeInTheDocument()
     expect(api.fetchWorkspaceChatProviders).toHaveBeenCalledWith(config, '__orchestrator__')
+  })
+  it('does not launch sign-in when the backend CLI is missing', async () => {
+    render(<HarnessSetupPanel config={config} provider="claude" projectId={null} />)
+    const setup = await screen.findByRole('region', { name: 'Claude Code onboarding' })
+    expect(within(setup).queryByRole('button', { name: 'Open sign-in terminal' })).not.toBeInTheDocument()
+    expect(useAppStore.getState().openTerminals).toEqual([])
+  })
+  it('hides one backend host’s sign-in observation while switching profiles', async () => {
+    const { rerender } = render(<HarnessSetupPanel config={config} provider="codex" projectId={null} />)
+    expect(await screen.findByText('Verified by Codex CLI')).toBeInTheDocument()
+    rerender(<HarnessSetupPanel config={{ ...config, baseUrl: 'http://localhost:4015' }} provider="codex" projectId={null} />)
+    expect(screen.getByText(/Checking harnesses on the connected backend/)).toBeInTheDocument()
+    expect(screen.queryByText('Verified by Codex CLI')).not.toBeInTheDocument()
   })
 
   it('saves only the selected batch command', async () => {
@@ -68,5 +111,23 @@ describe('HarnessSetupPanel', () => {
     await waitFor(() => expect(api.updateAgentConfig).toHaveBeenCalledWith(config, {
       commands: { ANTIGRAVITY: 'agy --verified-args {{prompt}}' }, agent_provider: 'CODEX',
     }))
+  })
+
+  it('keeps a stored Gemini task default intact while removing it from active default options', async () => {
+    vi.mocked(api.fetchAgents).mockResolvedValue(['ANTIGRAVITY', 'GEMINI'])
+    vi.mocked(api.fetchAgentConfig).mockResolvedValue({ commands: { GEMINI: 'gemini --prompt {{prompt}}', ANTIGRAVITY: 'agy --prompt {{prompt}}' }, agent_provider: 'GEMINI', max_turns: 20 })
+    vi.mocked(api.fetchWorkspaceChatProviders).mockResolvedValue({ providers: [
+      { id: 'ANTIGRAVITY', label: 'Antigravity', enabled: true, conversation_mode: 'native_session', provider_resume: true },
+      { id: 'GEMINI', label: 'Gemini', enabled: true, conversation_mode: 'transcript_replay', provider_resume: false },
+    ] })
+    render(<HarnessSetupPanel config={config} provider="antigravity" projectId={null} />)
+
+    const defaults = await screen.findByRole('region', { name: 'Default task harness' })
+    expect(within(defaults).getByText(/Current: Gemini/)).toBeInTheDocument()
+    expect(within(defaults).getByRole('status')).toHaveTextContent('stored Gemini task default is preserved')
+    fireEvent.click(within(defaults).getAllByRole('button')[0])
+    expect(within(defaults).getByRole('button', { name: 'Antigravity' })).toBeInTheDocument()
+    expect(within(defaults).queryByRole('button', { name: 'Gemini' })).not.toBeInTheDocument()
+    expect(api.updateAgentConfig).not.toHaveBeenCalled()
   })
 })

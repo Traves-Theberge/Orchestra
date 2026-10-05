@@ -2,15 +2,65 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/orchestra/orchestra/apps/backend/internal/agents"
+	"github.com/orchestra/orchestra/apps/backend/internal/db"
+	"github.com/orchestra/orchestra/apps/backend/internal/plangate"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker/memory"
+	trackersqlite "github.com/orchestra/orchestra/apps/backend/internal/tracker/sqlite"
 )
+
+func useLocalDispatchFixture(t *testing.T, service *Service, issues []tracker.Issue) {
+	t.Helper()
+	database, err := db.Connect(filepath.Join(t.TempDir(), "dispatch.db"))
+	if err != nil {
+		t.Fatalf("connect fixture database: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	const projectID = "dispatch-project"
+	if _, err := database.Exec(`INSERT INTO projects(id,name,root_path,remote_url) VALUES(?,?,?,?)`, projectID, "Dispatch", filepath.Join(t.TempDir(), "project"), ""); err != nil {
+		t.Fatalf("insert fixture project: %v", err)
+	}
+	for _, issue := range issues {
+		assignee := issue.AssigneeID
+		if strings.TrimSpace(assignee) == "" {
+			assignee = "agent-CODEX"
+		}
+		blockers, err := json.Marshal(issue.BlockedBy)
+		if err != nil {
+			t.Fatalf("encode blockers for %s: %v", issue.ID, err)
+		}
+		_, err = database.Exec(`INSERT INTO issues(id,identifier,title,description,state,assignee_id,project_id,blocked_by,provider) VALUES(?,?,?,?,?,?,?,?,?)`, issue.ID, issue.Identifier, issue.Title, issue.Description, issue.State, assignee, projectID, string(blockers), issue.Provider)
+		if err != nil {
+			t.Fatalf("insert fixture issue %s: %v", issue.ID, err)
+		}
+	}
+	service.SetDB(database)
+	client := trackersqlite.NewClient(database, []string{"agent-CODEX", "agent-claude"})
+	for _, issue := range issues {
+		if !strings.EqualFold(issue.State, "In Progress") {
+			continue
+		}
+		if _, err := database.Exec(`UPDATE issues SET plan=? WHERE id=? AND project_id=?`, "fixture plan", issue.ID, projectID); err != nil {
+			t.Fatalf("set approved fixture plan for %s: %v", issue.ID, err)
+		}
+		current, err := client.FetchIssueByIdentifier(context.Background(), issue.ID)
+		if err != nil {
+			t.Fatalf("fetch approved fixture issue %s: %v", issue.ID, err)
+		}
+		if _, err := database.Exec(`INSERT INTO issue_history(id,issue_id,user_id,action,new_value) VALUES(?,?,?,?,?)`, "approval-"+issue.ID, issue.ID, "test", "plan_approved", plangate.Fingerprint(*current)); err != nil {
+			t.Fatalf("record fixture approval for %s: %v", issue.ID, err)
+		}
+	}
+	service.SetTrackerClient(client)
+}
 
 type staticTrackerClient struct {
 	candidates []tracker.Issue
@@ -128,11 +178,11 @@ func TestPerformRefreshEnqueuesCandidatesUpToConcurrency(t *testing.T) {
 	service := NewService()
 	service.SetMaxConcurrent(2)
 	service.SetStateSets([]string{"todo"}, []string{"done"})
-	service.SetTrackerClient(memory.NewClient([]tracker.Issue{
+	useLocalDispatchFixture(t, service, []tracker.Issue{
 		{ID: "1", Identifier: "ORC-1", State: "todo", AssignedToWorker: true},
 		{ID: "2", Identifier: "ORC-2", State: "todo", AssignedToWorker: true},
 		{ID: "3", Identifier: "ORC-3", State: "todo", AssignedToWorker: true},
-	}))
+	})
 
 	service.QueueRefresh()
 	if err := service.PerformRefresh(context.Background()); err != nil {
@@ -165,13 +215,13 @@ func TestPerformRefreshHonorsPerStateConcurrencyLimit(t *testing.T) {
 	service.SetMaxConcurrent(10)
 	service.SetStateSets([]string{"todo", "in progress"}, []string{"done"})
 	service.SetMaxConcurrentByState(map[string]int{"todo": 2, "in progress": 1})
-	service.SetTrackerClient(memory.NewClient([]tracker.Issue{
+	useLocalDispatchFixture(t, service, []tracker.Issue{
 		{ID: "1", Identifier: "ORC-1", State: "todo", AssignedToWorker: true},
 		{ID: "2", Identifier: "ORC-2", State: "todo", AssignedToWorker: true},
 		{ID: "3", Identifier: "ORC-3", State: "todo", AssignedToWorker: true},
 		{ID: "4", Identifier: "ORC-4", State: "in progress", AssignedToWorker: true},
 		{ID: "5", Identifier: "ORC-5", State: "in progress", AssignedToWorker: true},
-	}))
+	})
 
 	service.QueueRefresh()
 	if err := service.PerformRefresh(context.Background()); err != nil {
@@ -201,10 +251,10 @@ func TestPerformRefreshHonorsPerStateConcurrencyLimit(t *testing.T) {
 func TestPerformRefreshSkipsIssuesNotAssignedToWorker(t *testing.T) {
 	service := NewService()
 	service.SetStateSets([]string{"Todo"}, []string{"Done"})
-	service.SetTrackerClient(memory.NewClientWithWorkerAssignees([]tracker.Issue{
+	useLocalDispatchFixture(t, service, []tracker.Issue{
 		{ID: "1", Identifier: "ORC-1", State: "Todo", AssignedToWorker: false, AssigneeID: "user-1"},
 		{ID: "2", Identifier: "ORC-2", State: "Todo", AssignedToWorker: true, AssigneeID: "agent-claude"},
-	}, []string{"agent-claude"}))
+	})
 
 	service.QueueRefresh()
 	if err := service.PerformRefresh(context.Background()); err != nil {
@@ -220,10 +270,10 @@ func TestPerformRefreshSkipsIssuesNotAssignedToWorker(t *testing.T) {
 func TestPerformRefreshSkipsCandidatesOutsideActiveStates(t *testing.T) {
 	service := NewService()
 	service.SetStateSets([]string{"Todo", "In Progress"}, []string{"Done"})
-	service.SetTrackerClient(staticTrackerClient{candidates: []tracker.Issue{
+	useLocalDispatchFixture(t, service, []tracker.Issue{
 		{ID: "1", Identifier: "ORC-1", State: "Done", AssignedToWorker: true},
 		{ID: "2", Identifier: "ORC-2", State: "Todo", AssignedToWorker: true},
-	}})
+	})
 
 	service.QueueRefresh()
 	if err := service.PerformRefresh(context.Background()); err != nil {
@@ -239,10 +289,10 @@ func TestPerformRefreshSkipsCandidatesOutsideActiveStates(t *testing.T) {
 func TestPerformRefreshSkipsTodoBlockedByNonTerminalIssue(t *testing.T) {
 	service := NewService()
 	service.SetStateSets([]string{"Todo", "In Progress"}, []string{"Done", "Cancelled"})
-	service.SetTrackerClient(memory.NewClient([]tracker.Issue{
+	useLocalDispatchFixture(t, service, []tracker.Issue{
 		{ID: "1", Identifier: "ORC-1", State: "Todo", BlockedBy: []tracker.Blocker{{ID: "B-1", State: "In Progress"}}},
 		{ID: "2", Identifier: "ORC-2", State: "Todo"},
-	}))
+	})
 
 	service.QueueRefresh()
 	if err := service.PerformRefresh(context.Background()); err != nil {
@@ -258,9 +308,9 @@ func TestPerformRefreshSkipsTodoBlockedByNonTerminalIssue(t *testing.T) {
 func TestPerformRefreshAllowsTodoBlockedOnlyByTerminalIssues(t *testing.T) {
 	service := NewService()
 	service.SetStateSets([]string{"Todo", "In Progress"}, []string{"Done", "Cancelled"})
-	service.SetTrackerClient(memory.NewClient([]tracker.Issue{
+	useLocalDispatchFixture(t, service, []tracker.Issue{
 		{ID: "1", Identifier: "ORC-1", State: "Todo", BlockedBy: []tracker.Blocker{{ID: "B-1", State: "Done"}}},
-	}))
+	})
 
 	service.QueueRefresh()
 	if err := service.PerformRefresh(context.Background()); err != nil {
@@ -862,7 +912,7 @@ func TestRevalidateClaimedIssueRemovesTodoBlockedByNonTerminal(t *testing.T) {
 	}
 }
 
-func TestRevalidateClaimedIssueUpdatesStateForActiveIssue(t *testing.T) {
+func TestRevalidateClaimedIssueBlocksLegacyInProgressWithoutApproval(t *testing.T) {
 	service := NewService()
 	service.SetStateSets([]string{"Todo", "In Progress"}, []string{"Done"})
 	service.SetRunningForTest([]RunningEntry{{IssueID: "1", IssueIdentifier: "ORC-1", State: "Todo"}})
@@ -875,12 +925,12 @@ func TestRevalidateClaimedIssueUpdatesStateForActiveIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("revalidate claimed issue: %v", err)
 	}
-	if !keep {
-		t.Fatalf("expected active issue to remain dispatchable")
+	if keep {
+		t.Fatalf("legacy In Progress issue without a durable plan approval must be held")
 	}
 	snapshot := service.Snapshot()
-	if len(snapshot.Running) != 1 || snapshot.Running[0].State != "In Progress" {
-		t.Fatalf("expected running issue with updated state, got %+v", snapshot.Running)
+	if len(snapshot.Running) != 0 {
+		t.Fatalf("unapproved legacy issue remained in the running snapshot: %+v", snapshot.Running)
 	}
 }
 
@@ -908,9 +958,9 @@ func TestRevalidateClaimedIssueReturnsErrorOnTrackerFailure(t *testing.T) {
 func TestPerformRefreshCarriesDescriptionIntoRunningEntry(t *testing.T) {
 	service := NewService()
 	service.SetStateSets([]string{"Todo", "In Progress"}, []string{"Done"})
-	service.SetTrackerClient(memory.NewClient([]tracker.Issue{
+	useLocalDispatchFixture(t, service, []tracker.Issue{
 		{ID: "1", Identifier: "ORC-1", State: "Todo", AssignedToWorker: true, Title: "Fix bug", Description: "Detailed description of the bug"},
-	}))
+	})
 
 	service.QueueRefresh()
 	if err := service.PerformRefresh(context.Background()); err != nil {

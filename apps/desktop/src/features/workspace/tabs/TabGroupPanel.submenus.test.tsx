@@ -92,7 +92,7 @@ describe('workspace tab group menus', () => {
   })
 
   it.each([
-    ['Claude', 'claude'], ['Codex', 'codex'], ['OpenCode', 'opencode'], ['Gemini', 'gemini'], ['8gent', '8gent'],
+    ['Claude', 'claude'], ['Codex', 'codex'], ['Antigravity', 'agy'], ['OpenCode', 'opencode'], ['8gent', '8gent'],
   ])('starts the %s terminal choice with a safely scoped workspace command', (label, executable) => {
     const { setOpenTerminals, addTabToGroup } = mount()
     fireEvent.click(screen.getByRole('button', { name: 'Add tab' }))

@@ -30,11 +30,16 @@ func TestStudioProviderAliases(t *testing.T) {
 	for runner, want := range map[string]agents.Provider{
 		"claude-code": agents.ProviderClaude, " CLAUDE ": agents.ProviderClaude,
 		"CoDeX": agents.ProviderCodex, "OPENCODE": agents.ProviderOpenCode,
-		"gemini": agents.ProviderGemini,
 	} {
 		got, err := agentsProviderFor(runner)
 		if err != nil || got != want {
 			t.Fatalf("runner %q: got %q, %v; want %q", runner, got, err, want)
 		}
+	}
+}
+
+func TestStudioRejectsRetiredGeminiForNewSessions(t *testing.T) {
+	if _, err := agentsProviderFor("gemini"); err == nil || !strings.Contains(err.Error(), "retired harness") {
+		t.Fatalf("expected a clear retired-harness rejection, got %v", err)
 	}
 }

@@ -96,35 +96,20 @@ func TestListAgentConfigsClassifiesProviderResources(t *testing.T) {
 		}
 	})
 
-	assertConfigMatch(t, configs, filepath.Join(home, ".gemini", "settings.json"), func(cfg AgentConfig) {
-		if cfg.Provider != "gemini" || cfg.ResourceType != "settings" {
-			t.Fatalf("expected gemini settings resource, got provider=%q resource_type=%q", cfg.Provider, cfg.ResourceType)
+	for _, legacyGeminiPath := range []string{
+		filepath.Join(home, ".gemini", "settings.json"),
+		filepath.Join(projectRoot, "GEMINI.md"),
+		filepath.Join(projectRoot, ".gemini", "commands", "summarize.toml"),
+	} {
+		if _, err := os.Stat(legacyGeminiPath); err != nil {
+			t.Fatalf("legacy Gemini config should remain untouched at %s: %v", legacyGeminiPath, err)
 		}
-		if cfg.Scope != ScopeGlobal || cfg.Origin != "global" {
-			t.Fatalf("expected global gemini settings, got scope=%q origin=%q", cfg.Scope, cfg.Origin)
+		for _, cfg := range configs {
+			if filepath.Clean(cfg.Path) == filepath.Clean(legacyGeminiPath) {
+				t.Fatalf("legacy Gemini config should not be advertised as an active agent resource: %s", legacyGeminiPath)
+			}
 		}
-		if cfg.Priority != 5 {
-			t.Fatalf("expected gemini settings priority 5, got %d", cfg.Priority)
-		}
-	})
-
-	assertConfigMatch(t, configs, filepath.Join(projectRoot, "GEMINI.md"), func(cfg AgentConfig) {
-		if cfg.ResourceType != "context" || cfg.Variant != "context" {
-			t.Fatalf("expected gemini context resource, got resource_type=%q variant=%q", cfg.ResourceType, cfg.Variant)
-		}
-		if cfg.Priority != 30 {
-			t.Fatalf("expected gemini context priority 30, got %d", cfg.Priority)
-		}
-	})
-
-	assertConfigMatch(t, configs, filepath.Join(projectRoot, ".gemini", "commands", "summarize.toml"), func(cfg AgentConfig) {
-		if cfg.ResourceType != "commands" {
-			t.Fatalf("expected gemini command resource, got %q", cfg.ResourceType)
-		}
-		if cfg.Depth != 2 {
-			t.Fatalf("expected gemini command depth 2, got %d", cfg.Depth)
-		}
-	})
+	}
 
 	assertConfigMatch(t, configs, filepath.Join(home, ".config", "opencode", "opencode.json"), func(cfg AgentConfig) {
 		if cfg.Provider != "opencode" || cfg.ResourceType != "config" {

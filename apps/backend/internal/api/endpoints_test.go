@@ -12,9 +12,10 @@ import (
 	"testing"
 
 	"github.com/orchestra/orchestra/apps/backend/internal/config"
+	"github.com/orchestra/orchestra/apps/backend/internal/db"
 	"github.com/orchestra/orchestra/apps/backend/internal/orchestrator"
-	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
-	"github.com/orchestra/orchestra/apps/backend/internal/tracker/memory"
+	"github.com/orchestra/orchestra/apps/backend/internal/plangate"
+	sqlitetracker "github.com/orchestra/orchestra/apps/backend/internal/tracker/sqlite"
 	"github.com/rs/zerolog"
 )
 
@@ -206,27 +207,49 @@ func TestPostIssueStopNotFound(t *testing.T) {
 // TestPostIssueStopResetsStateAndCancelsSession pins down the contract that
 // #147 step 6 ("stop running session → state returns cleanly") relies on:
 // hitting POST /issues/{id}/stop must (1) invoke the registered cancel func
-// for the active run and (2) reset the issue back to Backlog with
-// branch_name/base_sha/plan/feedback cleared. Note: the #147 issue body says
-// "Todo" but the implementation uses "Backlog" — the live matrix should
-// expect Backlog.
+// for the active run, (2) hold the task in Backlog, (3) invalidate prior
+// plan approval, and (4) preserve task and worktree context.
 func TestPostIssueStopResetsStateAndCancelsSession(t *testing.T) {
-	const issueID = "issue-stop-1"
-	const identifier = "STOP-1"
-
-	// Seed without ProjectID so the handler skips the worktree-cleanup
-	// branch (which requires *db.DB). The state-reset and cancel-invocation
-	// paths are what we're pinning down here.
-	tr := memory.NewClient([]tracker.Issue{{
-		ID:         issueID,
-		Identifier: identifier,
-		Title:      "stop me",
-		State:      "In Progress",
-		BranchName: "feat/stop-me",
-	}})
+	database, err := db.Connect(filepath.Join(t.TempDir(), "warehouse.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	projectID, err := database.UpsertProject(context.Background(), filepath.Join(t.TempDir(), "project"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := sqlitetracker.NewClient(database, nil)
+	issue, err := tr.CreateIssue(context.Background(), "stop me", "preserve this task context", "In Progress", 0, "worker", projectID, "CODEX", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const branchName = "feat/stop-me"
+	const feedback = "keep reviewer context"
+	const plan = "- [ ] preserve implementation"
+	const baseSHA = "0123456789abcdef0123456789abcdef01234567"
+	const prURL = "https://github.com/example/repo/pull/17"
+	if _, err := tr.UpdateIssue(context.Background(), issue.ID, map[string]any{
+		"branch_name": branchName, "feedback": feedback, "plan": plan, "base_sha": baseSHA, "pr_url": prURL,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	issue, err = tr.FetchIssueByIdentifier(context.Background(), issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	issueID, identifier := issue.ID, issue.Identifier
+	fingerprint := plangate.Fingerprint(*issue)
+	if _, err := database.Exec(`INSERT INTO issue_history(id,issue_id,user_id,action,new_value) VALUES('stop-plan-ready',?,'User','plan_ready',?)`, issue.ID, fingerprint); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`INSERT INTO issue_history(id,issue_id,user_id,action,new_value) VALUES('stop-plan-approved',?,'User','plan_approved',?)`, issue.ID, fingerprint); err != nil {
+		t.Fatal(err)
+	}
 
 	orch := orchestrator.NewService()
 	orch.SetTrackerClient(tr)
+	orch.SetDB(database)
 	orch.SetRunningForTest([]orchestrator.RunningEntry{{
 		IssueID:         issueID,
 		IssueIdentifier: identifier,
@@ -242,8 +265,17 @@ func TestPostIssueStopResetsStateAndCancelsSession(t *testing.T) {
 		cancel()
 	})
 
+	workspaceRoot := t.TempDir()
+	worktreePath := filepath.Join(workspaceRoot, projectID, branchName)
+	if err := os.MkdirAll(worktreePath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	markerPath := filepath.Join(worktreePath, "user-work.txt")
+	if err := os.WriteFile(markerPath, []byte("retain working tree"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	router := NewRouter(zerolog.Nop(), orch, &config.Config{
-		WorkspaceRoot: t.TempDir(),
+		WorkspaceRoot: workspaceRoot,
 		Host:          "127.0.0.1",
 		APIToken:      "",
 	})
@@ -259,15 +291,128 @@ func TestPostIssueStopResetsStateAndCancelsSession(t *testing.T) {
 		t.Fatal("registered cancel func was not invoked")
 	}
 
-	updated, err := tr.FetchIssueByIdentifier(context.Background(), identifier)
+	updated, err := tr.FetchIssueByIdentifier(context.Background(), issue.ID)
 	if err != nil || updated == nil {
 		t.Fatalf("fetch updated issue: %v", err)
 	}
-	if updated.State != "Backlog" {
-		t.Errorf("issue state: got %q, want %q", updated.State, "Backlog")
+	if updated.State != "Backlog" || updated.Feedback != feedback || updated.Plan != plan || updated.BranchName != branchName || updated.BaseSHA != baseSHA || updated.PRURL != prURL {
+		t.Fatalf("stop did not hold task while retaining context: %+v", updated)
 	}
-	if updated.BranchName != "" {
-		t.Errorf("branch_name: got %q, want cleared", updated.BranchName)
+	if _, err := os.Stat(markerPath); err != nil {
+		t.Fatalf("stop removed workspace content: %v", err)
+	}
+	if gate := orch.PlanGate(context.Background(), *updated); gate.Status != "stale" {
+		t.Fatalf("stop left old approval reusable: %+v", gate)
+	}
+}
+
+func TestDeleteIssueSessionHoldsTaskAfterCancellation(t *testing.T) {
+	database, err := db.Connect(filepath.Join(t.TempDir(), "warehouse.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	projectID, err := database.UpsertProject(context.Background(), filepath.Join(t.TempDir(), "project"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := sqlitetracker.NewClient(database, nil)
+	issue, err := client.CreateIssue(context.Background(), "cancel me", "retain this plan", "In Progress", 0, "worker", projectID, "CODEX", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.UpdateIssue(context.Background(), issue.ID, map[string]any{"plan": "- [ ] work"}); err != nil {
+		t.Fatal(err)
+	}
+	issue, err = client.FetchIssueByIdentifier(context.Background(), issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fingerprint := plangate.Fingerprint(*issue)
+	if _, err := database.Exec(`INSERT INTO issue_history(id,issue_id,user_id,action,new_value) VALUES('delete-session-plan-approved',?,'User','plan_approved',?)`, issue.ID, fingerprint); err != nil {
+		t.Fatal(err)
+	}
+	orch := orchestrator.NewService()
+	orch.SetTrackerClient(client)
+	orch.SetDB(database)
+	orch.SetRunningForTest([]orchestrator.RunningEntry{{IssueID: issue.ID, IssueIdentifier: issue.Identifier, State: "In Progress", Provider: "CODEX", SessionID: "session-stop"}})
+	cancelled := false
+	orch.RegisterCancel(issue.ID, "CODEX", func() { cancelled = true })
+	router := NewRouter(zerolog.Nop(), orch, &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1"})
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodDelete, "/api/v1/issues/"+issue.Identifier+"/session", nil))
+	if recorder.Code != http.StatusNoContent || !cancelled {
+		t.Fatalf("DELETE session did not cancel and hold task: status=%d cancelled=%t body=%s", recorder.Code, cancelled, recorder.Body.String())
+	}
+	updated, err := client.FetchIssueByIdentifier(context.Background(), issue.ID)
+	if err != nil || updated.State != "Backlog" || updated.Plan != "- [ ] work" {
+		t.Fatalf("session stop lost task context or failed to hold it: %+v %v", updated, err)
+	}
+	if gate := orch.PlanGate(context.Background(), *updated); gate.Status != "stale" {
+		t.Fatalf("session stop left old approval reusable: %+v", gate)
+	}
+}
+
+func TestStopPersistenceFailureDoesNotCancelSession(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		method string
+		path   string
+		want   int
+	}{
+		{name: "post stop", method: http.MethodPost, path: "/api/v1/issues/%s/stop", want: http.StatusConflict},
+		{name: "provider delete", method: http.MethodDelete, path: "/api/v1/issues/%s/session?provider=CODEX", want: http.StatusConflict},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			database, err := db.Connect(filepath.Join(t.TempDir(), "warehouse.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = database.Close() })
+			projectID, err := database.UpsertProject(context.Background(), filepath.Join(t.TempDir(), "project"), "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			client := sqlitetracker.NewClient(database, nil)
+			issue, err := client.CreateIssue(context.Background(), "do not cancel", "preserve approved context", "In Progress", 0, "worker", projectID, "CODEX", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := client.UpdateIssue(context.Background(), issue.ID, map[string]any{"plan": "- [ ] execute"}); err != nil {
+				t.Fatal(err)
+			}
+			issue, err = client.FetchIssueByIdentifier(context.Background(), issue.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fingerprint := plangate.Fingerprint(*issue)
+			if _, err := database.Exec(`INSERT INTO issue_history(id,issue_id,user_id,action,new_value) VALUES('stop-failure-approved',?,'User','plan_approved',?)`, issue.ID, fingerprint); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := database.Exec(`CREATE TRIGGER reject_stop_backlog BEFORE UPDATE OF state ON issues WHEN NEW.state='Backlog' BEGIN SELECT RAISE(ABORT, 'forced stop persistence failure'); END`); err != nil {
+				t.Fatal(err)
+			}
+			service := orchestrator.NewService()
+			service.SetTrackerClient(client)
+			service.SetDB(database)
+			service.SetRunningForTest([]orchestrator.RunningEntry{{IssueID: issue.ID, IssueIdentifier: issue.Identifier, State: "In Progress", Provider: "CODEX", SessionID: "active"}})
+			cancelled := false
+			service.RegisterCancel(issue.ID, "CODEX", func() { cancelled = true })
+			router := NewRouter(zerolog.Nop(), service, &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1"})
+			path := strings.Replace(tc.path, "%s", issue.Identifier, 1)
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, httptest.NewRequest(tc.method, path, nil))
+			if recorder.Code != tc.want || !strings.Contains(recorder.Body.String(), `"code":"stop_failed"`) {
+				t.Fatalf("stop reported an unexpected outcome: status=%d body=%s", recorder.Code, recorder.Body.String())
+			}
+			if cancelled {
+				t.Fatal("session was canceled before the durable hold committed")
+			}
+			unchanged, err := client.FetchIssueByIdentifier(context.Background(), issue.ID)
+			if err != nil || unchanged.State != "In Progress" || service.PlanGate(context.Background(), *unchanged).Status != "approved" {
+				t.Fatalf("failed stop changed task or invalidated approval without committing hold: issue=%+v err=%v gate=%+v", unchanged, err, service.PlanGate(context.Background(), *unchanged))
+			}
+		})
 	}
 }
 
@@ -426,6 +571,17 @@ func TestPostAgentConfigRejectsInvalidJSON(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestPostAgentConfigRejectsExplicitRetiredGeminiDefault(t *testing.T) {
+	router := newTestRouter(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/config/agents", strings.NewReader(`{"agent_provider":"GEMINI"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for retired provider, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

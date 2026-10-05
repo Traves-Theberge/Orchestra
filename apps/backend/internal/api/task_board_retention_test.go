@@ -55,10 +55,11 @@ func TestBoardReviewAndDoneRetainGitWork(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(root, "untracked.txt"), []byte("retain this too\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			server.orchestrator.SetTrackerClient(memory.NewClient([]tracker.Issue{{
+			client := memory.NewClient([]tracker.Issue{{
 				ID: "retention-task", Identifier: "RETAIN-1", Title: "Retain work",
 				ProjectID: projectID, BranchName: "task-retention", State: "In Progress",
-			}}))
+			}})
+			server.orchestrator.SetTrackerClient(client)
 			rootHead := prSafetyGit(t, root, "rev-parse", "HEAD")
 			rootStatus := prSafetyGit(t, root, "status", "--porcelain")
 			remoteHead := prSafetyGit(t, remote, "rev-parse", "refs/heads/task")
@@ -71,7 +72,16 @@ func TestBoardReviewAndDoneRetainGitWork(t *testing.T) {
 			router.Patch("/api/v1/issues/{issue_identifier}", server.PatchIssue)
 			host := httptest.NewServer(router)
 			defer host.Close()
-			for _, state := range []string{"Review", "Done", "Done"} {
+			for _, step := range []struct {
+				state     string
+				status    int
+				persisted string
+			}{
+				{"Review", http.StatusOK, "Review"},
+				{"Done", http.StatusConflict, "Review"},
+				{"In Progress", http.StatusConflict, "Review"},
+			} {
+				state := step.state
 				request, err := http.NewRequestWithContext(t.Context(), http.MethodPatch, host.URL+"/api/v1/issues/RETAIN-1", strings.NewReader(`{"state":"`+state+`"}`))
 				if err != nil {
 					t.Fatal(err)
@@ -82,11 +92,11 @@ func TestBoardReviewAndDoneRetainGitWork(t *testing.T) {
 				}
 				body, readErr := io.ReadAll(response.Body)
 				response.Body.Close()
-				if readErr != nil || response.StatusCode != http.StatusOK {
+				if readErr != nil || response.StatusCode != step.status {
 					t.Fatalf("%s: status %d, read %v, body %s", state, response.StatusCode, readErr, body)
 				}
 				issue, err := server.orchestrator.FetchIssueByIdentifier(t.Context(), "RETAIN-1")
-				if err != nil || issue.State != state {
+				if err != nil || issue.State != step.persisted {
 					t.Fatalf("transition not persisted: %+v, %v", issue, err)
 				}
 				if prSafetyGit(t, root, "rev-parse", "HEAD") != rootHead || prSafetyGit(t, root, "status", "--porcelain") != rootStatus {

@@ -21,12 +21,12 @@ const (
 // AgentConfig represents a single agent configuration file discovered on disk,
 // including its content, filesystem path, category (core vs. skill), and scope.
 type AgentConfig struct {
-	Name         string      `json:"name"`                    // e.g. "claude", "gemini", "workspace.json"
+	Name         string      `json:"name"`                    // e.g. "claude", "codex", "workspace.json"
 	Content      string      `json:"content"`                 // File content
 	Path         string      `json:"path"`                    // Full absolute path
 	Category     string      `json:"category"`                // "CORE" or "SKILL"
 	Scope        ConfigScope `json:"scope"`                   // "GLOBAL" or "PROJECT"
-	Provider     string      `json:"provider,omitempty"`      // e.g. "codex", "gemini"
+	Provider     string      `json:"provider,omitempty"`      // e.g. "codex", "claude"
 	ResourceType string      `json:"resource_type,omitempty"` // e.g. "config", "instructions", "context"
 	Variant      string      `json:"variant,omitempty"`       // e.g. "override", "stack"
 	Priority     int         `json:"priority,omitempty"`      // Lower renders earlier in UI
@@ -57,13 +57,6 @@ var AgentMeta = map[string]struct {
 		Format:           "toml",
 		GlobalSkillPaths: []string{".codex/agents", ".agents/skills"},
 		LocalSkillPaths:  []string{".codex/agents", ".agents/skills"},
-	},
-	"gemini": {
-		GlobalPaths:      []string{".gemini/settings.json", ".gemini/GEMINI.md"},
-		LocalPaths:       []string{".gemini/settings.json", "GEMINI.md"},
-		Format:           "json",
-		GlobalSkillPaths: []string{".gemini/commands"},
-		LocalSkillPaths:  []string{".gemini/commands"},
 	},
 	"opencode": {
 		GlobalPaths:      []string{".config/opencode/opencode.json", ".config/opencode/opencode.jsonc"},
@@ -116,7 +109,7 @@ func ListAgentConfigs(workspaceRoot string, projectRoot string) ([]AgentConfig, 
 	orchAgentsDir := filepath.Join(workspaceRoot, ".orchestra", "agents")
 	_ = os.MkdirAll(orchAgentsDir, 0o755)
 
-	orchFiles := []string{".claude", ".gemini", ".opencode", ".codex", "workspace.json"}
+	orchFiles := []string{".claude", ".opencode", ".codex", "workspace.json"}
 	for _, name := range orchFiles {
 		path := filepath.Join(orchAgentsDir, name)
 		content := readOrCreate(path)

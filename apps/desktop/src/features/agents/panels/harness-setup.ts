@@ -7,10 +7,17 @@ export const KNOWN_HARNESSES: readonly HarnessDefinition[] = [
   { id: 'CODEX', label: 'Codex', helpUrl: 'https://github.com/openai/codex' },
   { id: 'ANTIGRAVITY', label: 'Antigravity', helpUrl: 'https://antigravity.google/docs/cli-overview' },
   { id: 'CLAUDE', label: 'Claude Code', helpUrl: 'https://code.claude.com/docs' },
-  { id: 'GEMINI', label: 'Gemini CLI', helpUrl: 'https://github.com/google-gemini/gemini-cli' },
   { id: 'OPENCODE', label: 'OpenCode', helpUrl: 'https://opencode.ai/docs/cli/' },
   { id: '8GENT', label: '8gent', helpUrl: 'https://github.com/8gi-foundation/8gent-code' },
 ]
+
+// Commands are presented for the user to run on the backend host. Orchestra
+// never executes these from a browser session or treats them as proof of auth.
+export const HARNESS_SIGN_IN_COMMANDS: Readonly<Record<string, string>> = {
+  CODEX: 'codex login',
+  CLAUDE: 'claude',
+  OPENCODE: 'opencode auth login',
+}
 
 export function normalizeHarnessId(value: string): string {
   return value.trim().toUpperCase()

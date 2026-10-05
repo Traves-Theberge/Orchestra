@@ -1,6 +1,8 @@
 package tracker
 
-import "context"
+import (
+	"context"
+)
 
 // Attachment identifies authoring context without implying it has been
 // materialized or made available to a provider.
@@ -49,12 +51,34 @@ type WorkItem struct {
 	Feedback           string         `json:"feedback,omitempty"`
 	PRURL              string         `json:"pr_url,omitempty"`
 	Plan               string         `json:"plan,omitempty"`
+	PlanGate           *PlanGate      `json:"plan_gate,omitempty"`
+	ReviewGate         *ReviewGate    `json:"review_gate,omitempty"`
 	AcceptanceCriteria []string       `json:"acceptance_criteria,omitempty"`
 	Attachments        []Attachment   `json:"attachments,omitempty"`
 	AgentGuidance      map[string]any `json:"agent_guidance,omitempty"`
 	SourceTemplate     string         `json:"source_template,omitempty"`
 	AuthoringSessionID string         `json:"authoring_session_id,omitempty"`
 	Extra              map[string]any `json:"extra,omitempty"`
+}
+
+// PlanGate is Orchestra's human approval state for a task plan. PlanHash is an
+// opaque fingerprint of the current task context and plan, not a provider ID.
+type PlanGate struct {
+	Status   string `json:"status"`
+	PlanHash string `json:"plan_hash,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+}
+
+// ReviewGate is last recorded PR-review evidence, not a fresh remote snapshot.
+type ReviewGate struct {
+	Status           string `json:"status"`
+	Freshness        string `json:"freshness,omitempty"`
+	HeadSHA          string `json:"head_sha,omitempty"`
+	PRURL            string `json:"pr_url,omitempty"`
+	AttemptID        string `json:"attempt_id,omitempty"`
+	ReviewerProvider string `json:"reviewer_provider,omitempty"`
+	ReviewerAgentID  string `json:"reviewer_agent_id,omitempty"`
+	Feedback         string `json:"feedback,omitempty"`
 }
 
 // Filter narrows which WorkItems are returned by Adapter.Fetch.

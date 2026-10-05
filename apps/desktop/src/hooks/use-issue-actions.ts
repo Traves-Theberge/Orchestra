@@ -4,6 +4,8 @@ import {
   deleteIssue,
   fetchIssues,
   fetchIssueDetail,
+  fetchPRSnapshot,
+  postOrchestratorControl,
   fetchProjectGitHubIssues,
   fetchSessionDetail,
   stopIssueSession,
@@ -15,6 +17,7 @@ import {
   type IssueCreatePayload,
   type IssueUpdatePayload,
   type IssueListItem,
+  type OrchestratorControlRequest,
 } from '@core/api/client'
 import type { SessionDetail } from '@core/api/types'
 import type { IssueDetailResult } from '@features/issue-detail/types'
@@ -36,6 +39,11 @@ interface UseIssueActionsOpts {
 
 interface UseIssueActionsResult {
   handleIssueUpdate: (identifier: string, updates: IssueUpdatePayload) => Promise<void>
+  handleApprovePlan: (request: Extract<OrchestratorControlRequest, { operation: 'approve_plan' }>) => Promise<void>
+  handleReplan: (request: Extract<OrchestratorControlRequest, { operation: 'replan' }>) => Promise<void>
+  handleRequestReview: (identifier: string, provider: string) => Promise<void>
+  handleApproveReview: (identifier: string) => Promise<void>
+  handleCompleteReview: (identifier: string) => Promise<void>
   handleStopSession: (identifier: string, provider?: string) => Promise<void>
   handleCreateIssue: (initialState: string) => void
   handleTaskSubmit: (payload: IssueCreatePayload) => Promise<void>
@@ -60,6 +68,7 @@ export function useIssueActions(
   const [sessionLookupError, setSessionLookupError] = useState('')
   const issueInspectionSequence = useRef(0)
   const inspectedOwner = useRef<{ identifier: string; owner: IssueInspectionOwner } | null>(null)
+  const reviewRequestIds = useRef(new Map<string, string>())
   const matchesIssue = (issue: IssueListItem, identifier: string) => [issue.id, issue.issue_id, issue.identifier, issue.issue_identifier].includes(identifier)
   const captureTaskTarget = (identifier: string) => {
     const state = useAppStore.getState()
@@ -94,6 +103,70 @@ export function useIssueActions(
     const match = url.pathname.match(/^\/([^/]+)\/([^/]+)\/issues\/(\d+)\/?$/)
     if (!project?.github_owner || !project.github_repo || url.protocol !== 'https:' || url.hostname !== 'github.com' || !match || match[1].toLowerCase() !== project.github_owner.toLowerCase() || match[2].toLowerCase() !== project.github_repo.toLowerCase()) throw new Error('GitHub issue link does not match its registered repository. Refresh the project before changing it.')
     return { project, number: Number(match[3]) }
+  }
+  const pullRequestNumber = (value: string) => {
+    let url: URL
+    try { url = new URL(value) } catch { throw new Error('Task does not contain a valid pull request URL.') }
+    const match = url.pathname.match(/^\/([^/]+)\/([^/]+)\/pull\/(\d+)\/?$/)
+    if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'github.com' || url.username || url.password || url.search || url.hash || !match || `https://github.com/${match[1]}/${match[2]}/pull/${match[3]}` !== value) throw new Error('Task pull request URL is not canonical. Refresh the task before review.')
+    return Number(match[3])
+  }
+  const exactReviewSnapshot = async (projectId: string, prUrl: string, expectedHead?: string, requireMerged = false) => {
+    const number = pullRequestNumber(prUrl)
+    const snapshot = await fetchPRSnapshot(config!, projectId, number)
+    const head = snapshot.pr.head.sha || ''
+    if (snapshot.pr.number !== number || snapshot.pr.html_url !== prUrl || !/^[a-f0-9]{40}$/i.test(head) || expectedHead && head.toLowerCase() !== expectedHead.toLowerCase()) throw new Error('Fresh pull request snapshot does not match the exact task URL and expected head SHA.')
+    if (requireMerged && !snapshot.pr.merged_at) throw new Error('The exact pull request head is not confirmed merged. Task completion was not requested.')
+    if (!requireMerged && (snapshot.pr.state !== 'open' || snapshot.pr.merged_at)) throw new Error('Pull request is not open for review. Refresh its current state before continuing.')
+    return snapshot.pr
+  }
+  const reviewReceipt = async (
+    key: string,
+    buildRequest: (requestId: string) => Extract<OrchestratorControlRequest, { operation: 'request_review' | 'approve_review' | 'complete_review' }>,
+  ) => {
+    let requestId = reviewRequestIds.current.get(key)
+    if (!requestId) {
+      requestId = crypto.randomUUID()
+      reviewRequestIds.current.set(key, requestId)
+    }
+    const unknown = () => new Error(`Review action outcome is unknown for request ${requestId}. Refresh this task and reconcile the same receipt before trying again.`)
+    try {
+      const prior = await postOrchestratorControl(config!, { operation: 'receipt', request_id: requestId })
+      if (prior.success && prior.receipt_status === 'completed' && prior.request_id === requestId) return prior
+      if (prior.receipt_status === 'pending' || prior.receipt_status === 'unknown') throw unknown()
+      reviewRequestIds.current.delete(key)
+      throw new Error(prior.error?.message || 'Review action receipt was rejected.')
+    } catch (error) {
+      const code = (error as { code?: string })?.code
+      if (code === 'mutation_unknown') throw unknown()
+      if (code !== 'receipt_not_found') {
+        if (code && code !== 'request_failed' && code !== 'receipt_unavailable') reviewRequestIds.current.delete(key)
+        throw error
+      }
+    }
+    try {
+      const result = await postOrchestratorControl(config!, buildRequest(requestId))
+      if (result.success && result.receipt_status === 'completed' && result.request_id === requestId) return result
+      if (result.receipt_status === 'pending' || result.receipt_status === 'unknown') throw unknown()
+      reviewRequestIds.current.delete(key)
+      throw new Error(result.error?.message || 'Review action was rejected.')
+    } catch (error) {
+      const code = (error as { code?: string })?.code
+      if (!code || code === 'mutation_unknown' || code === 'request_failed') {
+        try {
+          const reconciled = await postOrchestratorControl(config!, { operation: 'receipt', request_id: requestId })
+          if (reconciled.success && reconciled.receipt_status === 'completed' && reconciled.request_id === requestId) return reconciled
+          if (reconciled.receipt_status === 'pending' || reconciled.receipt_status === 'unknown') throw unknown()
+          reviewRequestIds.current.delete(key)
+          throw new Error(reconciled.error?.message || 'Review action receipt was rejected.')
+        } catch (receiptError) {
+          if ((receiptError as { code?: string })?.code !== 'receipt_not_found') throw unknown()
+        }
+        throw unknown()
+      }
+      reviewRequestIds.current.delete(key)
+      throw error
+    }
   }
 
   const handleIssueUpdate = async (identifier: string, updates: IssueUpdatePayload) => {
@@ -163,6 +236,236 @@ export function useIssueActions(
     }
   }
 
+  const handleApprovePlan: UseIssueActionsResult['handleApprovePlan'] = async (request) => {
+    if (!config) throw new Error('Backend unavailable. The plan was not approved.')
+    const target = captureTaskTarget(request.task_id)
+    if (target.virtual || !target.issue) throw new Error('Plan approval is available only for a local Orchestra task.')
+    const identity = target.issue
+    const stableId = identity.id || identity.issue_id || ''
+    const identifier = identity.identifier || identity.issue_identifier || stableId
+    if (!stableId || stableId !== request.task_id || identity.project_id !== request.project_id || !identifier) throw new Error('Task identity changed. Reopen the task in its project before approving the plan.')
+
+    let receipt
+    try {
+      const prior = await postOrchestratorControl(config, { operation: 'receipt', request_id: request.request_id })
+      if (!prior.success || prior.receipt_status !== 'completed' || prior.request_id !== request.request_id || prior.data?.effect !== 'plan_approved') {
+        throw new Error(prior.error?.message || `Approval receipt ${request.request_id} is not complete; refresh this task before taking another action.`)
+      }
+      receipt = prior
+    } catch (error) {
+      target.assertCurrent()
+      const code = (error as { code?: string })?.code
+      if (code === 'mutation_unknown') throw new Error(`Approval outcome is still unknown for request ${request.request_id}. Refresh the task and inspect this receipt before trying again.`)
+      if (code !== 'receipt_not_found') throw error
+    }
+
+    if (!receipt) {
+      const fresh = await fetchIssueDetail(config, identifier)
+      target.assertCurrent()
+      const freshId = fresh.id || fresh.issue_id || ''
+      const freshGate = fresh.plan_gate as { status?: string; plan_hash?: string } | undefined
+      if (freshId !== request.task_id || fresh.project_id !== request.project_id) throw new Error('Fresh task read returned a different task or project. No approval was sent.')
+      if (fresh.state !== 'Todo' || freshGate?.status !== 'awaiting_approval' || freshGate.plan_hash !== request.expected_plan_hash) throw new Error('The plan or task state changed. Refresh the task before approving the current plan.')
+
+      const approveRequest: OrchestratorControlRequest = request
+      try {
+        receipt = await postOrchestratorControl(config, approveRequest)
+      } catch (error) {
+        target.assertCurrent()
+        const code = (error as { code?: string })?.code
+        if (code && code !== 'mutation_unknown') throw error
+        try {
+          receipt = await postOrchestratorControl(config, { operation: 'receipt', request_id: request.request_id })
+        } catch {
+          throw new Error(`Approval outcome is unknown for request ${request.request_id}. Refresh this task and reconcile the same receipt before trying again.`)
+        }
+      }
+    }
+    target.assertCurrent()
+    if (!receipt.success || receipt.receipt_status !== 'completed' || receipt.request_id !== request.request_id || receipt.data?.effect !== 'plan_approved') {
+      const message = receipt.error?.message || (receipt.receipt_status === 'pending' || receipt.receipt_status === 'unknown'
+        ? `Approval outcome is still unknown for request ${request.request_id}. Refresh the task and inspect this receipt before trying again.`
+        : 'The approval receipt was not confirmed. Refresh the task before trying again.')
+      throw new Error(message)
+    }
+
+    const confirmed = await fetchIssueDetail(config, identifier)
+    target.assertCurrent()
+    const confirmedId = confirmed.id || confirmed.issue_id || ''
+    const confirmedGate = confirmed.plan_gate as { status?: string; plan_hash?: string } | undefined
+    if (confirmedId !== request.task_id || confirmed.project_id !== request.project_id || confirmed.state !== 'In Progress' || confirmedGate?.status !== 'approved' || confirmedGate.plan_hash !== request.expected_plan_hash) {
+      throw new Error(`Approval receipt ${request.request_id} completed, but the refreshed task does not confirm the approved plan. Refresh this task before taking another action.`)
+    }
+    opts.setIssueLookupResult({ ...identity, ...confirmed } as IssueDetailResult)
+    opts.setStatusMessage(`Plan approved for ${identifier}. Execution is queued; worker activity is not yet confirmed.`)
+    const issues = await fetchIssues(config)
+    target.assertCurrent()
+    useAppStore.getState().setBoardIssues(issues)
+  }
+
+  const handleReplan: UseIssueActionsResult['handleReplan'] = async (request) => {
+    if (!config) throw new Error('Backend unavailable. The replan was not requested.')
+    const feedback = request.feedback.trim()
+    if (!feedback) throw new Error('Enter feedback before requesting a replan.')
+    const target = captureTaskTarget(request.task_id)
+    if (target.virtual || !target.issue) throw new Error('Replanning is available only for a local Orchestra task.')
+    const identity = target.issue
+    const stableId = identity.id || identity.issue_id || ''
+    const identifier = identity.identifier || identity.issue_identifier || stableId
+    if (!stableId || stableId !== request.task_id || identity.project_id !== request.project_id || !identifier) throw new Error('Task identity changed. Reopen the task in its project before requesting a replan.')
+
+    let receipt
+    try {
+      const prior = await postOrchestratorControl(config, { operation: 'receipt', request_id: request.request_id })
+      if (!prior.success || prior.receipt_status !== 'completed' || prior.request_id !== request.request_id || prior.data?.effect !== 'replan_requested') {
+        throw new Error(prior.error?.message || `Replan receipt ${request.request_id} is not complete; refresh this task before taking another action.`)
+      }
+      receipt = prior
+    } catch (error) {
+      target.assertCurrent()
+      const code = (error as { code?: string })?.code
+      if (code === 'mutation_unknown') throw new Error(`Replan outcome is still unknown for request ${request.request_id}. Refresh the task and inspect this receipt before trying again.`)
+      if (code !== 'receipt_not_found') throw error
+    }
+
+    if (!receipt) {
+      const fresh = await fetchIssueDetail(config, identifier)
+      target.assertCurrent()
+      const freshId = fresh.id || fresh.issue_id || ''
+      const freshGate = fresh.plan_gate as { status?: string; plan_hash?: string } | undefined
+      if (freshId !== request.task_id || fresh.project_id !== request.project_id) throw new Error('Fresh task read returned a different task or project. No replan was sent.')
+      if (fresh.state !== request.expected_state || freshGate?.status === 'unsupported' || freshGate?.plan_hash !== request.expected_plan_hash) throw new Error('The task state, planning capability, or context hash changed. Refresh before requesting a replan.')
+
+      try {
+        receipt = await postOrchestratorControl(config, request)
+      } catch (error) {
+        target.assertCurrent()
+        const code = (error as { code?: string })?.code
+        if (code && code !== 'mutation_unknown') throw error
+        try {
+          receipt = await postOrchestratorControl(config, { operation: 'receipt', request_id: request.request_id })
+        } catch {
+          throw new Error(`Replan outcome is unknown for request ${request.request_id}. Refresh this task and reconcile the same receipt before trying again.`)
+        }
+      }
+    }
+    target.assertCurrent()
+    if (!receipt.success || receipt.receipt_status !== 'completed' || receipt.request_id !== request.request_id || receipt.data?.effect !== 'replan_requested') {
+      const message = receipt.error?.message || (receipt.receipt_status === 'pending' || receipt.receipt_status === 'unknown'
+        ? `Replan outcome is still unknown for request ${request.request_id}. Refresh the task and inspect this receipt before trying again.`
+        : 'The replan receipt was not confirmed. Refresh the task before trying again.')
+      throw new Error(message)
+    }
+
+    const confirmed = await fetchIssueDetail(config, identifier)
+    target.assertCurrent()
+    const confirmedId = confirmed.id || confirmed.issue_id || ''
+    const confirmedFeedback = typeof confirmed.feedback === 'string' ? confirmed.feedback.trim() : ''
+    if (confirmedId !== request.task_id || confirmed.project_id !== request.project_id || confirmed.state !== 'Todo' || confirmedFeedback !== feedback) {
+      throw new Error(`Replan receipt ${request.request_id} completed, but the refreshed task does not confirm Todo with the submitted feedback.`)
+    }
+    opts.setIssueLookupResult({ ...identity, ...confirmed } as IssueDetailResult)
+    opts.setStatusMessage(`Replan requested for ${identifier}. Planning activity has not yet been observed.`)
+    const issues = await fetchIssues(config)
+    target.assertCurrent()
+    useAppStore.getState().setBoardIssues(issues)
+  }
+
+  const handleRequestReview: UseIssueActionsResult['handleRequestReview'] = async (identifier, provider) => {
+    if (!config || !provider.trim()) throw new Error('Select an available registered review provider first.')
+    const target = captureTaskTarget(identifier)
+    if (target.virtual || !target.issue) throw new Error('PR review is available only for an exact local Orchestra task.')
+    const stableId = target.issue.id || target.issue.issue_id || ''
+    const issueIdentifier = target.issue.identifier || target.issue.issue_identifier || stableId
+    if (!stableId || !issueIdentifier || !target.issue.project_id) throw new Error('Task identity is incomplete. Reopen it from its project before requesting review.')
+    const fresh = await fetchIssueDetail(config, issueIdentifier)
+    target.assertCurrent()
+    const freshPRURL = typeof fresh.pr_url === 'string' ? fresh.pr_url : ''
+    if ((fresh.id || fresh.issue_id) !== stableId || fresh.project_id !== target.issue.project_id || fresh.state !== 'Review' || !freshPRURL) throw new Error('Fresh task read does not confirm the exact Review task and linked pull request.')
+    const inventory = await postOrchestratorControl(config, { operation: 'reviewers' })
+    target.assertCurrent()
+    const capability = inventory.data?.providers?.find(item => item.provider === provider && item.available && item.reviewer_agent_id === 'provider-default')
+    if (!inventory.success || !capability) throw new Error(inventory.error?.message || `No verified provider-default review capability is available for ${provider}.`)
+    const pr = await exactReviewSnapshot(target.issue.project_id, freshPRURL)
+    target.assertCurrent()
+    const gate = fresh.review_gate as { status?: string; head_sha?: string; pr_url?: string; attempt_id?: string } | undefined
+    if (gate?.status === 'running' || gate?.status === 'awaiting_human_approval' || gate?.status === 'approved') throw new Error('A review for this pull request head is already running or settled.')
+    const key = `request_review\u0000${target.issue.project_id}\u0000${stableId}\u0000${freshPRURL}\u0000${pr.head.sha}\u0000${provider}`
+    const result = await reviewReceipt(key, requestId => ({
+      operation: 'request_review', request_id: requestId, project_id: target.issue!.project_id!, task_id: stableId,
+      expected_state: 'Review', expected_pr_url: freshPRURL, expected_head_sha: pr.head.sha!, provider, reviewer_agent_id: capability.reviewer_agent_id,
+    }))
+    target.assertCurrent()
+    const admittedGate = result.data?.review_gate
+    if (!admittedGate || !admittedGate.attempt_id || admittedGate.pr_url !== freshPRURL || admittedGate.head_sha?.toLowerCase() !== pr.head.sha?.toLowerCase() || admittedGate.reviewer_provider !== provider || admittedGate.reviewer_agent_id !== 'provider-default') throw new Error(`Review receipt ${result.request_id || ''} did not confirm the requested task, pull request, head and provider.`)
+    const confirmed = await fetchIssueDetail(config, issueIdentifier)
+    target.assertCurrent()
+    const confirmedGate = confirmed.review_gate as { status?: string; head_sha?: string; pr_url?: string; attempt_id?: string; reviewer_provider?: string; reviewer_agent_id?: string } | undefined
+    const findingsSettled = confirmedGate?.status === 'changes_requested' && confirmed.state === 'Todo'
+    if ((confirmed.id || confirmed.issue_id) !== stableId || confirmed.project_id !== target.issue.project_id || !['Review', 'Todo'].includes(confirmed.state) || !confirmedGate || confirmedGate.attempt_id !== admittedGate.attempt_id || confirmedGate.pr_url !== freshPRURL || confirmedGate.head_sha?.toLowerCase() !== pr.head.sha?.toLowerCase() || !findingsSettled && confirmedGate.reviewer_provider !== provider) throw new Error('The review attempt was accepted, but the refreshed task does not confirm its exact review identity.')
+    opts.setIssueLookupResult({ ...target.issue, ...confirmed } as IssueDetailResult)
+    opts.setStatusMessage(findingsSettled ? `Review findings returned ${issueIdentifier} to planning with feedback.` : `Review attempt ${admittedGate.attempt_id} accepted; reviewer completion is not yet observed.`)
+    const issues = await fetchIssues(config)
+    target.assertCurrent()
+    useAppStore.getState().setBoardIssues(issues)
+  }
+
+  const handleApproveReview: UseIssueActionsResult['handleApproveReview'] = async (identifier) => {
+    if (!config) throw new Error('Backend unavailable. Review approval was not submitted.')
+    const target = captureTaskTarget(identifier)
+    if (target.virtual || !target.issue) throw new Error('Review approval is available only for an exact local task.')
+    const stableId = target.issue.id || target.issue.issue_id || ''
+    const issueIdentifier = target.issue.identifier || target.issue.issue_identifier || stableId
+    const projectId = target.issue.project_id || ''
+    const fresh = await fetchIssueDetail(config, issueIdentifier)
+    target.assertCurrent()
+    const gate = fresh.review_gate as { status?: string; head_sha?: string; pr_url?: string; attempt_id?: string } | undefined
+    if ((fresh.id || fresh.issue_id) !== stableId || fresh.project_id !== projectId || fresh.state !== 'Review' || gate?.status !== 'awaiting_human_approval' || !gate.attempt_id || !gate.head_sha || !gate.pr_url) throw new Error('Fresh task read does not confirm a clean review awaiting your approval.')
+    await exactReviewSnapshot(projectId, gate.pr_url, gate.head_sha)
+    target.assertCurrent()
+    const key = `approve_review\u0000${projectId}\u0000${stableId}\u0000${gate.pr_url}\u0000${gate.head_sha}\u0000${gate.attempt_id}`
+    const result = await reviewReceipt(key, requestId => ({ operation: 'approve_review', request_id: requestId, project_id: projectId, task_id: stableId, expected_state: 'Review', expected_pr_url: gate.pr_url!, expected_head_sha: gate.head_sha!, review_attempt_id: gate.attempt_id! }))
+    target.assertCurrent()
+    if (result.data?.task_state !== 'Review' || result.data.review_gate?.status !== 'approved' || result.data.review_gate.attempt_id !== gate.attempt_id || result.data.review_gate.head_sha?.toLowerCase() !== gate.head_sha.toLowerCase() || result.data.review_gate.pr_url !== gate.pr_url) throw new Error('Review approval receipt does not confirm the exact approved attempt.')
+    const confirmed = await fetchIssueDetail(config, issueIdentifier)
+    target.assertCurrent()
+    const confirmedGate = confirmed.review_gate as typeof gate
+    if ((confirmed.id || confirmed.issue_id) !== stableId || confirmed.project_id !== projectId || confirmed.state !== 'Review' || confirmedGate?.status !== 'approved' || confirmedGate.attempt_id !== gate.attempt_id || confirmedGate.head_sha?.toLowerCase() !== gate.head_sha.toLowerCase() || confirmedGate.pr_url !== gate.pr_url) throw new Error('Approval completed, but the refreshed task does not confirm that exact review attempt.')
+    opts.setIssueLookupResult({ ...target.issue, ...confirmed } as IssueDetailResult)
+    opts.setStatusMessage('Review approved. The task remains in Review until this same pull request head is observed merged.')
+    const issues = await fetchIssues(config)
+    target.assertCurrent()
+    useAppStore.getState().setBoardIssues(issues)
+  }
+
+  const handleCompleteReview: UseIssueActionsResult['handleCompleteReview'] = async (identifier) => {
+    if (!config) throw new Error('Backend unavailable. Task completion was not submitted.')
+    const target = captureTaskTarget(identifier)
+    if (target.virtual || !target.issue) throw new Error('Review completion is available only for an exact local task.')
+    const stableId = target.issue.id || target.issue.issue_id || ''
+    const issueIdentifier = target.issue.identifier || target.issue.issue_identifier || stableId
+    const projectId = target.issue.project_id || ''
+    const fresh = await fetchIssueDetail(config, issueIdentifier)
+    target.assertCurrent()
+    const gate = fresh.review_gate as { status?: string; head_sha?: string; pr_url?: string; attempt_id?: string } | undefined
+    if ((fresh.id || fresh.issue_id) !== stableId || fresh.project_id !== projectId || fresh.state !== 'Review' || gate?.status !== 'approved' || !gate.attempt_id || !gate.head_sha || !gate.pr_url) throw new Error('Fresh task read does not confirm an approved Review attempt.')
+    await exactReviewSnapshot(projectId, gate.pr_url, gate.head_sha, true)
+    target.assertCurrent()
+    const key = `complete_review\u0000${projectId}\u0000${stableId}\u0000${gate.pr_url}\u0000${gate.head_sha}\u0000${gate.attempt_id}`
+    const result = await reviewReceipt(key, requestId => ({ operation: 'complete_review', request_id: requestId, project_id: projectId, task_id: stableId, expected_state: 'Review', expected_pr_url: gate.pr_url!, expected_head_sha: gate.head_sha!, review_attempt_id: gate.attempt_id! }))
+    target.assertCurrent()
+    if (result.data?.task_state !== 'Done' || result.data.review_gate?.status !== 'approved' || result.data.review_gate.attempt_id !== gate.attempt_id || result.data.review_gate.head_sha?.toLowerCase() !== gate.head_sha.toLowerCase() || result.data.review_gate.pr_url !== gate.pr_url) throw new Error('Completion receipt does not confirm the exact approved review and merged head.')
+    const confirmed = await fetchIssueDetail(config, issueIdentifier)
+    target.assertCurrent()
+    const confirmedGate = confirmed.review_gate as typeof gate
+    if ((confirmed.id || confirmed.issue_id) !== stableId || confirmed.project_id !== projectId || confirmed.state !== 'Done' || confirmedGate?.status !== 'approved' || confirmedGate.attempt_id !== gate.attempt_id || confirmedGate.head_sha?.toLowerCase() !== gate.head_sha.toLowerCase() || confirmedGate.pr_url !== gate.pr_url) throw new Error('Completion receipt landed, but the refreshed task does not confirm the exact merged review.')
+    opts.setIssueLookupResult({ ...target.issue, ...confirmed } as IssueDetailResult)
+    opts.setStatusMessage(`Task ${issueIdentifier} completed after the approved pull request head was confirmed merged.`)
+    const issues = await fetchIssues(config)
+    target.assertCurrent()
+    useAppStore.getState().setBoardIssues(issues)
+  }
+
   const handleStopSession = async (identifier: string, provider?: string) => {
     if (!config) return
     try {
@@ -170,9 +473,10 @@ export function useIssueActions(
       if (target.virtual) throw new Error('GitHub backlog issues have no local agent session. Promote this task before stopping a session.')
       await stopIssueSession(config, identifier, provider)
       target.assertCurrent()
-      await updateIssue(config, identifier, { state: 'Todo' })
+      const stopped = await fetchIssueDetail(config, identifier)
       target.assertCurrent()
-      opts.setStatusMessage(`Session for ${identifier} stopped. Task moved to Todo.`)
+      if ((stopped.id || stopped.issue_id) !== (target.issue.id || target.issue.issue_id) || stopped.project_id !== target.issue.project_id || stopped.state !== 'Backlog') throw new Error('Stop was requested, but the exact task is not confirmed in Backlog. Refresh before continuing.')
+      opts.setStatusMessage(`Session for ${identifier} stopped. Work retained in Backlog; a new plan approval is required.`)
       const updatedIssues = await fetchIssues(config)
       target.assertCurrent()
       useAppStore.getState().setBoardIssues(updatedIssues)
@@ -181,6 +485,7 @@ export function useIssueActions(
       await opts.executeIssueLookup(identifier)
     } catch (err) {
       opts.setErrorMessage(`stop session failed: ${toDisplayError(err)}`)
+      throw err
     }
   }
 
@@ -358,6 +663,11 @@ export function useIssueActions(
 
   return {
     handleIssueUpdate,
+    handleApprovePlan,
+    handleReplan,
+    handleRequestReview,
+    handleApproveReview,
+    handleCompleteReview,
     handleStopSession,
     handleCreateIssue,
     handleTaskSubmit,

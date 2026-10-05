@@ -184,7 +184,7 @@ func agentsProviderFor(runner string) (agents.Provider, error) {
 	case "opencode":
 		return agents.ProviderOpenCode, nil
 	case "gemini":
-		return agents.ProviderGemini, nil
+		return "", fmt.Errorf("studio: Gemini is a retired harness; select Antigravity for new sessions")
 	default:
 		return "", fmt.Errorf("studio: unsupported runner %q", runner)
 	}

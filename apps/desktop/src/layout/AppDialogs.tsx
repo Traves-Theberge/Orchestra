@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { IssueUpdatePayload, BackendConfig, RuntimeEntry } from '@core/api/client'
+import type { IssueUpdatePayload, BackendConfig, RuntimeEntry, OrchestratorControlRequest } from '@core/api/client'
 import { fetchAvailableRuntimes } from '@core/api/client'
 import type { SessionDetail, SnapshotPayload } from '@core/api/types'
 import type { TimelineItem } from '@layout/types'
@@ -31,6 +31,11 @@ interface AppDialogsProps {
   sessionLookupError: string
   sessionLookupResult: SessionDetail | null
   onIssueUpdate: (identifier: string, updates: IssueUpdatePayload) => Promise<void>
+  onApprovePlan: (request: Extract<OrchestratorControlRequest, { operation: 'approve_plan' }>) => Promise<void>
+  onReplan: (request: Extract<OrchestratorControlRequest, { operation: 'replan' }>) => Promise<void>
+  onRequestReview: (identifier: string, provider: string) => Promise<void>
+  onApproveReview: (identifier: string) => Promise<void>
+  onCompleteReview: (identifier: string) => Promise<void>
   onStopSession: (identifier: string, provider?: string) => Promise<void>
   onTaskSubmit: (payload: import('@core/api/client').IssueCreatePayload) => Promise<void>
   onAddProject: (path: string, setup?: import('@core/api/client').ProjectSetupOptions) => Promise<void>
@@ -50,6 +55,11 @@ export function AppDialogs({
   sessionLookupError,
   sessionLookupResult,
   onIssueUpdate,
+  onApprovePlan,
+  onReplan,
+  onRequestReview,
+  onApproveReview,
+  onCompleteReview,
   onStopSession,
   onTaskSubmit,
   onAddProject,
@@ -106,6 +116,11 @@ export function AppDialogs({
                   availableAgents={availableAgents}
                   snapshot={snapshot}
                   onUpdate={(updates) => onIssueUpdate(issueLookupId, updates)}
+                  onApprovePlan={onApprovePlan}
+                  onReplan={onReplan}
+                  onRequestReview={(provider) => onRequestReview(issueLookupId, provider)}
+                  onApproveReview={() => onApproveReview(issueLookupId)}
+                  onCompleteReview={() => onCompleteReview(issueLookupId)}
                   onStopSession={(p) => onStopSession(issueLookupId, p)}
                   theme={theme}
                 />

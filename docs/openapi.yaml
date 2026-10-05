@@ -96,7 +96,7 @@ components:
             $ref: '#/components/schemas/Blocker'
         provider:
           type: string
-          description: Agent provider override (claude/codex/gemini/opencode).
+          description: Agent harness override (claude/codex/antigravity/opencode/8gent). Historical Gemini identities remain readable but cannot be selected for new work.
         runtime_target:
           type: string
           description: Remote execution target (tailscale/kubernetes node name).
@@ -114,6 +114,10 @@ components:
         plan:
           type: string
           description: Agent execution plan text.
+        plan_gate:
+          $ref: '#/components/schemas/PlanGate'
+        review_gate:
+          $ref: '#/components/schemas/ReviewGate'
         created_at:
           type: string
           format: date-time
@@ -441,9 +445,48 @@ components:
           type: string
         plan:
           type: string
+        plan_gate:
+          $ref: '#/components/schemas/PlanGate'
+        review_gate:
+          $ref: '#/components/schemas/ReviewGate'
         extra:
           type: object
           additionalProperties: true
+
+    PlanGate:
+      type: object
+      description: Durable local task approval evidence bound to the current task context. Registration does not imply a supported planning stage.
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [planning, awaiting_approval, approved, stale, failed, unsupported]
+        plan_hash:
+          type: string
+          description: Exact context fingerprint required for approval and replan controls.
+        reason:
+          type: string
+          description: Observed limitation preventing this task source or harness from planning safely.
+
+    ReviewGate:
+      type: object
+      description: Last durable review attempt. Every approval and completion action independently verifies a fresh PR snapshot and task context.
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [not_reviewed, running, awaiting_human_approval, changes_requested, approved, stale, interrupted, failed, unsupported]
+        freshness:
+          type: string
+          enum: [not_checked]
+        attempt_id: { type: string }
+        head_sha: { type: string }
+        pr_url: { type: string }
+        reviewer_provider: { type: string }
+        reviewer_agent_id: { type: string }
+        reviewer_run_id: { type: string }
+        reviewer_session_id: { type: string }
+        feedback: { type: string }
 
     TrackerProject:
       type: object
@@ -1364,6 +1407,57 @@ paths:
           $ref: '#/components/responses/Unauthorized'
 
   # ─── Issues ───────────────────────────────────────────────────────────────
+  /api/v1/orchestrator/control:
+    post:
+      tags: [State]
+      summary: Execute or reconcile a durable project control operation
+      description: >
+        Runs bounded exact-project task controls shared by HTTP, CLI, and
+        native chat. `approve_plan` requires a current Todo plan hash and moves
+        the task to In Progress only after explicit approval. `replan` records
+        nonblank feedback and returns the task to Todo without executing it.
+        Mutation requests require a canonical UUID `request_id`; submit the same
+        UUID and arguments to reconcile a completed receipt. `receipt` is
+        read-only. Queueing, approval, and replan do not establish that a run
+        started or settled.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [operation]
+              properties:
+                operation:
+                  type: string
+                  enum: [projects, tasks, worktrees, status, create, assign, queue, approve_plan, replan, reviewers, request_review, approve_review, complete_review, receipt]
+                project_id: { type: string, description: Exact registered project identity. }
+                task_id: { type: string, description: Exact task identity within project_id. }
+                request_id: { type: string, format: uuid, description: Stable mutation receipt identity. }
+                expected_state: { type: string, enum: [Backlog, Todo, In Progress, Review] }
+                expected_plan_hash: { type: string, description: Exact current plan and execution-context fingerprint for approval or replan. }
+                expected_pr_url: { type: string, format: uri, description: Exact canonical linked PR URL for review controls. }
+                expected_head_sha: { type: string, description: Fresh full PR head SHA for review controls. }
+                review_attempt_id: { type: string, format: uuid, description: Exact reviewer attempt for human approval or completion. }
+                reviewer_agent_id: { type: string, enum: [provider-default], description: Supported native profile for requesting a review. }
+                feedback: { type: string, description: Required nonblank human or agent feedback for replan. }
+                title: { type: string }
+                description: { type: string, maxLength: 65536 }
+                assignee_id: { type: string }
+                provider: { type: string }
+                unassigned: { type: boolean }
+      responses:
+        '200':
+          description: Control result or stored receipt; inspect success and receipt_status.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
   /api/v1/issues:
     get:
       tags: [Issues]
@@ -1704,7 +1798,7 @@ paths:
     delete:
       tags: [Issues]
       summary: Stop issue session
-      description: Stops the active agent session(s) for an issue and resets state to `Todo`. Pass `provider` query param to stop only that provider's session (returns 409 if no session exists for it); omit to stop all sessions. Works even when the issue has no active runtime entry.
+      description: Stops the active agent session(s) for an issue and holds the task in `Backlog`, invalidating local plan approval while retaining its plan, feedback, worktree, branch and PR. Pass `provider` query param to select the session to cancel (returns 409 if no session exists for it); omit to stop all sessions. Works even when the issue has no active runtime entry. Starting again requires replanning and approval.
       parameters:
         - $ref: '#/components/parameters/IssueIdentifier'
         - name: provider
@@ -1729,18 +1823,17 @@ paths:
   /api/v1/issues/{issue_identifier}/stop:
     post:
       tags: [Issues]
-      summary: Stop and reset issue
+      summary: Stop issue and retain work
       description: >
-        Hard-resets an issue: stops all active agent sessions, removes the git
-        worktree directory, prunes the worktree reference, force-deletes the
-        branch, and resets the issue to `Backlog` while clearing `feedback`,
-        `plan`, `branch_name`, and `base_sha`. Bypasses normal state-transition
-        validation.
+        Stops active sessions and holds the issue in `Backlog`. Retains the
+        worktree, branch, plan, feedback, base SHA and linked PR. Invalidates
+        local plan approval durably so returning to Todo requires a new plan
+        and human approval. Does not delete files or publish Git changes.
       parameters:
         - $ref: '#/components/parameters/IssueIdentifier'
       responses:
         '200':
-          description: Reset issue.
+          description: Stopped issue with retained task context.
           content:
             application/json:
               schema:
@@ -3774,6 +3867,45 @@ paths:
                     items:
                       type: object
                       additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/agents/setup:
+    get:
+      tags: [Agents]
+      summary: Observe harness setup on the backend host
+      description: Reports runner registration, command configuration, executable discovery, and authentication evidence separately. Authentication is verified only for supported read-only provider probes; unknown never implies signed in. Executable paths and CLI output never include credentials.
+      responses:
+        '200':
+          description: Host-scoped harness observations.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [harnesses]
+                properties:
+                  harnesses:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, registered, command_configured, installation, authentication, terminal_supported]
+                      properties:
+                        id:
+                          type: string
+                        registered:
+                          type: boolean
+                        command_configured:
+                          type: boolean
+                        installation:
+                          type: string
+                          enum: [detected, missing, unknown]
+                        authentication:
+                          type: string
+                          enum: [signed_in, signed_out, unknown]
+                        executable:
+                          type: string
+                        terminal_supported:
+                          type: boolean
         '401':
           $ref: '#/components/responses/Unauthorized'
 

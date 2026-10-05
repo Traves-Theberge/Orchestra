@@ -181,6 +181,11 @@ export default function App() {
 
   const {
     handleIssueUpdate,
+    handleApprovePlan,
+    handleReplan,
+    handleRequestReview,
+    handleApproveReview,
+    handleCompleteReview,
     handleStopSession,
     handleCreateIssue,
     handleTaskSubmit,
@@ -599,6 +604,11 @@ export default function App() {
         sessionLookupError={sessionLookupError}
         sessionLookupResult={sessionLookupResult}
         onIssueUpdate={handleIssueUpdate}
+        onApprovePlan={handleApprovePlan}
+        onReplan={handleReplan}
+        onRequestReview={handleRequestReview}
+        onApproveReview={handleApproveReview}
+        onCompleteReview={handleCompleteReview}
         onStopSession={handleStopSession}
         onTaskSubmit={handleTaskSubmit}
         onAddProject={handleAddProject}

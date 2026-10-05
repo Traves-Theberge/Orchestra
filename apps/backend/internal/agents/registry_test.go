@@ -22,6 +22,51 @@ func TestNewRegistryNormalizesProviderKeys(t *testing.T) {
 	}
 }
 
+func TestLegacyGeminiCommandDoesNotRegisterAnActiveRunner(t *testing.T) {
+	registry := NewRegistry(map[string]string{
+		"GEMINI": "gemini -p {{prompt}} --output-format stream-json --approval-mode yolo",
+	})
+	if registry.HasProvider(ProviderGemini) {
+		t.Fatal("legacy Gemini configuration registered an active runner")
+	}
+	if registry.CanReadOnlyStage(ProviderGemini) || registry.CanReadOnlyStage(ProviderAntigravity) {
+		t.Fatal("unexpected read-only capability without a verified adapter")
+	}
+	if _, _, ok := registry.PrepareReadOnlyStageCommandFor(ProviderAntigravity); ok {
+		t.Fatal("Antigravity capability must remain unavailable until scoped permissions are verified")
+	}
+}
+
+func TestReadOnlyPlanCommandRequiresKnownDefaultAndVerifiedProviderMode(t *testing.T) {
+	cases := []struct {
+		provider Provider
+		command  string
+		want     string
+	}{
+		{ProviderCodex, "codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json {{prompt}}", "codex exec --skip-git-repo-check --ignore-user-config --sandbox read-only --json {{prompt}}"},
+		{ProviderClaude, "claude -p {{prompt}} --output-format stream-json --verbose --dangerously-skip-permissions", "claude -p {{prompt}} --output-format stream-json --verbose --permission-mode plan --tools Read,Grep,Glob --disallowedTools mcp__*"},
+		{ProviderAntigravity, "agy -p {{prompt}} --output-format stream-json", ""},
+		{ProviderOpenCode, "opencode -p {{prompt}} -f json", ""},
+		{Provider8gent, "8gent run --yes --output-format stream-json {{prompt}}", ""},
+		{ProviderCodex, "codex exec --dangerously-bypass-approvals-and-sandbox {{prompt}}", ""},
+	}
+	for _, tc := range cases {
+		t.Run(string(tc.provider)+"/"+tc.command, func(t *testing.T) {
+			registry := NewRegistry(map[string]string{string(tc.provider): tc.command})
+			got, ok := registry.ReadOnlyPlanCommandFor(tc.provider)
+			if tc.want == "" {
+				if ok || got != "" {
+					t.Fatalf("unexpected plan capability %q, %v", got, ok)
+				}
+				return
+			}
+			if !ok || got != tc.want {
+				t.Fatalf("plan command %q, %v; want %q", got, ok, tc.want)
+			}
+		})
+	}
+}
+
 func TestNewRegistryUsesCodexAppServerRunnerWhenCommandIncludesAppServer(t *testing.T) {
 	registry := NewRegistry(map[string]string{
 		"codex": "codex app-server --stdio",
@@ -62,7 +107,6 @@ func TestRegistrySelectsCorrectRunnerPerProvider(t *testing.T) {
 		{"claude", ProviderClaude, "claude --print", (*ClaudeRunner)(nil)},
 		{"codex_app_server", ProviderCodex, "codex app-server --stdio", (*CodexAppServerRunner)(nil)},
 		{"opencode", ProviderOpenCode, "opencode run", (*OpenCodeRunner)(nil)},
-		{"gemini", ProviderGemini, "gemini --prompt", (*GeminiRunner)(nil)},
 	}
 
 	for _, tc := range cases {

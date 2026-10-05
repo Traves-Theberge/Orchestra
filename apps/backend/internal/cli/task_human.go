@@ -104,6 +104,21 @@ func writeTaskDetails(out io.Writer, task map[string]any) error {
 		safeHuman(task["state"]), valueOr(task["assignee_id"], "unassigned"), valueOr(task["provider"], "not set"), valueOr(task["pr_url"], "none")); err != nil {
 		return err
 	}
+	if gate, ok := task["plan_gate"].(map[string]any); ok {
+		if _, err := fmt.Fprintf(out, "  Plan gate: %s\n  Plan hash: %s\n", valueOr(gate["status"], "unknown"), valueOr(gate["plan_hash"], "not observed")); err != nil {
+			return err
+		}
+		if reason := safeHuman(gate["reason"]); reason != "" {
+			if _, err := fmt.Fprintf(out, "  Plan availability: %s\n", reason); err != nil {
+				return err
+			}
+		}
+	}
+	if gate, ok := task["review_gate"].(map[string]any); ok {
+		if _, err := fmt.Fprintf(out, "  Review gate: %s\n  Reviewed head: %s\n  Review attempt: %s\n", valueOr(gate["status"], "unknown"), valueOr(gate["head_sha"], "not observed"), valueOr(gate["attempt_id"], "not observed")); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

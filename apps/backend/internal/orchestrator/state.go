@@ -24,7 +24,15 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/mcp"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
 	trackerregistry "github.com/orchestra/orchestra/apps/backend/internal/tracker/registry"
+	trackersqlite "github.com/orchestra/orchestra/apps/backend/internal/tracker/sqlite"
 	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
+)
+
+var (
+	ErrPlanApprovalRequired   = errors.New("current plan requires explicit human approval")
+	ErrReviewApprovalRequired = errors.New("reviewed head requires explicit human approval before completion")
+	ErrReplanRequired         = errors.New("review feedback requires an explicit replan operation")
+	ErrRetiredHarness         = errors.New("Gemini is a retired harness; select Antigravity for new tasks")
 )
 
 // CodexTotals holds cumulative token usage and wall-clock time across all completed runs.
@@ -120,6 +128,7 @@ type Service struct {
 	refreshPending           bool
 	trackerClient            tracker.Client
 	agentRegistry            *agents.Registry
+	stageContext             context.Context
 	agentCommands            map[string]string
 	agentProvider            string
 	activeStates             []string
@@ -140,6 +149,7 @@ type Service struct {
 	mcpRegistry              *mcp.Registry
 	mcpServers               map[string]string
 	trackerReg               *trackerregistry.Registry
+	trackerWorkerAssigneeIDs []string
 	onRetryExhausted         func(issueID, issueIdentifier, issueState string)
 }
 
@@ -239,12 +249,41 @@ func (s *Service) DeregisterCancel(issueID string, provider string) {
 func (s *Service) StopSession(issueID string, provider string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if !s.canStopSessionLocked(issueID, provider) {
+		return false
+	}
 	cancel, ok := s.cancels[issueID]
 	if !ok || cancel == nil {
 		return false
 	}
 	cancel()
 	return true
+}
+
+// CanStopSession reports whether a matching active session can be canceled.
+// It lets the API preserve provider-specific not-found behavior before it
+// commits the durable stop hold.
+func (s *Service) CanStopSession(issueID string, provider string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.canStopSessionLocked(issueID, provider)
+}
+
+func (s *Service) canStopSessionLocked(issueID, provider string) bool {
+	cancel, ok := s.cancels[issueID]
+	if !ok || cancel == nil {
+		return false
+	}
+	provider = strings.TrimSpace(provider)
+	if provider == "" {
+		return true
+	}
+	for _, entry := range s.running {
+		if entry.IssueID == issueID && strings.EqualFold(strings.TrimSpace(entry.Provider), provider) {
+			return true
+		}
+	}
+	return false
 }
 
 // StopAllSessionsForIssue cancels every active session for the given issue and
@@ -418,6 +457,27 @@ func (s *Service) SetDB(database *db.DB) {
 	s.db = database
 }
 
+// SetTrackerWorkerAssigneeIDs configures the exact local assignee IDs that may
+// be dispatched as workers. An empty list preserves SQLite's legacy behavior.
+func (s *Service) SetTrackerWorkerAssigneeIDs(ids []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.trackerWorkerAssigneeIDs = append([]string(nil), ids...)
+}
+
+// LocalSQLiteClient returns the local project tracker with the configured
+// worker-assignee allowlist applied.
+func (s *Service) LocalSQLiteClient() tracker.Client {
+	s.mu.RLock()
+	database := s.db
+	workerIDs := append([]string(nil), s.trackerWorkerAssigneeIDs...)
+	s.mu.RUnlock()
+	if database == nil {
+		return nil
+	}
+	return trackersqlite.NewClient(database, workerIDs)
+}
+
 // SetTrackerRegistry wires the per-project tracker registry into the service so
 // issue operations can resolve a project-specific client instead of the global one.
 func (s *Service) SetTrackerRegistry(reg *trackerregistry.Registry) {
@@ -522,7 +582,10 @@ func (s *Service) GetDiff(issueIdentifier string, provider string) (string, erro
 }
 
 // UpdateAgentConfig merges new agent commands and optionally updates the default provider.
-func (s *Service) UpdateAgentConfig(commands map[string]string, provider string) {
+func (s *Service) UpdateAgentConfig(commands map[string]string, provider string) error {
+	if strings.TrimSpace(provider) != "" && agents.NormalizeProvider(provider) == agents.ProviderGemini {
+		return ErrRetiredHarness
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if provider != "" {
@@ -537,6 +600,7 @@ func (s *Service) UpdateAgentConfig(commands map[string]string, provider string)
 			s.agentRegistry.SetCommand(agents.Provider(k), v)
 		}
 	}
+	return nil
 }
 
 // ListAgentConfigs discovers agent configuration files in the workspace and project directories.
@@ -909,6 +973,9 @@ func (s *Service) SearchIssues(ctx context.Context, query string) ([]tracker.Iss
 
 // CreateIssue creates a new issue in the configured tracker with the given metadata.
 func (s *Service) CreateIssue(ctx context.Context, title, description, state string, priority int, assigneeID, projectID string, provider string, runtimeTarget string, disabledTools []string) (*tracker.Issue, error) {
+	if agents.NormalizeProvider(provider) == agents.ProviderGemini {
+		return nil, ErrRetiredHarness
+	}
 	client, source, resolveErr := s.clientForCreation(ctx, projectID)
 	if resolveErr != nil {
 		return nil, resolveErr
@@ -941,26 +1008,11 @@ func (s *Service) CreateIssue(ctx context.Context, title, description, state str
 // UpdateIssue applies field updates to an issue, logs audit history for changed
 // fields, and queues a refresh to reflect changes in the snapshot.
 func (s *Service) UpdateIssue(ctx context.Context, identifier string, updates map[string]any) (*tracker.Issue, error) {
+	if provider, ok := updates["provider"].(string); ok && agents.NormalizeProvider(provider) == agents.ProviderGemini {
+		return nil, errors.New("Gemini is a retired harness; select Antigravity for new assignments")
+	}
 	s.mu.Lock()
 	client := s.trackerClient
-
-	// Handle manual provider override
-	if provider, ok := updates["provider"].(string); ok {
-		// Update in running entries
-		for i, entry := range s.running {
-			if entry.IssueIdentifier == identifier {
-				s.running[i].Provider = provider
-				break
-			}
-		}
-		// Update in retrying entries
-		for i, entry := range s.retrying {
-			if entry.IssueIdentifier == identifier {
-				s.retrying[i].Provider = provider
-				break
-			}
-		}
-	}
 	s.mu.Unlock()
 
 	if client == nil {
@@ -969,10 +1021,53 @@ func (s *Service) UpdateIssue(ctx context.Context, identifier string, updates ma
 
 	// 1. Fetch current issue for audit comparison (best effort)
 	oldIssue, _ := client.FetchIssueByIdentifier(ctx, identifier)
+	if nextState, ok := updates["state"].(string); ok && oldIssue == nil {
+		// State transitions that can enter execution or reopen a completed task
+		// must fail closed when their current state cannot be verified.
+		switch {
+		case strings.EqualFold(nextState, "In Progress"):
+			return nil, ErrReplanRequired
+		case strings.EqualFold(nextState, "Todo"), strings.EqualFold(nextState, "Backlog"):
+			return nil, ErrReplanRequired
+		case strings.EqualFold(nextState, "Done"):
+			return nil, ErrReviewApprovalRequired
+		}
+	}
+	if oldIssue != nil {
+		if nextState, ok := updates["state"].(string); ok && nextState != oldIssue.State {
+			switch {
+			case strings.EqualFold(nextState, "In Progress") && !strings.EqualFold(oldIssue.State, "Todo"):
+				return nil, ErrReplanRequired
+			case strings.EqualFold(nextState, "In Progress") && s.PlanGate(ctx, *oldIssue).Status != "approved":
+				return nil, ErrPlanApprovalRequired
+			case (strings.EqualFold(nextState, "Todo") || strings.EqualFold(nextState, "Backlog")) &&
+				!strings.EqualFold(oldIssue.State, "Todo") && !strings.EqualFold(oldIssue.State, "Backlog"):
+				return nil, ErrReplanRequired
+			case strings.EqualFold(nextState, "Done"):
+				return nil, ErrReviewApprovalRequired
+			}
+		}
+	}
 
 	issue, err := client.UpdateIssue(ctx, identifier, updates)
 	if err != nil {
 		return nil, err
+	}
+	if provider, ok := updates["provider"].(string); ok {
+		s.mu.Lock()
+		for i := range s.running {
+			if s.running[i].IssueIdentifier == identifier {
+				s.running[i].Provider = provider
+				break
+			}
+		}
+		for i := range s.retrying {
+			if s.retrying[i].IssueIdentifier == identifier {
+				s.retrying[i].Provider = provider
+				break
+			}
+		}
+		s.mu.Unlock()
 	}
 
 	// 2. Log changes to history
@@ -1107,6 +1202,17 @@ func (s *Service) enqueueCandidates(candidates []tracker.Issue) {
 		}
 		if _, ok := active[normalizeState(issue.State)]; !ok {
 			continue
+		}
+		gate := s.currentPlanGateLocked(context.Background(), issue)
+		switch normalizeState(issue.State) {
+		case "todo":
+			if gate.Status == "awaiting_approval" || gate.Status == "approved" || gate.Status == "failed" || gate.Status == "unsupported" || gate.Status == "changed" {
+				continue
+			}
+		case "in progress":
+			if gate.Status != "approved" {
+				continue
+			}
 		}
 		if !issue.AssignedToWorker {
 			continue
@@ -1511,6 +1617,13 @@ func (s *Service) RevalidateClaimedIssue(ctx context.Context, issueID string) (b
 	issue := issues[0]
 	state := issue.State
 	if !issue.AssignedToWorker {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.dropRunningIssueLocked(issueID)
+		delete(s.claimed, issueID)
+		return false, nil
+	}
+	if strings.EqualFold(issue.State, "In Progress") && s.PlanGate(ctx, issue).Status != "approved" {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		s.dropRunningIssueLocked(issueID)

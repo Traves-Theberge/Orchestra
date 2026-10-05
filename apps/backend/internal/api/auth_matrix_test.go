@@ -47,6 +47,7 @@ var allRoutes = []route{
 	{"GET", "/api/v1/stt/health", false},
 	{"POST", "/api/v1/stt/transcribe", false},
 	{"GET", "/api/v1/state", false},
+	{"POST", "/api/v1/orchestrator/control", false},
 
 	// Tracker configs
 	{"GET", "/api/v1/tracker/configs", false},
@@ -77,6 +78,7 @@ var allRoutes = []route{
 	{"POST", "/api/v1/config/agents/new", false},
 	{"POST", "/api/v1/config/agents/items", false},
 	{"GET", "/api/v1/agents", false},
+	{"GET", "/api/v1/agents/setup", false},
 	{"GET", "/api/v1/agents/claude/settings", false},
 	{"POST", "/api/v1/agents/claude/settings", false},
 	{"GET", "/api/v1/agents/claude/instructions", false},
@@ -299,7 +301,7 @@ func authMatrixConfig(root string) *config.Config {
 // sync with router.go. If routes are added or removed and the table
 // isn't updated, this test fails so the gap is loud.
 func TestAuthMatrixCoversAllRoutes(t *testing.T) {
-	const expectedRoutes = 193
+	const expectedRoutes = 195
 	if got := len(allRoutes); got != expectedRoutes {
 		t.Fatalf("auth matrix has %d routes, want %d — keep allRoutes in sync with router.go", got, expectedRoutes)
 	}

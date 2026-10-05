@@ -125,6 +125,9 @@ func NewRouterWithPubSub(
 	if server.workspaceChat != nil && warehouseDB != nil {
 		controlService, err := control.New(warehouseDB, orchestratorService, registry, cfg.ProjectRoots)
 		if err == nil {
+			err = server.configureReviewControl(controlService)
+		}
+		if err == nil {
 			if server.agentCatalog != nil {
 				controlService.ConfigureResourceExecutor(server.agentCatalog.Execute)
 			}
@@ -237,6 +240,7 @@ func NewRouterWithPubSub(
 	protected.Post("/api/v1/config/agents/new", server.PostAgentConfigNew)
 	protected.Post("/api/v1/config/agents/items", server.PostAgentConfigUpdate)
 	protected.Get("/api/v1/agents", server.GetAgents)
+	protected.Get("/api/v1/agents/setup", server.GetHarnessSetup)
 	// Claude-specific config endpoints (registered before {provider} wildcards)
 	protected.Get("/api/v1/agents/claude/settings", server.GetClaudeSettings)
 	protected.Post("/api/v1/agents/claude/settings", server.PostClaudeSettings)

@@ -100,7 +100,7 @@ func newAntigravityNativeSessionWithArgs(ctx context.Context, command string, pr
 	processArgs := append(append([]string(nil), prefixArgs...), args...)
 	cmd := exec.CommandContext(childCtx, binary, processArgs...)
 	cmd.Dir = request.Workspace
-	cmd.Env = safeSubprocessEnv(request.SessionID)
+	cmd.Env = safeSubprocessEnv(request.SessionID, ProviderAntigravity)
 	cmd.Env = append(cmd.Env, extraEnv...)
 	cmd.Stderr = io.Discard
 	stdout, err := cmd.StdoutPipe()
