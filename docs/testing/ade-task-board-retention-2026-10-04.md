@@ -95,3 +95,11 @@ two existing skips); native Electron CI must pass before merge.
 The full Linux backend race rerun passed after the startup change (API 88.786s,
 app 5.902s). The renderer production build also passed. Electron smoke copies
 its actual launch screenshot into the uploaded CI reports directory.
+
+Run `37249788248` again failed native Electron navigation: Console has its own
+back button rather than using the shared drilldown header. The initial marker
+therefore missed the actual fresh-profile control. A new App regression starts
+in Console and follows back-to-primary-to-Issues navigation; it failed before
+marking the Console button. That button now has the same smoke locator and an
+accessible name. This corrects the fixture's observation boundary without
+changing the fresh-profile default or relaxing native renderer assertions.
