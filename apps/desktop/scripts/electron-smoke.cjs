@@ -53,6 +53,10 @@ app.on('browser-window-created', (_, win) => {
     try {
       const result = await win.webContents.executeJavaScript(`(async () => {
         const deadline = Date.now() + 15000
+        while (!document.querySelector('[data-testid="sidebar-nav-ISSUES"], [data-testid="sidebar-back"]') && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100))
+        // Fresh profiles open the Console workspace drilldown. Exercise its back
+        // action before requiring primary navigation; neither view is a boot failure.
+        document.querySelector('[data-testid="sidebar-back"]')?.click()
         while (!document.querySelector('[data-testid="sidebar-nav-ISSUES"]') && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100))
         if (!document.querySelector('[data-testid="sidebar-nav-ISSUES"]')) throw new Error('Renderer did not mount')
         const config = await window.orchestraDesktop.getBackendConfig()
@@ -68,6 +72,9 @@ app.on('browser-window-created', (_, win) => {
       const screenshot = await win.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })
       if (screenshot.isEmpty()) throw new Error('Electron returned an empty launch screenshot')
       fs.writeFileSync(path.join(fixture, 'launch.png'), screenshot.toPNG())
+      const reports = path.join(__dirname, '..', 'reports')
+      fs.mkdirSync(reports, { recursive: true })
+      fs.writeFileSync(path.join(reports, 'electron-smoke-launch.png'), screenshot.toPNG())
       if (errors.length) throw new Error('Renderer logged errors')
       finish()
     } catch (error) { finish(error) }
