@@ -30,7 +30,7 @@ node scripts/launch-electron.mjs scripts/electron-smoke.cjs --workspace-controls
 - Dialog bounds were `{left:421.2, top:56, right:925.2, bottom:808}`; measured width and `scrollWidth` were both 502. After scrolling its fields to the bottom, the full Create worktree button bounds were `{left:750.963, top:754.7, right:903.4, bottom:786.2}` and fully visible inside the dialog and viewport. The footer screenshot shows the full button.
 - Root/child file trees, same-name buffers, editor groups and root disk retention passed.
 - Idle scoped Codex session records and selected child session row passed; a child conversation title rename persisted through the scoped API, wrong-workspace PATCH was rejected, default child title inherited the branch label; provider turns: **0**.
-- Header top offset: **0 pixels**; navigation sits beside the conversation title.
+  - Header top offset: **0 pixels**; navigation sits beside the conversation title.
 - Four + menu actions present, portalled and unclipped; child Markdown disk write and actual native browser guest attachment passed; root editor/tool isolation passed.
 - Tasks header capture passed with Board, Work Items and Create Task controls visible; unified header top/bottom were 14/42 pixels.
 - Existing project creation, file sidebar, maximize/restore, retained chat and Git alongside chat checks passed.
@@ -46,3 +46,11 @@ This proves the exercised local production Electron flow, not all provider infer
 An earlier native attempt created the worktree but found a New agent dialog still visible; it failed and captured `orchestra-electron-smoke-gPORdN/failure.png`. Two subsequent attempts did not reproduce that modal observation. The script retains bounded submission/dialog diagnostics rather than dismissing an unexpected modal. A following attempt passed ownership checks but failed an obsolete tab-padding alignment assertion; the final assertion compares actual header bounds and also requires inline navigation beside the title.
 
 Several intermediate runs also exposed stale renderer builds and dialog overflow while the worktree dropdown/dialog layout was being changed. They failed their explicit selector or bounds assertions; the final run above used the rebuilt renderer and passed strict viewport and footer checks. These failures were retained as diagnostics and were not counted as passing evidence.
+
+## 2026-10-05 expanded walkthrough follow-up
+
+After toolbar, archive and primary close-view integration, the expanded disposable Electron run passed against the latest production renderer: `apps/desktop/reports/submenu-native-smoke-20261005d.log` (`ELECTRON_SMOKE_PASSED`). Structured evidence is `apps/desktop/reports/multi-worktree-smoke-result.json`. It again verified real dialog submission exactly once, visible dropdown/dialog/footer bounds, four source modes, scoped workspace selection, same-name root/child Monaco buffers, retained editor groups across close/reopen, native-pointer primary menu, conversation archive/history/restore, task header and toolbar submenus. No provider turn was sent.
+
+The audit now resolves only the visible active workspace header's `role=tablist`, waits for the exact selected workspace row and `Files & terminals`/unselected `Tasks` state, and scopes Monaco assertions to the active split group. The earlier zero-sized hidden editor was caused by the audit's generic control fallback running before context navigation settled; the corrected audit reproduced no product buffer loss. `TabGroupPanel` supplies `data-group-id`, `data-active-tab-id` and `data-active-tab` for that observation.
+
+The real New terminal menu item was activated. The fixture backend returned the explicit Windows limitation: interactive PTY terminals are unavailable until a ConPTY adapter is implemented. The audit records that outcome and makes no claim that a shell session started. The editor buffer check also remains read-only: fixture sentinel contents matched their original disk bytes.

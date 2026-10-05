@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Archive, RotateCcw } from 'lucide-react'
 import type { BackendConfig, ProjectWorktree, WorkspaceChatSession, WorkspaceChatSnapshot } from '@core/api/client'
-import { fetchArchivedWorkspaceChat, setWorkspaceChatArchived } from '@core/api/client'
+import { fetchArchivedWorkspaceChat, fetchWorkspaceChat, setWorkspaceChatArchived, stopWorkspaceChatTurn } from '@core/api/client'
+import { sameObservedPath } from './workspace-agent-projection'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@ui/dialog'
 
 export function WorkspaceChatArchiveControl({
@@ -22,13 +23,57 @@ export function WorkspaceChatArchiveControl({
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const disabled = busy || ['running', 'stopping', 'unknown'].includes(session.status)
+  const [confirmedIntent, setConfirmedIntent] = useState<{ status: string; lifecycleVersion: number } | null>(null)
+  const unknown = session.status === 'unknown'
+  const active = session.status === 'running' || session.status === 'stopping'
+  const disabled = busy || unknown
+  const triggerLabel = unknown
+    ? `Archive unavailable for conversation ${session.title}`
+    : `${session.status === 'running' ? 'Stop and archive' : session.status === 'stopping' ? 'Wait and archive' : 'Archive'} conversation ${session.title}`
+  const unsettledDelivery = (snapshot: WorkspaceChatSnapshot) =>
+    snapshot.messages.some(message => message.role === 'user' && ['accepted', 'unknown'].includes(message.status)) ||
+    (snapshot.requests ?? []).some(request => ['pending', 'sending', 'unknown'].includes(request.status))
+  const exactSession = (snapshot: WorkspaceChatSnapshot) => {
+    const actual = snapshot.session
+    if (actual.id !== session.id || actual.project_id !== projectId || actual.workspace_id !== workspaceId || !sameObservedPath(actual.workspace_path || '', cwd)) {
+      throw new Error('The selected conversation no longer matches this exact workspace. Refresh the workspace list before changing it.')
+    }
+    return actual
+  }
   const archive = async () => {
     setBusy(true)
     setError('')
     try {
-      await setWorkspaceChatArchived(config, projectId, session.id,
-        { workspace_id: workspaceId, cwd }, session.status, session.lifecycle_version ?? 0, true)
+      const scopedConfig = { ...config, workspaceId }
+      let detail = await fetchWorkspaceChat(scopedConfig, projectId, session.id)
+      let selected = exactSession(detail)
+      if (selected.status === 'unknown') throw new Error('This conversation has an unknown turn state. No stop or archive was attempted; keep it visible and review its recovery state first.')
+      const intent = confirmedIntent
+      if (!intent) throw new Error('The archive confirmation state was lost. Refresh the workspace list before changing this conversation.')
+      const stopWasExplicitlyConfirmed = intent.status === 'running' || intent.status === 'stopping'
+      if ((selected.status === 'running' || selected.status === 'stopping') && !stopWasExplicitlyConfirmed) {
+        throw new Error('This conversation became active after the archive confirmation opened. No stop or archive was attempted; refresh its status and choose Stop and archive explicitly if needed.')
+      }
+      if (selected.status === 'running') {
+        if (intent.status !== 'running' || (selected.lifecycle_version ?? 0) !== intent.lifecycleVersion) {
+          throw new Error('The conversation state changed after confirmation. No stop or archive was attempted; refresh before choosing Stop and archive.')
+        }
+        const stopped = await stopWorkspaceChatTurn(scopedConfig, projectId, session.id)
+        if (stopped.session.id !== session.id || stopped.session.project_id !== projectId || stopped.session.status !== 'stopping') {
+          throw new Error('The selected conversation stop was not confirmed. It remains visible and was not archived.')
+        }
+      }
+      const deadline = Date.now() + 30000
+      while (selected.status === 'running' || selected.status === 'stopping') {
+        if (Date.now() >= deadline) throw new Error('Stop was requested, but this exact conversation has not reached confirmed settlement. No archive was attempted; retry after its status updates.')
+        await new Promise(resolve => setTimeout(resolve, 350))
+        detail = await fetchWorkspaceChat(scopedConfig, projectId, session.id)
+        selected = exactSession(detail)
+        if (selected.status === 'unknown') throw new Error('The selected conversation outcome became unknown. No archive was attempted; keep its history and recovery state visible.')
+      }
+      if (unsettledDelivery(detail)) throw new Error('This exact conversation still has an accepted or uncertain message/request. No archive was attempted; its recovery state must settle first.')
+      await setWorkspaceChatArchived(scopedConfig, projectId, session.id,
+        { workspace_id: workspaceId, cwd }, selected.status, selected.lifecycle_version ?? 0, true)
       setOpen(false)
       onArchived()
     } catch (cause) {
@@ -38,8 +83,8 @@ export function WorkspaceChatArchiveControl({
     }
   }
   return <>
-    <button type="button" aria-label={`Archive conversation ${session.title}`} title="Archive conversation" disabled={disabled}
-      onClick={event => { event.stopPropagation(); setError(''); setOpen(true) }}
+    <button type="button" aria-label={triggerLabel} title={unknown ? 'Turn state is unknown; no stop or archive will be attempted.' : 'Archive conversation'} disabled={disabled}
+      onClick={event => { event.stopPropagation(); setError(''); setConfirmedIntent({ status: session.status, lifecycleVersion: session.lifecycle_version ?? 0 }); setOpen(true) }}
       className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40">
       <Archive size={12} />
     </button>
@@ -47,7 +92,7 @@ export function WorkspaceChatArchiveControl({
       <DialogContent srTitle="Archive conversation?" showCloseButton={!busy} className="max-w-lg">
         <div className="space-y-2">
           <DialogTitle>Archive conversation?</DialogTitle>
-          <DialogDescription>The conversation will leave the active workspace list. Its provider identity and history stay in Orchestra and remain readable from Archived conversations. This does not remove the worktree.</DialogDescription>
+          <DialogDescription>{session.status === 'running' ? 'This conversation has an active turn. Confirming will stop only this selected conversation, wait for the backend to confirm settlement, then archive its metadata. If delivery or settlement is uncertain, it stays visible and unarchived.' : session.status === 'stopping' ? 'A stop is already in progress for this selected conversation. Confirm to wait for settlement before archiving its metadata. Uncertain delivery stays visible and unarchived.' : 'The conversation will leave the active workspace list. Its provider identity and history stay in Orchestra and remain readable from Archived conversations. This does not remove the worktree.'}</DialogDescription>
           <div className="rounded-md border border-border bg-muted/30 p-3 text-xs">
             <p className="font-medium">{session.title}</p>
             <p className="mt-1 break-all font-mono text-muted-foreground">{cwd}</p>
@@ -56,7 +101,7 @@ export function WorkspaceChatArchiveControl({
         {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
         <DialogFooter className="gap-2">
           <button type="button" disabled={busy} onClick={() => setOpen(false)} className="rounded-md border border-border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50">Cancel</button>
-          <button type="button" disabled={disabled} onClick={() => void archive()} className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50">{busy ? 'Archiving…' : 'Archive conversation'}</button>
+          <button type="button" disabled={disabled} onClick={() => void archive()} className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50">{busy ? (active ? 'Waiting for settlement...' : 'Archiving...') : session.status === 'running' ? 'Stop and archive conversation' : session.status === 'stopping' ? 'Wait and archive conversation' : 'Archive conversation'}</button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -102,7 +147,7 @@ export function WorkspaceArchiveHistory({
     }
   }
 
-  const liveWorktree = selected && worktrees.find(row => row.id === selected.workspace_id && row.path === selected.workspace_path)
+  const liveWorktree = selected && worktrees.find(row => row.id === selected.workspace_id && sameObservedPath(row.path, selected.workspace_path || ''))
   const canRestore = !!selected && !!liveWorktree && !['running', 'stopping', 'unknown'].includes(selected.status)
   const restore = async () => {
     if (!selected || !liveWorktree || !selected.workspace_id || !selected.workspace_path) return

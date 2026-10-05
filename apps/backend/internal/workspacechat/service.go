@@ -30,7 +30,7 @@ const Mode = "transcript_replay"
 const OrchestratorScope = "__orchestrator__"
 const maxText = 64 * 1024
 
-var ErrBusy = errors.New("project workspace has an active or unsettled chat turn")
+var ErrBusy = errors.New("conversation has an active or unsettled turn or delivery")
 var ErrNotFound = errors.New("conversation not found in this project")
 var ErrInvalid = errors.New("invalid chat request")
 var ErrForbidden = errors.New("project path is not authorized or unavailable")

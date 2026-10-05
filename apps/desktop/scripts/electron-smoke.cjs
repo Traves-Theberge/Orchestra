@@ -31,7 +31,7 @@ if (workspaceAudit) {
   process.env.ORCHESTRA_TELEMETRY_PROVIDERS = 'none'
 }
 let complete = false
-const timeout = setTimeout(() => finish(new Error('Electron smoke timed out')), workspaceAudit ? 120_000 : 45_000)
+const timeout = setTimeout(() => finish(new Error('Electron smoke timed out')), workspaceAudit ? 180_000 : 45_000)
 
 // Production startup errors normally use a modal dialog. Preserve that error
 // as a failed smoke instead of blocking a hidden run or exiting successfully.

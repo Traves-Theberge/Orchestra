@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { ChevronDown, Circle, Folder, GitBranch, Plus, RefreshCw } from 'lucide-react'
+import { ChevronDown, Circle, Folder, GitBranch, Plus, RefreshCw, Terminal } from 'lucide-react'
 import { useAppStore } from '@core/store'
 import { fetchProjectWorktrees, fetchState, listWorkspaceChatArchives, listWorkspaceChatSessions, type BackendConfig, type ProjectWorktree, type WorkspaceChatSession, type IssueListItem } from '@core/api/client'
 import type { Project, RunningEntry } from '@core/api/types'
 import type { SelectedProjectWorkspace } from '@core/store/types'
+import { GLOBAL_PROJECT_ID } from '@core/store/types'
 import type { IssueInspectionOwner } from '@/hooks/use-issue-actions'
 import { getAgentIcon } from '@/layout/shared/controls'
 import { projectWorkspaceAgentRows, shortObservedAge, type WorkspaceAgentRow } from './workspace-agent-projection'
@@ -28,8 +29,10 @@ function ProjectNode({ project, onSelect, onInspectTask }: Omit<TreeProps, 'quer
   const activeProjectId = useAppStore(state => state.activeProjectId)
   const selections = useAppStore(state => state.workspaceSelections)
   const issues = useAppStore(state => state.allBoardIssues)
+  const openTerminals = useAppStore(state => state.openTerminals)
   const [expanded, setExpanded] = useState(true)
   const [revision, setRevision] = useState(0)
+  const [closedWorkspaceKeys, setClosedWorkspaceKeys] = useState<Set<string>>(() => new Set())
   const scope = JSON.stringify([config?.baseUrl, config?.apiToken, project.id])
   const [observation, setObservation] = useState<Observation>({ scope: '', worktrees: [], sessions: [], archives: [], running: [], warnings: {}, loading: false })
   useEffect(() => {
@@ -90,13 +93,30 @@ function ProjectNode({ project, onSelect, onInspectTask }: Omit<TreeProps, 'quer
         const workspace: SelectedProjectWorkspace = { projectId: project.id, workspaceId: worktree.id, path: worktree.path, branch: worktree.branch, registered: worktree.primary, isMain: worktree.is_main_worktree }
         const isSelected = activeProjectId === project.id && (selected ? selected.workspaceId === worktree.id : worktree.primary)
         const tasks = issues.filter(issue => issue.project_id === project.id && issue.branch_name === worktree.branch && !!issue.branch_name)
-        const rows = projectWorkspaceAgentRows(project.id, worktree, observation.sessions, observation.running)
-        const activate = () => { if (!worktree.prunable && worktree.id) useAppStore.getState().selectProjectWorkspace(project.id, workspace) }
+        const rows = projectWorkspaceAgentRows(project.id, worktree, observation.sessions, observation.running, openTerminals)
+        const workspaceKey = `${scope}:${worktree.id}`
+        const viewClosed = closedWorkspaceKeys.has(workspaceKey)
+        const activate = () => {
+          if (worktree.prunable || !worktree.id) return
+          setClosedWorkspaceKeys(previous => { const next = new Set(previous); next.delete(workspaceKey); return next })
+          useAppStore.getState().selectProjectWorkspace(project.id, workspace)
+        }
+        const closeView = () => {
+          setClosedWorkspaceKeys(previous => new Set(previous).add(workspaceKey))
+          const store = useAppStore.getState()
+          const currentWorkspace = config ? store.workspaceSelections[`${config.baseUrl}::${project.id}`] : undefined
+          if (store.activeProjectId !== project.id || (currentWorkspace ? currentWorkspace.workspaceId !== worktree.id : !worktree.primary)) return
+          store.closeProjectTab(project.id)
+          const nextProject = useAppStore.getState().activeProjectId
+          store.setSelectedProjectID(nextProject === GLOBAL_PROJECT_ID ? null : nextProject)
+          store.setActiveSection('PROJECTS')
+        }
         return <div key={worktree.id} role="button" tabIndex={worktree.prunable ? -1 : 0} aria-disabled={worktree.prunable} aria-label={`Open ${project.name} workspace ${worktree.branch || 'Detached'}`} aria-pressed={isSelected} onClick={activate} onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); activate() } }} className={`min-w-0 cursor-pointer rounded-lg border px-3 py-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${isSelected ? 'border-border bg-muted/40' : 'border-transparent hover:bg-muted/20'}`} title={worktree.path}>
-          <div className="flex min-w-0 items-center gap-2 text-[13px]"><GitBranch size={13} className="shrink-0 text-muted-foreground" /><span className="min-w-0 truncate">{worktree.branch || worktree.head.slice(0, 8) || 'Detached'}</span>{worktree.is_main_worktree && <span className="shrink-0 rounded border border-border px-1 py-px text-[10px] leading-none text-muted-foreground">primary</span>}{worktree.locked && <span className="text-[10px] text-muted-foreground">locked</span>}{worktree.prunable && <span className="text-[10px] text-muted-foreground">missing</span>}{config && <WorktreeRemovalControls config={config} projectId={project.id} projectName={project.name} worktree={worktree} onRemoved={() => setRevision(value => value + 1)} />}</div>
-          <button type="button" disabled={worktree.prunable} aria-label={`New agent in ${project.name} workspace ${worktree.branch || 'Detached'}`} onClick={event => { event.stopPropagation(); useAppStore.getState().openCreateAgentDialog(workspace) }} className="float-right -mt-5 rounded p-1 text-muted-foreground hover:bg-muted"><Plus size={12} /></button>
-          <WorkspaceAgents config={config!} workspace={workspace} rows={rows} onArchived={() => setRevision(value => value + 1)} onInspectTask={row => { const issue = issues.find(issue => issue.project_id === project.id && issue.id === row.taskId); if (issue) inspectTask(issue) }} />
-          {tasks.map(issue => <button type="button" aria-label={`Inspect task ${issue.identifier ?? issue.issue_identifier}`} disabled={!onInspectTask} onClick={event => { event.stopPropagation(); activate(); inspectTask(issue) }} key={issue.id ?? issue.identifier} className="block h-6 w-full truncate pl-5 text-left text-[11px] text-muted-foreground hover:text-foreground" title={`${issue.title} · ${issue.state}`}>{issue.identifier ?? issue.issue_identifier} · {issue.title}</button>)}
+          <div className="flex min-w-0 items-center gap-2 text-[13px]"><GitBranch size={13} className="shrink-0 text-muted-foreground" /><span className="min-w-0 truncate">{worktree.branch || worktree.head.slice(0, 8) || 'Detached'}</span>{worktree.is_main_worktree && <span className="shrink-0 rounded border border-border px-1 py-px text-[10px] leading-none text-muted-foreground">primary</span>}{worktree.locked && <span className="text-[10px] text-muted-foreground">locked</span>}{worktree.prunable && <span className="text-[10px] text-muted-foreground">missing</span>}{config && <WorktreeRemovalControls config={config} projectId={project.id} projectName={project.name} worktree={worktree} onCloseWorkspace={closeView} onRemoved={() => setRevision(value => value + 1)} />}
+            <button type="button" disabled={worktree.prunable} aria-label={`New agent in ${project.name} workspace ${worktree.branch || 'Detached'}`} onClick={event => { event.stopPropagation(); activate(); useAppStore.getState().openCreateAgentDialog(workspace) }} className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted"><Plus size={12} /></button>
+          </div>
+          {!viewClosed && <WorkspaceAgents config={config!} workspace={workspace} rows={rows} onArchived={() => setRevision(value => value + 1)} onInspectTask={row => { const issue = issues.find(issue => issue.project_id === project.id && issue.id === row.taskId); if (issue) inspectTask(issue) }} />}
+          {!viewClosed && tasks.map(issue => <button type="button" aria-label={`Inspect task ${issue.identifier ?? issue.issue_identifier}`} disabled={!onInspectTask} onClick={event => { event.stopPropagation(); activate(); inspectTask(issue) }} key={issue.id ?? issue.identifier} className="block h-6 w-full truncate pl-5 text-left text-[11px] text-muted-foreground hover:text-foreground" title={`${issue.title} · ${issue.state}`}>{issue.identifier ?? issue.issue_identifier} · {issue.title}</button>)}
           {observation.warnings[worktree.id] && <p className="pl-5 text-[10px] text-muted-foreground">{observation.warnings[worktree.id]}</p>}
         </div>
       })}
@@ -114,14 +134,16 @@ function WorkspaceAgents({ config, workspace, rows, onInspectTask, onArchived }:
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 60000); return () => clearInterval(timer) }, [])
   if (!rows.length) return null
   return <div className="mt-1 min-w-0 pl-5">
-    {rows.length > 1 && <button type="button" aria-label={`${expanded ? 'Collapse' : 'Expand'} agent sessions in ${workspace.workspaceId}`} aria-expanded={expanded} onClick={event => { event.stopPropagation(); setExpanded(value => !value) }} className="flex h-6 w-full items-center justify-between text-left text-[11px] text-muted-foreground"><span>{rows.length} agents</span><ChevronDown size={12} className={expanded ? '' : '-rotate-90'} /></button>}
+    {rows.length > 1 && <button type="button" aria-label={(expanded ? 'Collapse' : 'Expand') + ' workspace activity in ' + workspace.workspaceId} aria-expanded={expanded} onClick={event => { event.stopPropagation(); setExpanded(value => !value) }} className="flex h-6 w-full items-center justify-between text-left text-[11px] text-muted-foreground"><span>{rows.length} workspace items</span><ChevronDown size={12} className={expanded ? '' : '-rotate-90'} /></button>}
     {(rows.length === 1 || expanded) && rows.map(row => <div key={row.key} className="group/session flex min-w-0 items-center">
-    <button type="button" onClick={event => { event.stopPropagation(); useAppStore.getState().selectProjectWorkspace(workspace.projectId, workspace); if (row.source === 'native') useAppStore.getState().requestWorkspaceConversation(workspace.projectId, row.sessionId, workspace); else onInspectTask(row) }} aria-label={row.source === 'native' ? `Open ${row.provider} conversation ${row.title}` : `Inspect running task ${row.taskIdentifier}`} className="flex h-6 min-w-0 flex-1 items-center gap-1.5 rounded text-left text-[11px] text-muted-foreground hover:bg-muted/40 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring" title={`${row.provider || 'Provider unreported'} · ${row.status} · ${row.preview}`}>
-      <Circle size={10} className={`shrink-0 ${['running', 'starting'].includes(row.status) ? 'text-emerald-500' : row.status === 'failed' ? 'text-destructive' : row.status === 'interrupted' ? 'text-amber-500' : 'text-muted-foreground'}`} />
-      <span className="shrink-0">{getAgentIcon(row.provider, 13)}</span><span className="min-w-0 flex-1 truncate"><span className="text-foreground/80">{row.title}</span>{row.preview && <span> – {row.preview}</span>}</span>
-      {row.model && <span className="max-w-20 shrink-0 truncate font-mono text-[10px]" title={`${row.modelObserved ? 'Observed' : 'Requested'} model: ${row.model}`}>{row.model}</span>}<span className="shrink-0 text-[10px]" title={row.timestamp}>{shortObservedAge(row.timestamp, now)}</span>
-    </button>
-    {row.source === 'native' && row.session && <WorkspaceChatArchiveControl config={config} projectId={workspace.projectId} workspaceId={workspace.workspaceId} cwd={workspace.path} session={row.session} onArchived={onArchived} />}
+      {row.source === 'terminal' ? <div role="status" aria-label={'Terminal tab ' + row.title + '; runtime state unverified'} className="flex h-6 min-w-0 flex-1 items-center gap-1.5 rounded text-[11px] text-muted-foreground" title={row.preview}>
+        <Terminal size={12} className="shrink-0" /><span className="min-w-0 flex-1 truncate"><span className="text-foreground/80">{row.title}</span><span aria-hidden="true"> · </span><span>runtime unverified</span></span>
+      </div> : <button type="button" onClick={event => { event.stopPropagation(); useAppStore.getState().selectProjectWorkspace(workspace.projectId, workspace); if (row.source === 'runtime') onInspectTask(row); else useAppStore.getState().requestWorkspaceConversation(workspace.projectId, row.sessionId, workspace) }} aria-label={row.source === 'runtime' ? 'Inspect running task ' + row.taskIdentifier : 'Open ' + row.provider + (row.source === 'native' ? ' native chat ' : row.source === 'transcript' ? ' transcript ' : ' conversation; mode unreported ') + row.title} className="flex h-6 min-w-0 flex-1 items-center gap-1.5 rounded text-left text-[11px] text-muted-foreground hover:bg-muted/40 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring" title={`${row.provider || 'Provider unreported'} · ${row.status} · ${row.preview}`}>
+        <Circle size={10} className={'shrink-0 ' + (['running', 'starting'].includes(row.status) ? 'text-emerald-500' : row.status === 'failed' ? 'text-destructive' : row.status === 'interrupted' ? 'text-amber-500' : 'text-muted-foreground')} />
+        <span className="shrink-0">{getAgentIcon(row.provider, 13)}</span><span className="min-w-0 flex-1 truncate"><span className="text-foreground/80">{row.title}</span>{row.source !== 'runtime' && <span> · {row.source === 'native' ? 'Native chat' : row.source === 'transcript' ? 'Transcript' : 'Mode unreported'}</span>}{row.preview && <span> – {row.preview}</span>}</span>
+        {row.model && <span className="max-w-20 shrink-0 truncate font-mono text-[10px]" title={(row.modelObserved ? 'Observed' : 'Requested') + ' model: ' + row.model}>{row.model}</span>}<span className="shrink-0 text-[10px]" title={row.timestamp}>{shortObservedAge(row.timestamp, now)}</span>
+      </button>}
+      {row.session && row.source !== 'runtime' && row.source !== 'terminal' && <WorkspaceChatArchiveControl config={config} projectId={workspace.projectId} workspaceId={workspace.workspaceId} cwd={workspace.path} session={row.session} onArchived={onArchived} />}
     </div>)}
   </div>
 }

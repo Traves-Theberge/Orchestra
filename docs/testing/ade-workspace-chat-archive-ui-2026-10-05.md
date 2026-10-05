@@ -1,0 +1,23 @@
+# Workspace conversation archive UI follow-up — 2026-10-05
+
+## Reference receipt
+
+- Orca `stablyai/orca` at `3284b4c70c901402831bb4ccc5576ea083d2e5ae`: inspected `src/main/native-chat/agent-session-journal/journal-dispatch-observation.test.ts` and `src/cli/handlers/orchestration/mutation-request.ts`. The journal tests distinguish pending, accepted, and unknown dispatch observations at the session fence; the mutation handler retains request identity when delivery may have landed. Orchestra follows those boundaries by keeping unknown or unsettled selected conversations unarchived and by stopping only after an explicit user confirmation for that exact conversation. Archive itself remains metadata-only and does not copy Orca's journal or mutation implementation.
+- T3 Code `pingdotgg/t3code` at `737993303d36e10674c54b95e5bd3826682c99c7`: inspected `ProviderAdapter.ts` and `RunFinalizationService.ts`. The adapter keeps provider/session/turn/runtime identities distinct, while finalization checks the current run before refreshing state. No corresponding reversible chat-archive operation was found in the inspected T3 sources. Orchestra applies the identity and recheck discipline to an exact `(project, workspace ID, canonical cwd, conversation ID)` before stop/archive; there is no archive-equivalent borrowed from T3.
+- T3's `docs/user/thread-sidebar.md` describes reversible archive/undo as user-facing behavior, but it is documentation and does not establish persistence or checkout authorization. Orchestra retains durable SQLite metadata and applies server-side path/scope and lifecycle-version checks.
+
+## Behavior and adaptation
+
+The workspace activity list now distinguishes native sessions, transcript replays, conversations with an unreported mode, task-run observations, and local terminal tabs. Terminal tabs are shown only when their stored project and cwd match the exact workspace; because this is local tab metadata rather than backend runtime evidence, the UI labels them “runtime unverified.” The group count says “workspace items,” not “agents.”
+
+Archive confirmation captures the status and lifecycle version shown when the user opens it. A plain archive confirmation that later receives a refreshed running row cannot implicitly stop the new turn. Explicit “Stop and archive” is allowed only when the displayed session was running and its lifecycle version still matches the exact fetched session; then the UI requests stop for that conversation, polls that same identity, and archives only after confirmed settlement with no accepted/uncertain message or pending/sending/unknown request. Unknown outcomes remain visible and unarchived. Windows paths are compared case-insensitively after slash normalization; POSIX paths remain case-sensitive.
+
+## Behavioral verification
+
+- `apps/desktop/src/features/projects/ProjectWorkspaceTree.test.tsx` covers explicit stop-and-archive, the new confirmation-status race, unsettled and unknown delivery, scoped transcript rows, and path-bound terminals.
+- `apps/desktop/src/features/projects/workspace-agent-projection.test.ts` verifies native/transcript distinction and exact project/cwd terminal binding.
+- Passed: `npx vitest run src/features/projects/ProjectWorkspaceTree.test.tsx src/features/projects/workspace-agent-projection.test.ts --reporter=dot` (26 tests).
+- Passed: `npm run typecheck` in `apps/desktop`.
+- Passed: `go test ./internal/workspacechat -count=1` in `apps/backend`.
+- Passed: isolated native Electron workspace-controls walkthrough, `apps/desktop/reports/submenu-native-smoke-20261005d.log`; structured receipt: `apps/desktop/reports/multi-worktree-smoke-result.json`. It covered worktree close/reopen and verified retained editor groups, exact workspace file buffers, toolbars, submenus, archive flow, and terminal's honest Windows unsupported state. No live provider turn was sent. The initial zero-sized Monaco observation came from the audit selecting generic hidden retained navigation before the post-close workspace-context update settled, then reading editor content pane-wide. The corrected walkthrough waits for the visible active workspace tablist and selected workspace card, verifies the Tasks tab is not selected, and inspects the visible Monaco editor in the active `shared.ts` tab group. It reproduced no product buffer/layout loss; no WorkspaceLayout behavior change was needed.
+- Added `data-group-id`, `data-active-tab-id`, and `data-active-tab` attributes to `TabGroupPanel` so the native audit can bind selected tabs and Monaco evidence to their actual split group. This is test-observation metadata only.

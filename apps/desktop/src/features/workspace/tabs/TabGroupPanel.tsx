@@ -180,6 +180,8 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
 
   return (
     <div
+      data-group-id={group.id}
+      data-active-tab-id={group.activeTabId}
       className="flex flex-col h-full min-h-0 min-w-0 bg-background relative"
       onMouseDownCapture={() => {
         if (!isFocused) setFocusedGroup(projectId, group.id)
@@ -259,6 +261,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
                   <span className="pointer-events-none absolute right-0 top-1 bottom-1 w-[2px] rounded-full bg-primary" />
                 )}
                 <button
+                  data-active-tab={isActive}
                   onClick={() => activateTabInGroup(projectId, ref.id)}
                   onContextMenu={(e) => {
                     e.preventDefault()

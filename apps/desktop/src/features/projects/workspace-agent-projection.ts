@@ -1,9 +1,10 @@
 import type { WorkspaceChatSession, ProjectWorktree } from '@core/api/client'
 import type { RunningEntry } from '@core/api/types'
+import type { TerminalNode } from '@features/terminal/TerminalMultiplexer'
 
 export type WorkspaceAgentRow = {
   key: string
-  source: 'native' | 'runtime'
+  source: 'native' | 'transcript' | 'conversation' | 'runtime' | 'terminal'
   sessionId: string
   session?: WorkspaceChatSession
   taskId?: string
@@ -35,9 +36,10 @@ export function projectWorkspaceAgentRows(
   workspace: ProjectWorktree & { id: string },
   sessions: ScopedNativeSession[],
   running: ScopedRuntime[],
+  terminals: TerminalNode[] = [],
 ): WorkspaceAgentRow[] {
   const native = sessions.filter(session => !!session.id && session.project_id === projectId && session.workspace_id === workspace.id && sameObservedPath(session.workspace_path || '', workspace.path)).map(session => ({
-    key: `native:${session.id}`, source: 'native' as const, sessionId: session.id, session,
+    key: `conversation:${session.id}`, source: session.conversation_mode === 'native_session' ? 'native' as const : session.conversation_mode === 'transcript_replay' ? 'transcript' as const : 'conversation' as const, sessionId: session.id, session,
     provider: session.provider, title: session.title || 'Conversation',
     preview: session.last_message || session.error || session.status,
     status: session.status, model: session.effective_model || session.requested_model || '',
@@ -51,7 +53,13 @@ export function projectWorkspaceAgentRows(
     status: run.session_id ? run.state.toLowerCase() : 'starting',
     model: run.effective_model || run.requested_model || '', modelObserved: !!run.effective_model, timestamp: run.started_at || run.last_event_at || '',
   }))
-  return [...native, ...runtime]
+  const openTerminals = terminals.filter(terminal => terminal.projectId === projectId && sameObservedPath(terminal.cwd || '', workspace.path)).map(terminal => ({
+    key: `terminal:${terminal.id}`, source: 'terminal' as const, sessionId: terminal.id,
+    provider: 'Terminal', title: terminal.title || 'Terminal',
+    preview: 'Open terminal tab; backend runtime status is unverified.',
+    status: 'runtime_unverified', model: '', modelObserved: false, timestamp: '',
+  }))
+  return [...native, ...runtime, ...openTerminals]
 }
 
 export function shortObservedAge(timestamp: string, now: number): string {
