@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { SplitLayout } from './SplitLayout'
 import { ResizableWorkspace } from './ResizableWorkspace'
+import { WorkspaceToolsControls } from './WorkspaceToolsControls'
 import { WorkspaceWelcome } from './panels/WorkspaceWelcome'
 import { useAppStore } from '@core/store'
 import { GLOBAL_PROJECT_ID } from '@core/store/types'
@@ -45,7 +46,7 @@ export function WorkspaceLayout({ onAddTerminal }: WorkspaceLayoutProps) {
                 </div>
               })}
             </>} tools={<>
-              {layout && tabCount > 0 ? <SplitLayout projectId={activeProjectId} layout={layout} /> : <div className="flex w-full flex-col gap-2 p-4"><p className="mb-2 text-xs text-muted-foreground">Files & terminals</p>{onAddTerminal && <button onClick={onAddTerminal} className="flex items-center gap-2 rounded-md px-3 py-2 text-xs hover:bg-accent"><Terminal className="size-4" />New terminal</button>}<button onClick={() => openBrowserTab()} className="flex items-center gap-2 rounded-md px-3 py-2 text-xs hover:bg-accent"><Globe className="size-4" />New browser tab</button></div>}
+              {layout && tabCount > 0 ? <SplitLayout projectId={activeProjectId} layout={layout} /> : <div className="flex w-full flex-col gap-2 p-4"><div className="mb-2 flex items-center justify-between"><p className="text-xs text-muted-foreground">Files & terminals</p><WorkspaceToolsControls /></div>{onAddTerminal && <button onClick={onAddTerminal} className="flex items-center gap-2 rounded-md px-3 py-2 text-xs hover:bg-accent"><Terminal className="size-4" />New terminal</button>}<button onClick={() => openBrowserTab()} className="flex items-center gap-2 rounded-md px-3 py-2 text-xs hover:bg-accent"><Globe className="size-4" />New browser tab</button></div>}
             </>} />
         </div>
       )}

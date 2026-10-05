@@ -16,6 +16,7 @@ import { getAgentIcon } from '@layout/shared/controls'
 import type { TabGroup, TabRef, WorkspaceContextID } from '@core/store/types'
 import { EditorContent } from '../editor/EditorContent'
 import { BrowserContent } from '../browser/BrowserContent'
+import { WorkspaceToolsControls } from '../WorkspaceToolsControls'
 import { TerminalView } from '@features/terminal/TerminalView'
 import { TabContextMenu } from './TabContextMenu'
 import { ORCHESTRA_FILE_MIME, shellQuote } from '../file-explorer/FileTreeRow'
@@ -308,6 +309,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
 
         {/* Split + close-group menu — far right */}
         <div className="flex items-center shrink-0">
+          <WorkspaceToolsControls />
           <button
             ref={splitRef}
             onClick={() => {

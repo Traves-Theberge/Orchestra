@@ -1206,7 +1206,7 @@ describe('App smoke render', () => {
       const lastButton = screen.getByTestId('sidebar-nav-SETTINGS')
       fireEvent.keyDown(lastButton, { key: 'Home' })
       await waitFor(() => {
-        expect(document.activeElement).toBe(screen.getByTestId('sidebar-nav-CONSOLE'))
+        expect(document.activeElement).toBe(screen.getByTestId('sidebar-nav-PROJECTS'))
       })
     })
 

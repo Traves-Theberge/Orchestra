@@ -22,9 +22,9 @@ function SandboxIcon({ className, size }: { className?: string; size?: number })
 }
 
 export const sidebarItems: SidebarItem[] = [
+  { id: 'PROJECTS', label: 'Projects', description: 'Local workspace grouping', icon: FolderTree },
   { id: 'CONSOLE', label: 'Development', description: 'Editor, terminals, and browser preview', icon: Terminal },
   { id: 'ISSUES', label: 'Tasks', description: 'Task board and inspector', icon: ListTodo },
-  { id: 'PROJECTS', label: 'Projects', description: 'Local workspace grouping', icon: FolderTree },
   { id: 'AGENTS', label: 'Agents', description: 'Global agent configurations', icon: Cpu },
   { id: 'WAREHOUSE', label: 'Usage', description: 'Per-agent tokens, cost, and sessions', icon: Database },
   { id: 'SANDBOX', label: 'Remote', description: 'Remote code execution', icon: SandboxIcon },

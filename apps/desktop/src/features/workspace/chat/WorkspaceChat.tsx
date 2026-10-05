@@ -392,7 +392,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, acti
 
   return (
     <section aria-label={`${projectName} workspace chat`} onKeyDown={e => { if (e.key === 'Escape' && !e.nativeEvent.isComposing && working) { e.preventDefault(); interrupt() } }} className="relative flex h-full min-h-0 min-w-0 flex-col bg-background">
-      <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/40 px-4 py-2.5">
+      <header className="flex shrink-0 flex-wrap items-center gap-2 px-4 py-2.5">
         <button aria-label="Toggle conversations" aria-expanded={threadsOpen} title="Conversations" onClick={() => setThreadsOpen(open => !open)} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent"><MessageSquare className="size-4" /></button>
         <span className="max-w-36 truncate text-[11px] text-muted-foreground">{projectName}</span><ChevronRight className="size-3 shrink-0 text-muted-foreground/50" />
         <h2 className="min-w-0 flex-1 truncate text-[13px] font-medium">{snapshot?.session.title || 'New chat'}</h2>
