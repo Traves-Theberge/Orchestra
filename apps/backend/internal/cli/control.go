@@ -13,6 +13,9 @@ import (
 
 func controlRequest(ctx context.Context, client *http.Client, base *url.URL, token string, c command) (any, string, error) {
 	args := map[string]string{"operation": strings.TrimPrefix(strings.TrimPrefix(c.name, "task "), "control ")}
+	if c.name == "task assign" {
+		args["expected_state"] = "Backlog"
+	}
 	if c.requestID != "" {
 		args["request_id"] = c.requestID
 	}

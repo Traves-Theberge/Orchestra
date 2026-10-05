@@ -233,6 +233,19 @@ func (s *Server) GetIssues(w http.ResponseWriter, r *http.Request) {
 	statesParam := query.Get("states")
 	projectID := query.Get("project_id")
 	assigneeID := query.Get("assignee_id")
+	unassigned := false
+	if raw := query.Get("unassigned"); raw != "" {
+		parsed, parseErr := strconv.ParseBool(raw)
+		if parseErr != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid_filter", "unassigned must be a boolean")
+			return
+		}
+		unassigned = parsed
+	}
+	if unassigned && assigneeID != "" {
+		writeJSONError(w, http.StatusBadRequest, "invalid_filter", "unassigned cannot be combined with assignee_id")
+		return
+	}
 
 	filter := tracker.IssueFilter{
 		ProjectID:  projectID,
@@ -247,6 +260,15 @@ func (s *Server) GetIssues(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "fetch_failed", "failed to fetch data")
 		return
+	}
+	if unassigned {
+		filtered := make([]tracker.Issue, 0, len(issues))
+		for _, issue := range issues {
+			if strings.TrimSpace(issue.AssigneeID) == "" {
+				filtered = append(filtered, issue)
+			}
+		}
+		issues = filtered
 	}
 
 	// Optional pagination via limit/offset query params

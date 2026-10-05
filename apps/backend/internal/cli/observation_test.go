@@ -83,6 +83,109 @@ func TestObservationsUseAuthenticatedSharedAPIs(t *testing.T) {
 	}
 }
 
+func TestTaskListFiltersUseExplicitAssigneeSemantics(t *testing.T) {
+	var queries [][2]string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/projects" {
+			fmt.Fprint(w, `[{"id":"p1","name":"Project"}]`)
+			return
+		}
+		queries = append(queries, [2]string{r.URL.Query().Get("assignee_id"), r.URL.Query().Get("unassigned")})
+		fmt.Fprint(w, `{"issues":[{"id":"task-1","identifier":"P-1","project_id":"p1","state":"Backlog","pr_url":"https://example.test/pr/1"}],"total":1}`)
+	}))
+	defer server.Close()
+	for _, args := range [][]string{
+		{"task", "list", "--project", "p1", "--assignee", "worker-7", "--json"},
+		{"task", "list", "--project", "p1", "--unassigned", "--json"},
+	} {
+		code, _, errOut := execute(t, context.Background(), args, server.URL)
+		if code != 0 {
+			t.Fatalf("%v: %s", args, errOut)
+		}
+	}
+	if len(queries) != 2 || queries[0] != [2]string{"worker-7", ""} || queries[1] != [2]string{"", "true"} {
+		t.Fatalf("assignee filters were not distinct and exact: %v", queries)
+	}
+	for _, args := range [][]string{
+		{"task", "list", "--unassigned", "--assignee", "worker-7"},
+		{"task", "assign", "--project", "p1", "--id", "task-1", "--request-id", "not-a-uuid"},
+	} {
+		code, _, _ := execute(t, context.Background(), args, "")
+		if code != 2 {
+			t.Fatalf("expected invalid CLI arguments for %v, got %d", args, code)
+		}
+	}
+}
+
+func TestTaskAssignUsesSharedControlAndShowsPersistedPRLink(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/orchestrator/control" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprint(w, `{"success":true,"data":{"task":{"id":"task-1","identifier":"P-1","project_id":"p1","title":"Fix task","state":"Backlog","assignee_id":"worker-7","pr_url":"https://github.com/example/repo/pull/12"},"effect":"assigned","execution":"not_started","provider":"unchanged"}}`)
+	}))
+	defer server.Close()
+	var stdout, stderr bytes.Buffer
+	code := Run(context.Background(), []string{"task", "assign", "--project", "p1", "--id", "task-1", "--request-id", "bd60e6ec-5c67-4937-9c72-3e46513b5fad", "--assignee", "worker-7"}, &stdout, &stderr, func(key string) string {
+		if key == "ORCHESTRA_BASE_URL" {
+			return server.URL
+		}
+		if key == "ORCHESTRA_API_TOKEN" {
+			return "fixture-secret"
+		}
+		return ""
+	})
+	if code != 0 || stderr.Len() != 0 || !strings.Contains(stdout.String(), "PR: https://github.com/example/repo/pull/12") || !strings.Contains(stdout.String(), "Assignee: worker-7") || !strings.Contains(stdout.String(), "Harness: not set") {
+		t.Fatalf("human task assignment output: %d %s %s", code, stdout.String(), stderr.String())
+	}
+	if body["operation"] != "assign" || body["project_id"] != "p1" || body["task_id"] != "task-1" || body["assignee_id"] != "worker-7" || body["expected_state"] != "Backlog" || body["request_id"] != "bd60e6ec-5c67-4937-9c72-3e46513b5fad" || body["provider"] != nil {
+		t.Fatalf("assignment control arguments confused assignee with provider or lost scope: %+v", body)
+	}
+}
+
+func TestHumanTaskListAndShowPrintPersistedPRURL(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/projects":
+			fmt.Fprint(w, `[{"id":"p1","name":"Project"}]`)
+		case "/api/v1/issues":
+			fmt.Fprint(w, `{"issues":[{"id":"task-1","identifier":"P-1","project_id":"p1","title":"Fix task","state":"Backlog","assignee_id":"worker-7","pr_url":"https://github.com/example/repo/pull/12"},{"id":"task-2","identifier":"P-2","project_id":"p1","title":"No linked pull request","state":"Backlog","assignee_id":"worker-8"}],"total":2}`)
+		case "/api/v1/orchestrator/control":
+			fmt.Fprint(w, `{"success":true,"data":{"project_id":"p1","tasks":[{"id":"task-1","identifier":"P-1","project_id":"p1","title":"Fix task","state":"Backlog","assignee_id":"worker-7","pr_url":"https://github.com/example/repo/pull/12"},{"id":"task-2","identifier":"P-2","project_id":"p1","title":"No linked pull request","state":"Backlog","assignee_id":"worker-8"}]}}`)
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	for _, args := range [][]string{
+		{"task", "list", "--project", "p1"},
+		{"task", "show", "--project", "p1", "--id", "task-1"},
+		{"control", "tasks", "--project", "p1"},
+	} {
+		var stdout, stderr bytes.Buffer
+		code := Run(context.Background(), args, &stdout, &stderr, func(key string) string {
+			if key == "ORCHESTRA_BASE_URL" {
+				return server.URL
+			}
+			if key == "ORCHESTRA_API_TOKEN" {
+				return "fixture-secret"
+			}
+			return ""
+		})
+		if code != 0 || stderr.Len() != 0 || !strings.Contains(stdout.String(), "P-1 — Fix task") || !strings.Contains(stdout.String(), "PR: https://github.com/example/repo/pull/12") {
+			t.Fatalf("human output for %v: %d %s %s", args, code, stdout.String(), stderr.String())
+		}
+		if args[1] != "show" && (!strings.Contains(stdout.String(), "P-2 — No linked pull request") || !strings.Contains(stdout.String(), "PR: none")) {
+			t.Fatalf("human task inventory did not report absent PR linkage for %v: %s", args, stdout.String())
+		}
+	}
+}
+
 func TestTaskIdentityAndProjectScopeFailures(t *testing.T) {
 	for _, tc := range []struct {
 		name, body string
@@ -195,10 +298,31 @@ func TestEmptyCollectionsAreArrays(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	for _, args := range [][]string{{"project", "list"}, {"task", "list"}} {
+	for _, args := range [][]string{{"project", "list"}, {"task", "list", "--json"}} {
 		code, out, _ := execute(t, context.Background(), args, server.URL)
 		if code != 0 || strings.Contains(out, `"data":null`) || strings.Contains(out, `"issues":null`) {
 			t.Fatalf("empty shape: %d %s", code, out)
+		}
+	}
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"task", "list"}, "No tasks found."},
+		{[]string{"task", "list", "--unassigned"}, "No unassigned tasks found."},
+	} {
+		var out, errOut bytes.Buffer
+		code := Run(context.Background(), tc.args, &out, &errOut, func(key string) string {
+			if key == "ORCHESTRA_BASE_URL" {
+				return server.URL
+			}
+			if key == "ORCHESTRA_API_TOKEN" {
+				return "fixture-secret"
+			}
+			return ""
+		})
+		if code != 0 || !strings.Contains(out.String(), tc.want) || errOut.Len() != 0 {
+			t.Fatalf("null inventory human output for %v: code=%d out=%q err=%q", tc.args, code, out.String(), errOut.String())
 		}
 	}
 }

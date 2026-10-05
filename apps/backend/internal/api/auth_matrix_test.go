@@ -4,11 +4,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/orchestra/orchestra/apps/backend/internal/config"
+	"github.com/orchestra/orchestra/apps/backend/internal/db"
 	"github.com/orchestra/orchestra/apps/backend/internal/orchestrator"
+	sqlitetracker "github.com/orchestra/orchestra/apps/backend/internal/tracker/sqlite"
 	"github.com/rs/zerolog"
 )
 
@@ -260,13 +263,36 @@ func pathParam(_ string) string { return "x" }
 // missing-paths and tripping other assertions.
 func newAuthMatrixRouter(t *testing.T) http.Handler {
 	t.Helper()
-	return NewRouter(zerolog.Nop(), orchestrator.NewService(), &config.Config{
-		WorkspaceRoot: t.TempDir(),
-		WorktreeRoot:  t.TempDir(),
+	root := t.TempDir()
+	return NewRouter(zerolog.Nop(), orchestrator.NewService(), authMatrixConfig(root))
+}
+
+// newAuthMatrixRouterWithDB supplies the minimal dependencies needed to take
+// authenticated project-file/tree handlers past request authentication
+// without producing fixture panics. Keep the no-DB builder above for tests
+// that explicitly verify missing-database behavior.
+func newAuthMatrixRouterWithDB(t *testing.T) http.Handler {
+	t.Helper()
+	root := t.TempDir()
+	warehouse, err := db.Connect(filepath.Join(root, "auth-matrix.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = warehouse.Close() })
+	service := orchestrator.NewService()
+	service.SetDB(warehouse)
+	service.SetTrackerClient(sqlitetracker.NewClient(warehouse, nil))
+	return NewRouterWithPubSub(zerolog.Nop(), service, authMatrixConfig(root), nil, warehouse, nil, nil, nil, nil, nil)
+}
+
+func authMatrixConfig(root string) *config.Config {
+	return &config.Config{
+		WorkspaceRoot: root,
+		WorktreeRoot:  filepath.Join(root, "worktrees"),
 		Host:          "127.0.0.1",
 		APIToken:      "test-token",
-		ProjectRoots:  []string{"/tmp"},
-	})
+		ProjectRoots:  []string{root},
+	}
 }
 
 // TestAuthMatrixCoversAllRoutes verifies the matrix list above stays in
@@ -313,7 +339,7 @@ func TestAuthMatrixProtectedRoutesRequireBearer(t *testing.T) {
 // (missing DB/tracker dependencies) — those are Tier 2 coverage. This
 // tier just guards against an auth regression.
 func TestAuthMatrixWithBearerAvoids401(t *testing.T) {
-	router := newAuthMatrixRouter(t)
+	router := newAuthMatrixRouterWithDB(t)
 	for i, r := range allRoutes {
 		t.Run(r.method+" "+r.path, func(t *testing.T) {
 			req := httptest.NewRequest(r.method, r.path, nil)

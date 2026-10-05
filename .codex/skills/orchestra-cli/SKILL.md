@@ -1,6 +1,6 @@
 ---
 name: orchestra-cli
-description: Inspect Orchestra projects and issue-backed tasks, create Backlog tasks, queue complete tasks, reconcile control receipts, and scope native agent/skill authoring through the Orchestra CLI. Orca-managed worktrees use the separate Orca CLI skill.
+description: Inspect Orchestra projects and tasks, create Backlog tasks, assign explicit workers, queue complete tasks, show stored PR linkages, reconcile control receipts, and scope native agent/skill authoring through the Orchestra CLI. Orca-managed worktrees use the separate Orca CLI skill.
 ---
 
 # Orchestra CLI
@@ -27,13 +27,15 @@ orchestra project list --json
 orchestra project show <project-id> --json
 orchestra task list --project <project-id> --json
 orchestra task list --project <project-id> --states Backlog,Todo --json
+orchestra task list --project <project-id> --unassigned
+orchestra task list --project <project-id> --assignee <worker-id>
 orchestra task show --id <task-id> --project <project-id> --json
 orchestra task show --identifier <issue-identifier> --project <project-id> --json
 ```
 
 Set the selected backend/token first, or pass its `--base-url`. Read the command's help for its exact syntax and supported filters. Without `--project`, task listing observes the configured global tracker; it is not an aggregate of every project's distinct issue source. For every project's tasks, list the project catalog and query each project explicitly, retaining project/source context and reporting failures separately.
 
-These requests are separate snapshots. Project-filtered success establishes the returned observations, not complete coverage of an external tracker; the legacy backend can fall back to its global tracker. Report that limitation when completeness matters.
+These requests are separate snapshots. The legacy `task list/show` path uses the existing issue API: no `--project` means its configured global tracker; `--project` validates a registered project and passes `project_id` to that API, whose legacy routing can still fall back globally. A successful response is only the returned snapshot, not proof of complete external-source coverage or strict project-source ownership. Use `control tasks --project <project-id>` for strict selected-source inventory; it fails closed instead of falling back globally. Report scope/routing limitations when completeness matters.
 
 Resolve project ID from the catalog and task ID/identifier from returned tasks. Names, issue numbers and identifiers can collide across repositories and sources. A request such as “work on #42” requires resolving its project/source/repository; ask for that context if the available inventory cannot identify one target. Never choose the first match. Do not derive repository identity or a worktree path from a display-name prefix.
 
@@ -48,12 +50,14 @@ Read [the task-system contract](references/task-system.md) when interpreting tas
 - Requested provider/model/budget values are intent, not effective runtime configuration. Do not infer that an installed executable can honor them. Current native adapters reject explicit unsupported model/turn requests.
 - A merged PR is not an observed Done task. Task workflow state, runtime status, hosted issue state and reviewed-head state are separate observations.
 
-## Create and queue issue-backed tasks
+## Create, assign and queue issue-backed tasks
 
 Use these commands only when the selected executable advertises them:
 
 ```text
 orchestra task create --project <project-id> --request-id <uuid> --title <title> --description <text> --assignee <worker-id> --provider CODEX --json
+orchestra task assign --project <project-id> --id <task-id> --request-id <uuid> --assignee <worker-id>
+orchestra task assign --project <project-id> --id <task-id> --request-id <uuid> --assignee <worker-id> --provider CODEX --json
 orchestra task queue --project <project-id> --id <task-id> --request-id <uuid> --expected-state Backlog --json
 orchestra control receipt --request-id <uuid> --json
 orchestra control projects --json
@@ -63,6 +67,10 @@ orchestra control status --json
 ```
 
 Generate and retain one canonical UUID per intended mutation before issuing it. Create produces Backlog only. Queue requires the exact project/task identity, complete title/description/assignee/provider, and current Backlog state. Its Todo acceptance is an admission request; observe subsequent runtime/worktree state separately. A queue response is not a started agent or live worktree.
+
+`task list --unassigned` returns tasks with blank/null assignees; `--assignee <worker-id>` selects one exact worker identity. These filters are mutually exclusive. Human task list/show/assign and `control tasks` output includes the persisted PR URL when present, and says `PR: none` when the task has no linkage; add `--json` to task list/show/assign and control tasks for the versioned envelope. Task `assignee_id` is a worker identity, separate from `provider` (the execution harness).
+
+`task assign` is a guarded local SQLite operation: it requires an exact project ID and task ID, canonical UUID request ID, `expected_state=Backlog`, and an unassigned Backlog task. It sets only the assignee unless `--provider` is explicitly supplied; it never guesses a provider or queues/starts the task. Assignment can therefore leave an incomplete Backlog task that queue still rejects until its required title, description, assignee and provider are present. Hosted assignment is unavailable: current hosted adapters lack a shared guarded Backlog transition, and GitHub's `open` issue state is not equivalent to Orchestra's Backlog. Do not use generic tracker PATCH or replace-all assignee updates to bypass this boundary.
 
 Queue currently supports local SQLite tasks with a conditional state update. Hosted queue is unavailable until that tracker adapter provides a guarded transition; do not substitute a legacy patch after this rejection. Hosted observation/create still depend on the selected adapter's actual support and returned scope.
 

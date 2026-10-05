@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const Help = `usage: orchestra <command>
@@ -19,13 +21,14 @@ const Help = `usage: orchestra <command>
   status --json
   project list --json
   project show <project-id> --json
-  task list [--project <project-id>] [--states <comma-separated>] --json
-  task show (--id <task-id> | --identifier <issue-identifier>) [--project <project-id>] --json
+  task list [--project <project-id>] [--states <comma-separated>] [--assignee <worker-id> | --unassigned] [--json]
+  task show (--id <task-id> | --identifier <issue-identifier>) [--project <project-id>] [--json]
   task create --project <project-id> --request-id <uuid> --title <title> [--description <text>] [--assignee <id>] [--provider <harness>] --json
+  task assign --project <project-id> --id <task-id> --request-id <uuid> --assignee <worker-id> [--provider <harness>] [--json]
   task queue --project <project-id> --id <task-id> --request-id <uuid> --expected-state Backlog --json
   control receipt --request-id <uuid> --json
   control projects --json
-  control tasks --project <project-id> --json
+  control tasks --project <project-id> [--json]
   control worktrees --project <project-id> --json
   control status --json
   agent|skill list --project <project-id> --harness <CODEX|CLAUDE|OPENCODE|GEMINI|8GENT> --scope <effective|project|global> [--workspace <workspace-id>] --json
@@ -36,9 +39,10 @@ const Help = `usage: orchestra <command>
 Observation commands accept --base-url <origin>, or ORCHESTRA_BASE_URL.
 ORCHESTRA_API_TOKEN must be set in the environment; there is no token flag.
 Only HTTPS or loopback HTTP origins are accepted. Requests time out after 10 seconds.
-Success: versioned JSON envelope on stdout. Failure: JSON error on stderr, nonzero exit.
+Task list/show/assign and control tasks print human-readable rows by default; use --json for the versioned JSON envelope. Other successful commands print that envelope. Failures print a JSON error on stderr and return nonzero.
 Task show returns the tracked task, not a guessed worktree, run or provider session.
 Create makes a Backlog task. Queue requests Todo admission, not an observed agent/worktree.
+Task assignment changes the explicit assignee on an unassigned local SQLite Backlog task and may set an explicitly requested provider. It never infers a provider or queues the task; hosted assignment is unavailable. Use --unassigned or --assignee on task list to filter the tracker inventory. Human task output prints a stored PR URL or says none; it does not verify the PR externally.
 Mutations persist request identity; unknown outcomes require receipt/task reconciliation.
 No task stop/reset/delete, project deletion, worktree create/removal, terminal send/wait or PR mutations are exposed. Agent/skill file deletion is hash-guarded and scoped.`
 
@@ -46,7 +50,7 @@ const maxResponseBytes = 8 << 20
 
 type command struct {
 	name, baseURL, project, states, id, identifier                   string
-	show                                                             bool
+	show, unassigned, jsonOutput                                     bool
 	requestID, title, description, assignee, provider, expectedState string
 }
 
@@ -101,7 +105,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	client := &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
 	var data any
 	var code string
-	if c.name == "task create" || c.name == "task queue" || strings.HasPrefix(c.name, "control ") {
+	if c.name == "task create" || c.name == "task queue" || c.name == "task assign" || strings.HasPrefix(c.name, "control ") {
 		data, code, err = controlRequest(ctx, client, u, token, c)
 	} else {
 		data, code, err = observe(ctx, client, u, token, c)
@@ -119,6 +123,12 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	if c.states != "" {
 		scope["states"] = c.states
 	}
+	if c.assignee != "" {
+		scope["assignee_id"] = c.assignee
+	}
+	if c.unassigned {
+		scope["unassigned"] = "true"
+	}
 	if c.id != "" {
 		if c.name == "project show" {
 			scope = map[string]string{"source": "project", "project_id": c.id}
@@ -132,7 +142,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	if c.name == "status" {
 		scope = map[string]string{"source": "backend_snapshot"}
 	}
-	if strings.HasPrefix(c.name, "control ") || c.name == "task create" || c.name == "task queue" {
+	if strings.HasPrefix(c.name, "control ") || c.name == "task create" || c.name == "task queue" || c.name == "task assign" {
 		scope["source"] = "orchestra_control"
 		if c.requestID != "" {
 			scope["request_id"] = c.requestID
@@ -141,7 +151,14 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	origin := *u
 	origin.Path = ""
 	scope["backend_base_url"] = origin.String()
-	output := redact(envelope{1, c.name, scope, data}, token)
+	data = redact(data, token)
+	output := envelope{1, c.name, scope, data}
+	if !c.jsonOutput && taskHumanCommand(c.name) {
+		if err := writeTaskHuman(stdout, c, data); err != nil {
+			return fail(stderr, "output_failed", "could not write task output", 1)
+		}
+		return 0
+	}
 	if err := json.NewEncoder(stdout).Encode(output); err != nil {
 		return fail(stderr, "output_failed", "could not write JSON output", 1)
 	}
@@ -156,8 +173,8 @@ func parse(args []string) (command, error) {
 	c.name = args[0]
 	args = args[1:]
 	if c.name == "project" || c.name == "task" || c.name == "control" {
-		if len(args) == 0 || !((c.name == "project" && (args[0] == "list" || args[0] == "show")) || (c.name == "task" && (args[0] == "list" || args[0] == "show" || args[0] == "create" || args[0] == "queue")) || (c.name == "control" && (args[0] == "receipt" || args[0] == "projects" || args[0] == "tasks" || args[0] == "worktrees" || args[0] == "status"))) {
-			return c, errors.New("use project list/show, task list/show/create/queue, or control projects/tasks/worktrees/status/receipt")
+		if len(args) == 0 || !((c.name == "project" && (args[0] == "list" || args[0] == "show")) || (c.name == "task" && (args[0] == "list" || args[0] == "show" || args[0] == "create" || args[0] == "queue" || args[0] == "assign")) || (c.name == "control" && (args[0] == "receipt" || args[0] == "projects" || args[0] == "tasks" || args[0] == "worktrees" || args[0] == "status"))) {
+			return c, errors.New("use project list/show, task list/show/create/queue/assign, or control projects/tasks/worktrees/status/receipt")
 		}
 		c.show = args[0] == "show"
 		c.name += " " + args[0]
@@ -174,6 +191,18 @@ func parse(args []string) (command, error) {
 				return c, errors.New("duplicate --json")
 			}
 			seen[arg] = true
+			c.jsonOutput = true
+			continue
+		}
+		if arg == "--unassigned" {
+			if c.name != "task list" {
+				return c, errors.New("--unassigned is only supported for task list")
+			}
+			if seen[arg] {
+				return c, errors.New("duplicate --unassigned")
+			}
+			seen[arg] = true
+			c.unassigned = true
 			continue
 		}
 		if c.name == "project show" && !strings.HasPrefix(arg, "-") && c.id == "" {
@@ -206,8 +235,8 @@ func parse(args []string) (command, error) {
 			}
 			c.states = value
 		case "--id":
-			if c.name != "task show" && c.name != "task queue" {
-				return c, errors.New("--id is only supported for task show/queue")
+			if c.name != "task show" && c.name != "task queue" && c.name != "task assign" {
+				return c, errors.New("--id is only supported for task show/queue/assign")
 			}
 			c.id = value
 		case "--identifier":
@@ -216,11 +245,11 @@ func parse(args []string) (command, error) {
 			}
 			c.identifier = value
 		case "--request-id":
-			if c.name != "task create" && c.name != "task queue" && c.name != "control receipt" {
+			if c.name != "task create" && c.name != "task queue" && c.name != "task assign" && c.name != "control receipt" {
 				return c, errors.New("--request-id only supports mutations/receipt")
 			}
 			c.requestID = value
-		case "--title", "--description", "--assignee", "--provider":
+		case "--title", "--description":
 			if c.name != "task create" {
 				return c, errors.New("task metadata flags only support task create")
 			}
@@ -229,11 +258,17 @@ func parse(args []string) (command, error) {
 				c.title = value
 			case "--description":
 				c.description = value
-			case "--assignee":
-				c.assignee = value
-			case "--provider":
-				c.provider = value
 			}
+		case "--assignee":
+			if c.name != "task create" && c.name != "task list" && c.name != "task assign" {
+				return c, errors.New("--assignee is only supported for task list/create/assign")
+			}
+			c.assignee = value
+		case "--provider":
+			if c.name != "task create" && c.name != "task assign" {
+				return c, errors.New("--provider is only supported for task create/assign")
+			}
+			c.provider = value
 		case "--expected-state":
 			if c.name != "task queue" || value != "Backlog" {
 				return c, errors.New("queue requires --expected-state Backlog")
@@ -254,6 +289,17 @@ func parse(args []string) (command, error) {
 	}
 	if c.name == "task queue" && (c.project == "" || c.id == "" || c.requestID == "" || c.expectedState != "Backlog") {
 		return c, errors.New("task queue requires --project, --id, --request-id and --expected-state Backlog")
+	}
+	if c.name == "task assign" && (c.project == "" || c.id == "" || c.requestID == "" || strings.TrimSpace(c.assignee) == "") {
+		return c, errors.New("task assign requires --project, --id, --request-id and --assignee")
+	}
+	if c.name == "task create" || c.name == "task queue" || c.name == "task assign" || c.name == "control receipt" {
+		if id, err := uuid.Parse(c.requestID); err != nil || id == uuid.Nil || id.String() != c.requestID {
+			return c, errors.New("mutations and receipt lookup require a canonical UUID --request-id")
+		}
+	}
+	if c.name == "task list" && c.unassigned && c.assignee != "" {
+		return c, errors.New("task list --unassigned and --assignee are mutually exclusive")
 	}
 	if c.name == "control receipt" && c.requestID == "" {
 		return c, errors.New("control receipt requires --request-id")
@@ -300,6 +346,12 @@ func observe(ctx context.Context, client *http.Client, base *url.URL, token stri
 	}
 	if c.states != "" {
 		q.Set("states", c.states)
+	}
+	if c.assignee != "" {
+		q.Set("assignee_id", c.assignee)
+	}
+	if c.unassigned {
+		q.Set("unassigned", "true")
 	}
 	u.RawQuery = q.Encode()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)

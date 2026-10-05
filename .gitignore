@@ -24,6 +24,8 @@ __pycache__/
 **/orchestrd
 **/orchestrad
 **/orchestra
+# The CLI source directory shares the binary name; keep source tests visible.
+!apps/backend/cmd/orchestra/
 **/*.exe
 **/*.bin
 **/*.dll

@@ -197,6 +197,8 @@ components:
       properties:
         id:
           type: string
+        source_id:
+          type: string
         identifier:
           type: string
         title:
@@ -374,6 +376,10 @@ components:
       properties:
         id:
           type: string
+          description: Orchestra storage identity; adapter IDs may include a source prefix. Use source_id for the identifier expected by the source API.
+        source_id:
+          type: string
+          description: Native identifier expected by the source API, without an Orchestra adapter prefix.
         identifier:
           type: string
         source:
@@ -391,8 +397,12 @@ components:
           type: string
         url:
           type: string
+        source_project_id:
+          type: string
+          description: Native tracker container (for example repository, team, or project key); independent of Orchestra's registered project UUID.
         project_id:
           type: string
+          description: Orchestra registered project UUID when the item is bound to a local project; not the native tracker container ID.
         assignee_id:
           type: string
         assignees:
@@ -1357,7 +1367,9 @@ paths:
       summary: List issues
       description: >
         Lists issues from the orchestrator tracker with optional filtering by
-        `states` (comma-separated), `project_id`, and `assignee_id`. Pagination
+        `states` (comma-separated), `project_id`, and `assignee_id`, or for
+        blank/null assignees using `unassigned=true` (mutually exclusive with
+        `assignee_id`). Pagination
         is applied after filtering via `limit`/`offset`; `total` in the response
         reflects the unfiltered count before pagination.
       parameters:
@@ -1375,6 +1387,11 @@ paths:
           in: query
           schema:
             type: string
+        - name: unassigned
+          in: query
+          description: Return only tasks without an assignee; cannot be combined with assignee_id.
+          schema:
+            type: boolean
         - name: limit
           in: query
           schema:

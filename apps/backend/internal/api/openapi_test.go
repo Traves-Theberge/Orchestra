@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -16,6 +17,30 @@ func TestEmbeddedOpenAPISpecMatchesRepositorySource(t *testing.T) {
 	}
 	if !bytes.Equal(openAPISpec, source) {
 		t.Fatal("embedded API spec differs from docs/openapi.yaml")
+	}
+}
+
+func TestOpenAPIWorkItemIdentityScopesAreDocumented(t *testing.T) {
+	var document struct {
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]struct {
+					Description string `yaml:"description"`
+				} `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(openAPISpec, &document); err != nil {
+		t.Fatalf("parse OpenAPI identity schema: %v", err)
+	}
+	workItem, ok := document.Components.Schemas["WorkItem"]
+	if !ok {
+		t.Fatal("OpenAPI schemas missing WorkItem")
+	}
+	for _, field := range []string{"id", "source_id", "source_project_id", "project_id"} {
+		if strings.TrimSpace(workItem.Properties[field].Description) == "" {
+			t.Errorf("WorkItem.%s must distinguish its identity scope", field)
+		}
 	}
 }
 

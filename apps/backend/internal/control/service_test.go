@@ -104,6 +104,100 @@ func TestQueueRequiresExactScopedIdentityAndCompleteBacklog(t *testing.T) {
 		requireCode(t, executeControl(service, map[string]any{"operation": op, "project_id": first}), "unsupported_operation")
 	}
 }
+
+func TestAssignUnassignedBacklogTaskIsExactScopedAndPreservesPRLink(t *testing.T) {
+	service, database, first, second := controlFixture(t)
+	client := trackersqlite.NewClient(database, nil)
+	task, err := client.CreateIssue(context.Background(), "PR-linked task", "Description", "Backlog", 0, "", first, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prURL := "https://github.com/example/project/pull/17"
+	if _, err := client.UpdateIssue(context.Background(), task.ID, map[string]any{"pr_url": prURL}); err != nil {
+		t.Fatal(err)
+	}
+	args := map[string]any{"operation": "assign", "project_id": first, "task_id": task.ID, "expected_state": "Backlog", "assignee_id": "worker-7", "request_id": "bd60e6ec-5c67-4937-9c72-3e46513b5fad"}
+	wrongScope := map[string]any{}
+	for key, value := range args {
+		wrongScope[key] = value
+	}
+	wrongScope["project_id"] = second
+	wrongScope["request_id"] = "124c23a0-6614-4fa2-9123-470cb36fb5a5"
+	requireCode(t, executeControl(service, wrongScope), "task_not_found")
+
+	result := executeControl(service, args)
+	if result["success"] != true {
+		t.Fatal(result)
+	}
+	data := result["data"].(map[string]any)
+	updated := data["task"].(*tracker.Issue)
+	if updated.ID != task.ID || updated.ProjectID != first || updated.State != "Backlog" || updated.AssigneeID != "worker-7" || updated.Provider != "" || updated.PRURL != prURL || data["effect"] != "assigned" || data["execution"] != "not_started" {
+		t.Fatalf("assignment changed identity/readiness or lost PR linkage: %+v", result)
+	}
+	if replay := executeControl(service, args); replay["success"] != true {
+		t.Fatalf("same request did not reconcile: %+v", replay)
+	}
+	conflict := map[string]any{}
+	for key, value := range args {
+		conflict[key] = value
+	}
+	conflict["assignee_id"] = "worker-other"
+	requireCode(t, executeControl(service, conflict), "request_identity_conflict")
+
+	reassigned := map[string]any{}
+	for key, value := range args {
+		reassigned[key] = value
+	}
+	reassigned["request_id"] = "8228bcb7-85f1-424b-8fbe-18345e6d605c"
+	requireCode(t, executeControl(service, reassigned), "assignee_conflict")
+
+	if list := executeControl(service, map[string]any{"operation": "tasks", "project_id": first, "unassigned": true}); list["success"] != true || len(list["data"].(map[string]any)["tasks"].([]tracker.Issue)) != 0 {
+		t.Fatalf("assigned task remained in unassigned view: %+v", list)
+	}
+	assigned := executeControl(service, map[string]any{"operation": "tasks", "project_id": first, "assignee_id": "worker-7"})
+	if assigned["success"] != true {
+		t.Fatal(assigned)
+	}
+	rows := assigned["data"].(map[string]any)["tasks"].([]tracker.Issue)
+	if len(rows) != 1 || rows[0].PRURL != prURL {
+		t.Fatalf("strict task inventory lost assignment/PR link: %+v", assigned)
+	}
+	queue := map[string]any{"operation": "queue", "project_id": first, "task_id": task.ID, "expected_state": "Backlog", "request_id": "c2112626-aad4-437e-b337-22f4ca8ce6bb"}
+	requireCode(t, executeControl(service, queue), "incomplete_task")
+	current, err := client.FetchIssueByIdentifier(context.Background(), task.ID)
+	if err != nil || current.State != "Backlog" || current.AssigneeID != "worker-7" || current.Provider != "" || current.PRURL != prURL {
+		t.Fatalf("partial assignment implicitly queued or changed task linkage: %+v %v", current, err)
+	}
+
+	readyTask, err := client.CreateIssue(context.Background(), "Complete before queue", "Has a full description", "Backlog", 0, "", first, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	readyAssignment := map[string]any{
+		"operation": "assign", "project_id": first, "task_id": readyTask.ID,
+		"expected_state": "Backlog", "assignee_id": "worker-8", "provider": "codex",
+		"request_id": "d7d43361-b3b3-4f2d-93a3-3da090894879",
+	}
+	if assigned := executeControl(service, readyAssignment); assigned["success"] != true {
+		t.Fatalf("explicit assignment/provider was rejected: %+v", assigned)
+	}
+	ready, err := client.FetchIssueByIdentifier(context.Background(), readyTask.ID)
+	if err != nil || ready.Provider != "CODEX" || ready.AssigneeID != "worker-8" || ready.State != "Backlog" {
+		t.Fatalf("assignment did not apply only the explicit metadata: %+v %v", ready, err)
+	}
+	queueReady := map[string]any{
+		"operation": "queue", "project_id": first, "task_id": readyTask.ID,
+		"expected_state": "Backlog", "request_id": "2d1227c5-9c2c-4403-9d54-773e13fa53d4",
+	}
+	if queued := executeControl(service, queueReady); queued["success"] != true {
+		t.Fatalf("fully configured task could not be queued separately: %+v", queued)
+	}
+	ready, err = client.FetchIssueByIdentifier(context.Background(), readyTask.ID)
+	if err != nil || ready.State != "Todo" || ready.AssigneeID != "worker-8" || ready.Provider != "CODEX" {
+		t.Fatalf("queue failed to retain the explicit assignment: %+v %v", ready, err)
+	}
+}
+
 func TestConfiguredProjectTrackerFailureCannotFallBackToSQLite(t *testing.T) {
 	service, database, first, _ := controlFixture(t)
 	if err := database.UpdateProjectIssueSource(context.Background(), first, "github", "owner/repo", ""); err != nil {

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/orchestra/orchestra/apps/backend/internal/config"
@@ -73,6 +74,10 @@ func TestIssueAuthoringMetadataHTTPRoundTrip(t *testing.T) {
 		}
 	}
 	assertMetadata(request(http.MethodPatch, "/api/v1/issues/"+identifier, metadata, http.StatusOK))
+	prURL := "https://github.com/example/project/pull/17"
+	if _, err := sqlitetracker.NewClient(database, nil).UpdateIssue(t.Context(), id, map[string]any{"pr_url": prURL}); err != nil {
+		t.Fatal(err)
+	}
 	assertMetadata(request(http.MethodGet, "/api/v1/issues/"+identifier, nil, http.StatusOK))
 	list := request(http.MethodGet, "/api/v1/issues", nil, http.StatusOK)
 	found := false
@@ -80,12 +85,29 @@ func TestIssueAuthoringMetadataHTTPRoundTrip(t *testing.T) {
 		issue := value.(map[string]any)
 		if issue["identifier"] == identifier {
 			assertMetadata(issue)
+			if issue["pr_url"] != prURL {
+				t.Fatalf("task list lost exact PR linkage: %+v", issue)
+			}
 			found = true
 		}
 	}
 	if !found {
 		t.Fatal("created task absent from list")
 	}
+	assigned := request(http.MethodPost, "/api/v1/issues", map[string]any{"title": "assigned task", "state": "Backlog", "description": "already assigned", "assignee_id": "worker-7", "provider": "CODEX"}, http.StatusCreated)
+	unassigned := request(http.MethodGet, "/api/v1/issues?unassigned=true", nil, http.StatusOK)
+	for _, value := range unassigned["issues"].([]any) {
+		issue := value.(map[string]any)
+		assignee, _ := issue["assignee_id"].(string)
+		if strings.TrimSpace(assignee) != "" || issue["id"] == assigned["id"] {
+			t.Fatalf("unassigned view returned assigned task: %+v", issue)
+		}
+	}
+	filtered := request(http.MethodGet, "/api/v1/issues?assignee_id=worker-7", nil, http.StatusOK)
+	if rows := filtered["issues"].([]any); len(rows) != 1 || rows[0].(map[string]any)["id"] != assigned["id"] {
+		t.Fatalf("assignee filter mismatch: %+v", filtered)
+	}
+	request(http.MethodGet, "/api/v1/issues?unassigned=true&assignee_id=worker-7", nil, http.StatusBadRequest)
 	orch.SetRunningForTest([]orchestrator.RunningEntry{{IssueID: id, IssueIdentifier: identifier, SessionID: "fixture-session", State: "In Progress", Provider: "CLAUDE"}})
 	active := request(http.MethodGet, "/api/v1/issues/"+identifier, nil, http.StatusOK)
 	assertMetadata(active)

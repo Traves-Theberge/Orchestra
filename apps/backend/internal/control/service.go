@@ -32,6 +32,7 @@ type Request struct {
 	Description   string `json:"description,omitempty"`
 	AssigneeID    string `json:"assignee_id,omitempty"`
 	Provider      string `json:"provider,omitempty"`
+	Unassigned    bool   `json:"unassigned,omitempty"`
 }
 type Service struct {
 	db               *db.DB
@@ -114,14 +115,17 @@ func (s *Service) Execute(ctx context.Context, name string, arguments map[string
 		}
 		return success(map[string]any{"project_id": project.ID, "worktrees": rows, "observation": "git_registry_only"})
 	}
-	if req.Operation != "tasks" && req.Operation != "create" && req.Operation != "queue" {
-		return failure("unsupported_operation", "Supported operations: projects, tasks, worktrees, status, create, queue, receipt; pause/stop/delete are unavailable")
+	if req.Operation != "tasks" && req.Operation != "create" && req.Operation != "queue" && req.Operation != "assign" {
+		return failure("unsupported_operation", "Supported operations: projects, tasks, worktrees, status, create, assign, queue, receipt; pause/stop/delete are unavailable")
 	}
 	client, err := s.projectClient(ctx, req.ProjectID)
 	if err != nil {
 		return failure("project_unavailable", err.Error())
 	}
 	if req.Operation == "tasks" {
+		if req.Unassigned && req.AssigneeID != "" {
+			return failure("invalid_request", "tasks accepts either unassigned=true or an exact assignee_id filter, not both")
+		}
 		tasks, err := client.FetchIssues(ctx, tracker.IssueFilter{ProjectID: req.ProjectID})
 		if err != nil {
 			return failure("observation_failed", "Project task inventory unavailable; no global fallback performed")
@@ -131,6 +135,9 @@ func (s *Service) Execute(ctx context.Context, name string, arguments map[string
 		for _, task := range tasks {
 			if task.ProjectID != req.ProjectID || task.ID == "" {
 				return failure("scope_conflict", "Tracker returned task identity outside the requested registered project; inventory not confirmed")
+			}
+			if req.Unassigned && strings.TrimSpace(task.AssigneeID) != "" || req.AssigneeID != "" && task.AssigneeID != req.AssigneeID {
+				continue
 			}
 			scoped = append(scoped, task)
 		}
@@ -144,6 +151,15 @@ func (s *Service) Execute(ctx context.Context, name string, arguments map[string
 	}
 	if req.Operation == "queue" && (req.TaskID == "" || req.ExpectedState != "Backlog" || req.Title != "" || req.Description != "" || req.AssigneeID != "" || req.Provider != "") {
 		return failure("invalid_request", "Queue requires exact project/task IDs and expected_state Backlog; metadata edits are unavailable")
+	}
+	if req.Operation == "assign" && (req.TaskID == "" || req.ExpectedState != "Backlog" || strings.TrimSpace(req.AssigneeID) == "" || req.Title != "" || req.Description != "" || req.Unassigned) {
+		return failure("invalid_request", "Assign requires exact project/task IDs, assignee_id and expected_state Backlog")
+	}
+	if req.Operation == "assign" && req.Provider != "" {
+		req.Provider = string(agents.NormalizeProvider(req.Provider))
+		if !validAssignmentProvider(agents.Provider(req.Provider)) {
+			return failure("invalid_request", "Assignment provider must be a registered harness name")
+		}
 	}
 	sum := sha256.Sum256(raw)
 	digest := hex.EncodeToString(sum[:])
@@ -227,6 +243,55 @@ func (s *Service) mutate(ctx context.Context, client tracker.Client, req Request
 		}
 		return success(map[string]any{"task": task, "effect": "backlog_created", "execution": "not_started"})
 	}
+	if req.Operation == "assign" {
+		if _, local := client.(*trackersqlite.Client); !local {
+			return failure("unsupported_transition", "Guarded assignment is available only for project-local SQLite tasks; hosted task assignment is not implemented for this source")
+		}
+		tasks, err := client.FetchIssuesByIDs(ctx, []string{req.TaskID})
+		if err != nil {
+			return failure("observation_failed", "Task lookup failed; assignment mutation not sent")
+		}
+		var task *tracker.Issue
+		for i := range tasks {
+			if tasks[i].ID == req.TaskID && tasks[i].ProjectID == req.ProjectID {
+				if task != nil {
+					return failure("identity_ambiguous", "Multiple tasks match this identity; assignment not sent")
+				}
+				task = &tasks[i]
+			}
+		}
+		if task == nil {
+			return failure("task_not_found", "Exact task not found in selected project; assignment not sent")
+		}
+		if task.State != req.ExpectedState {
+			return failure("state_conflict", "Task is no longer in expected Backlog state; assignment not sent")
+		}
+		if strings.TrimSpace(task.AssigneeID) != "" {
+			return failure("assignee_conflict", "Task already has an assignee; assignment not sent")
+		}
+		changed, err := s.db.ExecContext(ctx, `UPDATE issues SET assignee_id=?,provider=CASE WHEN ?='' THEN provider ELSE ? END,updated_at=datetime('now') WHERE id=? AND project_id=? AND state='Backlog' AND TRIM(COALESCE(assignee_id,''))=''`, req.AssigneeID, req.Provider, req.Provider, task.ID, req.ProjectID)
+		if err != nil {
+			return failure("mutation_unknown", "Assignment result not confirmed; inspect project tasks and receipt before repeating")
+		}
+		rows, err := changed.RowsAffected()
+		if err != nil {
+			return failure("mutation_unknown", "Assignment result not confirmed; inspect project tasks and receipt before repeating")
+		}
+		if rows != 1 {
+			return failure("state_conflict", "Task state, project or assignee changed; assignment not sent")
+		}
+		expectedProvider := task.Provider
+		if req.Provider != "" {
+			expectedProvider = req.Provider
+		}
+		updated, err := client.FetchIssueByIdentifier(ctx, task.ID)
+		if err != nil || updated == nil || updated.ID != task.ID || updated.ProjectID != req.ProjectID || updated.State != "Backlog" || updated.AssigneeID != req.AssigneeID || updated.Provider != expectedProvider || updated.PRURL != task.PRURL {
+			return failure("mutation_unknown", "Assignment may have landed; inspect exact task and receipt before trying again")
+		}
+		s.orchestrator.LogIssueEvent(task.ID, "User", "assignee_change", "", req.AssigneeID)
+		s.orchestrator.QueueRefresh()
+		return success(map[string]any{"task": updated, "effect": "assigned", "execution": "not_started"})
+	}
 	tasks, err := client.FetchIssuesByIDs(ctx, []string{req.TaskID})
 	if err != nil {
 		return failure("observation_failed", "Task lookup failed; queue mutation not sent")
@@ -274,6 +339,15 @@ func (s *Service) mutate(ctx context.Context, client tracker.Client, req Request
 	s.orchestrator.QueueRefresh()
 	return success(map[string]any{"task": updated, "effect": "queued", "execution": "not_observed", "worktree": "not_observed"})
 }
+
+func validAssignmentProvider(provider agents.Provider) bool {
+	switch provider {
+	case agents.ProviderCodex, agents.ProviderClaude, agents.ProviderOpenCode, agents.ProviderGemini, agents.Provider8gent, agents.ProviderAntigravity:
+		return true
+	default:
+		return false
+	}
+}
 func decodeReceipt(id, status, raw string) map[string]any {
 	if status == "pending" || raw == "" {
 		out := failure("mutation_unknown", "Durable intent exists without confirmed outcome; inspect project tasks, do not blindly repeat")
@@ -300,9 +374,9 @@ func ToolSpecs() []map[string]any {
 	stringField := func(description string) map[string]any {
 		return map[string]any{"type": "string", "description": description}
 	}
-	return []map[string]any{{"type": "function", "name": "orchestra_control", "description": "Observe all registered projects, exact issue-backed tasks and authorized Git worktree registry. Create Backlog tasks or queue complete Backlog tasks through Orchestra. Never infer running/worktree readiness from queued state. Mutations require stable UUID request_id; inspect receipts and tasks after uncertainty. No pause/stop/delete/PR mutations.", "inputSchema": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"operation"}, "properties": map[string]any{
-		"operation":  map[string]any{"type": "string", "enum": []string{"projects", "tasks", "worktrees", "status", "create", "queue", "receipt"}},
-		"project_id": stringField("Exact registered project ID; required for tasks/create/queue"), "task_id": stringField("Exact task ID; required for queue"), "request_id": stringField("Canonical UUID retained for mutation reconciliation"), "expected_state": stringField("Queue requires Backlog"), "title": stringField("New Backlog task title"), "description": stringField("New Backlog task description"), "assignee_id": stringField("Task owner"), "provider": stringField("Registered task harness provider"),
+	return []map[string]any{{"type": "function", "name": "orchestra_control", "description": "Observe all registered projects, exact issue-backed tasks and authorized Git worktree registry. Create Backlog tasks, assign an explicit worker to an unassigned Backlog task, or queue complete Backlog tasks through Orchestra. Assignment never infers a provider or starts execution. Never infer running/worktree readiness from queued state. Mutations require stable UUID request_id; inspect receipts and tasks after uncertainty. No pause/stop/delete/PR mutations.", "inputSchema": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"operation"}, "properties": map[string]any{
+		"operation":  map[string]any{"type": "string", "enum": []string{"projects", "tasks", "worktrees", "status", "create", "assign", "queue", "receipt"}},
+		"project_id": stringField("Exact registered project ID; required for tasks/create/assign/queue"), "task_id": stringField("Exact task ID; required for assign/queue"), "request_id": stringField("Canonical UUID retained for mutation reconciliation"), "expected_state": stringField("Assign/queue require Backlog"), "title": stringField("New Backlog task title"), "description": stringField("New Backlog task description"), "assignee_id": stringField("Exact task owner identity; assignment does not infer it from provider"), "provider": stringField("Provider harness for task creation or explicit assignment only"), "unassigned": map[string]any{"type": "boolean", "description": "Return only tasks with no assignee; mutually exclusive with assignee_id on tasks operation"},
 	}}}}
 }
 
