@@ -861,23 +861,29 @@ func (s *Service) SearchIssues(ctx context.Context, query string) ([]tracker.Iss
 
 // CreateIssue creates a new issue in the configured tracker with the given metadata.
 func (s *Service) CreateIssue(ctx context.Context, title, description, state string, priority int, assigneeID, projectID string, provider string, runtimeTarget string, disabledTools []string) (*tracker.Issue, error) {
-	client := s.clientForProject(ctx, projectID)
-
+	client, source, resolveErr := s.clientForCreation(ctx, projectID)
+	if resolveErr != nil {
+		return nil, resolveErr
+	}
 	if client == nil {
 		return nil, fmt.Errorf("tracker client not available")
 	}
 
 	issue, err := client.CreateIssue(ctx, title, description, state, priority, assigneeID, projectID, provider, disabledTools)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrCreateUnconfirmed, err)
 	}
-	if issue != nil && runtimeTarget != "" {
+	if !confirmedCreatedIdentity(issue, projectID, source) {
+		return nil, ErrCreateUnconfirmed
+	}
+	if runtimeTarget != "" {
+		createdIdentity := *issue
 		updated, updateErr := client.UpdateIssue(ctx, issue.Identifier, map[string]any{"runtime_target": runtimeTarget})
 		if updateErr != nil {
-			return nil, fmt.Errorf("persist runtime target for created issue %s: %w", issue.Identifier, updateErr)
+			return nil, fmt.Errorf("%w: persist runtime target for created issue %s: %v", ErrCreateUnconfirmed, issue.Identifier, updateErr)
 		}
-		if updated == nil || updated.RuntimeTarget != runtimeTarget {
-			return nil, fmt.Errorf("tracker did not persist runtime target for created issue %s", issue.Identifier)
+		if !confirmedCreatedIdentity(updated, projectID, source) || updated.ID != createdIdentity.ID || updated.Identifier != createdIdentity.Identifier || updated.Source != createdIdentity.Source || updated.ProjectID != createdIdentity.ProjectID || updated.RuntimeTarget != runtimeTarget {
+			return nil, fmt.Errorf("%w: tracker did not confirm identity and runtime target for created issue %s", ErrCreateUnconfirmed, issue.Identifier)
 		}
 		issue = updated
 	}

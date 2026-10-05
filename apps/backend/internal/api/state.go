@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
 	"github.com/orchestra/orchestra/apps/backend/internal/mcp"
+	"github.com/orchestra/orchestra/apps/backend/internal/orchestrator"
 	"github.com/orchestra/orchestra/apps/backend/internal/presenter"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
 	"github.com/orchestra/orchestra/apps/backend/internal/utils/git"
@@ -316,6 +317,14 @@ func (s *Server) PostIssue(w http.ResponseWriter, r *http.Request) {
 	issue, err := s.orchestrator.CreateIssue(r.Context(), body.Title, body.Description, body.State, body.Priority, body.AssigneeID, body.ProjectID, body.Provider, body.RuntimeTarget, body.DisabledTools)
 	if err != nil {
 		s.logger.Error().Err(err).Msg("orchestrator failed to create issue")
+		if errors.Is(err, orchestrator.ErrCreateSourceUnavailable) {
+			writeJSONError(w, http.StatusServiceUnavailable, "project_tracker_unavailable", err.Error())
+			return
+		}
+		if errors.Is(err, orchestrator.ErrCreateUnconfirmed) {
+			writeJSONError(w, http.StatusConflict, "creation_unconfirmed", orchestrator.ErrCreateUnconfirmed.Error())
+			return
+		}
 		writeJSONError(w, http.StatusInternalServerError, "create_failed", "creation failed")
 		return
 	}
