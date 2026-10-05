@@ -25,6 +25,7 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/api"
 	"github.com/orchestra/orchestra/apps/backend/internal/config"
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
+	"github.com/orchestra/orchestra/apps/backend/internal/harnessaccounts"
 	"github.com/orchestra/orchestra/apps/backend/internal/logfile"
 	"github.com/orchestra/orchestra/apps/backend/internal/mcp"
 	"github.com/orchestra/orchestra/apps/backend/internal/observability"
@@ -110,6 +111,15 @@ func Run(logger zerolog.Logger) error {
 	termManager := terminal.NewManager()
 
 	agentRegistry := agents.NewRegistryWithTerminal(cfg.AgentCommands, termManager)
+	accountRoot, accountErr := harnessaccounts.HostRoot(cfg.WorkspaceRoot)
+	if accountErr != nil {
+		return fmt.Errorf("managed account root: %w", accountErr)
+	}
+	accounts, accountErr := harnessaccounts.Open(accountRoot)
+	if accountErr != nil {
+		return fmt.Errorf("managed accounts: %w", accountErr)
+	}
+	agentRegistry.SetAccountStore(accounts)
 	for provider, command := range cfg.NativeAgentCommands {
 		agentRegistry.SetNativeCommand(agents.Provider(provider), command)
 	}
@@ -146,11 +156,14 @@ func Run(logger zerolog.Logger) error {
 		}
 	}
 
-	provider := canonicalDispatchProvider(cfg.AgentProvider)
-	if !agentRegistry.HasProvider(provider) {
-		return fmt.Errorf("agent provider %q is not configured", cfg.AgentProvider)
-	}
 	orchestratorService.SetAgentRegistry(agentRegistry, cfg.AgentCommands, cfg.AgentProvider)
+	if err := orchestratorService.RestoreHarnessRegistration(context.Background()); err != nil {
+		return fmt.Errorf("restore harness registration: %w", err)
+	}
+	_, restoredDefault := orchestratorService.GetAgentConfig()
+	if !agentRegistry.HasProvider(canonicalDispatchProvider(restoredDefault)) {
+		return fmt.Errorf("default agent provider %q is unregistered; register it or select another default", restoredDefault)
+	}
 
 	workspaceService := workspace.Service{Root: cfg.WorktreeRoot}
 	orchestratorService.SetWorkspaceService(workspaceService)
@@ -187,12 +200,15 @@ func Run(logger zerolog.Logger) error {
 	mcpRegistry := mcp.NewRegistry(make(map[string]string), logger)
 	orchestratorService.SetMCPRegistry(mcpRegistry, allMCPServers)
 
-	logger.Info().Str("agent_provider", cfg.AgentProvider).Str("service_id", runtime.ServiceOrchestrator).Msg("agent provider configured")
+	logger.Info().Str("agent_provider", restoredDefault).Str("service_id", runtime.ServiceOrchestrator).Msg("agent provider configured")
 
 	usageService, err := usage.NewService(filepath.Join(cfg.WorkspaceRoot, ".orchestra", "usage"), nil)
 	if err != nil {
 		logger.Warn().Err(err).Msg("usage service unavailable")
 		usageService = nil
+	}
+	if usageService != nil {
+		usageService.SetAccountStore(accounts)
 	}
 
 	daemonBin, exeErr := os.Executable()
@@ -221,7 +237,7 @@ func Run(logger zerolog.Logger) error {
 		return fmt.Errorf("workspace chat: %w", chatErr)
 	}
 	defer chatService.Close()
-	router := api.NewRouterWithPubSub(logger, orchestratorService, &cfg, pubsub, warehouseDB, termManager, usageService, trackerRegistry, studioMgr, studioTpls, chatService)
+	router := api.NewRouterWithPubSub(logger, orchestratorService, &cfg, pubsub, warehouseDB, termManager, usageService, trackerRegistry, studioMgr, studioTpls, chatService, accounts)
 
 	observeRetainedTerminalWorkspaces(orchestratorService, trackerClient, logger)
 
@@ -244,7 +260,7 @@ func Run(logger zerolog.Logger) error {
 	}
 
 	toolExecutor := tools.NewLinearToolExecutor(trackerClient)
-	go startExecutionWorker(orchestratorService, agentRegistry, provider, cfg.AgentProvider, cfg.WorkspaceRoot, cfg.WorkflowFile, cfg.AgentMaxTurns, toolExecutor.Execute, tools.TrackerToolSpecs(), cfg.WorkspaceHooks, pubsub, warehouseDB, sessionLog, termManager, &cfg, trackerRegistry, logger)
+	go startExecutionWorker(orchestratorService, agentRegistry, cfg.WorkspaceRoot, cfg.WorkflowFile, cfg.AgentMaxTurns, toolExecutor.Execute, tools.TrackerToolSpecs(), cfg.WorkspaceHooks, pubsub, warehouseDB, sessionLog, termManager, &cfg, trackerRegistry, logger)
 
 	logger.Info().Str("addr", addr).Str("service_id", runtime.ServiceOrchestrator).Msg("starting orchestrad")
 
@@ -418,8 +434,6 @@ func seedTrackerConfigFromEnv(ctx context.Context, warehouse *db.DB, cfg config.
 func startExecutionWorker(
 	service *orchestrator.Service,
 	registry *agents.Registry,
-	provider agents.Provider,
-	providerName string,
 	workspaceRoot string,
 	workflowFile string,
 	agentMaxTurns int,
@@ -439,6 +453,8 @@ func startExecutionWorker(
 	defer ticker.Stop()
 
 	for range ticker.C {
+		_, providerName := service.GetAgentConfig()
+		provider := canonicalDispatchProvider(providerName)
 		processExecutionTick(service, workspaceService, registry, provider, providerName, workspaceRoot, workflowFile, agentMaxTurns, toolExecutor, toolSpecs, workspaceHooks, pubsub, warehouseDB, sessionLog, termManager, cfg, trackerReg, logger)
 	}
 }
@@ -949,6 +965,7 @@ func processExecutionTick(
 	}
 
 	result, runErr := registry.RunTurn(runCtx, activeProvider, agents.TurnRequest{
+		AccountID:         entry.AccountID,
 		RequestedModel:    requestedOptions.RequestedModel,
 		RequestedMaxTurns: requestedOptions.RequestedMaxTurns,
 		SessionID:         sessionID,

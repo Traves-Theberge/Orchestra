@@ -61,6 +61,10 @@ func NormalizeProvider(s string) Provider {
 // TurnRequest encapsulates all parameters needed to execute a single agent turn,
 // including the prompt, workspace paths, timeout, and optional tool specifications.
 type TurnRequest struct {
+	// AccountID is a durable binding. Empty uses the provider's active selection.
+	AccountID string
+	// CredentialHome is resolved by Registry; callers must not supply it directly.
+	CredentialHome string
 	// RequestedModel is authoring intent, not a claim about the observed model.
 	RequestedModel string
 	// RequestedAgentID is a harness-native primary agent identifier. It is

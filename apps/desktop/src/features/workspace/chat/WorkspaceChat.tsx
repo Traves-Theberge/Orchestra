@@ -4,11 +4,11 @@ import { ArrowDown, ArrowUp, CheckCircle2, ChevronRight, Loader2, MessageSquare,
 import { MarkdownRenderer } from '@ui/MarkdownRenderer'
 import { AppTooltip } from '@ui/tooltip-wrapper'
 import { ChatMessage } from './ChatMessage'
+import { MessageRail } from './MessageRail'
 import { HarnessPicker } from './HarnessPicker'
 import { AgentPicker } from './AgentPicker'
 import { type AgentSelection } from '@core/api/agent-catalog'
 import { useAppStore } from '@core/store'
-import { ChatUsage } from './ChatUsage'
 import { chatDraftStorageKey, readChatDraftReceipt, writeChatDraftReceipt } from './chat-draft-storage'
 import {
   createWorkspaceChatSession, renameWorkspaceChatSession, fetchWorkspaceChat, fetchWorkspaceChatProviders, fetchWorkspaceChatModels,
@@ -63,13 +63,6 @@ function StreamingAssistant({ events, projectId }: { events: WorkspaceChatEvent[
     items.set(key, (items.get(key) ?? '') + (event.delta ?? ''))
   }
   return <>{[...items].map(([id, text]) => <article key={id} className="py-2"><div className="mb-2 flex items-center gap-2 text-[11px] text-muted-foreground"><Sparkles className="size-3.5 text-primary/80" />Agent · streaming</div><MarkdownRenderer content={text} enableMermaid={false} linkProjectId={projectId} className="break-words text-[13px] leading-7 [&_pre]:overflow-auto [&_pre]:rounded-xl [&_pre]:bg-muted/30" /></article>)}</>
-}
-
-function ProviderUsage({ events }: { events: WorkspaceChatEvent[] }) {
-  const event = [...events].reverse().find(e => e.type === 'thread/tokenUsage/updated')
-  const total = record(record(event?.payload?.tokenUsage).total)
-  const count = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value.toLocaleString() : 'unknown'
-  return <p>Provider thread usage (cumulative): {event ? `${count(total.inputTokens)} input · ${count(total.outputTokens)} output · ${count(total.cachedInputTokens)} cached · ${count(total.totalTokens)} total tokens` : 'not observed'}</p>
 }
 
 function AgentQuestion({ request, disabled, onReply }: { request: WorkspaceChatRequest; disabled: boolean; onReply: (answer: Record<string, unknown>) => void }) {
@@ -504,11 +497,13 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
       <div hidden={!!contentOverride} className={`${contentOverride ? 'hidden' : 'flex'} min-h-0 flex-1 flex-col`}>
       {(error || observationError) && <div role="alert" className="border-b border-destructive/20 bg-destructive/5 px-5 py-3 text-xs text-destructive">{error || observationError}</div>}
       {creating.current?.uncertain && creating.current.sessionId === sessionId && <div className="px-5 py-2"><button disabled={pending} onClick={retryCreate} className="rounded-md border border-border px-3 py-1.5 text-xs disabled:opacity-40">Retry creating chat</button><p className="mt-1 text-[10px] text-muted-foreground">Reuses the same conversation identity. Your message stays unsent.</p></div>}
-      <div ref={timelineRef} aria-label="Chat timeline" onScroll={e => { const el = e.currentTarget; followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; setShowJump(!followRef.current) }} className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6">
+      <div className="relative min-h-0 flex-1">
+      <MessageRail messages={messages} timelineRef={timelineRef} />
+      <div ref={timelineRef} aria-label="Chat timeline" onScroll={e => { const el = e.currentTarget; followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; setShowJump(!followRef.current) }} className="h-full overflow-y-auto px-4 py-6 sm:px-6">
         <div role="log" aria-label="Conversation messages" className="mx-auto max-w-[760px] space-y-5 pb-4">
           {messages.map((message, index) => <Fragment key={message.id}>
             {datedTimeline && <AgentActivity events={eventsBetween(index === 0 ? -Infinity : Date.parse(messages[index - 1].created_at), Date.parse(message.created_at))} />}
-            <ChatMessage message={message} provider={snapshot?.session.provider ?? ''} projectId={projectId} />
+            <div data-rail-message-id={message.id}><ChatMessage message={message} provider={snapshot?.session.provider ?? ''} projectId={projectId} /></div>
           </Fragment>)}
           <AgentActivity events={datedTimeline ? events.filter(e => !Number.isFinite(Date.parse(e.created_at)) || Date.parse(e.created_at) > Date.parse(messages[messages.length - 1].created_at)) : events} />
           <StreamingAssistant events={working ? events : []} projectId={projectId} />
@@ -516,6 +511,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
           {working && <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />{snapshot?.session.status === 'stopping' ? 'Stopping current turn…' : 'Agent turn in progress…'}</p>}
           <div ref={endRef} />
         </div>
+      </div>
       </div>
       {showJump && <button aria-label="Scroll to latest message" onClick={() => { followRef.current = true; setShowJump(false); endRef.current?.scrollIntoView?.({ behavior: 'smooth' }) }} className="absolute bottom-48 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-card px-3 py-1.5 text-xs shadow-sm"><ArrowDown className="size-3" />Latest</button>}
       <footer data-chat-composer-placement={draftHero ? 'centered' : 'docked'} className={`${draftHero ? 'absolute left-1/2 top-[45%] -translate-x-1/2 -translate-y-1/2' : 'mx-auto shrink-0'} w-full max-w-[808px] px-4 pb-3 pt-1 sm:px-6`}>
@@ -525,7 +521,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
         {uncertainSession === sessionId && sessionId && <p role="status" className="mb-2 text-xs text-destructive">Delivery is uncertain. Your draft is retained; inspect the conversation before starting a new turn.</p>}
         {creating.current && creating.current.sessionId !== sessionId && <p role="status" className="mb-2 text-xs text-muted-foreground">Recover the pending chat from Conversations before sending another message.</p>}{submitted.current && submitted.current.sessionId !== sessionId && <p role="status" className="mb-2 text-xs text-muted-foreground">Resolve the pending message in its conversation before sending another message.</p>}{storageWarning && <p role="status" className="mb-2 text-xs text-muted-foreground">{storageWarning}</p>}{snapshot?.session.error && <p role="status" className="mb-2 text-xs text-destructive">{snapshot.session.error}</p>}
         <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm transition-colors focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/5">
-          <textarea ref={textareaRef} aria-label="Message agent" value={draft} onChange={e => { setDraft(e.target.value); drafts.current[sessionId] = e.target.value; persist() }} rows={3} disabled={pending || legacyGeminiSession} placeholder={working ? 'Draft your next message while the agent works…' : 'Ask anything, or describe a change…'} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send() } }} className="block max-h-60 min-h-[88px] w-full resize-none bg-transparent px-4 pt-3 text-[15px] leading-6 outline-none placeholder:text-muted-foreground/60 disabled:opacity-50" />
+          <textarea ref={textareaRef} aria-label="Message agent" value={draft} onChange={e => { setDraft(e.target.value); drafts.current[sessionId] = e.target.value; persist() }} rows={3} disabled={pending || legacyGeminiSession} placeholder={legacyGeminiSession ? 'Legacy conversation history is read-only' : working ? 'Draft your next message while the agent works…' : 'Ask anything, or describe a change…'} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send() } }} className="block max-h-60 min-h-[88px] w-full resize-none bg-transparent px-4 pt-3 text-[15px] leading-6 outline-none placeholder:text-muted-foreground/60 disabled:opacity-50" />
           <div aria-label="Main agent controls" className="flex min-w-0 items-center gap-2 px-3 pb-2.5 pt-1">
             <HarnessPicker providers={providers} provider={snapshot?.session.provider || creating.current?.provider || provider} disabled={loading || pending || working} locked={!!creating.current || !!submitted.current || !!submittedReply.current || !!uncertainSession}
               catalog={catalog} model={selectedModel} onModel={value => setModelSelection({ key: catalogKey, model: value })} onProvider={id => {
@@ -538,17 +534,16 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
                 }
                 setProvider(id)
               }} />
-            <AgentPicker config={config} projectId={projectId} harness={agentHarness} selection={selectedAgent} disabled={loading || pending || working || !!creating.current || !!submitted.current || !!submittedReply.current || !!uncertainSession || legacyGeminiSession} onChange={value => setAgentSelections(previous => ({ ...previous, [agentKey]: value ?? null }))} />
+            <AgentPicker config={config} projectId={projectId} harness={agentHarness} selection={selectedAgent} disabled={loading || pending || working || legacyGeminiSession || !!creating.current || !!submitted.current || !!submittedReply.current || !!uncertainSession} onChange={value => setAgentSelections(previous => ({ ...previous, [agentKey]: value ?? null }))} />
             {selectedModel && effortOptions.length > 0 && <select aria-label="Reasoning effort for next turn" value={selectedEffort} disabled={pending || working} onChange={e => setEffortSelection({ key: catalogKey, model: effortModel?.model ?? '', effort: e.target.value })} className="min-w-0 max-w-32 rounded-md border-0 bg-transparent py-1 text-[11px] text-muted-foreground"><option value="">Inherit provider setting</option>{effortOptions.map(e => <option key={e.reasoning_effort} value={e.reasoning_effort}>{e.reasoning_effort}</option>)}</select>}
             <span className="flex-1" />
             {working ? <button aria-label="Stop current turn" title="Interrupt current turn (Escape)" disabled={pending || snapshot?.session.status === 'stopping'} onClick={interrupt} className="shrink-0 rounded-full border border-border bg-background p-2 disabled:opacity-40"><Square className="size-3.5" /></button>
               : <button aria-label="Send message" title="Send message" disabled={!storageReady || legacyGeminiSession || !!creating.current || !!submitted.current || !draft.trim() || pending || !!observationError || (sessionId ? !snapshot || uncertainSession === sessionId : loading || !selectedProvider?.enabled)} onClick={send} className="shrink-0 rounded-full bg-foreground p-2 text-background disabled:opacity-25"><ArrowUp className="size-3.5" /></button>}
           </div>
-          {nativeComposer && <div className="px-4 pb-2 text-[10px] text-muted-foreground"><ChatUsage events={events} /></div>}
         </div>
         {nativeComposer && (!catalog || modelCatalog.error) && <p className="mt-2 text-[10px] text-muted-foreground">{modelCatalog.key === catalogKey && modelCatalog.error ? `Model catalog unavailable: ${modelCatalog.error}. Provider default remains available.` : 'Loading provider model catalog…'}</p>}
         {!loading && !sessionId && !selectedProvider?.enabled && <p className="mt-2 text-xs text-muted-foreground">{providers.map(p => `${p.label}: ${p.reason || 'unavailable'}`).join(' · ') || 'Workspace chat is unavailable on this backend. Refresh after updating the backend.'}</p>}
-        <div className="mt-2 flex items-start justify-between gap-3 text-[10px] text-muted-foreground/70"><span>{working ? 'Drafts stay unsent until the current turn finishes · Esc to interrupt' : 'Enter to send · Shift+Enter for a new line'}</span>{snapshot && <details className="max-w-[60%] text-right"><summary className="cursor-pointer">{nativeSession ? 'Native session' : 'Transcript replay'} · Session details</summary><div className="mt-2 space-y-1 break-words text-left text-[10px]"><p>{snapshot.session.provider} · {snapshot.session.conversation_mode === 'native_session' ? 'Native provider session' : snapshot.session.conversation_mode === 'transcript_replay' ? 'Conversation history is supplied to each fresh agent turn' : snapshot.session.conversation_mode} · {snapshot.session.effective_model ? `Model: ${snapshot.session.effective_model}` : 'Model not observed'}</p>{snapshot.session.provider_thread_id && <p className="break-all">Provider thread: {snapshot.session.provider_thread_id}</p>}{snapshot.session.requested_model && <p>Requested model: {snapshot.session.requested_model}</p>}{snapshot.session.requested_reasoning_effort && <p>Requested effort: {snapshot.session.requested_reasoning_effort}</p>}<p>Observed effort: {snapshot.session.effective_reasoning_effort || 'unknown'}</p>{(snapshot.session.approval_policy || snapshot.session.sandbox_mode) && <p>Approvals: {snapshot.session.approval_policy || 'not observed'} · Sandbox: {snapshot.session.sandbox_mode || 'not observed'}</p>}<ProviderUsage events={snapshot.events ?? []} />{!nativeSession && <p>Model selection is unavailable for this transcript-replay conversation.</p>}</div></details>}</div>
+        <p className="mt-2 text-[10px] text-muted-foreground/70">{working ? 'Drafts stay unsent until the current turn finishes · Esc to interrupt' : 'Enter to send · Shift+Enter for a new line'}</p>
       </footer>
       </div>
     </section>

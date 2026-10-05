@@ -48,7 +48,7 @@ async function openThreadList() {
 async function selectConversation(title = 'Review changes') {
   await openThreadList()
   fireEvent.click(screen.getByRole('button', { name: `Open conversation: ${title}` }))
-  await screen.findByText(/Session details/)
+  await screen.findByRole('button', { name: `Rename conversation: ${title}` })
 }
 
 describe('WorkspaceChat', () => {
@@ -88,6 +88,7 @@ describe('WorkspaceChat', () => {
     expect(await screen.findByRole('button', { name: 'Use Antigravity' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Use Gemini' })).not.toBeInTheDocument()
   })
+
   it('opens and closes the conversation list with Escape and restores trigger focus', async () => {
     open()
     await openThreadList()
@@ -155,7 +156,7 @@ describe('WorkspaceChat', () => {
     open()
     await screen.findByRole('button', { name: 'Toggle conversations' })
     act(() => useAppStore.getState().requestWorkspaceConversation('project-a', session.id))
-    await screen.findByText(/Session details/)
+    await screen.findByRole('button', { name: 'Rename conversation: Review changes' })
     expect(api.fetchWorkspaceChat).toHaveBeenCalledWith(config, 'project-a', session.id)
     expect(useAppStore.getState().requestedWorkspaceConversation).toBeNull()
     expect(api.sendWorkspaceChatMessage).not.toHaveBeenCalled()
@@ -208,7 +209,7 @@ describe('WorkspaceChat', () => {
     expect(api.fetchWorkspaceChat).toHaveBeenCalledTimes(observed)
     await act(async () => { await vi.advanceTimersByTimeAsync(1) })
     expect(api.fetchWorkspaceChat).toHaveBeenCalledTimes(observed + 1)
-    expect(screen.getByText(/17 input.*9 output.*26 total tokens/)).toBeInTheDocument()
+    expect(screen.queryByText(/17 input.*9 output.*26 total tokens/)).not.toBeInTheDocument()
     expect(api.sendWorkspaceChatMessage).not.toHaveBeenCalled()
   })
   it('pauses inactive workspace reads and immediately resumes without losing its draft or snapshot', async () => {
@@ -224,7 +225,7 @@ describe('WorkspaceChat', () => {
     expect(api.fetchWorkspaceChat).toHaveBeenCalledTimes(detailCalls)
     expect(api.fetchWorkspaceChatProviders).toHaveBeenCalledTimes(providerCalls)
     expect(api.listWorkspaceChatSessions).toHaveBeenCalledTimes(historyCalls)
-    expect(screen.getByText(/Session details/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Rename conversation: Review changes' })).toBeInTheDocument()
     expect(screen.getByLabelText('Message agent')).toHaveValue('Keep this workspace draft')
     await act(async () => mounted.rerender(<WorkspaceChat config={config} projectId="project-a" projectName="Alpha" active />))
     expect(api.fetchWorkspaceChat).toHaveBeenCalledTimes(detailCalls + 1)
@@ -437,7 +438,7 @@ describe('WorkspaceChat', () => {
     resolveSend({ session, message })
     await waitFor(() => expect(screen.getByLabelText('Message agent')).toHaveValue(''))
   })
-  it('renders provider continuity, streamed text, tool activity, plans and observed usage', async () => {
+  it('renders streamed text, tool activity and plans without session metadata panels', async () => {
     vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({
       session: { ...session, status: 'running', conversation_mode: 'native_session', provider_thread_id: 'provider-thread', requested_model: 'requested-model', effective_model: 'observed-model', approval_policy: 'on-request', sandbox_mode: 'workspace-write' },
       messages: [], events: [
@@ -454,14 +455,13 @@ describe('WorkspaceChat', () => {
     await openThreadList()
     fireEvent.click(screen.getByRole('button', { name: 'Open conversation: Review changes' }))
     expect(await screen.findByText('Hello world')).toBeInTheDocument()
-    expect(screen.getByText(/Provider thread: provider-thread/)).toBeInTheDocument()
-    expect(screen.getByText(/Model: observed-model/)).toBeInTheDocument()
-    expect(screen.getByText(/Requested model: requested-model/)).toBeInTheDocument()
+    expect(screen.queryByText(/Provider thread: provider-thread/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Session details/)).not.toBeInTheDocument()
     expect(screen.getByText('git status')).toBeInTheDocument()
     expect(screen.getByText('Orchestra control')).toBeInTheDocument()
     expect(screen.getByText(/durable-task-id/)).toBeInTheDocument()
     expect(screen.getByText(/inProgress: Inspect/)).toBeInTheDocument()
-    expect(screen.getByText(/100 input.*20 output.*40 cached.*120 total tokens/)).toBeInTheDocument()
+    expect(screen.queryByText(/100 input.*20 output.*40 cached.*120 total tokens/)).not.toBeInTheDocument()
   })
   it('sends a scoped approval once and disables repeat answers', async () => {
     const request: api.WorkspaceChatRequest = { id: 'approval-a', turn_id: 'turn-a', method: 'item/commandExecution/requestApproval', params: { command: 'git status' }, status: 'pending', created_at: '' }

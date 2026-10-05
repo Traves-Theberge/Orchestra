@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"testing"
 
 	"github.com/orchestra/orchestra/apps/backend/internal/config"
@@ -48,12 +49,25 @@ func TestHarnessSetupReportsIndependentHostObservations(t *testing.T) {
 	if codex.Authentication != "signed_in" && codex.Authentication != "signed_out" && codex.Authentication != "unknown" {
 		t.Fatalf("invalid authentication observation: %+v", codex)
 	}
-	if codex.TerminalSupported {
-		t.Fatal("nil test terminal manager was advertised as interactive")
+	if runtime.GOOS == "windows" && codex.TerminalSupported {
+		t.Fatal("Windows backend was advertised as having an interactive PTY")
 	}
 	for _, row := range payload.Harnesses[1:] {
-		if row.Authentication != "unknown" {
+		if row.ID != "CLAUDE" && row.Authentication != "unknown" {
 			t.Fatalf("unsupported auth probe claimed sign-in: %+v", row)
+		}
+	}
+}
+
+func TestCodexDeviceLoginDoesNotExposeAnotherAttempt(t *testing.T) {
+	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: "test-token"})
+	for _, method := range []string{http.MethodGet, http.MethodDelete} {
+		request := httptest.NewRequest(method, "/api/v1/agents/setup/codex/device-login/not-this-host", nil)
+		request.Header.Set("Authorization", "Bearer test-token")
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("%s status = %d: %s", method, response.Code, response.Body.String())
 		}
 	}
 }

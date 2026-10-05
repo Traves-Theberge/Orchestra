@@ -101,6 +101,7 @@ func runMigrations(db *sql.DB) error {
 		{"issues", "authoring_session_id", "TEXT"},
 		{"issues", "requested_model", "TEXT"},
 		{"runs", "requested_model", "TEXT"},
+		{"runs", "account_id", "TEXT NOT NULL DEFAULT 'system_default'"},
 		{"runs", "requested_max_turns", "INTEGER CHECK(requested_max_turns IS NULL OR (typeof(requested_max_turns) = 'integer' AND requested_max_turns BETWEEN 1 AND 100))"},
 		{"runs", "disabled_tools", "TEXT DEFAULT '[]'"},
 		{"issues", "requested_max_turns", "INTEGER CHECK(requested_max_turns IS NULL OR (typeof(requested_max_turns) = 'integer' AND requested_max_turns BETWEEN 1 AND 100))"},

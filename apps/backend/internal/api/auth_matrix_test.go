@@ -79,6 +79,15 @@ var allRoutes = []route{
 	{"POST", "/api/v1/config/agents/items", false},
 	{"GET", "/api/v1/agents", false},
 	{"GET", "/api/v1/agents/setup", false},
+	{"GET", "/api/v1/agents/accounts", false},
+	{"POST", "/api/v1/agents/accounts", false},
+	{"PUT", "/api/v1/agents/accounts/active/CODEX", false},
+	{"POST", "/api/v1/agents/accounts/example/verify", false},
+	{"POST", "/api/v1/agents/accounts/example/reauth", false},
+	{"DELETE", "/api/v1/agents/accounts/example", false},
+	{"POST", "/api/v1/agents/setup/codex/device-login", false},
+	{"GET", "/api/v1/agents/setup/codex/device-login/example", false},
+	{"DELETE", "/api/v1/agents/setup/codex/device-login/example", false},
 	{"GET", "/api/v1/agents/claude/settings", false},
 	{"POST", "/api/v1/agents/claude/settings", false},
 	{"GET", "/api/v1/agents/claude/instructions", false},
@@ -94,6 +103,7 @@ var allRoutes = []route{
 	{"POST", "/api/v1/agents/claude/subagents", false},
 	{"DELETE", "/api/v1/agents/claude/subagents/" + pathParam("name"), false},
 	{"GET", "/api/v1/agents/codex/config", false},
+	{"PUT", "/api/v1/agents/codex/registration", false},
 	{"POST", "/api/v1/agents/codex/config", false},
 	{"GET", "/api/v1/agents/codex/instructions", false},
 	{"POST", "/api/v1/agents/codex/instructions", false},
@@ -301,7 +311,7 @@ func authMatrixConfig(root string) *config.Config {
 // sync with router.go. If routes are added or removed and the table
 // isn't updated, this test fails so the gap is loud.
 func TestAuthMatrixCoversAllRoutes(t *testing.T) {
-	const expectedRoutes = 195
+	const expectedRoutes = 205
 	if got := len(allRoutes); got != expectedRoutes {
 		t.Fatalf("auth matrix has %d routes, want %d — keep allRoutes in sync with router.go", got, expectedRoutes)
 	}

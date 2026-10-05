@@ -36,9 +36,9 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('UISlice — default initialization', () => {
-  it('initializes activeSection to CONSOLE', () => {
+  it('opens Maestro on first launch', () => {
     const { state } = createTestSlice()
-    expect(state.activeSection).toBe('CONSOLE')
+    expect(state.activeSection).toBe('ORCHESTRATOR')
   })
 
   it('initializes sidebarCollapsed to false', () => {

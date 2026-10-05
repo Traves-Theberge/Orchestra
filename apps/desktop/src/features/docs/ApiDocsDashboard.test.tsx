@@ -39,7 +39,7 @@ paths:
     render(<ApiDocsDashboard config={config} />)
 
     expect(await screen.findByText('Orchestra API')).toBeTruthy()
-    expect(screen.getAllByText('GET')).toHaveLength(2)
+    expect(await screen.findAllByText('GET')).toHaveLength(2)
     expect(screen.getAllByText('/api/v1/projects')).toHaveLength(2)
     fireEvent.change(screen.getByRole('textbox', { name: 'Filter API operations' }), { target: { value: 'health' } })
     expect(screen.getByText('/api/v1/health')).toBeTruthy()

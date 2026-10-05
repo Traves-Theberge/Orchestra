@@ -23,6 +23,24 @@ func TestNewRegistryNormalizesProviderKeys(t *testing.T) {
 	}
 }
 
+func TestUnregisteredRunnerRejectsNewBatchAndNativeStarts(t *testing.T) {
+	registry := NewRegistry(map[string]string{"CODEX": "codex exec {{prompt}}"})
+	registry.SetRegistered(ProviderCodex, false)
+	if registry.HasProvider(ProviderCodex) || registry.SupportsNativeSession(ProviderCodex) {
+		t.Fatal("unregistered provider remained available")
+	}
+	if _, err := registry.RunTurn(context.Background(), ProviderCodex, TurnRequest{Prompt: "test"}, nil); err == nil {
+		t.Fatal("new batch turn admitted after unregister")
+	}
+	if _, err := registry.StartNativeSession(context.Background(), ProviderCodex, TurnRequest{}, "", nil); err == nil {
+		t.Fatal("new native session admitted after unregister")
+	}
+	registry.SetRegistered(ProviderCodex, true)
+	if !registry.HasProvider(ProviderCodex) || !registry.SupportsNativeSession(ProviderCodex) {
+		t.Fatal("re-register did not restore configured capabilities")
+	}
+}
+
 func TestLegacyGeminiCommandDoesNotRegisterAnActiveRunner(t *testing.T) {
 	registry := NewRegistry(map[string]string{
 		"GEMINI": "gemini -p {{prompt}} --output-format stream-json --approval-mode yolo",

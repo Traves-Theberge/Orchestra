@@ -84,6 +84,8 @@ Queue currently supports local SQLite tasks with a conditional state update. Hos
 
 ## Human approval and replanning
 
+Provider subprocess approval policy is separate from Orchestra's human gates. A Windows Codex planning command using native `approval_policy=never` still requires explicit human approval of the resulting Orchestra plan; it does not grant task execution or PR approval. Inspect provider logs when planning cannot read files, and distinguish a completed provider turn from successful inspection.
+
 Todo means planning admission, not execution permission. Observe the task's `plan_gate`: a completed plan must wait at `awaiting_approval`. Copy its exact opaque `plan_hash` and complete project/task IDs into `approve-plan` only after the human explicitly approves that plan or tells Maestro to approve it. A previous approval does not authorize a changed plan, code context or task configuration. Never infer approval from assignment, a successful provider turn, a checked checklist, or a state label; never replace a rejected gate control with a generic state PATCH.
 
 `replan` requires the observed current state and plan hash plus nonempty feedback. It preserves the task's code/worktree and review context, returns an inactive task to Todo, and invalidates the prior approval. It does not stop an active run or approve the new plan. Unknown delivery requires receipt and exact-task reconciliation before another mutation. These gate controls support local SQLite tasks; fail closed for hosted sources without an equivalent durable gate contract.

@@ -3,6 +3,7 @@ package usage
 import (
 	"context"
 	"fmt"
+	"github.com/orchestra/orchestra/apps/backend/internal/harnessaccounts"
 	"os"
 	"sort"
 	"sync"
@@ -41,6 +42,7 @@ type WorktreeEntry struct {
 
 // Service is the entry point for everything usage-related.
 type Service struct {
+	accounts     *harnessaccounts.Store
 	store        *store
 	worktreesFn  func() []WorktreeEntry
 	mu           sync.Mutex
@@ -52,10 +54,26 @@ type Service struct {
 	// Rate-limit cache: probes are slow (HTTP / subprocess) and the windows
 	// move on the order of minutes, so we cache for rateLimitTTL and only
 	// refresh on demand or when force=true.
-	rateLimitMu       sync.Mutex
-	rateLimitCache    *RateLimitState
-	rateLimitFetched  time.Time
-	rateLimitInflight chan struct{}
+	rateLimitMu         sync.Mutex
+	rateLimitCache      *RateLimitState
+	rateLimitFetched    time.Time
+	rateLimitInflight   chan struct{}
+	rateLimitAccountKey string
+	rateLimitEpoch      int64
+}
+
+func (s *Service) SetAccountStore(store *harnessaccounts.Store) {
+	s.rateLimitMu.Lock()
+	s.accounts = store
+	s.rateLimitCache = nil
+	s.rateLimitEpoch++
+	s.rateLimitMu.Unlock()
+}
+func (s *Service) InvalidateRateLimits() {
+	s.rateLimitMu.Lock()
+	s.rateLimitCache = nil
+	s.rateLimitEpoch++
+	s.rateLimitMu.Unlock()
 }
 
 // Anthropic and Codex windows tick on the order of minutes; polling more
@@ -519,8 +537,27 @@ func usageTotal(p Provider, input, output, cacheRead, cacheWrite, reasoning int6
 // Results are cached for rateLimitTTL; force=true refreshes immediately.
 // Concurrent callers coalesce on the inflight refresh.
 func (s *Service) RateLimits(ctx context.Context, force bool) RateLimitState {
+	accountID, home, accountKey, accountLabel := "", "", "system_default", "Host default"
+	if s.accounts != nil {
+		selection := s.accounts.Active("CODEX")
+		accountID = selection.AccountID
+		accountKey = fmt.Sprintf("%s:%d", accountID, selection.Version)
+		if accountID != "" {
+			if account, err := s.accounts.Get(accountID); err == nil {
+				accountLabel = account.Label
+			}
+			var err error
+			home, err = s.accounts.Home("CODEX", accountID)
+			if err != nil {
+				state := s.unavailableState("selected account is unavailable")
+				state.Claude = fetchClaudeRateLimits(ctx)
+				state.Codex.AccountID = accountID
+				return state
+			}
+		}
+	}
 	s.rateLimitMu.Lock()
-	if !force && s.rateLimitCache != nil && time.Since(s.rateLimitFetched) < rateLimitTTL {
+	if !force && s.rateLimitCache != nil && s.rateLimitAccountKey == accountKey && time.Since(s.rateLimitFetched) < rateLimitTTL {
 		out := *s.rateLimitCache
 		s.rateLimitMu.Unlock()
 		return out
@@ -530,16 +567,17 @@ func (s *Service) RateLimits(ctx context.Context, force bool) RateLimitState {
 		s.rateLimitMu.Unlock()
 		<-ch
 		s.rateLimitMu.Lock()
-		if s.rateLimitCache != nil {
+		if s.rateLimitCache != nil && s.rateLimitAccountKey == accountKey {
 			out := *s.rateLimitCache
 			s.rateLimitMu.Unlock()
 			return out
 		}
 		s.rateLimitMu.Unlock()
-		return s.unavailableState("refresh failed")
+		return s.RateLimits(ctx, force)
 	}
 	done := make(chan struct{})
 	s.rateLimitInflight = done
+	epoch := s.rateLimitEpoch
 	s.rateLimitMu.Unlock()
 
 	defer func() {
@@ -551,8 +589,10 @@ func (s *Service) RateLimits(ctx context.Context, force bool) RateLimitState {
 
 	now := time.Now().UnixMilli()
 	state := RateLimitState{
-		Gemini:   &ProviderRateLimits{Provider: ProviderGemini, Status: RateLimitUnavailable, UpdatedAt: now, Error: "Gemini does not expose plan windows"},
-		OpenCode: &ProviderRateLimits{Provider: ProviderOpenCode, Status: RateLimitUnavailable, UpdatedAt: now, Error: "OpenCode does not expose plan windows"},
+		Gemini:      &ProviderRateLimits{Provider: ProviderGemini, Status: RateLimitUnavailable, UpdatedAt: now, Error: "Gemini does not expose plan windows"},
+		OpenCode:    &ProviderRateLimits{Provider: ProviderOpenCode, Status: RateLimitUnavailable, UpdatedAt: now, Error: "OpenCode does not expose plan windows"},
+		Antigravity: &ProviderRateLimits{Provider: ProviderAntigravity, Status: RateLimitUnavailable, UpdatedAt: now, Error: "No verified Antigravity quota source"},
+		Eightgent:   &ProviderRateLimits{Provider: Provider8gent, Status: RateLimitUnavailable, UpdatedAt: now, Error: "8gent has no unified subscription quota"},
 	}
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -562,15 +602,25 @@ func (s *Service) RateLimits(ctx context.Context, force bool) RateLimitState {
 	}()
 	go func() {
 		defer wg.Done()
-		state.Codex = fetchCodexRateLimits(ctx)
+		state.Codex = fetchCodexRateLimitsInHome(ctx, home)
+		state.Codex.AccountID = accountID
+		state.Codex.AccountLabel = accountLabel
+		state.Codex.Source = "codex_app_server"
 	}()
 	wg.Wait()
 
 	s.rateLimitMu.Lock()
 	cached := state
-	s.rateLimitCache = &cached
-	s.rateLimitFetched = time.Now()
+	stale := epoch != s.rateLimitEpoch
+	if !stale {
+		s.rateLimitCache = &cached
+		s.rateLimitAccountKey = accountKey
+		s.rateLimitFetched = time.Now()
+	}
 	s.rateLimitMu.Unlock()
+	if stale {
+		return s.unavailableState("account selection changed; refresh usage")
+	}
 	return state
 }
 
@@ -580,10 +630,12 @@ func (s *Service) unavailableState(reason string) RateLimitState {
 		return &ProviderRateLimits{Provider: p, Status: RateLimitUnavailable, UpdatedAt: now, Error: reason}
 	}
 	return RateLimitState{
-		Claude:   mk(ProviderClaude),
-		Codex:    mk(ProviderCodex),
-		Gemini:   mk(ProviderGemini),
-		OpenCode: mk(ProviderOpenCode),
+		Claude:      mk(ProviderClaude),
+		Codex:       mk(ProviderCodex),
+		Gemini:      mk(ProviderGemini),
+		OpenCode:    mk(ProviderOpenCode),
+		Antigravity: mk(ProviderAntigravity),
+		Eightgent:   mk(Provider8gent),
 	}
 }
 

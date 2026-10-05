@@ -20,6 +20,8 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/config"
 	"github.com/orchestra/orchestra/apps/backend/internal/control"
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
+	"github.com/orchestra/orchestra/apps/backend/internal/harnessaccounts"
+	"github.com/orchestra/orchestra/apps/backend/internal/harnesssetup"
 	"github.com/orchestra/orchestra/apps/backend/internal/observability"
 	"github.com/orchestra/orchestra/apps/backend/internal/orchestrator"
 	"github.com/orchestra/orchestra/apps/backend/internal/staticassets"
@@ -56,6 +58,8 @@ type Server struct {
 	worktreeJobs        *worktreejobs.Service
 	worktreeRemovals    *workspacelifecycle.Service
 	agentCatalog        *agentcatalog.Service
+	codexDeviceLogin    *harnesssetup.DeviceLoginManager
+	accounts            *harnessaccounts.Store
 }
 
 // SetStudioTemplateStore wires a template store onto the server for the
@@ -88,28 +92,34 @@ func NewRouterWithPubSub(
 	registry *trackerregistry.Registry,
 	studioMgr *studio.Manager,
 	studioTpls *templates.Store,
-	chat ...*workspacechat.Service,
+	extras ...any,
 ) http.Handler {
 	if termManager == nil {
 		termManager = terminal.NewManager()
 	}
 	server := &Server{
-		logger:        logger,
-		orchestrator:  orchestratorService,
-		workspaceRoot: cfg.WorkspaceRoot,
-		worktreeRoot:  cfg.WorktreeRoot,
-		authToken:     cfg.APIToken,
-		pubsub:        pubsub,
-		db:            warehouseDB,
-		config:        cfg,
-		termManager:   termManager,
-		usageService:  usageService,
-		registry:      registry,
-		studioMgr:     studioMgr,
-		studioTpls:    studioTpls,
+		logger:           logger,
+		orchestrator:     orchestratorService,
+		workspaceRoot:    cfg.WorkspaceRoot,
+		worktreeRoot:     cfg.WorktreeRoot,
+		authToken:        cfg.APIToken,
+		pubsub:           pubsub,
+		db:               warehouseDB,
+		config:           cfg,
+		termManager:      termManager,
+		codexDeviceLogin: harnesssetup.NewDeviceLoginManager(),
+		usageService:     usageService,
+		registry:         registry,
+		studioMgr:        studioMgr,
+		studioTpls:       studioTpls,
 	}
-	if len(chat) > 0 {
-		server.workspaceChat = chat[0]
+	for _, extra := range extras {
+		switch value := extra.(type) {
+		case *workspacechat.Service:
+			server.workspaceChat = value
+		case *harnessaccounts.Store:
+			server.accounts = value
+		}
 	}
 	if warehouseDB != nil {
 		catalog, err := agentcatalog.New(warehouseDB, cfg.ProjectRoots, cfg.WorkspaceRoot, cfg.AgentCommands, cfg.NativeAgentCommands)
@@ -241,6 +251,16 @@ func NewRouterWithPubSub(
 	protected.Post("/api/v1/config/agents/items", server.PostAgentConfigUpdate)
 	protected.Get("/api/v1/agents", server.GetAgents)
 	protected.Get("/api/v1/agents/setup", server.GetHarnessSetup)
+	protected.Put("/api/v1/agents/{provider}/registration", server.SetHarnessRegistration)
+	protected.Get("/api/v1/agents/accounts", server.ListHarnessAccounts)
+	protected.Post("/api/v1/agents/accounts", server.BeginHarnessAccount)
+	protected.Put("/api/v1/agents/accounts/active/{provider}", server.SelectHarnessAccount)
+	protected.Post("/api/v1/agents/accounts/{id}/verify", server.VerifyHarnessAccount)
+	protected.Post("/api/v1/agents/accounts/{id}/reauth", server.ReauthHarnessAccount)
+	protected.Delete("/api/v1/agents/accounts/{id}", server.RemoveHarnessAccount)
+	protected.Post("/api/v1/agents/setup/codex/device-login", server.StartCodexDeviceLogin)
+	protected.Get("/api/v1/agents/setup/codex/device-login/{id}", server.GetCodexDeviceLogin)
+	protected.Delete("/api/v1/agents/setup/codex/device-login/{id}", server.CancelCodexDeviceLogin)
 	// Claude-specific config endpoints (registered before {provider} wildcards)
 	protected.Get("/api/v1/agents/claude/settings", server.GetClaudeSettings)
 	protected.Post("/api/v1/agents/claude/settings", server.PostClaudeSettings)

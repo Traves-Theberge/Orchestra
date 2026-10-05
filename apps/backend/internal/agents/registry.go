@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/orchestra/orchestra/apps/backend/internal/harnessaccounts"
 	"github.com/orchestra/orchestra/apps/backend/internal/terminal"
 	"github.com/orchestra/orchestra/apps/backend/internal/unsandbox"
 )
@@ -15,13 +16,77 @@ import (
 // turn execution to the appropriate backend. It is the central entry point
 // for the orchestrator to invoke any configured agent.
 type Registry struct {
+	accounts       *harnessaccounts.Store
 	mu             sync.Mutex
 	runners        map[Provider]Runner
+	disabled       map[Provider]bool
 	commands       map[Provider]string
 	readOnlyStages map[string]readOnlyStageCapability
 	nativeCommands map[Provider]string
 	transports     map[RuntimeTarget]RuntimeTransport
 	termManager    *terminal.Manager
+}
+
+func (r *Registry) SetAccountStore(store *harnessaccounts.Store) {
+	r.mu.Lock()
+	r.accounts = store
+	r.mu.Unlock()
+}
+func (r *Registry) ActiveAccount(provider Provider) string {
+	r.mu.Lock()
+	store := r.accounts
+	r.mu.Unlock()
+	if store == nil {
+		return ""
+	}
+	return store.Active(string(provider)).AccountID
+}
+
+// ValidateAccount checks a persisted conversation binding before accepting a
+// new message. An account removed since the previous turn cannot be replaced
+// silently by the current active selection.
+func (r *Registry) ValidateAccount(provider Provider, accountID string) error {
+	if accountID == "" || accountID == "system_default" {
+		return nil
+	}
+	r.mu.Lock()
+	store := r.accounts
+	r.mu.Unlock()
+	if store == nil {
+		return harnessaccounts.ErrUnavailable
+	}
+	_, err := store.Home(string(provider), accountID)
+	return err
+}
+func (r *Registry) bindAccount(provider Provider, request TurnRequest) (TurnRequest, error) {
+	if request.AccountID == "system_default" {
+		request.AccountID = ""
+		return request, nil
+	}
+	r.mu.Lock()
+	store := r.accounts
+	r.mu.Unlock()
+	if store == nil {
+		if request.AccountID != "" {
+			return request, harnessaccounts.ErrNotFound
+		}
+		return request, nil
+	}
+	if request.AccountID == "" {
+		request.AccountID = store.Active(string(provider)).AccountID
+	}
+	if request.AccountID == "" {
+		return request, nil
+	}
+	if NormalizeRuntimeTarget(string(request.RuntimeTarget)) != RuntimeLocal {
+		return request, fmt.Errorf("managed account remote execution is unsupported")
+	}
+	home, err := store.Home(string(provider), request.AccountID)
+	if err != nil {
+		return request, err
+	}
+	request.CredentialHome = home
+	return request, nil
 }
 
 type readOnlyStageCapability struct {
@@ -41,6 +106,7 @@ func NewRegistry(commandByProvider map[string]string) *Registry {
 func NewRegistryWithTerminal(commandByProvider map[string]string, tm *terminal.Manager) *Registry {
 	r := &Registry{
 		runners:        map[Provider]Runner{},
+		disabled:       map[Provider]bool{},
 		commands:       map[Provider]string{},
 		readOnlyStages: map[string]readOnlyStageCapability{},
 		nativeCommands: map[Provider]string{},
@@ -58,6 +124,21 @@ func NewRegistryWithTerminal(commandByProvider map[string]string, tm *terminal.M
 // the registered RuntimeTransport instead of the default runner.
 func (r *Registry) RunTurn(ctx context.Context, provider Provider, request TurnRequest, onEvent EventHandler) (TurnResult, error) {
 	provider = NormalizeProvider(string(provider))
+	var accountErr error
+	request, accountErr = r.bindAccount(provider, request)
+	if accountErr != nil {
+		return TurnResult{}, accountErr
+	}
+	r.mu.Lock()
+	accountStore := r.accounts
+	r.mu.Unlock()
+	if accountStore != nil && request.AccountID != "" {
+		release, err := accountStore.Acquire(request.AccountID)
+		if err != nil {
+			return TurnResult{}, err
+		}
+		defer release()
+	}
 	if request.PlanOnly {
 		if !r.isPreparedReadOnlyStage(provider, request.CommandOverride) || NormalizeRuntimeTarget(string(request.RuntimeTarget)) != RuntimeLocal {
 			return TurnResult{}, fmt.Errorf("read-only stage is not supported for provider %s and runtime %s", provider, NormalizeRuntimeTarget(string(request.RuntimeTarget)))
@@ -68,6 +149,7 @@ func (r *Registry) RunTurn(ctx context.Context, provider Provider, request TurnR
 	}
 	r.mu.Lock()
 	runner, ok := r.runners[provider]
+	ok = ok && !r.disabled[provider]
 	cmd := r.commands[provider]
 	transport := r.transports[request.RuntimeTarget]
 	r.mu.Unlock()
@@ -99,6 +181,7 @@ func (r *Registry) ValidateTurnOptions(provider Provider, request TurnRequest) e
 	}
 	r.mu.Lock()
 	runner, ok := r.runners[provider]
+	ok = ok && !r.disabled[provider]
 	transport := r.transports[request.RuntimeTarget]
 	r.mu.Unlock()
 	if !ok {
@@ -165,7 +248,16 @@ func (r *Registry) HasProvider(provider Provider) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	_, ok := r.runners[provider]
-	return ok
+	return ok && !r.disabled[provider]
+}
+
+// SetRegistered changes availability for future turns without discarding the
+// configured command or interrupting a runner already executing a turn.
+func (r *Registry) SetRegistered(provider Provider, registered bool) {
+	provider = NormalizeProvider(string(provider))
+	r.mu.Lock()
+	r.disabled[provider] = !registered
+	r.mu.Unlock()
 }
 
 // Providers returns a slice of all currently registered provider identifiers.
@@ -174,7 +266,9 @@ func (r *Registry) Providers() []Provider {
 	defer r.mu.Unlock()
 	providers := make([]Provider, 0, len(r.runners))
 	for p := range r.runners {
-		providers = append(providers, p)
+		if !r.disabled[p] {
+			providers = append(providers, p)
+		}
 	}
 	return providers
 }

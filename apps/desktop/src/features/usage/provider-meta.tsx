@@ -1,6 +1,6 @@
-import type { UsageProvider } from '@core/api/client'
+import type { QuotaProvider } from '@core/api/client'
 
-export function providerLabel(provider: UsageProvider): string {
+export function providerLabel(provider: QuotaProvider): string {
   switch (provider) {
     case 'claude':
       return 'Claude'
@@ -10,12 +10,16 @@ export function providerLabel(provider: UsageProvider): string {
       return 'Gemini CLI (legacy logs)'
     case 'opencode':
       return 'OpenCode'
+    case 'antigravity':
+      return 'Antigravity'
+    case '8gent':
+      return '8gent'
   }
 }
 
 type ProviderIconMeta = { src: string; invert: boolean }
 
-function providerIconMeta(provider: UsageProvider): ProviderIconMeta {
+function providerIconMeta(provider: QuotaProvider): ProviderIconMeta {
   switch (provider) {
     case 'claude':
       return { src: './Anthropic_Symbol_1.png', invert: true }
@@ -25,10 +29,14 @@ function providerIconMeta(provider: UsageProvider): ProviderIconMeta {
       return { src: './Google_Symbol_1.png', invert: false }
     case 'opencode':
       return { src: './opencode.png', invert: false }
+    case 'antigravity':
+      return { src: './Google_Symbol_1.png', invert: false }
+    case '8gent':
+      return { src: './8gent.png', invert: false }
   }
 }
 
-export function ProviderIcon({ provider, size = 14 }: { provider: UsageProvider; size?: number }) {
+export function ProviderIcon({ provider, size = 14 }: { provider: QuotaProvider; size?: number }) {
   const { src, invert } = providerIconMeta(provider)
   return (
     <img

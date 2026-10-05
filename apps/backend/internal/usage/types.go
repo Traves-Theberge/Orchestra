@@ -13,10 +13,12 @@ import "time"
 type Provider string
 
 const (
-	ProviderClaude   Provider = "claude"
-	ProviderCodex    Provider = "codex"
-	ProviderGemini   Provider = "gemini"
-	ProviderOpenCode Provider = "opencode"
+	ProviderClaude      Provider = "claude"
+	ProviderCodex       Provider = "codex"
+	ProviderGemini      Provider = "gemini"
+	ProviderOpenCode    Provider = "opencode"
+	ProviderAntigravity Provider = "antigravity"
+	Provider8gent       Provider = "8gent"
 )
 
 func (p Provider) Valid() bool {
@@ -246,12 +248,15 @@ type RateLimitWindow struct {
 
 // ProviderRateLimits captures a provider's quota state.
 type ProviderRateLimits struct {
-	Provider  Provider         `json:"provider"`
-	Session   *RateLimitWindow `json:"session,omitempty"`
-	Weekly    *RateLimitWindow `json:"weekly,omitempty"`
-	UpdatedAt int64            `json:"updated_at"`
-	Status    RateLimitStatus  `json:"status"`
-	Error     string           `json:"error,omitempty"`
+	AccountID    string           `json:"account_id,omitempty"`
+	AccountLabel string           `json:"account_label,omitempty"`
+	Source       string           `json:"source,omitempty"`
+	Provider     Provider         `json:"provider"`
+	Session      *RateLimitWindow `json:"session,omitempty"`
+	Weekly       *RateLimitWindow `json:"weekly,omitempty"`
+	UpdatedAt    int64            `json:"updated_at"`
+	Status       RateLimitStatus  `json:"status"`
+	Error        string           `json:"error,omitempty"`
 }
 
 type RateLimitStatus string
@@ -266,8 +271,10 @@ const (
 
 // RateLimitState is the bundled state for all providers.
 type RateLimitState struct {
-	Claude   *ProviderRateLimits `json:"claude,omitempty"`
-	Codex    *ProviderRateLimits `json:"codex,omitempty"`
-	Gemini   *ProviderRateLimits `json:"gemini,omitempty"`
-	OpenCode *ProviderRateLimits `json:"opencode,omitempty"`
+	Claude      *ProviderRateLimits `json:"claude,omitempty"`
+	Codex       *ProviderRateLimits `json:"codex,omitempty"`
+	Gemini      *ProviderRateLimits `json:"gemini,omitempty"`
+	OpenCode    *ProviderRateLimits `json:"opencode,omitempty"`
+	Antigravity *ProviderRateLimits `json:"antigravity,omitempty"`
+	Eightgent   *ProviderRateLimits `json:"8gent,omitempty"`
 }

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import {
   Bell,
+  Bot,
   Cable,
+  ChartNoAxesColumn,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -74,6 +76,8 @@ import { contrastRatio, formatHslTriplet, hexToHslTriplet, hslTripletToHex, pars
 import { deriveRoles } from '@core/theme/derive-surface'
 import { normalizeTheme } from '@core/theme/defaults'
 import type { ChartPalette, RoleSet, Theme, ThemeMode, ThemeRoleKey } from '@core/theme/types'
+import { HarnessSetupPanel } from '@features/agents/panels/HarnessSetupPanel'
+import { UsagePage } from '@features/usage/UsagePage'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -157,6 +161,8 @@ const CONTRAST_PAIRS: Array<{ label: string; foreground: ThemeRoleKey; backgroun
 
 const SECTIONS = [
   { id: 'connections', label: 'Connections', icon: Database },
+  { id: 'harnesses', label: 'Harnesses', icon: Bot },
+  { id: 'usage', label: 'Usage', icon: ChartNoAxesColumn },
   { id: 'integrations', label: 'Integrations', icon: Cable },
   { id: 'appearance', label: 'Appearance', icon: Paintbrush },
   { id: 'terminal', label: 'Terminal', icon: Terminal },
@@ -412,8 +418,21 @@ export function SettingsPage({
             </div>
           </section>
 
-          {/* ── Agents ── */}
-          {/* ── Integrations ── */}
+          {/* Harness onboarding and usage */}
+          <section data-settings-section="harnesses" className="rounded-xl transition-colors duration-500 scroll-mt-4">
+            <SectionHeading icon={Bot} title="Harnesses" description="Provider onboarding, authentication, and account selection on this backend" />
+            <div className="mt-4 rounded-2xl border border-border/40 bg-gradient-to-b from-card via-card to-muted/20 p-5 shadow-sm">
+              <HarnessSetupPanel config={config} provider="codex" projectId={null} />
+            </div>
+          </section>
+
+          <section data-settings-section="usage" className="rounded-xl transition-colors duration-500 scroll-mt-4">
+            <SectionHeading icon={ChartNoAxesColumn} title="Usage" description="Provider quota windows and local session history" />
+            <div className="mt-4 rounded-2xl border border-border/40 bg-gradient-to-b from-card via-card to-muted/20 shadow-sm">
+              <UsagePage config={config} embedded />
+            </div>
+          </section>
+
           <section data-settings-section="integrations" className="rounded-xl transition-colors duration-500 scroll-mt-4">
             <SectionHeading icon={Cable} title="Integrations" description="GitHub, Linear, Jira, and other service connections" />
             <div className="mt-4">

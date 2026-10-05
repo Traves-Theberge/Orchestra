@@ -64,6 +64,7 @@ type Provider struct {
 	ProviderResume   bool   `json:"provider_resume"`
 }
 type Session struct {
+	AccountID                 string `json:"account_id,omitempty"`
 	ID                        string `json:"id"`
 	ProjectID                 string `json:"project_id"`
 	WorkspaceID               string `json:"workspace_id,omitempty"`
@@ -165,6 +166,9 @@ func New(database *db.DB, registry Registry, roots []string) (*Service, error) {
 		return nil, err
 	}
 	if _, err = database.Exec(`CREATE TABLE IF NOT EXISTS workspace_chat_lifecycle(session_id TEXT PRIMARY KEY, archived_at TEXT NOT NULL DEFAULT '', version INTEGER NOT NULL DEFAULT 0);`); err != nil {
+		return nil, err
+	}
+	if _, err = database.Exec(`CREATE TABLE IF NOT EXISTS workspace_chat_account_bindings(session_id TEXT PRIMARY KEY, account_id TEXT NOT NULL); CREATE INDEX IF NOT EXISTS workspace_chat_account_ref ON workspace_chat_account_bindings(account_id);`); err != nil {
 		return nil, err
 	}
 	tx, err := database.Begin()
@@ -335,6 +339,12 @@ func (s *Service) createWithRequest(ctx context.Context, pid string, req CreateR
 		identity = uuid.NewString()
 	}
 	sess := Session{ID: identity, ProjectID: pid, WorkspaceID: workspaceID, WorkspacePath: cwd, Provider: string(p), Title: title, Status: "idle", ConversationMode: Mode, CreatedAt: now, UpdatedAt: now}
+	sess.AccountID = "system_default"
+	if selector, ok := s.registry.(interface{ ActiveAccount(agents.Provider) string }); ok {
+		if selected := selector.ActiveAccount(p); selected != "" {
+			sess.AccountID = selected
+		}
+	}
 	sess.RequestedAgentID = req.RequestedAgentID
 	sess.RequestedAgentScope = req.RequestedAgentScope
 	sess.RequestedAgentContentHash = req.RequestedAgentContentHash
@@ -357,6 +367,9 @@ func (s *Service) createWithRequest(ctx context.Context, pid string, req CreateR
 		return Session{}, err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_sessions(id,project_id,provider,title,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)`, sess.ID, pid, sess.Provider, title, sess.Status, now, now); err != nil {
+		return Session{}, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_account_bindings(session_id,account_id) VALUES(?,?)`, sess.ID, sess.AccountID); err != nil {
 		return Session{}, err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_modes(session_id,mode) VALUES(?,?)`, sess.ID, sess.ConversationMode); err != nil {
@@ -538,6 +551,13 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 			return Accepted{d.Session, m}, nil
 		}
 	}
+	if accountRegistry, ok := s.registry.(interface {
+		ValidateAccount(agents.Provider, string) error
+	}); ok {
+		if err := accountRegistry.ValidateAccount(agents.Provider(d.Session.Provider), d.Session.AccountID); err != nil {
+			return Accepted{}, fmt.Errorf("%w: bound account is no longer available", ErrUnsupported)
+		}
+	}
 	// A fresh send can choose a different primary profile or return to the
 	// provider default. The accepted message freezes that exact choice below;
 	// replays are checked against the per-message record above.
@@ -588,6 +608,7 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 		return Accepted{}, err
 	}
 	turn := agents.TurnRequest{SessionID: uuid.NewString(), ProjectID: pid, Workspace: root, WorkspaceRoot: root, ProjectRootWorkspace: true, Prompt: req.Text, Timeout: 10 * time.Minute, RuntimeTarget: agents.RuntimeLocal, RequestedModel: req.RequestedModel, RequestedMaxTurns: req.RequestedMaxTurns, RequestedAgentID: req.RequestedAgentID, RequestedAgentScope: req.RequestedAgentScope, RequestedAgentContentHash: req.RequestedAgentContentHash, RequestedAgentFormat: req.RequestedAgentFormat}
+	turn.AccountID = d.Session.AccountID
 	if pid == OrchestratorScope {
 		if !s.supportsControl(agents.Provider(d.Session.Provider)) {
 			return Accepted{}, ErrUnsupported
@@ -621,7 +642,7 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 		} else {
 			s.mu.Unlock()
 			locked = false
-			if err = s.validateEffort(ctx, pid, d.Session.Provider, model, req.RequestedReasoningEffort); err != nil {
+			if err = s.validateEffort(ctx, pid, d.Session.Provider, d.Session.AccountID, model, req.RequestedReasoningEffort); err != nil {
 				return Accepted{}, err
 			}
 			req.RequestedModel, req.RequestedReasoningEffort = inputModel, inputEffort

@@ -2,7 +2,9 @@ package harnesssetup
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"github.com/orchestra/orchestra/apps/backend/internal/harnessaccounts"
 	"io"
 	"os/exec"
 	"path/filepath"
@@ -21,13 +23,15 @@ const (
 )
 
 type Harness struct {
-	ID                string      `json:"id"`
-	Registered        bool        `json:"registered"`
-	CommandConfigured bool        `json:"command_configured"`
-	Installation      Observation `json:"installation"`
-	Authentication    Observation `json:"authentication"`
-	Executable        string      `json:"executable,omitempty"`
-	TerminalSupported bool        `json:"terminal_supported"`
+	ID                  string      `json:"id"`
+	Registered          bool        `json:"registered"`
+	RegistrationVersion int64       `json:"registration_version"`
+	CommandConfigured   bool        `json:"command_configured"`
+	Installation        Observation `json:"installation"`
+	Authentication      Observation `json:"authentication"`
+	Executable          string      `json:"executable,omitempty"`
+	TerminalSupported   bool        `json:"terminal_supported"`
+	CredentialEntries   *int        `json:"credential_entries,omitempty"`
 }
 
 type definition struct {
@@ -41,7 +45,18 @@ var known = []definition{
 }
 
 type Lookup func(string) (string, error)
-type AuthProbe func(context.Context, string) (Observation, error)
+type AuthProbe func(context.Context, string, string) (Observation, error)
+
+func ProbeSupportedAuth(ctx context.Context, id string, path string) (Observation, error) {
+	switch id {
+	case "CODEX":
+		return ProbeCodexAuth(ctx, path)
+	case "CLAUDE":
+		return ProbeClaudeAuth(ctx, path)
+	default:
+		return Unknown, nil
+	}
+}
 
 // Observe uses only known executable names. It never executes a configured
 // command template, which can contain arbitrary user-supplied shell syntax.
@@ -67,16 +82,83 @@ func Observe(ctx context.Context, registered []string, commands map[string]strin
 		if err == nil && path != "" {
 			row.Installation = Detected
 			row.Executable = path
-			if item.id == "CODEX" && knownBinary && auth != nil {
-				state, probeErr := auth(ctx, path)
+			if (item.id == "CODEX" || item.id == "CLAUDE") && knownBinary && auth != nil {
+				state, probeErr := auth(ctx, item.id, path)
 				if probeErr == nil {
 					row.Authentication = state
+				}
+			}
+			if item.id == "OPENCODE" && knownBinary {
+				if count, probeErr := ProbeOpenCodeCredentialCatalog(ctx, path); probeErr == nil {
+					row.CredentialEntries = &count
 				}
 			}
 		}
 		result = append(result, row)
 	}
 	return result
+}
+
+// ProbeOpenCodeCredentialCatalog counts saved provider entries without returning
+// credentials. A listed entry is configuration evidence, not verified access.
+func ProbeOpenCodeCredentialCatalog(ctx context.Context, path string) (int, error) {
+	bounded, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	command := exec.CommandContext(bounded, path, "auth", "list", "--format", "json")
+	var output limitedOutput
+	command.Stdout, command.Stderr = &output, io.Discard
+	if err := command.Run(); err != nil {
+		return 0, err
+	}
+	if bounded.Err() != nil {
+		return 0, bounded.Err()
+	}
+	return classifyOpenCodeCredentialCatalog(output.data)
+}
+
+func classifyOpenCodeCredentialCatalog(data []byte) (int, error) {
+	var entries []json.RawMessage
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return 0, err
+	}
+	if entries == nil {
+		return 0, errors.New("OpenCode credential catalog is not an array")
+	}
+	return len(entries), nil
+}
+
+// ProbeClaudeAuth reads the JSON status supported by Claude Code. A failed or
+// malformed command remains unknown; only an explicit logged-out JSON result
+// with the documented exit status becomes signed_out.
+func ProbeClaudeAuth(ctx context.Context, path string) (Observation, error) {
+	bounded, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	command := exec.CommandContext(bounded, path, "auth", "status")
+	var stdout limitedOutput
+	command.Stdout, command.Stderr = &stdout, io.Discard
+	err := command.Run()
+	if bounded.Err() != nil {
+		return Unknown, bounded.Err()
+	}
+	return classifyClaudeStatus(err, stdout.data)
+}
+
+func classifyClaudeStatus(err error, output []byte) (Observation, error) {
+	var status struct {
+		LoggedIn   *bool  `json:"loggedIn"`
+		AuthMethod string `json:"authMethod"`
+	}
+	if parseErr := json.Unmarshal(output, &status); parseErr != nil || status.LoggedIn == nil {
+		return Unknown, errors.New("unrecognized Claude auth status")
+	}
+	if err == nil && *status.LoggedIn && status.AuthMethod != "" && status.AuthMethod != "none" {
+		return SignedIn, nil
+	}
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ExitCode() == 1 && !*status.LoggedIn && status.AuthMethod == "none" {
+		return SignedOut, nil
+	}
+	return Unknown, errors.New("inconsistent Claude auth status")
 }
 
 // Only an absolute leading executable path is interpreted from a command
@@ -111,9 +193,16 @@ func configuredExecutable(commands map[string]string, id string) string {
 // one alone is ambiguous: Codex uses it for both signed-out and probe errors.
 // Output is inspected only for the exact signed-out message and never returned.
 func ProbeCodexAuth(ctx context.Context, path string) (Observation, error) {
+	return ProbeCodexAuthInHome(ctx, path, "")
+}
+
+func ProbeCodexAuthInHome(ctx context.Context, path, home string) (Observation, error) {
 	bounded, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	command := exec.CommandContext(bounded, path, "login", "status")
+	if home != "" {
+		command.Env = harnessaccounts.CodexProcessEnv(home)
+	}
 	var stderr limitedOutput
 	command.Stdout, command.Stderr = io.Discard, &stderr
 	err := command.Run()

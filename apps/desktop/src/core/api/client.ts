@@ -332,6 +332,7 @@ export type WorkspaceChatModelCatalog = {
     default_reasoning_effort?: string; supported_reasoning_efforts?: { reasoning_effort: string; description?: string }[] }[]
 }
 export type WorkspaceChatSession = {
+  account_id?: string
   workspace_id?: string
   workspace_path?: string
   id: string; project_id: string; provider: string; title: string
@@ -622,17 +623,50 @@ export async function fetchAgents(config: BackendConfig): Promise<string[]> {
 export type HarnessSetupObservation = {
   id: string
   registered: boolean
+  registration_version?: number
   command_configured: boolean
   installation: 'detected' | 'missing' | 'unknown'
   authentication: 'signed_in' | 'signed_out' | 'unknown'
   executable?: string
   terminal_supported: boolean
+  credential_entries?: number
 }
 
 export async function fetchHarnessSetup(config: BackendConfig): Promise<HarnessSetupObservation[]> {
   const payload = await requestJSON<{ harnesses: HarnessSetupObservation[] }>(config, '/api/v1/agents/setup')
   return payload.harnesses ?? []
 }
+
+export async function setHarnessRegistration(config: BackendConfig, provider: string, registered: boolean, expectedVersion: number): Promise<void> {
+  await requestJSON(config, `/api/v1/agents/${encodeURIComponent(provider)}/registration`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ registered, expected_version: expectedVersion }),
+  })
+}
+
+export type CodexDeviceLogin = {
+  id: string
+  account_id?: string
+  state: 'starting' | 'pending' | 'succeeded' | 'failed' | 'canceled' | 'expired'
+  user_code?: string
+  verification_url?: string
+  message?: string
+}
+
+export const startCodexDeviceLogin = (config: BackendConfig) => requestJSON<CodexDeviceLogin>(config, '/api/v1/agents/setup/codex/device-login', { method: 'POST' }, 20000)
+export const fetchCodexDeviceLogin = (config: BackendConfig, id: string) => requestJSON<CodexDeviceLogin>(config, `/api/v1/agents/setup/codex/device-login/${encodeURIComponent(id)}`)
+export const cancelCodexDeviceLogin = (config: BackendConfig, id: string) => requestJSON<void>(config, `/api/v1/agents/setup/codex/device-login/${encodeURIComponent(id)}`, { method: 'DELETE' })
+
+export type HarnessAccount = { id: string; provider: string; label: string; auth_state: 'pending' | 'signed_in' | 'signed_out' | 'unknown'; created_at: string; last_verified_at?: string }
+export type HarnessAccountSelection = { provider: string; account_id?: string; version: number }
+export type HarnessAccounts = { accounts: HarnessAccount[]; selections: HarnessAccountSelection[]; supported_providers: string[]; source?: string; observed_at?: string }
+export const fetchHarnessAccounts = (config: BackendConfig) => requestJSON<HarnessAccounts>(config, '/api/v1/agents/accounts')
+export const beginHarnessAccount = (config: BackendConfig, label: string) => requestJSON<{ account: HarnessAccount; login: CodexDeviceLogin }>(config, '/api/v1/agents/accounts', { method: 'POST', body: JSON.stringify({ provider: 'CODEX', label }) }, 20000)
+export const reauthHarnessAccount = (config: BackendConfig, id: string) => requestJSON<CodexDeviceLogin>(config, `/api/v1/agents/accounts/${encodeURIComponent(id)}/reauth`, { method: 'POST' }, 20000)
+export const verifyHarnessAccount = (config: BackendConfig, id: string) => requestJSON<HarnessAccount>(config, `/api/v1/agents/accounts/${encodeURIComponent(id)}/verify`, { method: 'POST' })
+export const selectHarnessAccount = (config: BackendConfig, provider: string, accountID: string, version: number) => requestJSON<HarnessAccountSelection>(config, `/api/v1/agents/accounts/active/${encodeURIComponent(provider)}`, { method: 'PUT', body: JSON.stringify({ account_id: accountID, version }) })
+export const removeHarnessAccount = (config: BackendConfig, id: string) => requestJSON<void>(config, `/api/v1/agents/accounts/${encodeURIComponent(id)}`, { method: 'DELETE' })
 
 /**
  * Fetches the global agent configuration (commands, provider, max turns).
@@ -2507,6 +2541,7 @@ export async function saveAgentProviderKey(
 // ===========================================================================
 
 export type UsageProvider = 'claude' | 'codex' | 'gemini' | 'opencode'
+export type QuotaProvider = UsageProvider | 'antigravity' | '8gent'
 export type UsageScope = 'orchestra' | 'all'
 export type UsageRange = '7d' | '30d' | '90d' | 'all'
 export type UsageBreakdownKind = 'model' | 'project'
@@ -2598,7 +2633,10 @@ export type RateLimitWindow = {
 }
 
 export type ProviderRateLimits = {
-  provider: UsageProvider
+  provider: QuotaProvider
+  account_id?: string
+  account_label?: string
+  source?: string
   session?: RateLimitWindow
   weekly?: RateLimitWindow
   updated_at: number
@@ -2611,6 +2649,8 @@ export type RateLimitState = {
   codex?: ProviderRateLimits
   gemini?: ProviderRateLimits
   opencode?: ProviderRateLimits
+  antigravity?: ProviderRateLimits
+  '8gent'?: ProviderRateLimits
 }
 
 function usageQS(scope: UsageScope, range: UsageRange, extra: Record<string, string> = {}): string {

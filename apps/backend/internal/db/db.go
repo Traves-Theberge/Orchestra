@@ -43,6 +43,25 @@ func Connect(dbPath string) (*DB, error) {
 	if _, err := db.Exec(Schema); err != nil {
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS harness_registration (
+		provider TEXT PRIMARY KEY,
+		registered INTEGER NOT NULL CHECK (registered IN (0, 1)),
+		version INTEGER NOT NULL CHECK (version > 0)
+	)`); err != nil {
+		return nil, fmt.Errorf("apply harness registration schema: %w", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS harness_command_overrides (
+		provider TEXT PRIMARY KEY,
+		command TEXT NOT NULL
+	)`); err != nil {
+		return nil, fmt.Errorf("apply harness command schema: %w", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS harness_default_selection (
+		id INTEGER PRIMARY KEY CHECK (id = 1),
+		provider TEXT NOT NULL
+	)`); err != nil {
+		return nil, fmt.Errorf("apply harness default schema: %w", err)
+	}
 
 	// Schema migrations with proper error handling
 	if err := runMigrations(db); err != nil {

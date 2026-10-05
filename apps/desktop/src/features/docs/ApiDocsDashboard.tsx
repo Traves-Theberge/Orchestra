@@ -47,31 +47,30 @@ function pretty(value: unknown): string {
 }
 
 export function ApiDocsDashboard({ config }: { config: BackendConfig }) {
-  const [document, setDocument] = useState<OpenAPIDocument | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [result, setResult] = useState<{ key: string; document: OpenAPIDocument | null; error: string | null } | null>(null)
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
+  const requestKey = JSON.stringify([config.baseUrl, config.apiToken, refreshKey])
+  const loading = result?.key !== requestKey
+  const document = loading ? null : result.document
+  const error = loading ? null : result.error
 
   useEffect(() => {
     let active = true
-    setLoading(true)
-    setError(null)
     fetchOpenAPISpec(config)
       .then((source) => {
         const parsed = parse(source) as OpenAPIDocument
         if (!parsed || typeof parsed !== 'object' || !parsed.paths) {
           throw new Error('The backend returned an invalid OpenAPI document.')
         }
-        if (active) setDocument(parsed)
+        if (active) setResult({ key: requestKey, document: parsed, error: null })
       })
       .catch((cause: unknown) => {
-        if (active) setError(toDisplayError(cause))
+        if (active) setResult({ key: requestKey, document: null, error: toDisplayError(cause) })
       })
-      .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [config, refreshKey])
+  }, [config, requestKey])
 
   const operations = useMemo(() => listOperations(document), [document])
   const filtered = useMemo(() => {

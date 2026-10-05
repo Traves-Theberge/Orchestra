@@ -601,6 +601,19 @@ components:
           items:
             $ref: '#/components/schemas/FileNode'
 
+    CodexDeviceLogin:
+      type: object
+      required: [id, state]
+      properties:
+        id: { type: string }
+        account_id: { type: string, description: Opaque managed account identifier when login is isolated. }
+        state:
+          type: string
+          enum: [starting, pending, succeeded, failed, canceled, expired]
+        user_code: { type: string }
+        verification_url: { type: string, format: uri }
+        message: { type: string }
+
     AgentConfig:
       type: object
       properties:
@@ -770,22 +783,34 @@ components:
 
     RateLimitState:
       type: object
-      description: Current Claude API rate limit status.
+      description: Provider quota observations. Local token history is a separate usage source.
       properties:
-        requests_limit:
-          type: integer
-        requests_remaining:
-          type: integer
-        requests_reset:
-          type: string
-          format: date-time
-        tokens_limit:
-          type: integer
-        tokens_remaining:
-          type: integer
-        tokens_reset:
-          type: string
-          format: date-time
+        claude: { $ref: '#/components/schemas/ProviderRateLimits' }
+        codex: { $ref: '#/components/schemas/ProviderRateLimits' }
+        opencode: { $ref: '#/components/schemas/ProviderRateLimits' }
+        antigravity: { $ref: '#/components/schemas/ProviderRateLimits' }
+        '8gent': { $ref: '#/components/schemas/ProviderRateLimits' }
+        gemini: { $ref: '#/components/schemas/ProviderRateLimits' }
+    ProviderRateLimits:
+      type: object
+      required: [provider, status, updated_at]
+      properties:
+        provider: { type: string }
+        status: { type: string, enum: [idle, fetching, ok, error, unavailable] }
+        updated_at: { type: integer, format: int64 }
+        account_id: { type: string, description: Selected managed account for account-scoped observations. }
+        account_label: { type: string }
+        source: { type: string }
+        error: { type: string }
+        session: { $ref: '#/components/schemas/RateLimitWindow' }
+        weekly: { $ref: '#/components/schemas/RateLimitWindow' }
+    RateLimitWindow:
+      type: object
+      properties:
+        used_percent: { type: number }
+        window_minutes: { type: integer }
+        resets_at: { type: integer, format: int64 }
+        reset_description: { type: string }
 
     AgentCatalog:
       type: object
@@ -3888,12 +3913,16 @@ paths:
                     type: array
                     items:
                       type: object
-                      required: [id, registered, command_configured, installation, authentication, terminal_supported]
+                      required: [id, registered, registration_version, command_configured, installation, authentication, terminal_supported]
                       properties:
                         id:
                           type: string
                         registered:
                           type: boolean
+                        registration_version:
+                          type: integer
+                          format: int64
+                          description: Per-harness compare-and-swap version; zero means no explicit registration change.
                         command_configured:
                           type: boolean
                         installation:
@@ -3906,6 +3935,151 @@ paths:
                           type: string
                         terminal_supported:
                           type: boolean
+                        credential_entries:
+                          type: integer
+                          description: Saved OpenCode auth entries from the read-only JSON catalog; not verified model access.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/agents/{provider}/registration:
+    put:
+      tags: [Agents]
+      summary: Register or unregister a configured harness
+      description: Changes availability for new task turns and native chat sessions. Does not install a CLI, alter sign-in, remove a command, or interrupt a turn already running. The current default cannot be unregistered until another default is selected.
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+            enum: [CODEX, CLAUDE, OPENCODE, ANTIGRAVITY, 8GENT]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [registered, expected_version]
+              properties:
+                registered: { type: boolean }
+                expected_version: { type: integer, format: int64, minimum: 0 }
+      responses:
+        '200': { description: Updated registration and version. }
+        '400': { description: Invalid provider or request, missing command, or current default. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { description: Registration changed since expected_version. }
+
+  /api/v1/agents/accounts:
+    get:
+      tags: [Agents]
+      summary: List backend-owned managed accounts and versioned active selections
+      responses:
+        '200': { description: Account metadata, selections, and supported providers. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Agents]
+      summary: Begin isolated Codex device sign-in
+      description: Creates a private credential home; no existing host credentials are copied.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider, label]
+              properties:
+                provider: { type: string, enum: [CODEX] }
+                label: { type: string }
+      responses:
+        '200': { description: Pending account and device-code login snapshot. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/agents/accounts/active/{provider}:
+    put:
+      tags: [Agents]
+      summary: Select an account for new runs and conversations
+      parameters:
+        - { in: path, name: provider, required: true, schema: { type: string, enum: [CODEX] } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [account_id, version]
+              properties:
+                account_id: { type: string, description: Empty selects host default. }
+                version: { type: integer }
+      responses:
+        '200': { description: New selection and version. }
+        '409': { description: Selection version is stale. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/agents/accounts/{id}/verify:
+    post:
+      tags: [Agents]
+      summary: Probe Codex authentication in the account's private home
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Updated account authentication observation. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/agents/accounts/{id}/reauth:
+    post:
+      tags: [Agents]
+      summary: Start provider device login in an existing account home
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Device-code login snapshot. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/agents/accounts/{id}:
+    delete:
+      tags: [Agents]
+      summary: Remove an unused managed account and its owned credential home
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        '204': { description: Removed. }
+        '409': { description: Account remains bound to a run or conversation. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/v1/agents/setup/codex/device-login:
+    post:
+      tags: [Agents]
+      summary: Start Codex device-code sign-in on the backend host
+      description: Starts or returns the active host-scoped Codex app-server login attempt. The response contains a one-time user code and verification URL, never credential tokens.
+      responses:
+        '200':
+          description: Device login state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CodexDeviceLogin'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/agents/setup/codex/device-login/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Agents]
+      summary: Check a Codex device-code sign-in
+      responses:
+        '200':
+          description: Current device login state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CodexDeviceLogin'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    delete:
+      tags: [Agents]
+      summary: Cancel a Codex device-code sign-in
+      responses:
+        '204': { description: Sign-in canceled. }
         '401':
           $ref: '#/components/responses/Unauthorized'
 

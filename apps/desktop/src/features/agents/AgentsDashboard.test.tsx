@@ -81,7 +81,7 @@ function makeCommonState() {
 
 describe('AgentsDashboard', () => {
   beforeEach(() => resetAppStore())
-  it('uses the sidebar scope for configuration reads and removes duplicate dashboard controls', () => {
+  it('uses the sidebar scope for configuration reads and removes duplicate dashboard controls', async () => {
     mockUseClaudeConfig.mockReturnValue({ ...makeCommonState(), rules: [], skills: [], subagents: [] })
     mockUseCodexConfig.mockReturnValue({ ...makeCommonState(), config: [], instructions: [], subagents: [], skills: [], rules: [] })
     mockUseGeminiConfig.mockReturnValue({ ...makeCommonState(), settings: [], context: [], commands: [] })
@@ -96,7 +96,7 @@ describe('AgentsDashboard', () => {
       // AgentsSubNav uses this same store action for its scope dropdown.
       useAppStore.getState().setActiveAgentScope('PROJECT', 'project-1')
     })
-    expect(screen.getByText('Harness setup')).toBeTruthy()
+    expect(await screen.findByText('Harness setup')).toBeTruthy()
     expect(mockUseCodexConfig).toHaveBeenLastCalledWith(expect.anything(), 'PROJECT', 'project-1')
     act(() => useAppStore.getState().setActiveAgentCategory('mcp'))
     expect(mockUseCodexConfig).toHaveBeenLastCalledWith(expect.anything(), 'PROJECT', 'project-1')

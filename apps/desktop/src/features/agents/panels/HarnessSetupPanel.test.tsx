@@ -6,7 +6,7 @@ import { HarnessSetupPanel } from './HarnessSetupPanel'
 
 vi.mock('@core/api/client', async (importOriginal) => {
   const original = await importOriginal<typeof import('@core/api/client')>()
-  return { ...original, fetchAgents: vi.fn(), fetchAgentConfig: vi.fn(), fetchHarnessSetup: vi.fn(), fetchWorkspaceChatProviders: vi.fn(), updateAgentConfig: vi.fn() }
+  return { ...original, fetchAgents: vi.fn(), fetchAgentConfig: vi.fn(), fetchHarnessSetup: vi.fn(), fetchWorkspaceChatProviders: vi.fn(), updateAgentConfig: vi.fn(), setHarnessRegistration: vi.fn(), startCodexDeviceLogin: vi.fn(), fetchCodexDeviceLogin: vi.fn(), cancelCodexDeviceLogin: vi.fn(), fetchHarnessAccounts: vi.fn(), selectHarnessAccount: vi.fn(), beginHarnessAccount: vi.fn(), verifyHarnessAccount: vi.fn(), reauthHarnessAccount: vi.fn(), removeHarnessAccount: vi.fn() }
 })
 
 const config = { baseUrl: 'http://localhost:4014', apiToken: 'fixture' }
@@ -25,16 +25,49 @@ beforeEach(() => {
     { id: 'CLAUDE', label: 'Claude Code', enabled: true, conversation_mode: 'transcript_replay', provider_resume: false },
   ] })
   vi.mocked(api.updateAgentConfig).mockResolvedValue(undefined)
+  vi.mocked(api.setHarnessRegistration).mockResolvedValue(undefined)
+  vi.mocked(api.startCodexDeviceLogin).mockResolvedValue({ id: 'login-1', state: 'pending', user_code: 'TEST-CODE', verification_url: 'https://auth.openai.com/device', message: 'Enter the code at the verification page.' })
+  vi.mocked(api.cancelCodexDeviceLogin).mockResolvedValue(undefined)
+  vi.mocked(api.fetchCodexDeviceLogin).mockResolvedValue({ id: 'login-1', state: 'canceled', message: 'Sign-in canceled.' })
+  vi.mocked(api.fetchHarnessAccounts).mockResolvedValue({ accounts: [], selections: [], supported_providers: ['CODEX'] })
+  vi.mocked(api.selectHarnessAccount).mockResolvedValue({ provider: 'CODEX', account_id: '', version: 1 })
 })
 
 afterEach(() => cleanup())
 
 describe('HarnessSetupPanel', () => {
+  it('unregisters a non-default harness with a version precondition', async () => {
+    vi.mocked(api.fetchHarnessSetup).mockResolvedValue([{ id: 'CLAUDE', registered: true, registration_version: 4, command_configured: true, installation: 'detected', authentication: 'unknown', terminal_supported: false }])
+    render(<HarnessSetupPanel config={config} provider="claude" projectId={null} />)
+    const setup = await screen.findByRole('region', { name: 'Claude Code onboarding' })
+    fireEvent.click(within(setup).getByRole('button', { name: 'Unregister' }))
+    await waitFor(() => expect(api.setHarnessRegistration).toHaveBeenCalledWith(config, 'CLAUDE', false, 4))
+  })
+  it('keeps the default harness registered until another default is selected', async () => {
+    render(<HarnessSetupPanel config={config} provider="codex" projectId={null} />)
+    const setup = await screen.findByRole('region', { name: 'Codex onboarding' })
+    expect(within(setup).getByRole('button', { name: 'Unregister' })).toBeDisabled()
+    expect(within(setup).getByText(/Select another default task harness/)).toBeInTheDocument()
+  })
+  it('renders host default when an older backend returns null account lists', async () => {
+    vi.mocked(api.fetchHarnessAccounts).mockResolvedValue({ accounts: null, selections: null, supported_providers: ['CODEX'] } as unknown as Awaited<ReturnType<typeof api.fetchHarnessAccounts>>)
+    render(<HarnessSetupPanel config={config} provider="codex" projectId={null} />)
+    const region = await screen.findByRole('region', { name: 'Managed Codex accounts' })
+    expect(await within(region).findByText(/existing CLI credentials/)).toBeInTheDocument()
+  })
+  it('selects a verified managed account with a version precondition', async () => {
+    vi.mocked(api.fetchHarnessAccounts).mockResolvedValue({ accounts: [{ id: 'account-a', provider: 'CODEX', label: 'Work', auth_state: 'signed_in', created_at: '2026-10-05T00:00:00Z' }], selections: [{ provider: 'CODEX', version: 3 }], supported_providers: ['CODEX'] })
+    render(<HarnessSetupPanel config={config} provider="codex" projectId={null} />)
+    const region = await screen.findByRole('region', { name: 'Managed Codex accounts' })
+    expect(await within(region).findByText('Work')).toBeInTheDocument()
+    fireEvent.click(within(region).getByRole('button', { name: 'Select' }))
+    await waitFor(() => expect(api.selectHarnessAccount).toHaveBeenCalledWith(config, 'CODEX', 'account-a', 3))
+  })
   it('separates backend discovery from registration and verified sign-in', async () => {
     render(<HarnessSetupPanel config={config} provider="codex" projectId={null} />)
     const setup = await screen.findByRole('region', { name: 'Codex onboarding' })
     expect(within(setup).getByText('Detected on backend')).toBeInTheDocument()
-    expect(within(setup).getByText('Verified by Codex CLI')).toBeInTheDocument()
+    expect(within(setup).getByText('Signed in (Codex CLI status)')).toBeInTheDocument()
     expect(within(setup).getByRole('button', { name: 'Copy command' })).toBeInTheDocument()
     fireEvent.click(within(setup).getByRole('button', { name: 'Open sign-in terminal' }))
     expect(useAppStore.getState().openTerminals).toMatchObject([{ title: 'Codex sign-in', initialCommand: 'codex login' }])
@@ -53,12 +86,17 @@ describe('HarnessSetupPanel', () => {
     expect(within(setup).queryByRole('button', { name: 'Open sign-in terminal' })).not.toBeInTheDocument()
     expect(within(setup).getByRole('button', { name: 'Copy device-code command' })).toBeInTheDocument()
     expect(setup).toHaveTextContent('Interactive backend terminals are unavailable on this host')
+    fireEvent.click(within(setup).getByRole('button', { name: 'Start sign-in' }))
+    expect(await within(setup).findByText('TEST-CODE')).toBeInTheDocument()
+    expect(within(setup).getByRole('link', { name: 'Open verification page ↗' })).toHaveAttribute('href', 'https://auth.openai.com/device')
+    fireEvent.click(within(setup).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(api.cancelCodexDeviceLogin).toHaveBeenCalledWith(config, 'login-1'))
   })
   it('shows observed native chat separately from command registration and leaves auth unknown', async () => {
     render(<HarnessSetupPanel config={config} provider="codex" projectId={null} />)
     expect(await screen.findByText('Chat: native session · resume supported')).toBeInTheDocument()
     expect(screen.getAllByText('Installation: not observed').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Authentication: not verified').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Authentication: Not verified').length).toBeGreaterThan(0)
     expect(screen.getByText(/Codex chat uses the separately registered native app-server/)).toBeInTheDocument()
     expect(api.fetchWorkspaceChatProviders).toHaveBeenCalledWith(config, '__orchestrator__')
   })
@@ -68,12 +106,21 @@ describe('HarnessSetupPanel', () => {
     expect(within(setup).queryByRole('button', { name: 'Open sign-in terminal' })).not.toBeInTheDocument()
     expect(useAppStore.getState().openTerminals).toEqual([])
   })
+  it('attributes a verified Claude sign-in to Claude CLI status', async () => {
+    vi.mocked(api.fetchHarnessSetup).mockResolvedValue([
+      { id: 'CODEX', registered: true, command_configured: true, installation: 'missing', authentication: 'unknown', terminal_supported: false },
+      { id: 'CLAUDE', registered: true, command_configured: true, installation: 'detected', authentication: 'signed_in', terminal_supported: false },
+    ])
+    render(<HarnessSetupPanel config={config} provider="claude" projectId={null} />)
+    const setup = await screen.findByRole('region', { name: 'Claude Code onboarding' })
+    expect(within(setup).getByText('Signed in (Claude CLI status)')).toBeInTheDocument()
+  })
   it('hides one backend host’s sign-in observation while switching profiles', async () => {
     const { rerender } = render(<HarnessSetupPanel config={config} provider="codex" projectId={null} />)
-    expect(await screen.findByText('Verified by Codex CLI')).toBeInTheDocument()
+    expect(await screen.findByText('Signed in (Codex CLI status)')).toBeInTheDocument()
     rerender(<HarnessSetupPanel config={{ ...config, baseUrl: 'http://localhost:4015' }} provider="codex" projectId={null} />)
     expect(screen.getByText(/Checking harnesses on the connected backend/)).toBeInTheDocument()
-    expect(screen.queryByText('Verified by Codex CLI')).not.toBeInTheDocument()
+    expect(screen.queryByText('Signed in (Codex CLI status)')).not.toBeInTheDocument()
   })
 
   it('saves only the selected batch command', async () => {

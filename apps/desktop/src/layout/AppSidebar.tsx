@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Bell,
+  Bot,
   Cable,
   ChartNoAxesColumn,
   ChevronLeft,
@@ -40,6 +41,8 @@ const DRILLDOWN_SECTIONS: ReadonlySet<string> = new Set(['SETTINGS', 'PROJECTS',
 
 const SETTINGS_SECTIONS = [
   { id: 'connections', label: 'Connections', icon: Database },
+  { id: 'harnesses', label: 'Harnesses', icon: Bot },
+  { id: 'usage', label: 'Usage', icon: ChartNoAxesColumn },
   { id: 'integrations', label: 'Integrations', icon: Cable },
   { id: 'appearance', label: 'Appearance', icon: Paintbrush },
   { id: 'terminal', label: 'Terminal', icon: Terminal },

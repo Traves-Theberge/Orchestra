@@ -68,7 +68,7 @@ func (r *Registry) SupportsNativeSession(provider Provider) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	p := NormalizeProvider(string(provider))
-	return (p == ProviderCodex || p == ProviderAntigravity) && strings.TrimSpace(r.nativeCommands[p]) != ""
+	return (p == ProviderCodex || p == ProviderAntigravity) && !r.disabled[p] && strings.TrimSpace(r.nativeCommands[p]) != ""
 }
 
 // Native control requires the interactive adapter's actual dynamic-tool protocol.
@@ -93,6 +93,11 @@ func (r *Registry) NativeCommandFor(provider Provider) (string, bool) {
 	return command, ok
 }
 func (r *Registry) StartNativeSession(ctx context.Context, provider Provider, request TurnRequest, threadID string, onEvent NativeEventHandler) (NativeSession, error) {
+	var accountErr error
+	request, accountErr = r.bindAccount(provider, request)
+	if accountErr != nil {
+		return nil, accountErr
+	}
 	if !r.SupportsNativeSession(provider) {
 		return nil, fmt.Errorf("native sessions are not supported by provider %s", provider)
 	}

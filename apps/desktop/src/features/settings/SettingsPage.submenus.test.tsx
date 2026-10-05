@@ -47,6 +47,21 @@ function renderSettings(config: BackendConfig | null = null, initialTab?: 'backe
 }
 
 describe('Settings selector walkthroughs', () => {
+  it('places every harness onboarding and usage quota in Settings', () => {
+    renderSettings()
+    const harnesses = document.querySelector('[data-settings-section="harnesses"]')
+    const usage = document.querySelector('[data-settings-section="usage"]')
+    expect(harnesses).toBeInTheDocument()
+    expect(usage).toBeInTheDocument()
+    for (const name of ['Codex', 'Claude Code', 'OpenCode', 'Antigravity', '8gent']) {
+      expect(harnesses).toHaveTextContent(name)
+    }
+    for (const name of ['Claude', 'Codex', 'OpenCode', 'Antigravity', '8gent']) expect(usage).toHaveTextContent(name)
+    expect(usage).toHaveTextContent('Antigravity history')
+    expect(usage).toHaveTextContent('8gent history')
+    expect(usage).toHaveTextContent('Gemini CLI (legacy logs)')
+  })
+
   it('chooses the exact backend profile while keeping fixture credentials out of the callback', () => {
     const { onSetActiveProfile } = renderSettings()
     fireEvent.click(screen.getByRole('button', { name: 'Fixture A' }))

@@ -4,7 +4,7 @@ export type HarnessDefinition = { id: string; label: string; helpUrl?: string }
 // is installed or authenticated. The backend's live registry remains the source
 // of truth for runnable providers.
 export const KNOWN_HARNESSES: readonly HarnessDefinition[] = [
-  { id: 'CODEX', label: 'Codex', helpUrl: 'https://github.com/openai/codex' },
+  { id: 'CODEX', label: 'Codex', helpUrl: 'https://learn.chatgpt.com/docs/auth' },
   { id: 'ANTIGRAVITY', label: 'Antigravity', helpUrl: 'https://antigravity.google/docs/cli-overview' },
   { id: 'CLAUDE', label: 'Claude Code', helpUrl: 'https://code.claude.com/docs' },
   { id: 'OPENCODE', label: 'OpenCode', helpUrl: 'https://opencode.ai/docs/cli/' },
@@ -15,7 +15,7 @@ export const KNOWN_HARNESSES: readonly HarnessDefinition[] = [
 // never executes these from a browser session or treats them as proof of auth.
 export const HARNESS_SIGN_IN_COMMANDS: Readonly<Record<string, string>> = {
   CODEX: 'codex login',
-  CLAUDE: 'claude',
+  CLAUDE: 'claude auth login',
   OPENCODE: 'opencode auth login',
 }
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/orchestra/orchestra/apps/backend/internal/harnessaccounts"
 	"io"
 	"os/exec"
 	"sync"
@@ -80,6 +81,10 @@ func mapCodexWindow(w *codexRPCWindow, defaultMinutes int) *RateLimitWindow {
 // read account rate limits. Mirrors Orca's codex-fetcher: initialize →
 // initialized notification → account/rateLimits/read.
 func fetchCodexRateLimits(ctx context.Context) *ProviderRateLimits {
+	return fetchCodexRateLimitsInHome(ctx, "")
+}
+
+func fetchCodexRateLimitsInHome(ctx context.Context, home string) *ProviderRateLimits {
 	now := time.Now().UnixMilli()
 	if _, err := exec.LookPath("codex"); err != nil {
 		return &ProviderRateLimits{
@@ -92,6 +97,9 @@ func fetchCodexRateLimits(ctx context.Context) *ProviderRateLimits {
 	defer cancel()
 
 	cmd := exec.CommandContext(cctx, "codex", "-s", "read-only", "-a", "untrusted", "app-server")
+	if home != "" {
+		cmd.Env = harnessaccounts.CodexProcessEnv(home)
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return errResult(now, err)

@@ -46,6 +46,7 @@ type CodexTotals struct {
 // RunningEntry represents an issue currently being executed by an agent, including
 // its session metadata, token usage, and the most recent event received.
 type RunningEntry struct {
+	AccountID         string   `json:"account_id,omitempty"`
 	IssueID           string   `json:"issue_id"`
 	IssueIdentifier   string   `json:"issue_identifier"`
 	Title             string   `json:"title,omitempty"`
@@ -75,6 +76,7 @@ type RunningEntry struct {
 
 // RetryEntry represents a failed run that is scheduled for a future retry attempt.
 type RetryEntry struct {
+	AccountID         string   `json:"account_id,omitempty"`
 	IssueID           string   `json:"issue_id"`
 	IssueIdentifier   string   `json:"issue_identifier"`
 	State             string   `json:"state,omitempty"`
@@ -552,6 +554,107 @@ func (s *Service) GetProviders() []string {
 	return out
 }
 
+// RestoreHarnessRegistration overlays persisted availability on configured runners.
+func (s *Service) RestoreHarnessRegistration(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.db == nil || s.agentRegistry == nil {
+		return nil
+	}
+	commandRows, err := s.db.QueryContext(ctx, `SELECT provider, command FROM harness_command_overrides`)
+	if err != nil {
+		return err
+	}
+	for commandRows.Next() {
+		var provider, command string
+		if err := commandRows.Scan(&provider, &command); err != nil {
+			commandRows.Close()
+			return err
+		}
+		s.agentCommands[provider] = command
+		s.agentRegistry.SetCommand(agents.Provider(provider), command)
+	}
+	if err := commandRows.Err(); err != nil {
+		commandRows.Close()
+		return err
+	}
+	commandRows.Close()
+	var selectedDefault string
+	err = s.db.QueryRowContext(ctx, `SELECT provider FROM harness_default_selection WHERE id = 1`).Scan(&selectedDefault)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if err == nil {
+		s.agentProvider = selectedDefault
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT provider, registered FROM harness_registration`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var provider string
+		var registered int
+		if err := rows.Scan(&provider, &registered); err != nil {
+			return err
+		}
+		s.agentRegistry.SetRegistered(agents.Provider(provider), registered == 1)
+	}
+	return rows.Err()
+}
+
+// HarnessRegistrationVersion supports per-provider compare-and-swap updates.
+func (s *Service) HarnessRegistrationVersion(ctx context.Context, provider string) (int64, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.db == nil {
+		return 0, nil
+	}
+	var version int64
+	err := s.db.QueryRowContext(ctx, `SELECT version FROM harness_registration WHERE provider = ?`, provider).Scan(&version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	return version, err
+}
+
+var ErrHarnessRegistrationConflict = errors.New("harness registration changed")
+var ErrDefaultHarness = errors.New("select another default harness before unregistering")
+var ErrHarnessCommand = errors.New("configure a command before registering this harness")
+
+func (s *Service) SetHarnessRegistration(ctx context.Context, provider string, registered bool, expectedVersion int64) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.db == nil || s.agentRegistry == nil {
+		return 0, errors.New("harness registry unavailable")
+	}
+	if !registered && agents.NormalizeProvider(s.agentProvider) == agents.Provider(provider) {
+		return 0, ErrDefaultHarness
+	}
+	if registered && strings.TrimSpace(s.agentCommands[provider]) == "" {
+		return 0, ErrHarnessCommand
+	}
+	var version int64
+	err := s.db.QueryRowContext(ctx, `SELECT version FROM harness_registration WHERE provider = ?`, provider).Scan(&version)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return 0, err
+	}
+	if version != expectedVersion {
+		return version, ErrHarnessRegistrationConflict
+	}
+	next := version + 1
+	value := 0
+	if registered {
+		value = 1
+	}
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO harness_registration (provider, registered, version) VALUES (?, ?, ?)
+		ON CONFLICT(provider) DO UPDATE SET registered = excluded.registered, version = excluded.version`, provider, value, next); err != nil {
+		return 0, err
+	}
+	s.agentRegistry.SetRegistered(agents.Provider(provider), registered)
+	return next, nil
+}
+
 // SetWorkspaceService configures the workspace service used for managing issue workspaces.
 func (s *Service) SetWorkspaceService(svc workspace.Service) {
 	s.mu.Lock()
@@ -589,15 +692,41 @@ func (s *Service) UpdateAgentConfig(commands map[string]string, provider string)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if provider != "" {
+		if s.agentRegistry != nil && !s.agentRegistry.HasProvider(agents.NormalizeProvider(provider)) {
+			return ErrHarnessCommand
+		}
+		if s.db != nil {
+			if _, err := s.db.ExecContext(context.Background(), `INSERT INTO harness_default_selection (id, provider) VALUES (1, ?)
+				ON CONFLICT(id) DO UPDATE SET provider = excluded.provider`, provider); err != nil {
+				return err
+			}
+		}
 		s.agentProvider = provider
 	}
 	if s.agentCommands == nil {
 		s.agentCommands = make(map[string]string)
 	}
 	for k, v := range commands {
+		if s.db != nil {
+			if _, err := s.db.ExecContext(context.Background(), `INSERT INTO harness_command_overrides (provider, command) VALUES (?, ?)
+				ON CONFLICT(provider) DO UPDATE SET command = excluded.command`, k, v); err != nil {
+				return err
+			}
+		}
 		s.agentCommands[k] = v
 		if s.agentRegistry != nil {
+			wasRegistered := s.agentRegistry.HasProvider(agents.Provider(k))
 			s.agentRegistry.SetCommand(agents.Provider(k), v)
+			if !wasRegistered {
+				// A command edit never opts a newly configured or explicitly
+				// disabled harness into task dispatch.
+				if s.db != nil {
+					if _, err := s.db.ExecContext(context.Background(), `INSERT OR IGNORE INTO harness_registration (provider, registered, version) VALUES (?, 0, 1)`, k); err != nil {
+						return err
+					}
+				}
+				s.agentRegistry.SetRegistered(agents.Provider(k), false)
+			}
 		}
 	}
 	return nil
@@ -1263,6 +1392,14 @@ func (s *Service) enqueueCandidates(candidates []tracker.Issue) {
 		}
 
 		entry := RunningEntry{
+			AccountID: func() string {
+				if s.agentRegistry != nil {
+					if id := s.agentRegistry.ActiveAccount(agents.NormalizeProvider(targetProvider)); id != "" {
+						return id
+					}
+				}
+				return "system_default"
+			}(),
 			IssueID:           issue.ID,
 			IssueIdentifier:   issue.Identifier,
 			Title:             issue.Title,
@@ -1371,6 +1508,7 @@ func (s *Service) releaseDueRetries() {
 		}
 
 		s.running = append(s.running, RunningEntry{
+			AccountID:         retry.AccountID,
 			IssueID:           retry.IssueID,
 			IssueIdentifier:   retry.IssueIdentifier,
 			Title:             "",
@@ -1467,6 +1605,7 @@ func (s *Service) RecordRunFailure(issueID string, provider string, issueIdentif
 	issueAssigneeID := ""
 	lastProvider := ""
 	lastRuntimeTarget := ""
+	accountID := ""
 	var disabledTools []string
 	var requestedModel string
 	var requestedMaxTurns *int
@@ -1480,6 +1619,7 @@ func (s *Service) RecordRunFailure(issueID string, provider string, issueIdentif
 		issueAssigneeID = entry.AssigneeID
 		lastProvider = entry.Provider
 		lastRuntimeTarget = entry.RuntimeTarget
+		accountID = entry.AccountID
 		requestedModel = entry.RequestedModel
 		requestedMaxTurns = cloneInt(entry.RequestedMaxTurns)
 		disabledTools = append([]string(nil), entry.DisabledTools...)
@@ -1508,6 +1648,7 @@ func (s *Service) RecordRunFailure(issueID string, provider string, issueIdentif
 	}
 
 	s.retrying = append(s.retrying, RetryEntry{
+		AccountID:         accountID,
 		IssueID:           issueID,
 		IssueIdentifier:   issueIdentifier,
 		State:             issueState,
@@ -1919,6 +2060,7 @@ func (s *Service) reconcileStalledRunningIssues() {
 
 		dueAt := computeRetryDue(entry.IssueID, attempt, s.retryBaseDelay, s.retryMaxDelay)
 		s.retrying = append(s.retrying, RetryEntry{
+			AccountID:         entry.AccountID,
 			IssueID:           entry.IssueID,
 			IssueIdentifier:   entry.IssueIdentifier,
 			State:             entry.State,
@@ -2125,7 +2267,7 @@ func (s *Service) PersistStateToDB(ctx context.Context) error {
 		return err
 	}
 
-	stmt, err := tx.PrepareContext(ctx, `INSERT INTO runs (id, issue_id, issue_identifier, provider, session_id, state, last_event, last_message, turn_count, input_tokens, output_tokens, total_tokens, runtime_target, disabled_tools, requested_model, requested_max_turns) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	stmt, err := tx.PrepareContext(ctx, `INSERT INTO runs (id, issue_id, issue_identifier, provider, session_id, state, last_event, last_message, turn_count, input_tokens, output_tokens, total_tokens, runtime_target, disabled_tools, requested_model, requested_max_turns, account_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -2137,7 +2279,7 @@ func (s *Service) PersistStateToDB(ctx context.Context) error {
 			return encodeErr
 		}
 		runID := fmt.Sprintf("run_%s_%s", entry.IssueID, entry.Provider)
-		_, err = stmt.ExecContext(ctx, runID, entry.IssueID, entry.IssueIdentifier, entry.Provider, entry.SessionID, entry.State, entry.LastEvent, entry.LastMessage, entry.TurnCount, entry.Tokens.InputTokens, entry.Tokens.OutputTokens, entry.Tokens.TotalTokens, entry.RuntimeTarget, string(disabledToolsJSON), entry.RequestedModel, entry.RequestedMaxTurns)
+		_, err = stmt.ExecContext(ctx, runID, entry.IssueID, entry.IssueIdentifier, entry.Provider, entry.SessionID, entry.State, entry.LastEvent, entry.LastMessage, entry.TurnCount, entry.Tokens.InputTokens, entry.Tokens.OutputTokens, entry.Tokens.TotalTokens, entry.RuntimeTarget, string(disabledToolsJSON), entry.RequestedModel, entry.RequestedMaxTurns, entry.AccountID)
 		if err != nil {
 			return err
 		}
@@ -2153,7 +2295,7 @@ func (s *Service) RestoreStateFromDB(ctx context.Context) error {
 		return nil
 	}
 
-	rows, err := s.db.QueryContext(ctx, `SELECT issue_id, issue_identifier, provider, session_id, state, last_event, last_message, turn_count, input_tokens, output_tokens, total_tokens, runtime_target, disabled_tools, requested_model, requested_max_turns FROM runs`)
+	rows, err := s.db.QueryContext(ctx, `SELECT issue_id, issue_identifier, provider, session_id, state, last_event, last_message, turn_count, input_tokens, output_tokens, total_tokens, runtime_target, disabled_tools, requested_model, requested_max_turns, account_id FROM runs`)
 	if err != nil {
 		return err
 	}
@@ -2166,7 +2308,7 @@ func (s *Service) RestoreStateFromDB(ctx context.Context) error {
 		var entry RunningEntry
 		var identifier, runtimeTarget, disabledToolsJSON, requestedModel sql.NullString
 		var requestedMaxTurns sql.NullInt64
-		if err := rows.Scan(&entry.IssueID, &identifier, &entry.Provider, &entry.SessionID, &entry.State, &entry.LastEvent, &entry.LastMessage, &entry.TurnCount, &entry.Tokens.InputTokens, &entry.Tokens.OutputTokens, &entry.Tokens.TotalTokens, &runtimeTarget, &disabledToolsJSON, &requestedModel, &requestedMaxTurns); err != nil {
+		if err := rows.Scan(&entry.IssueID, &identifier, &entry.Provider, &entry.SessionID, &entry.State, &entry.LastEvent, &entry.LastMessage, &entry.TurnCount, &entry.Tokens.InputTokens, &entry.Tokens.OutputTokens, &entry.Tokens.TotalTokens, &runtimeTarget, &disabledToolsJSON, &requestedModel, &requestedMaxTurns, &entry.AccountID); err != nil {
 			return err
 		}
 		entry.RuntimeTarget = runtimeTarget.String

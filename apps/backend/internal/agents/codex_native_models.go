@@ -28,6 +28,11 @@ type NativeModel struct {
 // NativeModels observes a provider's actual catalog without creating/resuming a
 // thread or sending inference. Catalog presence is not an entitlement check.
 func (r *Registry) NativeModels(ctx context.Context, provider Provider, request TurnRequest) ([]NativeModel, error) {
+	var accountErr error
+	request, accountErr = r.bindAccount(provider, request)
+	if accountErr != nil {
+		return nil, accountErr
+	}
 	if !r.SupportsNativeSession(provider) {
 		return nil, fmt.Errorf("native model catalog unsupported for provider %s", provider)
 	}

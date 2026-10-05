@@ -9,7 +9,7 @@ import {
   Sparkles,
   Waypoints,
 } from 'lucide-react'
-import type { BackendConfig, ProviderRateLimits } from '@core/api/client'
+import type { BackendConfig, ProviderRateLimits, QuotaProvider } from '@core/api/client'
 import { useUsage, USAGE_PROVIDERS, type ProviderUsageBundle } from './use-usage'
 import { providerLabel, ProviderIcon } from './provider-meta'
 import { FilterMenu, scopeLabel, rangeLabel } from './FilterMenu'
@@ -25,19 +25,21 @@ import {
 } from './format'
 import type { UsageScope, UsageRange } from '@core/api/client'
 
-export function UsagePage({ config }: { config: BackendConfig | null }) {
+const QUOTA_PROVIDERS: QuotaProvider[] = ['claude', 'codex', 'antigravity', 'opencode', '8gent', 'gemini']
+
+export function UsagePage({ config, embedded = false }: { config: BackendConfig | null; embedded?: boolean }) {
   const usage = useUsage(config)
   const { scope, range, setScope, setRange, bundles, rateLimits, refreshProvider, toggleProvider } = usage
 
   return (
-    <div className="h-full overflow-auto bg-background">
-      <div className="w-full p-6 space-y-4">
-        <div>
+    <div className={embedded ? 'bg-transparent' : 'h-full overflow-auto bg-background'}>
+      <div className={embedded ? 'w-full p-5 space-y-4' : 'w-full p-6 space-y-4'}>
+        {!embedded && <div>
           <h1 className="text-base font-semibold text-foreground">Usage</h1>
           <p className="mt-0.5 text-xs text-muted-foreground">
             Per-agent token, model, and session stats from local CLI logs.
           </p>
-        </div>
+        </div>}
         <RateLimitsCard rateLimits={rateLimits} error={usage.rateLimitError} />
         {USAGE_PROVIDERS.map((p) => (
           <ProviderPane
@@ -51,14 +53,26 @@ export function UsagePage({ config }: { config: BackendConfig | null }) {
             onToggle={(enabled) => void toggleProvider(p, enabled)}
           />
         ))}
+        <div className="grid gap-4 md:grid-cols-2">
+          {(['antigravity', '8gent'] as const).map(provider => (
+            <section key={provider} className="surface p-4" aria-label={`${providerLabel(provider)} local history`}>
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <ProviderIcon provider={provider} size={16} />
+                <span>{providerLabel(provider)} history</span>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">Local session history is unavailable for this harness. Quota evidence, when available, is shown above.</p>
+            </section>
+          ))}
+        </div>
       </div>
     </div>
   )
 }
 
 function RateLimitsCard({ rateLimits, error }: { rateLimits: ReturnType<typeof useUsage>['rateLimits']; error: string | null }) {
-  const entries = USAGE_PROVIDERS.map((p) => ({ provider: p, limits: rateLimits?.[p] ?? null }))
+  const entries = QUOTA_PROVIDERS.map((p) => ({ provider: p, limits: rateLimits?.[p] ?? null }))
   const anyHasData = entries.some(({ limits }) => limits?.session || limits?.weekly)
+  const hasSettledObservation = entries.some(({ limits }) => limits && limits.status !== 'idle' && limits.status !== 'fetching')
 
   return (
     <section className="space-y-3 surface p-4">
@@ -70,11 +84,11 @@ function RateLimitsCard({ rateLimits, error }: { rateLimits: ReturnType<typeof u
       </div>
       {!anyHasData && (
         <p className="text-xs text-muted-foreground">
-          {error ? `Rate-limit observation failed: ${error}` : 'Rate-limit utilization is not observed yet.'}
+          {error ? `Rate-limit observation failed: ${error}` : hasSettledObservation ? 'No provider quota windows are available for these accounts.' : 'Rate-limit utilization is not observed yet.'}
         </p>
       )}
       {anyHasData && error && <p role="status" className="text-xs text-muted-foreground">Showing cached rate-limit observations. {error}</p>}
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {entries.map(({ provider, limits }) => (
           <RateLimitTile key={provider} provider={provider} limits={limits} />
         ))}
@@ -87,7 +101,7 @@ function RateLimitTile({
   provider,
   limits,
 }: {
-  provider: typeof USAGE_PROVIDERS[number]
+  provider: QuotaProvider
   limits: ProviderRateLimits | null
 }) {
   const now = useNow(60_000)

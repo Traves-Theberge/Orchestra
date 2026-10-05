@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { RefreshCw, ChevronRight, Settings2 } from 'lucide-react'
+import { Activity, RefreshCw, ChevronRight, Settings2 } from 'lucide-react'
 import { useAppStore } from '@core/store'
 import {
   type BackendConfig,
   type UsageProvider,
+  type QuotaProvider,
   type ProviderRateLimits,
   type RateLimitState,
+  type UsageSummary,
   fetchRateLimits,
   refreshRateLimits,
+  fetchUsageScanState,
+  fetchUsageSummary,
+  refreshUsage,
 } from '@core/api/client'
 import { AppTooltip } from '@ui/tooltip-wrapper'
 import { providerLabel, ProviderIcon } from './provider-meta'
@@ -19,11 +24,13 @@ import {
   windowLabel,
 } from './rate-limit-ui'
 import { useNow } from '@/hooks'
+import { formatTokens } from './format'
 
 // Orca's status bar tracks only the providers that actually have plan windows.
 // Gemini and OpenCode have no comparable rate-limit concept, so they don't
 // belong in the bar — they're still tracked on the Usage page for token data.
 const BAR_PROVIDERS: UsageProvider[] = ['claude', 'codex']
+const ROSTER_PROVIDERS: QuotaProvider[] = ['claude', 'codex', 'antigravity', 'opencode', '8gent', 'gemini']
 const POLL_MS = 5 * 60 * 1000     // 5 min — quota windows are slow-moving
 const FOCUS_MIN_MS = 30 * 1000    // refetch on focus if older than 30s
 
@@ -91,6 +98,13 @@ export function UsageStatusBar({ config, generatedAt }: { config: BackendConfig 
     }
   }, [config, loadAll, profileKey])
 
+  useEffect(() => {
+    if (!config) return
+    const changed = () => { setRateLimits(null); void loadAll(true) }
+    window.addEventListener('orchestra-account-selection-changed', changed)
+    return () => window.removeEventListener('orchestra-account-selection-changed', changed)
+  }, [config, loadAll])
+
   const handleRefresh = useCallback(async () => {
     const generation = profile.current.generation
     setRefreshing(true)
@@ -109,9 +123,9 @@ export function UsageStatusBar({ config, generatedAt }: { config: BackendConfig 
   return (
     <div
       ref={containerRef}
-      className="flex items-center h-6 min-h-[24px] px-3 border-t border-border bg-[var(--bg-titlebar,var(--card))] text-xs select-none shrink-0 overflow-hidden"
+      className="flex items-center h-6 min-h-[24px] px-3 border-t border-border bg-[var(--bg-titlebar,var(--card))] text-xs select-none shrink-0"
     >
-      <div className="flex items-center gap-3 flex-1 min-w-0 overflow-hidden">
+      <div className="flex items-center gap-2 flex-1 min-w-0">
         {BAR_PROVIDERS.map((p) => (
           <ProviderSegment
             key={p}
@@ -120,6 +134,7 @@ export function UsageStatusBar({ config, generatedAt }: { config: BackendConfig 
             iconOnly={iconOnly}
           />
         ))}
+        <UsageRoster config={config} limits={visibleLimits} refreshing={refreshing} onRefresh={() => void handleRefresh()} />
         <AppTooltip content="Refresh usage data">
           <button
             onClick={handleRefresh}
@@ -136,6 +151,63 @@ export function UsageStatusBar({ config, generatedAt }: { config: BackendConfig 
       )}
     </div>
   )
+}
+
+type HistoryObservation = { kind: 'off' | 'empty' | 'error' | 'ready' | 'unsupported'; summary?: UsageSummary }
+
+function UsageRoster({ config, limits, refreshing, onRefresh }: { config: BackendConfig; limits: RateLimitState | null; refreshing: boolean; onRefresh: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [historySnapshot, setHistorySnapshot] = useState<{ key: string; rows: Record<QuotaProvider, HistoryObservation> } | null>(null)
+  const historyKey = JSON.stringify([config.baseUrl, config.apiToken, refreshKey])
+  const history = historySnapshot?.key === historyKey ? historySnapshot.rows : null
+  const ref = useRef<HTMLDivElement>(null)
+  const setActiveSection = useAppStore(state => state.setActiveSection)
+
+  useEffect(() => {
+    if (!open) return
+    let active = true
+    void Promise.all(ROSTER_PROVIDERS.map(async (provider): Promise<[QuotaProvider, HistoryObservation]> => {
+      if (provider === 'antigravity' || provider === '8gent') return [provider, { kind: 'unsupported' }]
+      try {
+        const scan = await fetchUsageScanState(config, provider)
+        if (!scan.enabled) return [provider, { kind: 'off' }]
+        const observed = refreshKey > 0 ? await refreshUsage(config, provider, true) : scan
+        if (!observed.has_any_data) return [provider, { kind: 'empty' }]
+        return [provider, { kind: 'ready', summary: await fetchUsageSummary(config, provider, 'all', '30d') }]
+      } catch {
+        return [provider, { kind: 'error' }]
+      }
+    })).then(rows => {
+      if (active) setHistorySnapshot({ key: historyKey, rows: Object.fromEntries(rows) as Record<QuotaProvider, HistoryObservation> })
+    })
+    return () => { active = false }
+  }, [config, historyKey, open, refreshKey])
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (event: MouseEvent) => { if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false) }
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+  }, [open])
+
+  return <div ref={ref} className="relative shrink-0">
+    <button type="button" aria-label="Open all usage insights" aria-expanded={open} onClick={() => setOpen(value => !value)} className={`inline-flex h-6 items-center gap-1 rounded px-1.5 text-[11px] transition-colors hover:bg-muted ${open ? 'bg-muted text-foreground' : 'text-muted-foreground'}`}><Activity size={12} /><span>Usage</span></button>
+    {open && <div role="dialog" aria-label="Usage insights" className="absolute bottom-full left-0 z-50 mb-1.5 w-80 overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-xl">
+      <div className="flex items-center justify-between border-b border-border/60 px-3 py-2.5"><span className="text-xs font-semibold">Usage insights</span><button type="button" aria-label="Refresh usage insights" disabled={refreshing} onClick={() => { setRefreshKey(value => value + 1); onRefresh() }} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"><RefreshCw size={13} className={refreshing ? 'animate-spin' : ''} /></button></div>
+      <div className="divide-y divide-border/40">{ROSTER_PROVIDERS.map(provider => {
+        const observation = limits?.[provider]
+        const window = observation?.session ?? observation?.weekly
+        const summary = window ? `${remainingPct(window)}% ${windowLabel(window)} remaining` : observation?.status === 'error' ? 'Observation failed' : observation?.status === 'unavailable' ? 'Quota window unavailable' : 'Quota not observed'
+        const local = history?.[provider]
+        const localText = !local ? 'Checking local history…' : local.kind === 'ready' && local.summary ? `${formatTokens(local.summary.total_tokens)} tokens · local 30d` : local.kind === 'off' ? 'Local tracking off' : local.kind === 'empty' ? 'No local history' : 'Local history unavailable'
+        return <button type="button" key={provider} onClick={() => { setOpen(false); setActiveSection('WAREHOUSE') }} className="flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-accent/60"><ProviderIcon provider={provider} size={16} /><span className="min-w-0 flex-1"><span title={providerLabel(provider)} className="block truncate text-xs font-medium">{providerLabel(provider)}{observation?.account_label ? <span className="ml-1 font-normal text-muted-foreground">· {observation.account_label}</span> : null}</span><span className="block truncate text-[10px] text-muted-foreground/70">{localText}</span></span><span className="max-w-32 shrink-0 truncate text-[10px] text-muted-foreground">{summary}</span><ChevronRight size={12} className="shrink-0 text-muted-foreground/60" /></button>
+      })}</div>
+      <button type="button" onClick={() => { setOpen(false); setActiveSection('WAREHOUSE') }} className="flex w-full items-center justify-between border-t border-border/60 px-3 py-2.5 text-xs font-medium hover:bg-accent/60">Usage details and history <ChevronRight size={13} /></button>
+    </div>}
+  </div>
 }
 
 function ProviderSegment({
@@ -283,11 +355,13 @@ function DetailPopover({
   limits: ProviderRateLimits | null
 }) {
   const setActiveSection = useAppStore((s) => s.setActiveSection)
-  const setSettingsInitialTab = useAppStore((s) => s.setSettingsInitialTab)
+  const setActiveAgentProvider = useAppStore((s) => s.setActiveAgentProvider)
+  const setActiveAgentCategory = useAppStore((s) => s.setActiveAgentCategory)
   const now = useNow(60_000)
-  const openAccountSettings = () => {
-    setSettingsInitialTab(undefined)
-    setActiveSection('SETTINGS')
+  const openHarnessSetup = () => {
+    setActiveAgentProvider(provider === 'claude' ? 'claude' : 'codex')
+    setActiveAgentCategory('overview')
+    setActiveSection('AGENTS')
   }
   return (
     <div className="absolute bottom-full left-0 mb-1.5 z-50 w-[300px] rounded-lg border border-border/60 bg-popover shadow-xl">
@@ -323,26 +397,22 @@ function DetailPopover({
         )}
       </div>
 
-      {/* Account / configuration footer — mirrors Orca */}
       <div className="h-px bg-border/60" />
       <div className="p-1">
-        <p className="px-2 pt-1.5 pb-1 text-[9px] font-bold uppercase tracking-[0.15em] text-muted-foreground/60">
-          {providerLabel(provider)} Account
-        </p>
         <button
           type="button"
-          onClick={openAccountSettings}
+          onClick={() => setActiveSection('WAREHOUSE')}
           className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-[12px] text-foreground/85 hover:bg-foreground/[0.06] hover:text-foreground transition-colors"
         >
-          <span>System default</span>
+          <span>Usage details and history</span>
           <ChevronRight size={12} className="text-muted-foreground/60" />
         </button>
         <button
           type="button"
-          onClick={openAccountSettings}
+          onClick={openHarnessSetup}
           className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-[12px] text-foreground/85 hover:bg-foreground/[0.06] hover:text-foreground transition-colors"
         >
-          <span>Manage Accounts…</span>
+          <span>Set up {providerLabel(provider)}</span>
           <Settings2 size={12} className="text-muted-foreground/60" />
         </button>
       </div>

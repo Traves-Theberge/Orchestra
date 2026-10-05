@@ -75,6 +75,9 @@ func startCodexNativeProcess(ctx context.Context, command string, request TurnRe
 		return nil, err
 	}
 	cmd.Dir = request.Workspace
+	if request.CredentialHome != "" {
+		cmd.Env = accountSubprocessEnv(request.SessionID, ProviderCodex, request.CredentialHome)
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		cancel()

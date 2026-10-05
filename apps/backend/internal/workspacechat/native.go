@@ -96,6 +96,10 @@ func (s *Service) supportsNative(p agents.Provider) bool {
 	return ok && n.SupportsNativeSession(p)
 }
 func (s *Service) decorate(ctx context.Context, v *Session) error {
+	v.AccountID = "system_default"
+	if e := s.db.QueryRowContext(ctx, `SELECT account_id FROM workspace_chat_account_bindings WHERE session_id=?`, v.ID).Scan(&v.AccountID); e != nil && !errors.Is(e, sql.ErrNoRows) {
+		return e
+	}
 	var mode string
 	if e := s.db.QueryRowContext(ctx, `SELECT mode FROM workspace_chat_modes WHERE session_id=?`, v.ID).Scan(&mode); e == nil {
 		v.ConversationMode = mode

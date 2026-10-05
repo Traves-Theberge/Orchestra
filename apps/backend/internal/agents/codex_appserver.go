@@ -56,6 +56,9 @@ func (r *CodexAppServerRunner) RunTurn(ctx context.Context, request TurnRequest,
 		return TurnResult{}, err
 	}
 	cmd.Dir = request.Workspace
+	if request.CredentialHome != "" {
+		cmd.Env = accountSubprocessEnv(request.SessionID, ProviderCodex, request.CredentialHome)
+	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

@@ -10,11 +10,11 @@ import (
 
 var effortName = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
 
-func (s *Service) validateEffort(ctx context.Context, pid, provider, model, effort string) error {
+func (s *Service) validateEffort(ctx context.Context, pid, provider, accountID, model, effort string) error {
 	if !effortName.MatchString(effort) {
 		return ErrUnsupported
 	}
-	catalog, err := s.Models(ctx, pid, provider)
+	catalog, err := s.modelsForAccount(ctx, pid, provider, accountID)
 	if err != nil {
 		return err
 	}
@@ -44,6 +44,10 @@ type ModelCatalog struct {
 // Models is a provider catalog observation, not login or entitlement proof.
 // It initializes a disposable native runtime without creating a provider thread.
 func (s *Service) Models(ctx context.Context, pid, provider string) (ModelCatalog, error) {
+	return s.modelsForAccount(ctx, pid, provider, "")
+}
+
+func (s *Service) modelsForAccount(ctx context.Context, pid, provider, accountID string) (ModelCatalog, error) {
 	root, err := s.root(ctx, pid)
 	if err != nil {
 		return ModelCatalog{}, err
@@ -63,7 +67,7 @@ func (s *Service) Models(ctx context.Context, pid, provider string) (ModelCatalo
 	defer s.wg.Done()
 	readCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	models, err := r.NativeModels(readCtx, p, agents.TurnRequest{Workspace: root, WorkspaceRoot: root, ProjectRootWorkspace: true, RuntimeTarget: agents.RuntimeLocal})
+	models, err := r.NativeModels(readCtx, p, agents.TurnRequest{Workspace: root, WorkspaceRoot: root, ProjectRootWorkspace: true, RuntimeTarget: agents.RuntimeLocal, AccountID: accountID})
 	if err != nil {
 		return ModelCatalog{}, err
 	}

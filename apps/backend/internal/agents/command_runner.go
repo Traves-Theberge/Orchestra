@@ -100,10 +100,12 @@ func (r *CommandRunner) RunTurn(ctx context.Context, request TurnRequest, onEven
 	finalPrompt := strings.TrimSpace(request.Prompt)
 	resolvedCommand := strings.ReplaceAll(commandLine, "{{prompt}}", shellQuote(finalPrompt))
 	commandContainsPrompt := strings.Contains(commandLine, "{{prompt}}")
+	processEnv := accountSubprocessEnv(sessionID, r.provider, request.CredentialHome)
 
-	// If we have a terminal manager, we can run in a persistent PTY
-	if r.termManager != nil && runtime.GOOS != "windows" {
-		return r.runInPTY(ctx, request, sessionID, resolvedCommand, finalPrompt, commandContainsPrompt, onEvent)
+	// Shell input and terminal logs can echo commands. Never send API keys or
+	// access tokens through a shared PTY; run those turns as sanitized subprocesses.
+	if r.termManager != nil && runtime.GOOS != "windows" && !containsPTYSecret(processEnv) {
+		return r.runInPTY(ctx, request, sessionID, resolvedCommand, finalPrompt, commandContainsPrompt, processEnv, onEvent)
 	}
 
 	cmdCtx, cancel := context.WithCancel(ctx)
@@ -118,7 +120,7 @@ func (r *CommandRunner) RunTurn(ctx context.Context, request TurnRequest, onEven
 	if err != nil {
 		return TurnResult{}, err
 	}
-	cmd.Env = safeSubprocessEnv(sessionID, r.provider)
+	cmd.Env = processEnv
 	cmd.Dir = request.Workspace
 
 	// Copying subprocess output must not wait for event callbacks: WaitDelay
@@ -452,11 +454,12 @@ func (r *CommandRunner) runInPTY(
 	resolvedCommand string,
 	finalPrompt string,
 	commandContainsPrompt bool,
+	processEnv []string,
 	onEvent EventHandler,
 ) (TurnResult, error) {
 	// Create or attach to a persistent PTY session for this issue/project
 	terminalID := fmt.Sprintf("issue-%s", request.IssueIdentifier)
-	session, err := r.termManager.GetOrCreateSessionWithEnv(terminalID, request.Workspace, safeSubprocessEnv(sessionID, r.provider))
+	session, err := r.termManager.GetOrCreateSession(terminalID, request.Workspace)
 	if err != nil {
 		return TurnResult{}, fmt.Errorf("failed to create terminal session: %w", err)
 	}
@@ -553,11 +556,12 @@ func (r *CommandRunner) runInPTY(
 	// For interactive agents (no {{prompt}} in command), launch the agent CLI first,
 	// wait for it to boot, then send the prompt as the first user message.
 	// For headless agents ({{prompt}} baked in), send the resolved command directly.
+	ptyCommand := scopedPTYCommand(resolvedCommand, processEnv)
 	if commandContainsPrompt {
-		session.Write([]byte(resolvedCommand + "\n"))
+		session.Write([]byte(ptyCommand + "\n"))
 	} else {
 		// Launch the interactive agent CLI
-		session.Write([]byte(resolvedCommand + "\n"))
+		session.Write([]byte(ptyCommand + "\n"))
 		// Give the agent time to boot — some CLIs show confirmation prompts
 		// (e.g. Claude's "Bypass Permissions" warning). Send Enter to dismiss,
 		// then wait for the TUI to fully initialize before sending the prompt.
@@ -991,7 +995,8 @@ func firstInt64(payload map[string]any, keys ...string) int64 {
 // subprocesses, avoiding leaking secrets from the parent process.
 func safeSubprocessEnv(sessionID string, provider Provider) []string {
 	allowed := []string{
-		"PATH", "HOME", "USER", "SHELL", "LANG", "LC_ALL",
+		"PATH", "HOME", "USER", "SHELL", "LANG", "LC_ALL", "TERM", "COLORTERM",
+		"XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME",
 		"TMPDIR", "TEMP", "TMP", "SYSTEMROOT", "WINDIR", "COMSPEC", "USERPROFILE", "APPDATA", "LOCALAPPDATA",
 		"ORCHESTRA_WORKSPACE_ROOT", "ORCHESTRA_SERVER_HOST", "ORCHESTRA_SERVER_PORT",
 	}
@@ -1001,24 +1006,72 @@ func safeSubprocessEnv(sessionID string, provider Provider) []string {
 			env = append(env, key+"="+val)
 		}
 	}
-	// Keep a provider's configured credential home consistent between read-only
-	// setup probes, usage readers, and batch runs without exposing it to other
-	// providers. Managed account overrides will be resolved per run here.
-	authHomeKey := ""
+	// Keep provider credentials consistent between read-only setup probes and
+	// agent runs without passing another provider's keys to this process.
+	var providerKeys []string
 	switch NormalizeProvider(string(provider)) {
 	case ProviderCodex:
-		authHomeKey = "CODEX_HOME"
+		providerKeys = []string{"CODEX_HOME", "OPENAI_API_KEY", "CODEX_ACCESS_TOKEN"}
 	case ProviderClaude:
-		authHomeKey = "CLAUDE_CONFIG_DIR"
+		providerKeys = []string{"CLAUDE_CONFIG_DIR", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"}
 	}
-	if authHomeKey != "" {
-		if val, ok := os.LookupEnv(authHomeKey); ok && strings.TrimSpace(val) != "" {
-			env = append(env, authHomeKey+"="+val)
+	for _, key := range providerKeys {
+		if val, ok := os.LookupEnv(key); ok && strings.TrimSpace(val) != "" {
+			env = append(env, key+"="+val)
 		}
 	}
 	env = append(env, "ORCHESTRA_SESSION_ID="+sessionID)
 	env = append(env, "ORCHESTRA_PROVIDER="+string(NormalizeProvider(string(provider))))
 	return env
+}
+
+func accountSubprocessEnv(sessionID string, provider Provider, home string) []string {
+	env := safeSubprocessEnv(sessionID, provider)
+	if home == "" {
+		return env
+	}
+	filtered := make([]string, 0, len(env)+1)
+	for _, entry := range env {
+		if strings.HasPrefix(entry, "CODEX_HOME=") || strings.HasPrefix(entry, "OPENAI_API_KEY=") || strings.HasPrefix(entry, "CODEX_ACCESS_TOKEN=") {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return append(filtered, "CODEX_HOME="+home)
+}
+
+// A shared issue terminal can be opened before an agent starts. Scope the
+// launched command rather than the persistent shell so both entry points can
+// attach to the same PTY without inheriting unrelated provider credentials.
+func scopedPTYCommand(command string, env []string) string {
+	parts := make([]string, 0, len(env)+5)
+	parts = append(parts, "env", "-i")
+	for _, entry := range env {
+		if isPTYSecret(entry) {
+			continue
+		}
+		parts = append(parts, shellQuote(entry))
+	}
+	parts = append(parts, "/bin/bash", "-c", shellQuote(command))
+	return strings.Join(parts, " ")
+}
+
+func containsPTYSecret(env []string) bool {
+	for _, entry := range env {
+		if isPTYSecret(entry) {
+			return true
+		}
+	}
+	return false
+}
+
+func isPTYSecret(entry string) bool {
+	for _, key := range []string{"OPENAI_API_KEY=", "CODEX_ACCESS_TOKEN=", "CLAUDE_CODE_OAUTH_TOKEN=", "ANTHROPIC_API_KEY=", "ANTHROPIC_AUTH_TOKEN="} {
+		if strings.HasPrefix(entry, key) {
+			return true
+		}
+	}
+	return false
 }
 
 func shellQuote(value string) string {
