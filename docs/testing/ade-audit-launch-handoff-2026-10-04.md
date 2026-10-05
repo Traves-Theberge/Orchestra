@@ -77,3 +77,38 @@ T3 Code `737993303d36e10674c54b95e5bd3826682c99c7`, previously inspected [Provid
 - After smoke termination, bind checks confirmed owned ports 5173, 5174 and 4014 were released.
 
 No account provider configuration was copied or written. The existing `audit-2026-10-04` profile was inspected for layout only and not launched or edited. These checks prove isolated native startup and controlled smoke/window-close cleanup, not authenticated provider execution, task orchestration, PR lifecycle, global Windows process-tree cancellation reliability, or Linux/macOS behavior. Existing audit profiles intentionally retain any data/config a user later writes into them.
+
+## Workspace readiness correction after main integration
+
+The visible relaunch on main `c0062c7` started the renderer and authenticated
+backend, then quit after its 20-second DOM readiness deadline. The audit
+bootstrap still required primary Tasks navigation while the retained profile
+opened a Console workspace drilldown. Production Electron smoke had been fixed
+separately; that did not verify this audit bootstrap. The initial report of a
+successful opening was premature.
+
+Readiness now accepts either mounted primary navigation or a mounted drilldown
+back control, while retaining authenticated backend-state and exact owned-port
+checks. Unlike the production smoke's navigation exercise, the interactive
+launcher does not click back or change the user's restored view. Blank renderer
+and missing navigation still fail. Local Electron runtime installation was also
+repaired through the installed package's normal installer after its runtime was
+found missing; no source dependencies or lockfile changed.
+
+Before this correction, the actual visible bootstrap logged `Renderer did not
+mount` and closed. Afterward, syntax validation and `npm run audit:dev -- --smoke`
+passed with `AUDIT_READY`, real preload and authenticated backend state, then
+clean shutdown. A subsequent visible launch reported `AUDIT_READY` on 4014/5174
+using the same persistent profile and preserved project. Account provider homes
+remain isolated; these results do not prove signed installation or provider turns.
+
+Both pinned references were reconsidered before this change: T3 Code
+`737993303d36e10674c54b95e5bd3826682c99c7`
+[ProviderAdapter](https://github.com/pingdotgg/t3code/blob/737993303d36e10674c54b95e5bd3826682c99c7/apps/server/src/orchestration-v2/ProviderAdapter.ts)
+separates starting/ready/runtime identities; Orca
+`3284b4c70c901402831bb4ccc5576ea083d2e5ae`
+[project model override](https://github.com/stablyai/orca/blob/3284b4c70c901402831bb4ccc5576ea083d2e5ae/src/main/native-chat/agent-model-catalog/agent-project-model-override.ts)
+distinguishes workspace configuration evidence from mere presence. Neither source
+defines an equivalent Electron audit DOM readiness check. Orchestra independently
+checks its mounted view and owned backend; reference runtimes were not exercised,
+and no reference source was copied. Kanban and native provider semantics are unchanged.

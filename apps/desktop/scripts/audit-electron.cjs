@@ -80,8 +80,11 @@ app.on('browser-window-created', (_, win) => {
       const expectedPort = Number(process.env.ORCHESTRA_SERVER_PORT)
       const result = await win.webContents.executeJavaScript(`(async () => {
         const deadline = Date.now() + 20000
-        while (!document.querySelector('[data-testid="sidebar-nav-ISSUES"]') && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100))
-        if (!document.querySelector('[data-testid="sidebar-nav-ISSUES"]')) throw new Error('Renderer did not mount')
+        // Workspace drilldowns are mounted views too. Observe their back control
+        // without navigating away from the user's restored workspace.
+        const mountedNavigation = '[data-testid="sidebar-nav-ISSUES"], [data-testid="sidebar-back"]'
+        while (!document.querySelector(mountedNavigation) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100))
+        if (!document.querySelector(mountedNavigation)) throw new Error('Renderer did not mount')
         const config = await window.orchestraDesktop.getBackendConfig()
         const response = await fetch(config.baseUrl + '/api/v1/state', { headers: { Authorization: 'Bearer ' + config.apiToken } })
         if (!response.ok) throw new Error('Authenticated backend state returned ' + response.status)
