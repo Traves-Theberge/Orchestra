@@ -14,6 +14,8 @@ vi.mock('./chat/WorkspaceChat', () => ({ WorkspaceChat: ({ projectId, config, he
 } }))
 vi.mock('./SplitLayout', () => ({ SplitLayout: () => <div>Project tools</div> }))
 vi.mock('@features/git', () => ({ GitTab: () => <div>Repository changes</div> }))
+vi.mock('./file-explorer/FileExplorer', () => ({ FileExplorer: () => <div role="tree" className="h-full w-full">Workspace files</div> }))
+vi.mock('./panels/WorkspaceSearch', () => ({ WorkspaceSearch: () => <div>Workspace search</div> }))
 vi.mock('./panels/WorkspaceWelcome', () => ({ WorkspaceWelcome: () => <div>Welcome</div> }))
 beforeEach(() => {
   resetAppStore()
@@ -44,16 +46,53 @@ describe('WorkspaceLayout chat ownership', () => {
     expect(childDraft).toHaveValue('Child draft')
     expect(useAppStore.getState().requestedWorkspaceConversation?.workspaceId).toBe('wt_child')
   })
-  it('opens the file tree from the Files & terminals tab and closes from the pane toolbar', () => {
+  it('fills the tools pane with Files until an active editor opens, then restores the resizable inspector', () => {
     render(<WorkspaceLayout />)
     fireEvent.click(screen.getByRole('tab', { name: 'Files & terminals' }))
     expect(screen.getByLabelText('Workspace tools')).toBeVisible()
-    expect(screen.getByText('Select a file to open it in the editor')).toBeVisible()
+    const filesView = screen.getByRole('region', { name: 'Workspace files view' })
+    expect(filesView).toBeVisible()
+    expect(filesView).toHaveClass('flex-col')
+    expect(screen.getByRole('tree')).toHaveClass('w-full')
+    expect(screen.queryByLabelText('Workspace file sidebar')).not.toBeInTheDocument()
+    expect(screen.queryByText('Select a file to open it in the editor')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle workspace search' }))
+    expect(screen.getByLabelText('Workspace search sidebar')).toHaveTextContent('Workspace search')
+    expect(screen.getByRole('button', { name: 'Toggle workspace files' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle workspace files' }))
+    expect(screen.getByRole('region', { name: 'Workspace files view' })).toBeVisible()
+    expect(screen.queryByLabelText('Workspace search sidebar')).not.toBeInTheDocument()
+
+    act(() => useAppStore.getState().addTabToGroup('a', { type: 'editor', id: 'open-file' }))
+    expect(screen.getByLabelText('Workspace file sidebar')).toHaveTextContent('Workspace files')
+    expect(screen.getByRole('separator', { name: 'Resize workspace files' })).toBeVisible()
+    expect(screen.getByText('Project tools')).toBeVisible()
+    act(() => useAppStore.getState().removeTabFromGroup('a', 'open-file'))
+    expect(screen.getByRole('region', { name: 'Workspace files view' })).toBeVisible()
+    expect(screen.queryByLabelText('Workspace file sidebar')).not.toBeInTheDocument()
+
     fireEvent.click(screen.getByRole('button', { name: 'Hide workspace tools' }))
     expect(screen.getByLabelText('Workspace tools')).not.toBeVisible()
     expect(screen.getByRole('tab', { name: 'Workspace' })).toHaveAttribute('aria-selected', 'true')
     fireEvent.click(screen.getByRole('tab', { name: 'Files & terminals' }))
     expect(screen.getByLabelText('Workspace tools')).toBeVisible()
+  })
+  it('uses active tabs in any split group to decide whether Files gets its own full pane', () => {
+    useAppStore.setState({ projectGroups: { a: {
+      left: { id: 'left', tabs: [{ type: 'editor', id: 'left-file' }], activeTabId: null },
+      right: { id: 'right', tabs: [{ type: 'editor', id: 'right-file' }], activeTabId: 'right-file' },
+    } } })
+    render(<WorkspaceLayout />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Files & terminals' }))
+    expect(screen.getByLabelText('Workspace file sidebar')).toBeVisible()
+    expect(screen.queryByRole('region', { name: 'Workspace files view' })).not.toBeInTheDocument()
+
+    act(() => useAppStore.setState({ projectGroups: { a: {
+      left: { id: 'left', tabs: [{ type: 'editor', id: 'left-file' }], activeTabId: null },
+      right: { id: 'right', tabs: [{ type: 'editor', id: 'right-file' }], activeTabId: null },
+    } } }))
+    expect(screen.getByRole('region', { name: 'Workspace files view' })).toBeVisible()
+    expect(screen.queryByLabelText('Workspace file sidebar')).not.toBeInTheDocument()
   })
   it('returns from task settings to the requested project conversation without losing its draft', () => {
     render(<WorkspaceLayout projectDetails={() => <div>Task settings</div>} />)

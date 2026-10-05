@@ -87,20 +87,20 @@ app.on('browser-window-created', (_, win) => {
       if (prVisualAudit) await require('./pr-visual-audit.cjs').installPRVisualFixture(win)
       if (workspaceAudit) {
         const workspaceResult = await win.webContents.executeJavaScript(`(async () => {
-          const wait = async predicate => {
+          const wait = async (predicate, name) => {
             const deadline = Date.now() + 15000
             while (!predicate() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 75))
-            if (!predicate()) throw new Error('Workspace audit timed out')
+            if (!predicate()) throw new Error('Workspace audit timed out waiting for ' + name)
           }
           const button = name => [...document.querySelectorAll('button, [role="button"]')].find(element => element.getAttribute('aria-label') === name || element.textContent.trim() === name)
           document.querySelector('[data-testid="sidebar-nav-PROJECTS"]').click()
-          await wait(() => button('Add project'))
+          await wait(() => button('Add project'), 'Add project control')
           button('Add project').click()
-          await wait(() => document.querySelector('[role="option"]'))
+          await wait(() => document.querySelector('[role="option"]'), 'project source list')
           const source = [...document.querySelectorAll('[role="option"]')].find(element => element.textContent.includes('New project'))
           if (!source) throw new Error('New project source missing')
           source.click()
-          await wait(() => [...document.querySelectorAll('label')].some(element => element.textContent === 'Project name'))
+          await wait(() => [...document.querySelectorAll('label')].some(element => element.textContent === 'Project name'), 'new project form')
           const setInput = (label, value) => {
             const controlLabel = [...document.querySelectorAll('label')].find(element => element.textContent === label)
             const input = controlLabel && document.getElementById(controlLabel.htmlFor)
@@ -110,36 +110,38 @@ app.on('browser-window-created', (_, win) => {
           }
           setInput('Project name', 'Workspace audit')
           setInput('Parent folder', ${JSON.stringify(path.join(fixture, 'projects'))})
-          await wait(() => button('Create project') && !button('Create project').disabled)
+          await wait(() => button('Create project') && !button('Create project').disabled, 'enabled Create project control')
           button('Create project').click()
           await wait(() => {
             const failure = document.querySelector('[role="dialog"] [role="alert"]')
             if (failure) throw new Error('Project creation: ' + failure.textContent)
             return document.querySelector('[role="tab"][aria-selected="true"]') && !document.querySelector('[role="dialog"]')
-          })
+          }, 'project workspace to open')
           const chat = document.querySelector('[aria-label="Workspace chat pane"]')
           if (!chat || chat.getBoundingClientRect().width <= 0) throw new Error('Project did not open its workspace')
           button('Expand Workspace audit')?.click()
-          await wait(() => button('Open Workspace audit workspace main'))
+          await wait(() => button('Open Workspace audit workspace main'), 'primary workspace card')
           button('Files & terminals').click()
-          button('Toggle workspace files').click()
-          await wait(() => document.querySelector('[aria-label="Workspace file sidebar"]'))
+          const filesToggle = button('Toggle workspace files')
+          if (filesToggle?.getAttribute('aria-pressed') !== 'true') filesToggle.click()
+          await wait(() => document.querySelector('[aria-label="Workspace file sidebar"], [aria-label="Workspace files view"]'), 'initial file viewer')
+          if (!document.querySelector('[aria-label="Workspace files view"] [role="tree"]')) throw new Error('Full-pane file viewer did not expose the workspace tree')
           button('Close workspace file sidebar').click()
-          await wait(() => button('Maximize workspace tools'))
+          await wait(() => button('Maximize workspace tools'), 'maximize workspace tools control')
           const tools = document.querySelector('[aria-label="Workspace tools"]')
           const originalChat = chat
           button('Maximize workspace tools').click()
-          await wait(() => tools.dataset.maximized === 'true')
+          await wait(() => tools.dataset.maximized === 'true', 'maximized workspace tools')
           const containerWidth = tools.parentElement.getBoundingClientRect().width
           if (tools.getBoundingClientRect().width < containerWidth - 2 || getComputedStyle(chat).display !== 'none') throw new Error('Workspace tools did not expand across the workspace')
           button('Restore workspace tools').click()
-          await wait(() => tools.dataset.maximized === 'false')
+          await wait(() => tools.dataset.maximized === 'false', 'restored workspace tools')
           if (document.querySelector('[aria-label="Workspace chat pane"]') !== originalChat) throw new Error('Maximize remounted chat')
           button('Git & pull requests').click()
-          await wait(() => document.querySelector('[role="tabpanel"][aria-label="Git & pull requests"]'))
+          await wait(() => document.querySelector('[role="tabpanel"][aria-label="Git & pull requests"]'), 'Git review panel')
           if (chat.getBoundingClientRect().width <= 0) throw new Error('Git review hides workspace chat')
           if (button('Create with AI')) throw new Error('Legacy AI creation journey remains')
-          return { projectSource: 'new', workspaceOpened: true, primaryWorktreeObserved: true, fileSidebarOpened: true, maximized: true, chatRetained: true, gitAlongsideChat: true }
+          return { projectSource: 'new', workspaceOpened: true, primaryWorktreeObserved: true, fullPaneFilesOpened: true, maximized: true, chatRetained: true, gitAlongsideChat: true }
         })()`)
         console.log('WORKSPACE_CONTROLS_SMOKE_RESULT', JSON.stringify(workspaceResult))
         console.log('MULTI_WORKTREE_SMOKE_RESULT', JSON.stringify(await require('./multi-worktree-audit.cjs').auditMultiWorktree(win, fixture)))

@@ -6,7 +6,7 @@ import { resetAppStore, useAppStore } from '@core/store'
 import { getActiveWorkspaceContextId } from '@core/store/workspace-context'
 import { WorkspaceToolSurface } from './WorkspaceToolSurface'
 
-vi.mock('./file-explorer/FileExplorer', () => ({ FileExplorer: () => <div>Checkout files</div> }))
+vi.mock('./file-explorer/FileExplorer', () => ({ FileExplorer: () => <div role="tree" className="h-full w-full">Checkout files</div> }))
 vi.mock('./panels/WorkspaceSearch', () => ({ WorkspaceSearch: () => <div>Checkout search</div> }))
 vi.mock('./WorkspaceToolsControls', () => ({ WorkspaceToolsControls: () => <button>Maximize workspace tools</button> }))
 
@@ -44,12 +44,14 @@ it('keeps the full borderless control strip inside the pane and reports its refr
   expect(toolbar).toHaveClass('h-10')
   expect(toolbar).not.toHaveClass('border-t', 'border-b')
   expect(toolbar).toContainElement(screen.getByRole('button', { name: 'Toggle workspace files' }))
-  expect(toolbar).toContainElement(screen.getByRole('button', { name: 'Toggle workspace search' }))
+  expect(screen.queryByRole('button', { name: 'Toggle workspace search' })).not.toBeInTheDocument()
   expect(toolbar).toContainElement(screen.getByRole('button', { name: 'Add workspace tool' }))
   expect(toolbar).toContainElement(screen.getByRole('button', { name: 'Hide workspace tools' }))
   expect(toolbar).toContainElement(screen.getByRole('button', { name: 'Maximize workspace tools' }))
   expect(screen.getByRole('button', { name: 'Hide workspace tools' })).not.toHaveAttribute('title')
   await waitFor(() => expect(setRefreshTarget).toHaveBeenCalledWith(expect.any(HTMLSpanElement)))
+  fireEvent.click(screen.getByRole('button', { name: 'Toggle workspace files' }))
+  expect(toolbar).toContainElement(screen.getByRole('button', { name: 'Toggle workspace search' }))
   fireEvent.click(screen.getByRole('button', { name: 'Hide workspace tools' }))
   expect(onToggleTools).toHaveBeenCalledOnce()
 })
@@ -57,10 +59,20 @@ it('keeps the full borderless control strip inside the pane and reports its refr
 it('toggles the search sidebar closed without changing the active tools pane', () => {
   const onToggleTools = vi.fn()
   render(<WorkspaceToolSurface toolsOpen onToggleTools={onToggleTools}><div>Tools</div></WorkspaceToolSurface>)
+  expect(screen.queryByRole('button', { name: 'Toggle workspace search' })).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Toggle workspace files' }))
+  expect(screen.getByLabelText('Workspace file sidebar')).toHaveTextContent('Checkout files')
+  expect(screen.getByRole('button', { name: 'Toggle workspace search' })).toBeVisible()
   fireEvent.click(screen.getByRole('button', { name: 'Toggle workspace search' }))
   expect(screen.getByLabelText('Workspace search sidebar')).toHaveTextContent('Checkout search')
-  fireEvent.click(screen.getByRole('button', { name: 'Toggle workspace search' }))
+  expect(screen.getByRole('button', { name: 'Toggle workspace files' })).toBeVisible()
+  fireEvent.click(screen.getByRole('button', { name: 'Toggle workspace files' }))
+  expect(screen.getByLabelText('Workspace file sidebar')).toHaveTextContent('Checkout files')
+  expect(screen.getByRole('button', { name: 'Toggle workspace search' })).toBeVisible()
+  fireEvent.click(screen.getByRole('button', { name: 'Toggle workspace files' }))
   expect(screen.queryByLabelText('Workspace search sidebar')).not.toBeInTheDocument()
+  expect(screen.queryByLabelText('Workspace file sidebar')).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Toggle workspace search' })).not.toBeInTheDocument()
   expect(onToggleTools).not.toHaveBeenCalled()
 })
 

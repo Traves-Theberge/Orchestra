@@ -46,6 +46,7 @@ export function WorkspaceLayout({ onAddTerminal, projectDetails, onInspectTask }
   }
   const view = projectViews[contextId] ?? 'workspace'
   const tabCount = Object.values(groups ?? {}).reduce((count, group) => count + group.tabs.length, 0)
+  const hasActiveWorkspaceTool = Object.values(groups ?? {}).some(group => !!group.activeTabId && group.tabs.some(tab => tab.id === group.activeTabId))
   const preference = toolPreferences[contextId]
   const toolsOpen = view === 'git' || view === 'files' || (view === 'workspace' && (preference === undefined ? tabCount > 0 : preference === -1 || tabCount > preference))
   const toggleTools = () => {
@@ -93,7 +94,7 @@ export function WorkspaceLayout({ onAddTerminal, projectDetails, onInspectTask }
             <WorkspaceChat config={owner.config} projectId={owner.project.id} projectName={owner.name} headerNavigation={id === contextId ? workspaceTabs : undefined} refreshToolbarTarget={id === contextId ? refreshToolbarTarget : null} contentOverride={id === contextId && view === 'project' && project ? projectDetails?.(project) : undefined} onShowChat={() => setProjectViews(previous => ({ ...previous, [contextId]: 'workspace' }))} active={id === contextId && view !== 'project' && (activeSection === 'CONSOLE' || activeSection === 'PROJECTS')} headerTools={id === contextId && !toolsOpen ? <AppTooltip content="Show workspace tools" side="bottom"><button type="button" aria-label="Show workspace tools" onClick={toggleTools} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent"><PanelRight className="size-4" /></button></AppTooltip> : undefined} />
           </div>)}
           </div>
-        </div>} tools={<WorkspaceToolSurface filesRequest={view === 'files' ? filesRequest : undefined} onAddTerminal={addTerminal} onRefreshTargetChange={setRefreshToolbarTarget} toolsOpen={toolsOpen} onToggleTools={toggleTools}>
+        </div>} tools={<WorkspaceToolSurface filesRequest={view === 'files' ? filesRequest : undefined} onAddTerminal={addTerminal} onRefreshTargetChange={setRefreshToolbarTarget} toolsOpen={toolsOpen} onToggleTools={toggleTools} hasActiveTools={view === 'git' || hasActiveWorkspaceTool}>
           <div hidden={view === 'git'} className={`${view === 'git' ? 'hidden' : 'flex'} min-h-0 min-w-0 flex-1`}>
             {layout && tabCount > 0 ? <SplitLayout projectId={contextId} layout={layout} /> : <div className="flex w-full items-center justify-center p-4"><p className="text-center text-xs text-muted-foreground">{view === 'files' ? 'Select a file to open it in the editor' : 'Open a file or add a tool from the + menu'}</p></div>}
           </div>

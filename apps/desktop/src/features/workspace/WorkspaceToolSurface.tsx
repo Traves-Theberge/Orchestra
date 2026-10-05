@@ -9,7 +9,7 @@ import { WorkspaceSearch } from './panels/WorkspaceSearch'
 import { WorkspaceToolsControls } from './WorkspaceToolsControls'
 import { ResizableInspector } from './ResizableInspector'
 
-export function WorkspaceToolSurface({ children, filesRequest, onAddTerminal, onRefreshTargetChange, toolsOpen, onToggleTools }: { children: ReactNode; filesRequest?: number; onAddTerminal?: () => void; onRefreshTargetChange?: (target: HTMLSpanElement | null) => void; toolsOpen?: boolean; onToggleTools?: () => void }) {
+export function WorkspaceToolSurface({ children, filesRequest, onAddTerminal, onRefreshTargetChange, toolsOpen, onToggleTools, hasActiveTools = true }: { children: ReactNode; filesRequest?: number; onAddTerminal?: () => void; onRefreshTargetChange?: (target: HTMLSpanElement | null) => void; toolsOpen?: boolean; onToggleTools?: () => void; hasActiveTools?: boolean }) {
   const [inspector, setInspector] = useState<'files' | 'search' | null>(null)
   const [lastFilesRequest, setLastFilesRequest] = useState<number | undefined>()
   const contextId = useAppStore(getActiveWorkspaceContextId)
@@ -70,7 +70,7 @@ export function WorkspaceToolSurface({ children, filesRequest, onAddTerminal, on
   }
   const toolbar = <div aria-label="Workspace tool controls" className="flex h-10 shrink-0 items-center gap-1 px-3 pt-1">
       <AppTooltip content="Files" side="bottom"><button type="button" aria-label="Toggle workspace files" aria-pressed={inspector === 'files'} onClick={() => { setInspector(current => current === 'files' ? null : 'files'); if (toolsOpen === false) onToggleTools?.() }} className="rounded p-1.5 text-muted-foreground hover:bg-muted"><Folder size={13} /></button></AppTooltip>
-      <AppTooltip content="Search files" side="bottom"><button type="button" aria-label="Toggle workspace search" aria-pressed={inspector === 'search'} onClick={() => { setInspector(current => current === 'search' ? null : 'search'); if (toolsOpen === false) onToggleTools?.() }} className="rounded p-1.5 text-muted-foreground hover:bg-muted"><Search size={13} /></button></AppTooltip>
+      {inspector && <AppTooltip content="Search files" side="bottom"><button type="button" aria-label="Toggle workspace search" aria-pressed={inspector === 'search'} onClick={() => { setInspector(current => current === 'search' ? null : 'search'); if (toolsOpen === false) onToggleTools?.() }} className="rounded p-1.5 text-muted-foreground hover:bg-muted"><Search size={13} /></button></AppTooltip>}
       {inspector && <AppTooltip content="Close file sidebar" side="bottom"><button type="button" aria-label="Close workspace file sidebar" onClick={() => setInspector(null)} className="rounded p-1 text-muted-foreground hover:bg-muted"><X size={12} /></button></AppTooltip>}
       <span className="flex-1" />
       <span ref={onRefreshTargetChange} className="flex items-center gap-1" />
@@ -81,6 +81,7 @@ export function WorkspaceToolSurface({ children, filesRequest, onAddTerminal, on
       {onToggleTools && <AppTooltip content="Hide workspace tools" side="bottom"><button type="button" onClick={onToggleTools} aria-label="Hide workspace tools" aria-pressed={toolsOpen} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent"><PanelRight size={16} /></button></AppTooltip>}
       <WorkspaceToolsControls inToolbar />
     </div>
+  const fullFilesView = inspector === 'files' && !hasActiveTools
   return <div className="flex min-h-0 min-w-0 flex-1 flex-col">
     {toolbar}
     {error && <p role="alert" className="px-3 py-1 text-xs text-destructive">{error}</p>}
@@ -99,6 +100,8 @@ export function WorkspaceToolSurface({ children, filesRequest, onAddTerminal, on
       <button type="button" role="menuitem" disabled={creating || !config?.baseUrl || !(workspace?.path || explorerRoot)} className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs hover:bg-accent focus:bg-accent focus:outline-none disabled:opacity-40" onClick={() => { void createMarkdown() }}><FileText size={14} />New markdown document</button>
       <button type="button" role="menuitem" className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs hover:bg-accent focus:bg-accent focus:outline-none" onClick={() => { dismiss(); const state = useAppStore.getState(); state.openBrowserTab(undefined, getActiveWorkspaceContextId(state)) }}><Globe size={14} />New browser tab</button>
     </div>, document.body)}
-    <ResizableInspector storageKey={`orchestra:inspector-width:v1:${encodeURIComponent(config?.baseUrl ?? '')}:${encodeURIComponent(contextId)}`} mode={inspector} inspector={inspector === 'files' ? <FileExplorer /> : <WorkspaceSearch />}>{children}</ResizableInspector>
+    <ResizableInspector storageKey={`orchestra:inspector-width:v1:${encodeURIComponent(config?.baseUrl ?? '')}:${encodeURIComponent(contextId)}`} mode={fullFilesView ? null : inspector} inspector={inspector === 'search' ? <WorkspaceSearch /> : <FileExplorer />}>
+      {fullFilesView ? <section aria-label="Workspace files view" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"><FileExplorer /></section> : children}
+    </ResizableInspector>
   </div>
 }

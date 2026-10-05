@@ -60,7 +60,8 @@ async function auditMultiWorktree(win, fixture) {
       const matches = [...document.querySelectorAll('[aria-label="Workspace tools"]')]
       return matches.find(visible)
     }
-    const fileRow = name => [...document.querySelectorAll('[aria-label="Workspace file sidebar"] [role="treeitem"]')].find(element => element.textContent.trim() === name && visible(element))
+    const fileSurface = () => [...document.querySelectorAll('[aria-label="Workspace files view"], [aria-label="Workspace file sidebar"]')].find(visible)
+    const fileRow = name => [...(fileSurface()?.querySelectorAll('[role="treeitem"]') ?? [])].find(element => element.textContent.trim() === name && visible(element))
     const editorTab = name => [...(tools()?.querySelectorAll('[data-group-id] button[title]') ?? [])].find(tab => tab.title === name && visible(tab))
     const editorText = () => [...(tools()?.querySelectorAll('[data-group-id]') ?? [])]
       .filter(group => visible(group) && group.querySelector('[data-active-tab="true"]'))
@@ -81,7 +82,7 @@ async function auditMultiWorktree(win, fixture) {
       await wait(() => fileToggle(), 'files tool surface')
       await wait(() => tools() && !tools().hidden, 'workspace tools pane visible for selected workspace')
       if (fileToggle().getAttribute('aria-pressed') !== 'true') fileToggle().click()
-      await wait(() => document.querySelector('[aria-label="Workspace file sidebar"]'), 'file tree')
+      await wait(() => fileSurface(), 'file viewer surface')
     }
     try { ${code} } catch (error) { throw new Error('Audit step #' + ${step} + ' [' + ${JSON.stringify(label)} + '] failed: ' + (error?.stack || error?.message || String(error))) }
   })()`)
@@ -285,6 +286,10 @@ async function auditMultiWorktree(win, fixture) {
   }
   const inspectorAudit = await run(`
     await files()
+    const visibleFile = fileRow('shared.ts') || fileRow('root-only.ts') || fileRow('child-only.ts')
+    if (!visibleFile) throw new Error('No fixture file is available to activate the resizable inspector')
+    visibleFile.click()
+    await wait(() => document.querySelector('[aria-label="Workspace file sidebar"]') && document.querySelector('[role="separator"][aria-label="Resize workspace files"]'), 'active file and resizable inspector')
     const handle = document.querySelector('[role="separator"][aria-label="Resize workspace files"]')
     if (!handle) throw new Error('File inspector resize control missing')
     const previous = Number(handle.getAttribute('aria-valuenow'))
@@ -327,7 +332,7 @@ async function auditMultiWorktree(win, fixture) {
   await new Promise(resolve => setTimeout(resolve, 650))
   inspectorAudit.tooltip = await run(`const target = control('Toggle workspace files'); if (!target) throw new Error('Native hover target missing'); const targetBounds = target.getBoundingClientRect(); const point = { x: Math.round(targetBounds.left + targetBounds.width / 2), y: Math.round(targetBounds.top + targetBounds.height / 2) }; const hit = document.elementFromPoint(point.x, point.y); const tip = [...document.querySelectorAll('[role="tooltip"]')].find(node => node.textContent.toLowerCase().includes('files')); if (!tip) throw new Error('Native pointer hover did not open the styled Files tooltip after its delay (target=' + JSON.stringify({ left: targetBounds.left, top: targetBounds.top, right: targetBounds.right, bottom: targetBounds.bottom, point, hit: hit?.outerHTML?.slice(0, 240), visibleMatches: [...document.querySelectorAll('[aria-label="Toggle workspace files"]')].map(node => { const r = node.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, hidden: !r.width || !r.height } }) }) + ', tooltips=' + JSON.stringify([...document.querySelectorAll('[role="tooltip"]')].map(node => node.textContent.trim())) + ')'); const bounds = tip.getBoundingClientRect(); if (bounds.left < 0 || bounds.right > innerWidth || bounds.top < 0 || bounds.bottom > innerHeight) throw new Error('Tooltip outside viewport'); return { visible: true, viewportContained: true, content: tip.textContent.trim(), target: { left: targetBounds.left, top: targetBounds.top, right: targetBounds.right, bottom: targetBounds.bottom } }`)
   win.hide()
-  await run(`
+  const filesLayoutAudit = await run(`
     if (control('Refresh workspaces for Workspace audit')) clickControl('Refresh workspaces for Workspace audit')
     else {
       clickControl('Project actions for Workspace audit')
@@ -339,10 +344,27 @@ async function auditMultiWorktree(win, fixture) {
     primaryCard.click()
     await wait(() => primaryCard.getAttribute('aria-pressed') === 'true', 'primary selected')
     await files()
+    await wait(() => document.querySelector('[aria-label="Workspace files view"]') && !document.querySelector('[aria-label="Workspace file sidebar"]'), 'full-pane files view before opening a file')
+    const filesRegion = document.querySelector('[aria-label="Workspace files view"]')
+    const fullTree = filesRegion?.querySelector('[role="tree"]')
+    if (!fullTree || fullTree.getBoundingClientRect().width < filesRegion.getBoundingClientRect().width - 24) throw new Error('Files tree does not fill the available tools pane width')
+    const fullPaneBounds = filesRegion.getBoundingClientRect()
+    const fileTreeBounds = fullTree.getBoundingClientRect()
     await wait(() => fileRow('root-only.ts') && fileRow('shared.ts'), 'root-owned files')
     if (fileRow('child-only.ts')) throw new Error('Root explorer leaked child file')
     fileRow('root-only.ts').click()
     await wait(() => editorTab('root-only.ts') && editorText().includes('ROOT_ONLY_SENTINEL'), 'root file editor')
+    await wait(() => document.querySelector('[aria-label="Workspace file sidebar"]') && document.querySelector('[role="separator"][aria-label="Resize workspace files"]'), 'resizable file inspector beside the opened editor')
+    const rootFileTab = editorTab('root-only.ts')
+    const closeRootFile = rootFileTab?.querySelector('[role="button"]')
+    if (!closeRootFile) throw new Error('Root editor tab close control is missing')
+    closeRootFile.click()
+    await wait(() => !editorTab('root-only.ts') && document.querySelector('[aria-label="Workspace files view"]') && !document.querySelector('[aria-label="Workspace file sidebar"]'), 'full-pane files view restored after closing the last file')
+    fileRow('root-only.ts').click()
+    await wait(() => editorTab('root-only.ts') && editorText().includes('ROOT_ONLY_SENTINEL') && document.querySelector('[role="separator"][aria-label="Resize workspace files"]'), 'reopened root file with resizable inspector')
+    return { fullPaneBeforeFirstOpen: true, fullPaneTreeWidth: Math.round(fileTreeBounds.width), fullPaneWidth: Math.round(fullPaneBounds.width), resizableInspectorAfterOpen: true, fullPaneRestoredAfterClose: true, inspectorRestoredAfterReopen: true }
+  `)
+  await run(`
     fileRow('shared.ts').click()
     await wait(() => editorTab('shared.ts') && editorText().includes('ROOT_SHARED_SENTINEL'), 'root shared editor')
     clickControl('Open Workspace audit workspace smoke/child')
@@ -609,7 +631,7 @@ async function auditMultiWorktree(win, fixture) {
   const retained = await api('GET', prefix + '/git/worktrees')
   if (!retained.worktrees.some(row => row.id === primary.id) || !retained.worktrees.some(row => row.id === job.workspace.id)) throw new Error('Closing a view removed a real checkout')
   if (fs.readFileSync(path.join(root, 'shared.ts'), 'utf8') !== rootShared) throw new Error('Child audit changed root contents')
-  const result = { worktreeJob: 'completed', creation: 'real_dialog_workspace_only', creationSubmissions: submission.calls, dialogDropdown: dropdownLayout, dialogLayout, childWorkspaceID: job.workspace.id, realGitMembership: true, exactSidebarSelection: true, isolatedFileTrees: true, isolatedSameNameEditorBuffers: true, editorGroupsRestored: true, rootContentsRetained: true, nativeSessions: chatResult, conversationRename: provider ? 'server_persisted_child_scope_wrong_scope_rejected_idle_no_turn' : 'skipped_no_registered_native_codex', providerTurns: 0, alignment, toolMenu, inspectorAudit, archiveAudit, primaryMenuActivatedByNativePointer: true, primaryChildMenuKeyboardAndOutsideDismissal: true, closeViewAudit: 'primary_protected_close_reopen_retains_editors_and_checkouts' }
+  const result = { worktreeJob: 'completed', creation: 'real_dialog_workspace_only', creationSubmissions: submission.calls, dialogDropdown: dropdownLayout, dialogLayout, filesLayoutAudit, childWorkspaceID: job.workspace.id, realGitMembership: true, exactSidebarSelection: true, isolatedFileTrees: true, isolatedSameNameEditorBuffers: true, editorGroupsRestored: true, rootContentsRetained: true, nativeSessions: chatResult, conversationRename: provider ? 'server_persisted_child_scope_wrong_scope_rejected_idle_no_turn' : 'skipped_no_registered_native_codex', providerTurns: 0, alignment, toolMenu, inspectorAudit, archiveAudit, primaryMenuActivatedByNativePointer: true, primaryChildMenuKeyboardAndOutsideDismissal: true, closeViewAudit: 'primary_protected_close_reopen_retains_editors_and_checkouts' }
   fs.writeFileSync(path.join(reports, 'multi-worktree-smoke-result.json'), JSON.stringify(result, null, 2))
   return result
 }
