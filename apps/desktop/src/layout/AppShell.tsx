@@ -26,7 +26,6 @@ export function AppShell({
   onSectionChange,
   bottomBar,
   errorMessage,
-  statusMessage,
   children,
   projects,
   selectedProjectID,
@@ -52,7 +51,6 @@ export function AppShell({
 
         <main className="min-w-0 flex-1 bg-background h-full flex flex-col overflow-hidden">
           {errorMessage && <div role="alert" className="shrink-0 border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-sm text-destructive">{errorMessage}</div>}
-          {!errorMessage && statusMessage && <div role="status" className="shrink-0 border-b border-border/40 px-4 py-2 text-xs text-muted-foreground">{statusMessage}</div>}
           {children}
         </main>
       </div>

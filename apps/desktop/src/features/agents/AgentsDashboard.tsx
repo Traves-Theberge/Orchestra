@@ -1,5 +1,5 @@
 // apps/desktop/src/widgets/agents/AgentsDashboard.tsx
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useAppStore } from '@core/store'
 import { AlertCircle } from 'lucide-react'
 import type { BackendConfig, Project } from '@core/api/types'
@@ -10,8 +10,6 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@ui/dialog'
 import { OverviewPanel, type ProviderSummary } from './panels/OverviewPanel'
-import { ProjectSelector } from './components/ProjectSelector'
-import { ScopeToggle } from './components/ScopeToggle'
 import { computeClaudeSummary, computeClaudeProjectSummary } from './hooks/use-overview-summary'
 import { SettingsPanel } from './panels/SettingsPanel'
 import { InstructionsPanel } from './panels/InstructionsPanel'
@@ -61,26 +59,18 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
   const setAgentCategoryCounts = useAppStore(s => s.setAgentCategoryCounts)
   const scope = useAppStore(s => s.activeAgentScope)
   const projectId = useAppStore(s => s.activeAgentProjectId)
-  // Agent Hub (overview/scope-toggle) state — separate from legacy activeAgentScope/projectId
+  const setScope = useAppStore(s => s.setActiveAgentScope)
+  // The Agents sidebar owns the scope used by both reads and panel presentation.
   const projects = useAppStore(s => s.projects)
-  const agentHubProjectId = useAppStore(s => s.agentHubProjectId)
-  const setAgentHubProjectId = useAppStore(s => s.setAgentHubProjectId)
-  const agentHubScope = useAppStore(s => s.agentHubScope)
-  const setAgentHubScope = useAppStore(s => s.setAgentHubScope)
+  const agentHubProjectId = projectId || null
+  const agentHubScope = scope
   const requestAgentHubNav = useAppStore(s => s.requestAgentHubNav)
   const agentHubPendingNav = useAppStore(s => s.agentHubPendingNav)
   const setAgentHubPendingNav = useAppStore(s => s.setAgentHubPendingNav)
   const setAgentHubDirty = useAppStore(s => s.setAgentHubDirty)
-  const selectedProjectID = useAppStore(s => s.selectedProjectID)
   const selectedProject = agentHubProjectId
     ? projects.find(p => p.id === agentHubProjectId) ?? null
     : null
-
-  const bootstrappedProjectRef = useRef(false)
-  if (!bootstrappedProjectRef.current && agentHubProjectId === null && selectedProjectID) {
-    bootstrappedProjectRef.current = true
-    setAgentHubProjectId(selectedProjectID)
-  }
 
   const isClaude = provider === 'claude'
   const is8gent = provider === '8gent'
@@ -335,22 +325,6 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
         </div>
       )}
 
-      {/* Top bar: project selector + scope toggle */}
-      <div className="flex items-center justify-end gap-2 px-3 py-1.5 border-b border-border/20 bg-card/20 shrink-0">
-        {category !== 'overview' && (
-          <ScopeToggle
-            scope={agentHubScope}
-            projectName={selectedProject?.name ?? null}
-            onChange={(s) => requestAgentHubNav(() => setAgentHubScope(s))}
-          />
-        )}
-        <ProjectSelector
-          projects={projects}
-          selectedId={agentHubProjectId}
-          onChange={(id) => requestAgentHubNav(() => setAgentHubProjectId(id))}
-        />
-      </div>
-
       <div className="flex flex-col flex-1 min-h-0">
         {category === 'mcp' && agentHubScope === 'PROJECT' && (
           <p className="px-4 py-2 text-xs text-muted-foreground border-b border-border/20">
@@ -382,7 +356,7 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                   globalSummary={overviewSummaryGlobal}
                   projectSummary={overviewSummaryProject}
                   onNavigate={(nextCategory, nextScope) => requestAgentHubNav(() => {
-                    setAgentHubScope(nextScope)
+                    setScope(nextScope, projectId)
                     setCategory(nextCategory)
                   })}
                 />

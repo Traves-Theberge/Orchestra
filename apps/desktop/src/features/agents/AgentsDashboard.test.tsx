@@ -80,6 +80,32 @@ function makeCommonState() {
 
 describe('AgentsDashboard', () => {
   beforeEach(() => resetAppStore())
+  it('uses the sidebar scope for configuration reads and removes duplicate dashboard controls', () => {
+    mockUseClaudeConfig.mockReturnValue({ ...makeCommonState(), rules: [], skills: [], subagents: [] })
+    mockUseCodexConfig.mockReturnValue({ ...makeCommonState(), config: [], instructions: [], subagents: [], skills: [], rules: [] })
+    mockUseGeminiConfig.mockReturnValue({ ...makeCommonState(), settings: [], context: [], commands: [] })
+    mockUseOpenCodeConfig.mockReturnValue({ ...makeCommonState(), config: [], agents: [], commands: [], skills: [] })
+    act(() => useAppStore.getState().setActiveAgentProvider('codex'))
+    render(<AgentsDashboard config={{ baseUrl: 'http://localhost:4010', apiToken: 'test' }} />)
+    expect(screen.queryByText('vs')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Global only' })).toBeNull()
+
+    useAppStore.setState({ projects: [{ id: 'project-1', name: 'Nautilus', root_path: '/tmp/nautilus', remote_url: '' }] })
+    act(() => {
+      // AgentsSubNav uses this same store action for its scope dropdown.
+      useAppStore.getState().setActiveAgentScope('PROJECT', 'project-1')
+    })
+    expect(screen.getByText(/specific to Nautilus/)).toBeTruthy()
+    act(() => useAppStore.getState().setActiveAgentCategory('mcp'))
+    expect(mockUseCodexConfig).toHaveBeenLastCalledWith(expect.anything(), 'PROJECT', 'project-1')
+    expect(screen.getByText(/Project MCP configuration is read-only here/)).toBeTruthy()
+    expect(screen.queryByText('Global only')).toBeNull()
+
+    act(() => useAppStore.getState().setActiveAgentScope('GLOBAL', ''))
+    expect(mockUseCodexConfig).toHaveBeenLastCalledWith(expect.anything(), 'GLOBAL', undefined)
+    expect(screen.queryByText(/Project MCP configuration is read-only here/)).toBeNull()
+  })
+
   it('routes Gemini categories to provider-specific panels', () => {
     mockUseClaudeConfig.mockReturnValue({
       ...makeCommonState(),
