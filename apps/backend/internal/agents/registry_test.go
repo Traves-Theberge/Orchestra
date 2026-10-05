@@ -3,6 +3,7 @@ package agents
 import (
 	"context"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -51,19 +52,39 @@ func TestReadOnlyPlanCommandRequiresKnownDefaultAndVerifiedProviderMode(t *testi
 		{ProviderCodex, "codex exec --dangerously-bypass-approvals-and-sandbox {{prompt}}", ""},
 	}
 	for _, tc := range cases {
+		want := tc.want
+		if tc.provider == ProviderCodex && runtime.GOOS == "windows" && want != "" {
+			want = "codex exec --skip-git-repo-check --ignore-user-config -c windows.sandbox='\"unelevated\"' -c approval_policy='\"never\"' --sandbox read-only --json {{prompt}}"
+		}
 		t.Run(string(tc.provider)+"/"+tc.command, func(t *testing.T) {
 			registry := NewRegistry(map[string]string{string(tc.provider): tc.command})
 			got, ok := registry.ReadOnlyPlanCommandFor(tc.provider)
-			if tc.want == "" {
+			if want == "" {
 				if ok || got != "" {
 					t.Fatalf("unexpected plan capability %q, %v", got, ok)
 				}
 				return
 			}
-			if !ok || got != tc.want {
-				t.Fatalf("plan command %q, %v; want %q", got, ok, tc.want)
+			if !ok || got != want {
+				t.Fatalf("plan command %q, %v; want %q", got, ok, want)
 			}
 		})
+	}
+	if runtime.GOOS == "windows" {
+		command, ok := safeStageCommand(ProviderCodex, cases[0].command)
+		if !ok {
+			t.Fatal("expected Codex read-only stage on Windows")
+		}
+		for _, required := range []string{"windows.sandbox='\"unelevated\"'", "approval_policy='\"never\"'", "--sandbox read-only"} {
+			if !strings.Contains(command, required) {
+				t.Fatalf("Windows Codex stage command %q missing %q", command, required)
+			}
+		}
+		for _, forbidden := range []string{"--dangerously-bypass-approvals-and-sandbox", "danger-full-access"} {
+			if strings.Contains(command, forbidden) {
+				t.Fatalf("Windows Codex stage command %q contains unsafe option %q", command, forbidden)
+			}
+		}
 	}
 }
 

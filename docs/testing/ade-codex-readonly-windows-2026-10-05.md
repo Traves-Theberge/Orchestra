@@ -1,0 +1,38 @@
+# Codex read-only planning on Windows
+
+## Reference review
+
+T3 Code was inspected at pinned revision [`737993303d36e10674c54b95e5bd3826682c99c7`](https://github.com/pingdotgg/t3code/tree/737993303d36e10674c54b95e5bd3826682c99c7), primarily [`ProviderAdapter.ts`](https://github.com/pingdotgg/t3code/blob/737993303d36e10674c54b95e5bd3826682c99c7/apps/server/src/orchestration-v2/ProviderAdapter.ts) and its provider-policy/session boundary. It models provider requests and identities explicitly, but this source does not provide a Windows `codex exec` sandbox-selection pattern or certify a local CLI read-only planning stage. Orchestra keeps its exact-default command allowlist and stage-specific adapter.
+
+Orca was inspected at pinned revision [`3284b4c70c901402831bb4ccc5576ea083d2e5ae`](https://github.com/stablyai/orca/tree/3284b4c70c901402831bb4ccc5576ea083d2e5ae): [`mutation-request.ts`](https://github.com/stablyai/orca/blob/3284b4c70c901402831bb4ccc5576ea083d2e5ae/src/cli/handlers/orchestration/mutation-request.ts) preserves request identity through uncertain mutation recovery, and [`journal-dispatch-observation.test.ts`](https://github.com/stablyai/orca/blob/3284b4c70c901402831bb4ccc5576ea083d2e5ae/src/main/native-chat/agent-session-journal/journal-dispatch-observation.test.ts) distinguishes pending, unknown, and accepted dispatch. Neither source contains a Windows Codex CLI sandbox-selection pattern. Orchestra applies the same explicit-scope discipline while leaving task planning under its own durable human approval gate. These source observations do not establish runtime reliability.
+
+## Orchestra adaptation
+
+The approved Codex execution command remains the exact Orchestra default containing `--dangerously-bypass-approvals-and-sandbox`; only its reviewed planning-stage derivative changes. On Windows that derivative now supplies `-c windows.sandbox='"unelevated"'` because `--ignore-user-config` removes the isolated Codex home configuration layer. It also sets `-c approval_policy='"never"'` for the noninteractive provider process and retains `--sandbox read-only`. Unix keeps the existing stage command. No dangerous sandbox or approval bypass flag is added. The adapter remains local-only, is registered as a prepared capability, and strips native/MCP tool executors for the plan turn.
+
+The Codex subprocess approval policy is separate from Orchestra's human plan approval. A completed plan leaves the task in Todo until the existing exact-context approval receipt is recorded. User/project Codex execution-policy rules remain loaded; the adapter does not use `--ignore-rules`. Codex documents rules as able to allow matching commands outside the sandbox, so a configured allow rule can narrow the guarantee that the read-only sandbox alone provides. The current user rule allows only `git status`; the harmless write probe below was denied by the Windows sandbox. Do not generalize that one probe to arbitrary rule sets.
+
+## Behavioral verification
+
+Host: Windows, Codex CLI `0.160.0`, isolated `CODEX_HOME` at `%LOCALAPPDATA%/Orchestra/audit-dev/provider-codex-live`, using its copied auth. The live commands used `--skip-git-repo-check --ignore-user-config`, explicit `windows.sandbox="unelevated"`, `approval_policy="never"`, `--sandbox read-only`, and `--ephemeral`; no token was printed and no user settings or auth were changed.
+
+- Without an explicit Windows sandbox implementation, a simple `Get-Content -LiteralPath AGENTS.md` was rejected as `blocked by policy`. Adding `--ignore-rules` alone did not fix it.
+- With the explicit `unelevated` selection and the original rules still active, Codex ran the PowerShell read and returned `# Repository Guidelines`.
+- With the final flags, Codex read the heading and attempted one `Set-Content` against a disposable marker file under `%TEMP%`. PowerShell returned `UnauthorizedAccessException` / `Access is denied` (exit code 1), and the marker remained `ORIGINAL_MARKER`; the probe removed the temporary file afterward.
+- The exact-command test `go test ./internal/agents -run TestReadOnlyPlanCommandRequiresKnownDefaultAndVerifiedProviderMode -count=1` passed on Windows. It checks Windows-specific flags and rejects dangerous sandbox bypass values; Unix retains its prior exact command.
+
+## Host setup notes
+
+The Codex triage skill at `C:\Users\trave\.agents\skills\triage\SKILL.md` was originally only `# Triage` plus a one-line description. It received YAML name/description frontmatter; its backup is `SKILL.md.backup-20261005-1630`, and `quick_validate` passed. The malformed `git-safety.rules` was separately repaired by the coordinator with the intended `git status` allow prefix retained; its backup is `git-safety.rules.backup-20261005-1645`, and `codex execpolicy check` passed. No global Codex settings or authentication files were changed by this adapter work.
+
+The subsequent normal-home turn also exposed `C:\Users\trave\.codex\agents\reviewer.toml` using the unsupported `prompt` field. The coordinator replaced only that field name with `developer_instructions`, preserving name, description and instructions, and saved `reviewer.toml.backup-20261005-1750`. TOML/schema checks passed. A fresh native read-only turn with the normal user home then read `# Repository Guidelines` with exit code zero and no malformed skill, rule or reviewer diagnostics. These three targeted local repairs are outside Git; the backups remain with the originals. Provider account settings and authentication files were not edited.
+
+## Live task verification after repair
+
+Rebuilt the committed backend plus the retry-identity and Windows stage fixes, excluding concurrent account-management changes, and relaunched the persistent audit profile with the user's normal provider context. Replanned the same exact ORCHESTRA-2 task through CLI request `3458439a-3667-413d-8588-65e3c6c8c4a5`, preserving its worktree and withholding approval. Native thread `01a10d2d-a8a1-7073-8c33-f8105d2a57d8` completed three repository inspection commands with exit code zero and returned a 2,286-character plan. The task remained Todo at `awaiting_approval`, fingerprint `0b9db93daa26ebc521603905be0a2f7c66d368359ba27eb75e3f00093ec3ac53`; runtime reported no running or retrying worker afterward. The retained task checkout remains at `c60d2ec`; the inspection does not certify newer uncommitted working-tree changes. No approve-plan, execution, commit, push or PR operation came from the task.
+
+The earlier live audit receipt remains historical evidence of the failures before this repair. This new observation establishes restored repository reads and a human hold for this host, not completion of the execution/PR pipeline.
+
+Final isolated backend validation excluded concurrent account-management edits: `go test ./internal/agents ./internal/app -count=1` passed. The Orchestra CLI skill and task-system reference now distinguish native subprocess approval policy from human plan/PR approval; skill validation passed. CLI control syntax did not change.
+
+OpenAI's [Windows sandbox documentation](https://developers.openai.com/codex/windows) documents `elevated` and `unelevated` native Windows implementations and the `[windows] sandbox` setting. Its [rules documentation](https://learn.chatgpt.com/docs/agent-configuration/rules) states that an `allow` rule runs a matching command outside the sandbox. The [approval and security documentation](https://learn.chatgpt.com/docs/agent-approvals-security) describes sandbox and approval policy as separate controls. The tested setup is evidence for this host and CLI version; organizations that prohibit `unelevated` can still reject the stage, in which case planning remains unavailable.

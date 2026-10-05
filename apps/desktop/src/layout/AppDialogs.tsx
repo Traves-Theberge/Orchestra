@@ -80,6 +80,12 @@ export function AppDialogs({
   const createTaskInitialState = useAppStore(s => s.createTaskInitialState)
   const createTaskInitialStateStr = createTaskInitialState?.state ?? 'Backlog'
   const [availableRuntimes, setAvailableRuntimes] = useState<RuntimeEntry[]>([])
+  const issueResultMatchesLookup = issueLookupResult && [
+    issueLookupResult.identifier,
+    issueLookupResult.issue_identifier,
+    issueLookupResult.id,
+    issueLookupResult.issue_id,
+  ].includes(issueLookupId)
 
   useEffect(() => {
     if (!config) return
@@ -103,9 +109,9 @@ export function AppDialogs({
             <DialogDescription>Task details</DialogDescription>
           </DialogHeader>
           <div className="flex-1 min-h-0">
-            {issueLookupPending ? skeletonFallback
-              : issueLookupError ? <div className={errClass}>{issueLookupError}</div>
-              : (issueLookupResult && typeof issueLookupResult === 'object') ? (
+            {issueResultMatchesLookup ? (
+              <>
+                {issueLookupError && <div role="alert" className={`${errClass} mb-3`}>Task refresh failed: {issueLookupError}</div>}
                 <IssueDetailView
                   result={{
                     ...issueLookupResult,
@@ -124,7 +130,10 @@ export function AppDialogs({
                   onStopSession={(p) => onStopSession(issueLookupId, p)}
                   theme={theme}
                 />
-              ) : <p className="text-center text-sm text-muted-foreground py-10">No issue data available.</p>}
+              </>
+            ) : issueLookupPending ? skeletonFallback
+              : issueLookupError ? <div className={errClass}>{issueLookupError}</div>
+              : <p className="text-center text-sm text-muted-foreground py-10">No issue data available.</p>}
           </div>
         </DialogContent>
       </Dialog>

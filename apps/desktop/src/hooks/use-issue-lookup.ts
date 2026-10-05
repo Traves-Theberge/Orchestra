@@ -60,7 +60,13 @@ export function useIssueLookup(
       if (isUnauthorizedError(err) || message.startsWith('unauthorized:')) {
         setStatusMessage('Protected host detected. Add bearer token in Settings -> Backend Configuration.')
       }
-      setIssueLookupResult(null)
+      const currentResultMatchesLookup = issueLookupResult && [
+        issueLookupResult.identifier,
+        issueLookupResult.issue_identifier,
+        issueLookupResult.id,
+        issueLookupResult.issue_id,
+      ].includes(normalized)
+      if (!currentResultMatchesLookup) setIssueLookupResult(null)
     } finally {
       setIssueLookupPending(false)
     }

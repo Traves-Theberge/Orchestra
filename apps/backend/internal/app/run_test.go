@@ -135,6 +135,10 @@ func TestLocalTwoTaskLifecycleIsBoundedAndRequiresPlanApproval(t *testing.T) {
 	registry := agents.NewRegistry(map[string]string{
 		"CODEX": "codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json {{prompt}}",
 	})
+	planCommand, ok := registry.ReadOnlyStageCommandFor(agents.ProviderCodex)
+	if !ok {
+		t.Fatal("expected configured Codex read-only planning stage")
+	}
 	fake := &fakeLifecycleRunner{}
 	registry.SetRunner(agents.ProviderCodex, fake)
 	pubsub := observability.NewPubSub()
@@ -216,7 +220,7 @@ func TestLocalTwoTaskLifecycleIsBoundedAndRequiresPlanApproval(t *testing.T) {
 			t.Fatalf("turn %d ran outside LOCAL: %s", i, request.RuntimeTarget)
 		}
 		if i < 2 {
-			if !request.PlanOnly || request.CommandOverride != "codex exec --skip-git-repo-check --ignore-user-config --sandbox read-only --json {{prompt}}" || len(request.ToolSpecs) != 0 || len(request.ResourceSpecs) != 0 {
+			if !request.PlanOnly || request.CommandOverride != planCommand || len(request.ToolSpecs) != 0 || len(request.ResourceSpecs) != 0 {
 				t.Fatalf("turn %d was not routed through the read-only planning command: %+v", i, request)
 			}
 		} else if request.PlanOnly {

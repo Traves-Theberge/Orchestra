@@ -3,6 +3,7 @@ package agents
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -266,7 +267,14 @@ func safeStageCommand(provider Provider, raw string) (string, bool) {
 	switch provider {
 	case ProviderCodex:
 		if raw == "codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json {{prompt}}" {
-			return "codex exec --skip-git-repo-check --ignore-user-config --sandbox read-only --json {{prompt}}", true
+			command := "codex exec --skip-git-repo-check --ignore-user-config --sandbox read-only --json {{prompt}}"
+			if runtime.GOOS == "windows" {
+				// ignore-user-config also omits CODEX_HOME's Windows sandbox mode.
+				// Pin the supported fallback explicitly while retaining the read-only
+				// execution policy for this unattended planning stage.
+				command = "codex exec --skip-git-repo-check --ignore-user-config -c windows.sandbox='\"unelevated\"' -c approval_policy='\"never\"' --sandbox read-only --json {{prompt}}"
+			}
+			return command, true
 		}
 	case ProviderClaude:
 		if raw == "claude -p {{prompt}} --output-format stream-json --verbose --dangerously-skip-permissions" {
