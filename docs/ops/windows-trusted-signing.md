@@ -1,19 +1,77 @@
 # Trusted Windows signing
 
-The unsigned backend is blocked by Smart App Control. The repository now has
-a manual `windows-trusted-signing` workflow that builds and signs a portable
-Windows application, its backend/CLI, and native DLL/Node libraries. It runs only
-on main, uses pinned actions and Azure OIDC, requires configuration before doing
-build work, and uploads only after signature/timestamp verification. It does not
-publish a release or claim native startup verification. No signing run has been
-completed yet: there is no configured trusted signing account.
+The selected path is a certificate provider, rather than an Azure subscription.
+The repository supports local Windows SDK SignTool signing with a CA-issued
+certificate whose hardware-backed private key is accessible through the current
+user's Personal certificate store. No certificate has been issued or purchased
+in this session; native Windows launch is still blocked pending issuance.
 
-The workflow YAML and PowerShell script parse successfully. Actual verification
-checks reject a missing executable and unsigned fixture files without emitting
-a success report. Signing, timestamp verification of a signed build and native
-application startup remain unverified until the publisher setup is complete.
+## Certificate and key storage
 
-## Account setup required from the publisher
+[SSL.com individual code signing](https://www.ssl.com/products/software-integrity/code-signing/iv/)
+is available without a registered business and displays the verified personal
+name. The current page lists $129/year plus $379 for its physical token, or a
+separate eSigner subscription for cloud signing. Confirm checkout currency,
+Canadian delivery, taxes and total before ordering. A company publisher instead
+needs organization validation. The provider requires identity verification;
+complete it directly with the provider, not through chat.
+
+Install the provider's token driver/key provider and public certificate using its
+instructions. The private key stays on the token; do not export it or commit a
+PFX, PIN, password or recovery material. Install Windows SDK SignTool separately.
+A provider cloud service needs its own supported integration; this local script
+does not claim to implement eSigner API authentication. Hardware tokens cannot be
+accessed by GitHub-hosted runners.
+
+## Build, sign and verify
+
+Run the manual `windows-certificate-build` workflow on main. It builds the desktop,
+backend and task CLI without any signing account. Its artifact explicitly includes
+`UNSIGNED` in its name and must not be distributed as a trusted release. Extract
+it locally, connect the token and sign the unpacked application:
+
+```powershell
+./scripts/sign-windows-package.ps1 `
+  -Directory '<absolute path to extracted win-unpacked>' `
+  -CertificateThumbprint '<40-character certificate thumbprint>' `
+  -SignToolPath '<absolute path to signtool.exe>' `
+  -ReportPath '<new signatures.csv path>'
+```
+
+The script validates the certificate and packaged desktop/backend/CLI layout,
+inspects all EXE/DLL/Node binaries before signing, preserves existing valid
+and timestamped vendor signatures, and rejects damaged or untrusted signatures.
+It signs unsigned files with SHA-256 and an RFC3161 timestamp, then verifies
+signatures and writes a hash/publisher report. Do not distribute a partial package
+if signing fails. Use a new report path for each run; stale reports are rejected.
+Token PIN prompts are handled by the provider's driver, not stored by this script.
+
+For a rebuilt development backend alone, use `sign-windows-backend.ps1` with the
+same certificate thumbprint and SignTool path. Rebuilding removes its signature.
+To use the signed package's backend for the existing audit profile:
+
+```powershell
+$env:ORCHESTRA_BACKEND_BIN = '<signed package>/resources/backend/win32-x64/orchestrad.exe'
+cd apps/desktop
+npm run audit:dev
+```
+
+Preserve the existing audit database and profile. Verify actual Windows startup,
+authenticated API readiness, workspace access and native chat independently after
+issuance; signatures alone do not prove these behaviors. The portable build has
+no installer. Installer and uninstaller signing need a separate verified packaging
+stage before release, and the existing release workflow is not claimed as signed.
+
+## Verification boundary
+
+PowerShell/YAML parsing and rejection of missing files, malformed certificate
+identity, unsigned artifacts and stale report paths can be checked without a key.
+A successful certificate-backed signing run, vendor preservation and Windows
+admission remain unverified until the certificate is installed. The earlier Azure
+workflow preflight failed as intended on missing configuration before authentication
+or signing; no Azure account or billable service was created.
+
+## Optional Azure alternative (not the selected path)
 
 Follow Microsoft's [Artifact Signing quickstart](https://learn.microsoft.com/en-us/azure/artifact-signing/quickstart).
 An Azure subscription, identity validation and a **PublicTrust** certificate
@@ -50,29 +108,3 @@ Configure these repository Actions variables (identifiers, not private keys):
 | `AZURE_SIGNING_ENDPOINT` | Account region endpoint from Azure |
 | `AZURE_SIGNING_ACCOUNT` | Signing account name |
 | `AZURE_SIGNING_PROFILE` | Validated PublicTrust certificate profile name |
-
-## Verification and local development
-
-Run the manual workflow on main after configuration. Download the resulting
-portable artifact and extract it. Launch the application and verify authenticated
-API readiness, workspace access and native chat independently. Signature checks
-alone do not prove that Windows admits every component.
-
-For local dev, the signed artifact's
-`resources/backend/win32-x64/orchestrad.exe` can be selected explicitly:
-
-```powershell
-$env:ORCHESTRA_BACKEND_BIN = '<absolute path to the verified signed backend>'
-cd apps/desktop
-npm run audit:dev
-```
-
-This selects the same signed backend built from main; it is not a policy bypass.
-Rebuilding changes the binary and removes its signature. Build new signed
-artifacts after backend changes. Preserve the existing audit profile and database;
-do not replace them with data shipped in a build. Locally issued certificate
-signing is also supported by `scripts/sign-windows-backend.ps1` once a trusted
-certificate and Windows SDK SignTool are available.
-
-The manual workflow currently produces a portable directory, not an installer.
-The older release workflow remains separate and must not be described as signed.

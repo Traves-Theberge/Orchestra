@@ -3,6 +3,7 @@ param(
     [Parameter(Mandatory = $true)][string]$ReportPath
 )
 $ErrorActionPreference = 'Stop'
+if (Test-Path -LiteralPath $ReportPath) { throw 'Choose a new ReportPath; an existing verification report must not be reused.' }
 $root = (Resolve-Path -LiteralPath $Directory).Path
 $package = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../apps/desktop/package.json') -Raw | ConvertFrom-Json
 $application = "$($package.build.productName).exe"

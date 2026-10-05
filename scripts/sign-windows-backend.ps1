@@ -8,6 +8,7 @@ $ErrorActionPreference = 'Stop'
 $binary = (Resolve-Path -LiteralPath $BinaryPath).Path
 if ([IO.Path]::GetExtension($binary) -ne '.exe') { throw 'An explicit Windows executable is required.' }
 $thumbprint = $CertificateThumbprint.Replace(' ', '')
+if ($thumbprint -notmatch '^[0-9a-fA-F]{40}$') { throw 'A 40-character certificate thumbprint is required.' }
 $certificate = Get-Item -LiteralPath "Cert:\CurrentUser\My\$thumbprint"
 if (!$certificate.HasPrivateKey) { throw 'The selected signing certificate has no accessible private key.' }
 if ($certificate.NotAfter -le (Get-Date) -or $certificate.NotBefore -gt (Get-Date)) { throw 'The selected certificate is not currently valid.' }
@@ -25,5 +26,6 @@ if ($LASTEXITCODE -ne 0) { throw "SignTool signing failed ($LASTEXITCODE)." }
 if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed ($LASTEXITCODE)." }
 $signature = Get-AuthenticodeSignature -LiteralPath $binary
 if ($signature.Status -ne 'Valid') { throw "Signature verification returned $($signature.Status)." }
+if (!$signature.TimeStamperCertificate) { throw 'The signature has no verified timestamp.' }
 Write-Output "Signed and verified: $binary"
 Write-Output 'Rebuilds replace this signature. Verify actual application startup separately.'

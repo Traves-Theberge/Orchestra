@@ -1,0 +1,47 @@
+﻿name: windows-certificate-build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-for-local-signing:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: ./.github/actions/setup-node-cached
+        with:
+          cache-dependency-path: apps/desktop/package-lock.json
+      - uses: ./.github/actions/setup-go-cached
+        with:
+          go-mod-path: apps/backend/go.mod
+          go-sum-path: apps/backend/go.sum
+      - run: npm ci
+        working-directory: apps/desktop
+      - run: npm audit --audit-level=low
+        working-directory: apps/desktop
+      - run: npm run typecheck
+        working-directory: apps/desktop
+      - name: Build native backend and task CLI
+        shell: pwsh
+        working-directory: apps/backend
+        run: |
+          New-Item -ItemType Directory -Force ../desktop/resources/backend/win32-x64 | Out-Null
+          go build -o ../desktop/resources/backend/win32-x64/orchestrad.exe ./cmd/orchestrad
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go build -o ../desktop/resources/backend/win32-x64/orchestra.exe ./cmd/orchestra
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Package portable Windows application
+        run: npm run dist:dir
+        working-directory: apps/desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Upload unsigned build for certificate-backed local signing
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: orchestra-windows-UNSIGNED-${{ github.sha }}
+          path: apps/desktop/release/win-unpacked/**
+          if-no-files-found: error

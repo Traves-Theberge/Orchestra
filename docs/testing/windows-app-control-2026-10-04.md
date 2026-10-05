@@ -15,6 +15,29 @@ Creating a self-signed certificate does not meet that trust requirement.
 
 ## Prepared signing path
 
+The user selected a certificate provider. The complete portable application now
+has `scripts/sign-windows-package.ps1` and a manual `windows-certificate-build`
+workflow producing explicitly unsigned artifacts for local token-backed signing.
+See [provider setup and commands](../ops/windows-trusted-signing.md). Azure remains
+an optional alternative; its attempted run stopped at missing-variable preflight.
+
+### Reference receipt
+
+Inspected T3 Code `737993303d36e10674c54b95e5bd3826682c99c7`,
+`.github/workflows/release-desktop.yml`: Windows signing preparation is conditional
+on configured publisher/service credentials; absent configuration skips it. Orca
+`3284b4c70c901402831bb4ccc5576ea083d2e5ae`,
+`.github/workflows/windows-signing-rehearsal.yml`: manually dispatched inner-binary
+signing precedes NSIS installer signing and excludes already valid vendor-signed
+PE files. This is source inspection, not runtime evidence for either reference.
+
+Orchestra adopts separate build/sign/verify boundaries and vendor preservation.
+It deliberately uses a local certificate-backed key for the selected provider,
+requires timestamps on preserved files, rejects invalid existing signatures, and
+labels unsigned artifacts explicitly. Unlike T3's optional signing preparation,
+the trusted-output path fails without signing configuration or verification.
+Installer/uninstaller coverage is deferred rather than claimed complete.
+
 Obtain a code-signing certificate from a trusted provider with an accessible
 private key in the current user's Personal certificate store, and install the
 Windows SDK SignTool. Then, after building the backend:
@@ -33,6 +56,13 @@ API readiness and the actual desktop UI. Signature verification alone does not
 prove that Windows admits every component.
 
 ## Current verification boundary
+
+Certificate-provider adaptation checks: all three signing/verification scripts
+parse; both workflow YAML files parse. Actual local negative runs reject malformed
+thumbprints and unsigned fixture packages without creating a report, and both
+package signing and verification reject an existing report before proceeding.
+No fixture binary was executed. Successful signing, timestamp verification and
+vendor-signature preservation still need the actual provider key.
 
 Native Windows launch is **not fixed** without a trusted signing setup. No
 policy was disabled, altered or bypassed. Backend tests and vulnerability scans
