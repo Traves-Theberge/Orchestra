@@ -484,6 +484,7 @@ function SubNavHeader({ label, onBack }: { label: string; onBack: () => void }) 
     <div className="flex items-center gap-1.5 px-2 pt-2 pb-1.5 shrink-0 border-b border-border/20 mb-1">
       <button
         type="button"
+        data-testid="sidebar-back"
         onClick={onBack}
         className="flex items-center gap-1.5 h-8 px-2 rounded-lg text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.06] transition-colors w-full"
       >
@@ -618,6 +619,8 @@ function ConsoleSubNav({ onBack }: { onBack: () => void }) {
       <div className="flex items-center gap-1 px-2 pt-2 pb-1.5 shrink-0 border-b border-border/20">
         <button
           type="button"
+          data-testid="sidebar-back"
+          aria-label="Back to navigation"
           onClick={onBack}
           className="flex items-center gap-1.5 h-8 px-2 rounded-lg text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.06] transition-colors"
         >

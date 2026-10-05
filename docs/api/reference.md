@@ -382,9 +382,9 @@ Applies a partial update. Fields not present in the body are unchanged.
 | Backlog | Todo | Requires `title`, `description`, `assignee_id`, `project_id` all non-empty |
 | Todo | In Progress | Free |
 | Todo | Backlog | Free |
-| In Progress | Review | Free; triggers auto-commit |
+| In Progress | Review | Free; retains Git changes and worktree |
 | In Progress | Backlog | Free |
-| Review | Done | Free; triggers auto-commit + worktree cleanup |
+| Review | Done | Free; retains Git changes, branch and worktree |
 | Review | Todo | Requires `feedback` in body |
 | Review | In Progress | Requires `feedback` in body |
 

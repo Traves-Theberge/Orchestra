@@ -280,6 +280,17 @@ describe('App smoke render', () => {
     vi.unstubAllGlobals()
   })
 
+  it('opens primary navigation from a fresh Console profile', async () => {
+    useAppStore.setState({ activeSection: 'CONSOLE' })
+    setupDesktopBridge()
+    setupFetch(defaultSnapshot(1))
+    render(<App />)
+
+    fireEvent.click(await screen.findByTestId('sidebar-back'))
+    fireEvent.click(await screen.findByTestId('sidebar-nav-ISSUES'))
+    await waitFor(() => expect(screen.getAllByText(/In Progress/i).length).toBeGreaterThan(0))
+  })
+
   it('renders task board on launch', async () => {
     setupDesktopBridge()
     setupFetch(defaultSnapshot(1))
