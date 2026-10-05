@@ -5,7 +5,7 @@ const count = (value: unknown) => typeof value === 'number' && Number.isFinite(v
 
 export function ChatUsage({ events }: { events: WorkspaceChatEvent[] }) {
   const usage = chatUsageObservation(events)
-  if (!usage.event) return <span>Usage not observed for this turn</span>
+  if (!usage.event) return null
   return <details className="max-w-full text-[10px] text-muted-foreground">
     <summary className="cursor-pointer">Provider thread: {count(usage.total.totalTokens)} tokens</summary>
     <div className="mt-1 space-y-1">

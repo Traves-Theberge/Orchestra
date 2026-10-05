@@ -58,7 +58,7 @@ func (r *Registry) RunTurn(ctx context.Context, provider Provider, request TurnR
 	if !ok {
 		return TurnResult{}, fmt.Errorf("provider not configured: %s", provider)
 	}
-	if err := validateTurnOptions(provider, runner, transport, request); err != nil {
+	if err := validateTurnOptions(ctx, provider, runner, transport, request); err != nil {
 		return TurnResult{}, err
 	}
 	if request.RuntimeTarget != "" && request.RuntimeTarget != RuntimeLocal {
@@ -82,17 +82,36 @@ func (r *Registry) ValidateTurnOptions(provider Provider, request TurnRequest) e
 	if !ok {
 		return fmt.Errorf("provider not configured: %s", provider)
 	}
-	return validateTurnOptions(provider, runner, transport, request)
+	return validateTurnOptions(context.Background(), provider, runner, transport, request)
 }
 
-func validateTurnOptions(provider Provider, runner Runner, transport RuntimeTransport, request TurnRequest) error {
+func validateTurnOptions(ctx context.Context, provider Provider, runner Runner, transport RuntimeTransport, request TurnRequest) error {
 	if runner == nil {
 		return fmt.Errorf("provider runner missing: %s", provider)
 	}
+	remote := request.RuntimeTarget != "" && request.RuntimeTarget != RuntimeLocal
 	if request.RequestedMaxTurns != nil {
 		return fmt.Errorf("requested_max_turns is not supported: task turn-budget semantics are not implemented")
 	}
-	remote := request.RuntimeTarget != "" && request.RuntimeTarget != RuntimeLocal
+	if request.RequestedAgentID == "" {
+		if request.RequestedAgentScope != "" || request.RequestedAgentContentHash != "" || request.RequestedAgentFormat != "" {
+			return fmt.Errorf("agent selection metadata requires a requested agent id")
+		}
+	} else {
+		if request.RequestedAgentScope != "project" && request.RequestedAgentScope != "global" {
+			return fmt.Errorf("requested agent scope must be project or global")
+		}
+		if remote {
+			return fmt.Errorf("requested agent selection is not supported by runtime target %s", request.RuntimeTarget)
+		}
+		validator, supported := runner.(AgentSelectionValidator)
+		if !supported {
+			return fmt.Errorf("requested agent selection is not supported by provider %s", provider)
+		}
+		if err := validator.ValidateAgentSelection(ctx, request); err != nil {
+			return fmt.Errorf("requested agent selection rejected by provider %s: %w", provider, err)
+		}
+	}
 	if remote && transport == nil {
 		return fmt.Errorf("runtime target not configured: %s", request.RuntimeTarget)
 	}

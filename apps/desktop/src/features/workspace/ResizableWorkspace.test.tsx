@@ -1,4 +1,6 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { type ReactElement } from 'react'
+import { AppTooltipProvider } from '@ui/tooltip-wrapper'
+import { cleanup, fireEvent, render as renderBase, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { useEffect, useState } from 'react'
 import { ResizableWorkspace } from './ResizableWorkspace'
@@ -75,3 +77,7 @@ it('leaves maximize mode when switching workspace or closing tools', () => {
   view.rerender(<ResizableWorkspace {...props} tools={<WorkspaceToolsControls />} storageKey="workspace-b" />)
   expect(screen.getByRole('separator')).toBeInTheDocument()
 })
+
+const render = (ui: ReactElement) => renderBase(ui, { wrapper: AppTooltipProvider })
+
+beforeEach(() => vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} }))

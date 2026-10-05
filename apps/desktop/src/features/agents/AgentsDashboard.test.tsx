@@ -7,6 +7,7 @@ const mockUseClaudeConfig = vi.fn()
 const mockUseCodexConfig = vi.fn()
 const mockUseGeminiConfig = vi.fn()
 const mockUseOpenCodeConfig = vi.fn()
+vi.mock('./panels/AgentResourcesPanel', () => ({ AgentResourcesPanel: ({ harness, scope, kind }: { harness: string; scope: string; kind: string }) => <div>{harness} {scope} {kind} resources</div> }))
 
 vi.mock('./hooks/use-claude-config', () => ({
   useClaudeConfig: (...args: unknown[]) => mockUseClaudeConfig(...args),
@@ -244,13 +245,13 @@ describe('AgentsDashboard', () => {
     expect(screen.getByText('OpenCode Instructions Panel')).toBeTruthy()
 
     act(() => useAppStore.getState().setActiveAgentCategory('agents'))
-    expect(screen.getByText('OpenCode Agents Panel')).toBeTruthy()
+    expect(screen.getByText('opencode global agent_definition resources')).toBeTruthy()
 
     act(() => useAppStore.getState().setActiveAgentCategory('commands'))
     expect(screen.getByText('OpenCode Commands Panel')).toBeTruthy()
 
     act(() => useAppStore.getState().setActiveAgentCategory('skills'))
-    expect(screen.getByText('OpenCode Skills Panel')).toBeTruthy()
+    expect(screen.getByText('opencode global skill resources')).toBeTruthy()
 
     act(() => useAppStore.getState().setActiveAgentCategory('permissions'))
     expect(screen.getByText('OpenCode Permissions Panel')).toBeTruthy()

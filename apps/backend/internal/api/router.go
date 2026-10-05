@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/orchestra/orchestra/apps/backend/internal/agentcatalog"
 	"github.com/orchestra/orchestra/apps/backend/internal/config"
 	"github.com/orchestra/orchestra/apps/backend/internal/control"
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
@@ -29,6 +30,7 @@ import (
 	trackerregistry "github.com/orchestra/orchestra/apps/backend/internal/tracker/registry"
 	"github.com/orchestra/orchestra/apps/backend/internal/usage"
 	"github.com/orchestra/orchestra/apps/backend/internal/workspacechat"
+	"github.com/orchestra/orchestra/apps/backend/internal/workspacelifecycle"
 	"github.com/orchestra/orchestra/apps/backend/internal/worktreejobs"
 	"github.com/rs/zerolog"
 )
@@ -52,6 +54,8 @@ type Server struct {
 	workspaceChat       *workspacechat.Service
 	orchestratorControl *control.Service
 	worktreeJobs        *worktreejobs.Service
+	worktreeRemovals    *workspacelifecycle.Service
+	agentCatalog        *agentcatalog.Service
 }
 
 // SetStudioTemplateStore wires a template store onto the server for the
@@ -107,10 +111,25 @@ func NewRouterWithPubSub(
 	if len(chat) > 0 {
 		server.workspaceChat = chat[0]
 	}
+	if warehouseDB != nil {
+		catalog, err := agentcatalog.New(warehouseDB, cfg.ProjectRoots, cfg.WorkspaceRoot, cfg.AgentCommands)
+		if err == nil {
+			server.agentCatalog = catalog
+			if server.workspaceChat != nil {
+				server.workspaceChat.ConfigureAgentCatalog(catalog)
+			}
+		} else {
+			logger.Warn().Err(err).Msg("agent definition catalog unavailable")
+		}
+	}
 	if server.workspaceChat != nil && warehouseDB != nil {
 		controlService, err := control.New(warehouseDB, orchestratorService, registry, cfg.ProjectRoots)
 		if err == nil {
-			err = server.workspaceChat.ConfigureOrchestrator(filepath.Join(cfg.WorkspaceRoot, ".orchestra", "orchestrator"), control.ToolSpecs(), controlService.Execute)
+			if server.agentCatalog != nil {
+				controlService.ConfigureResourceExecutor(server.agentCatalog.Execute)
+			}
+			specs := append(control.ToolSpecs(), control.ResourceToolSpecs()...)
+			err = server.workspaceChat.ConfigureOrchestrator(filepath.Join(cfg.WorkspaceRoot, ".orchestra", "orchestrator"), specs, controlService.Execute)
 		}
 		if err == nil {
 			server.orchestratorControl = controlService
@@ -119,6 +138,12 @@ func NewRouterWithPubSub(
 		}
 	}
 	if warehouseDB != nil {
+		removals, err := workspacelifecycle.New(warehouseDB, cfg.ProjectRoots)
+		if err == nil {
+			server.worktreeRemovals = removals
+		} else {
+			logger.Warn().Err(err).Msg("workspace removal controls unavailable")
+		}
 		jobs, err := worktreejobs.New(warehouseDB, cfg.WorktreeRoot, cfg.ProjectRoots, func(ctx context.Context, projectID, taskID string) error {
 			if server.orchestratorControl == nil {
 				return errors.New("exact existing-task linking is unavailable")
@@ -305,6 +330,8 @@ func NewRouterWithPubSub(
 	protected.Post("/api/v1/projects/{project_id}/refresh", server.RefreshProject)
 	protected.Get("/api/v1/projects/{project_id}", server.GetProject)
 	protected.Get("/api/v1/projects/{project_id}/git/worktrees", server.GetProjectWorktrees)
+	protected.Delete("/api/v1/projects/{project_id}/git/worktrees/{workspace_id}", server.DeleteProjectWorktree)
+	protected.Get("/api/v1/projects/{project_id}/worktree-removals/{request_id}", server.GetProjectWorktreeRemoval)
 	protected.Post("/api/v1/projects/{project_id}/worktree-jobs", server.PostWorktreeJob)
 	protected.Get("/api/v1/projects/{project_id}/worktree-jobs/{request_id}", server.GetWorktreeJob)
 	protected.Delete("/api/v1/projects/{project_id}", server.DeleteProject)
@@ -406,11 +433,21 @@ func NewRouterWithPubSub(
 	protected.Post("/api/v1/orchestrator/chat/sessions/{session_id}/stop", orchestratorChatScope(server.PostWorkspaceChatStop))
 	protected.Post("/api/v1/orchestrator/chat/sessions/{session_id}/requests/{request_id}/reply", orchestratorChatScope(server.PostWorkspaceChatReply))
 	protected.Post("/api/v1/orchestrator/control", server.PostOrchestratorControl)
+	protected.Get("/api/v1/projects/{project_id}/agent-catalog", server.GetAgentCatalog)
+	protected.Get("/api/v1/projects/{project_id}/agent-catalog/resource", server.GetAgentCatalogResource)
+	protected.Get("/api/v1/projects/{project_id}/agent-catalog/receipts/{request_id}", server.GetAgentCatalogReceipt)
+	protected.Post("/api/v1/projects/{project_id}/agent-catalog/resource", server.PostAgentCatalogResource)
+	protected.Put("/api/v1/projects/{project_id}/agent-catalog/resource", server.PutAgentCatalogResource)
+	protected.Delete("/api/v1/projects/{project_id}/agent-catalog/resource", server.DeleteAgentCatalogResource)
 	protected.Get("/api/v1/projects/{project_id}/chat/providers/{provider}/models", server.GetWorkspaceChatModels)
 	protected.Get("/api/v1/projects/{project_id}/chat/sessions", server.GetWorkspaceChatSessions)
+	protected.Get("/api/v1/projects/{project_id}/chat/archives", server.GetWorkspaceChatArchives)
 	protected.Post("/api/v1/projects/{project_id}/chat/sessions", server.PostWorkspaceChatSession)
 	protected.Get("/api/v1/projects/{project_id}/chat/sessions/{session_id}", server.GetWorkspaceChatSession)
 	protected.Patch("/api/v1/projects/{project_id}/chat/sessions/{session_id}/title", server.PatchWorkspaceChatTitle)
+	protected.Post("/api/v1/projects/{project_id}/chat/sessions/{session_id}/archive", server.PostWorkspaceChatArchive)
+	protected.Post("/api/v1/projects/{project_id}/chat/sessions/{session_id}/unarchive", server.PostWorkspaceChatUnarchive)
+	protected.Get("/api/v1/projects/{project_id}/chat/sessions/{session_id}/history", server.GetWorkspaceChatArchiveHistory)
 	protected.Post("/api/v1/projects/{project_id}/chat/sessions/{session_id}/messages", server.PostWorkspaceChatMessage)
 	protected.Post("/api/v1/projects/{project_id}/chat/sessions/{session_id}/stop", server.PostWorkspaceChatStop)
 	protected.Post("/api/v1/projects/{project_id}/chat/sessions/{session_id}/requests/{request_id}/reply", server.PostWorkspaceChatReply)

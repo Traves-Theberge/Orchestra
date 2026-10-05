@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/orchestra/orchestra/apps/backend/internal/agentcatalog"
 	"github.com/orchestra/orchestra/apps/backend/internal/agents"
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
 	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
@@ -38,11 +39,15 @@ var ErrConflict = errors.New("conversation identity is already bound to another 
 var ErrTitleConflict = errors.New("conversation title changed; refresh before renaming")
 
 type CreateRequest struct {
-	Provider                 string `json:"provider"`
-	Title                    string `json:"title"`
-	ClientSessionID          string `json:"client_session_id,omitempty"`
-	RequestedModel           string `json:"requested_model,omitempty"`
-	RequestedReasoningEffort string `json:"requested_reasoning_effort,omitempty"`
+	Provider                  string `json:"provider"`
+	Title                     string `json:"title"`
+	ClientSessionID           string `json:"client_session_id,omitempty"`
+	RequestedModel            string `json:"requested_model,omitempty"`
+	RequestedReasoningEffort  string `json:"requested_reasoning_effort,omitempty"`
+	RequestedAgentID          string `json:"agent_id,omitempty"`
+	RequestedAgentScope       string `json:"agent_scope,omitempty"`
+	RequestedAgentContentHash string `json:"agent_content_hash,omitempty"`
+	RequestedAgentFormat      string `json:"agent_format,omitempty"`
 }
 
 type Registry interface {
@@ -59,33 +64,48 @@ type Provider struct {
 	ProviderResume   bool   `json:"provider_resume"`
 }
 type Session struct {
-	ID                       string `json:"id"`
-	ProjectID                string `json:"project_id"`
-	WorkspaceID              string `json:"workspace_id,omitempty"`
-	WorkspacePath            string `json:"workspace_path,omitempty"`
-	Provider                 string `json:"provider"`
-	Title                    string `json:"title"`
-	Status                   string `json:"status"`
-	ConversationMode         string `json:"conversation_mode"`
-	CreatedAt                string `json:"created_at"`
-	UpdatedAt                string `json:"updated_at"`
-	Error                    string `json:"error,omitempty"`
-	ProviderThreadID         string `json:"provider_thread_id,omitempty"`
-	RequestedModel           string `json:"requested_model,omitempty"`
-	EffectiveModel           string `json:"effective_model,omitempty"`
-	ApprovalPolicy           string `json:"approval_policy,omitempty"`
-	SandboxMode              string `json:"sandbox_mode,omitempty"`
-	RequestedReasoningEffort string `json:"requested_reasoning_effort,omitempty"`
-	EffectiveReasoningEffort string `json:"effective_reasoning_effort,omitempty"`
+	ID                        string `json:"id"`
+	ProjectID                 string `json:"project_id"`
+	WorkspaceID               string `json:"workspace_id,omitempty"`
+	WorkspacePath             string `json:"workspace_path,omitempty"`
+	Provider                  string `json:"provider"`
+	Title                     string `json:"title"`
+	Status                    string `json:"status"`
+	ConversationMode          string `json:"conversation_mode"`
+	CreatedAt                 string `json:"created_at"`
+	UpdatedAt                 string `json:"updated_at"`
+	Error                     string `json:"error,omitempty"`
+	ProviderThreadID          string `json:"provider_thread_id,omitempty"`
+	RequestedModel            string `json:"requested_model,omitempty"`
+	EffectiveModel            string `json:"effective_model,omitempty"`
+	ApprovalPolicy            string `json:"approval_policy,omitempty"`
+	SandboxMode               string `json:"sandbox_mode,omitempty"`
+	RequestedReasoningEffort  string `json:"requested_reasoning_effort,omitempty"`
+	EffectiveReasoningEffort  string `json:"effective_reasoning_effort,omitempty"`
+	Archived                  bool   `json:"archived"`
+	ArchivedAt                string `json:"archived_at,omitempty"`
+	LifecycleVersion          int64  `json:"lifecycle_version"`
+	RequestedAgentID          string `json:"requested_agent_id,omitempty"`
+	RequestedAgentScope       string `json:"requested_agent_scope,omitempty"`
+	RequestedAgentContentHash string `json:"requested_agent_content_hash,omitempty"`
+	RequestedAgentFormat      string `json:"requested_agent_format,omitempty"`
+	EffectiveAgentID          string `json:"effective_agent_id,omitempty"`
+	AgentObservation          string `json:"agent_observation,omitempty"`
 }
 type Message struct {
-	ID              string `json:"id"`
-	SessionID       string `json:"session_id"`
-	Role            string `json:"role"`
-	Text            string `json:"text"`
-	Status          string `json:"status"`
-	ClientMessageID string `json:"client_message_id,omitempty"`
-	CreatedAt       string `json:"created_at"`
+	ID                        string `json:"id"`
+	SessionID                 string `json:"session_id"`
+	Role                      string `json:"role"`
+	Text                      string `json:"text"`
+	Status                    string `json:"status"`
+	ClientMessageID           string `json:"client_message_id,omitempty"`
+	CreatedAt                 string `json:"created_at"`
+	RequestedAgentID          string `json:"requested_agent_id,omitempty"`
+	RequestedAgentScope       string `json:"requested_agent_scope,omitempty"`
+	RequestedAgentContentHash string `json:"requested_agent_content_hash,omitempty"`
+	RequestedAgentFormat      string `json:"requested_agent_format,omitempty"`
+	EffectiveAgentID          string `json:"effective_agent_id,omitempty"`
+	AgentObservation          string `json:"agent_observation,omitempty"`
 }
 type Detail struct {
 	Session  Session          `json:"session"`
@@ -95,11 +115,15 @@ type Detail struct {
 	Cursor   int64            `json:"cursor"`
 }
 type SendRequest struct {
-	ClientMessageID          string `json:"client_message_id"`
-	Text                     string `json:"text"`
-	RequestedModel           string `json:"requested_model,omitempty"`
-	RequestedMaxTurns        *int   `json:"requested_max_turns,omitempty"`
-	RequestedReasoningEffort string `json:"requested_reasoning_effort,omitempty"`
+	ClientMessageID           string `json:"client_message_id"`
+	Text                      string `json:"text"`
+	RequestedModel            string `json:"requested_model,omitempty"`
+	RequestedMaxTurns         *int   `json:"requested_max_turns,omitempty"`
+	RequestedReasoningEffort  string `json:"requested_reasoning_effort,omitempty"`
+	RequestedAgentID          string `json:"agent_id,omitempty"`
+	RequestedAgentScope       string `json:"agent_scope,omitempty"`
+	RequestedAgentContentHash string `json:"agent_content_hash,omitempty"`
+	RequestedAgentFormat      string `json:"agent_format,omitempty"`
 }
 type Accepted struct {
 	Session Session `json:"session"`
@@ -119,6 +143,7 @@ type Service struct {
 	orchestratorRoot     string
 	orchestratorTools    []map[string]any
 	orchestratorExecutor agents.ToolExecutor
+	agentCatalog         *agentcatalog.Service
 }
 
 // New recovers incomplete deliveries as unknown; it never resubmits them.
@@ -136,7 +161,10 @@ func New(database *db.DB, registry Registry, roots []string) (*Service, error) {
 	if _, err = database.Exec(`CREATE TABLE IF NOT EXISTS workspace_chat_workspaces(session_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, cwd TEXT NOT NULL); CREATE INDEX IF NOT EXISTS workspace_chat_workspace_scope ON workspace_chat_workspaces(workspace_id);`); err != nil {
 		return nil, err
 	}
-	if _, err = database.Exec(`CREATE TABLE IF NOT EXISTS workspace_chat_creation_options(session_id TEXT PRIMARY KEY, requested_model TEXT NOT NULL, effort TEXT NOT NULL); CREATE TABLE IF NOT EXISTS workspace_chat_submission_inputs(message_id TEXT PRIMARY KEY, requested_model TEXT NOT NULL, effort TEXT NOT NULL);`); err != nil {
+	if _, err = database.Exec(`CREATE TABLE IF NOT EXISTS workspace_chat_creation_options(session_id TEXT PRIMARY KEY, requested_model TEXT NOT NULL, effort TEXT NOT NULL); CREATE TABLE IF NOT EXISTS workspace_chat_submission_inputs(message_id TEXT PRIMARY KEY, requested_model TEXT NOT NULL, effort TEXT NOT NULL); CREATE TABLE IF NOT EXISTS workspace_chat_agent_selection(session_id TEXT PRIMARY KEY, requested_agent_id TEXT NOT NULL DEFAULT '', scope TEXT NOT NULL DEFAULT '', content_hash TEXT NOT NULL DEFAULT '', format TEXT NOT NULL DEFAULT '', effective_agent_id TEXT NOT NULL DEFAULT '', observation TEXT NOT NULL DEFAULT ''); CREATE TABLE IF NOT EXISTS workspace_chat_submission_agents(message_id TEXT PRIMARY KEY, requested_agent_id TEXT NOT NULL DEFAULT '', scope TEXT NOT NULL DEFAULT '', content_hash TEXT NOT NULL DEFAULT '', format TEXT NOT NULL DEFAULT '');`); err != nil {
+		return nil, err
+	}
+	if _, err = database.Exec(`CREATE TABLE IF NOT EXISTS workspace_chat_lifecycle(session_id TEXT PRIMARY KEY, archived_at TEXT NOT NULL DEFAULT '', version INTEGER NOT NULL DEFAULT 0);`); err != nil {
 		return nil, err
 	}
 	tx, err := database.Begin()
@@ -154,6 +182,12 @@ func New(database *db.DB, registry Registry, roots []string) (*Service, error) {
 		return nil, err
 	}
 	return &Service{db: database, registry: registry, roots: append([]string(nil), roots...), active: map[string]context.CancelFunc{}, native: map[string]agents.NativeSession{}, nativePrefixes: map[string]string{}}, nil
+}
+
+// ConfigureAgentCatalog installs the single scoped catalog used to validate
+// requested primary-agent identities before session or message acceptance.
+func (s *Service) ConfigureAgentCatalog(catalog *agentcatalog.Service) {
+	s.agentCatalog = catalog
 }
 func stamp() string { return time.Now().UTC().Format(time.RFC3339Nano) }
 func (s *Service) registeredRoot(ctx context.Context, projectID string) (string, error) {
@@ -274,6 +308,9 @@ func (s *Service) createWithRequest(ctx context.Context, pid string, req CreateR
 			if err = s.decorate(ctx, &existing); err != nil {
 				return Session{}, err
 			}
+			if err = decorateLifecycle(ctx, s.db, &existing); err != nil {
+				return Session{}, err
+			}
 			return existing, nil
 		}
 		if !errors.Is(err, ErrNotFound) {
@@ -298,6 +335,13 @@ func (s *Service) createWithRequest(ctx context.Context, pid string, req CreateR
 		identity = uuid.NewString()
 	}
 	sess := Session{ID: identity, ProjectID: pid, WorkspaceID: workspaceID, WorkspacePath: cwd, Provider: string(p), Title: title, Status: "idle", ConversationMode: Mode, CreatedAt: now, UpdatedAt: now}
+	sess.RequestedAgentID = req.RequestedAgentID
+	sess.RequestedAgentScope = req.RequestedAgentScope
+	sess.RequestedAgentContentHash = req.RequestedAgentContentHash
+	sess.RequestedAgentFormat = req.RequestedAgentFormat
+	if req.RequestedAgentID != "" {
+		sess.AgentObservation = "requested_unobserved"
+	}
 	if s.supportsNative(p) {
 		sess.ConversationMode = "native_session"
 	}
@@ -306,6 +350,12 @@ func (s *Service) createWithRequest(ctx context.Context, pid string, req CreateR
 		return Session{}, err
 	}
 	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO workspace_chat_lifecycle(session_id) VALUES(?)`, sess.ID); err != nil {
+		return Session{}, err
+	}
+	if err = rejectPendingRemoval(ctx, tx, pid, workspaceID, cwd); err != nil {
+		return Session{}, err
+	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_sessions(id,project_id,provider,title,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)`, sess.ID, pid, sess.Provider, title, sess.Status, now, now); err != nil {
 		return Session{}, err
 	}
@@ -316,6 +366,9 @@ func (s *Service) createWithRequest(ctx context.Context, pid string, req CreateR
 		return Session{}, err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_creation_options(session_id,requested_model,effort) VALUES(?,?,?)`, sess.ID, req.RequestedModel, req.RequestedReasoningEffort); err != nil {
+		return Session{}, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_agent_selection(session_id,requested_agent_id,scope,content_hash,format,effective_agent_id,observation) VALUES(?,?,?,?,?,'',?)`, sess.ID, req.RequestedAgentID, req.RequestedAgentScope, req.RequestedAgentContentHash, req.RequestedAgentFormat, sess.AgentObservation); err != nil {
 		return Session{}, err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_native(session_id,requested_model) VALUES(?,?)`, sess.ID, req.RequestedModel); err != nil {
@@ -340,11 +393,22 @@ func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 const sessionFields = "id,project_id,provider,title,status,created_at,updated_at,error"
 
 func (s *Service) List(ctx context.Context, pid string) ([]Session, error) {
+	return s.ListWithArchived(ctx, pid, false)
+}
+
+// ListWithArchived returns sessions bound to the selected live checkout. The
+// normal chat list hides archived conversations; explicit history surfaces opt in.
+func (s *Service) ListWithArchived(ctx context.Context, pid string, includeArchived bool) ([]Session, error) {
 	workspaceID, _, primary, err := s.scope(ctx, pid)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT `+sessionFields+` FROM workspace_chat_sessions WHERE project_id=? AND (id IN (SELECT session_id FROM workspace_chat_workspaces WHERE workspace_id=?) OR (? AND id NOT IN (SELECT session_id FROM workspace_chat_workspaces))) ORDER BY created_at DESC`, pid, workspaceID, primary)
+	query := `SELECT ` + sessionFields + ` FROM workspace_chat_sessions WHERE project_id=? AND (id IN (SELECT session_id FROM workspace_chat_workspaces WHERE workspace_id=?) OR (? AND id NOT IN (SELECT session_id FROM workspace_chat_workspaces)))`
+	if !includeArchived {
+		query += ` AND NOT EXISTS (SELECT 1 FROM workspace_chat_lifecycle l WHERE l.session_id=workspace_chat_sessions.id AND l.archived_at<>'')`
+	}
+	query += ` ORDER BY created_at DESC`
+	rows, err := s.db.QueryContext(ctx, query, pid, workspaceID, primary)
 	if err != nil {
 		return nil, err
 	}
@@ -364,6 +428,9 @@ func (s *Service) List(ctx context.Context, pid string) ([]Session, error) {
 			return nil, e
 		}
 		if e := s.decorate(ctx, &result[i]); e != nil {
+			return nil, e
+		}
+		if e := decorateLifecycle(ctx, s.db, &result[i]); e != nil {
 			return nil, e
 		}
 	}
@@ -386,7 +453,7 @@ func (s *Service) DetailAfter(ctx context.Context, pid, id string, after int64) 
 	if err = s.validateSessionScope(ctx, &v); err != nil {
 		return Detail{}, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT id,session_id,role,text,status,client_message_id,created_at FROM workspace_chat_messages WHERE session_id=? ORDER BY ordinal`, id)
+	rows, err := s.db.QueryContext(ctx, `SELECT m.id,m.session_id,m.role,m.text,m.status,m.client_message_id,m.created_at,COALESCE(a.requested_agent_id,''),COALESCE(a.scope,''),COALESCE(a.content_hash,''),COALESCE(a.format,'') FROM workspace_chat_messages m LEFT JOIN workspace_chat_submission_agents a ON a.message_id=m.id WHERE m.session_id=? ORDER BY m.ordinal`, id)
 	if err != nil {
 		return Detail{}, err
 	}
@@ -394,8 +461,11 @@ func (s *Service) DetailAfter(ctx context.Context, pid, id string, after int64) 
 	result := Detail{Session: v, Messages: []Message{}}
 	for rows.Next() {
 		var m Message
-		if err := rows.Scan(&m.ID, &m.SessionID, &m.Role, &m.Text, &m.Status, &m.ClientMessageID, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.Role, &m.Text, &m.Status, &m.ClientMessageID, &m.CreatedAt, &m.RequestedAgentID, &m.RequestedAgentScope, &m.RequestedAgentContentHash, &m.RequestedAgentFormat); err != nil {
 			return Detail{}, err
+		}
+		if m.RequestedAgentID != "" {
+			m.AgentObservation = "requested_unobserved"
 		}
 		result.Messages = append(result.Messages, m)
 	}
@@ -405,6 +475,9 @@ func (s *Service) DetailAfter(ctx context.Context, pid, id string, after int64) 
 		return Detail{}, err
 	}
 	if err = s.decorate(ctx, &result.Session); err != nil {
+		return Detail{}, err
+	}
+	if err = decorateLifecycle(ctx, s.db, &result.Session); err != nil {
 		return Detail{}, err
 	}
 	if err = s.loadNative(ctx, &result, after); err != nil {
@@ -434,6 +507,9 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 	if err != nil {
 		return Accepted{}, err
 	}
+	if d.Session.Archived {
+		return Accepted{}, ErrNotFound
+	}
 	// An idempotent replay never runs again, even after failure or restart.
 	for _, m := range d.Messages {
 		if m.ClientMessageID == req.ClientMessageID {
@@ -451,17 +527,32 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 			if e != nil && !errors.Is(e, sql.ErrNoRows) {
 				return Accepted{}, e
 			}
-			if m.Text != req.Text || req.RequestedModel != requestedModel || req.RequestedReasoningEffort != requestedEffort || req.RequestedMaxTurns != nil {
+			var agentID, agentScope, agentHash, agentFormat string
+			e = s.db.QueryRowContext(ctx, `SELECT requested_agent_id,scope,content_hash,format FROM workspace_chat_submission_agents WHERE message_id=?`, m.ID).Scan(&agentID, &agentScope, &agentHash, &agentFormat)
+			if e != nil && !errors.Is(e, sql.ErrNoRows) {
+				return Accepted{}, e
+			}
+			if m.Text != req.Text || req.RequestedModel != requestedModel || req.RequestedReasoningEffort != requestedEffort || req.RequestedAgentID != agentID || req.RequestedAgentScope != agentScope || req.RequestedAgentContentHash != agentHash || req.RequestedAgentFormat != agentFormat || req.RequestedMaxTurns != nil {
 				return Accepted{}, ErrInvalid
 			}
 			return Accepted{d.Session, m}, nil
 		}
 	}
+	// A fresh send can choose a different primary profile or return to the
+	// provider default. The accepted message freezes that exact choice below;
+	// replays are checked against the per-message record above.
 	if req.RequestedModel == "" {
 		req.RequestedModel = d.Session.RequestedModel
 	}
 	if req.RequestedReasoningEffort == "" {
 		req.RequestedReasoningEffort = d.Session.RequestedReasoningEffort
+	}
+	if req.RequestedAgentID != "" {
+		if err = s.validateAgentIntent(ctx, pid, d.Session.Provider, req.RequestedAgentID, req.RequestedAgentScope, req.RequestedAgentContentHash, req.RequestedAgentFormat); err != nil {
+			return Accepted{}, err
+		}
+	} else if hasAgentIntent(req.RequestedAgentID, req.RequestedAgentScope, req.RequestedAgentContentHash, req.RequestedAgentFormat) {
+		return Accepted{}, ErrInvalid
 	}
 	if _, ok := s.active[id]; ok {
 		return Accepted{}, ErrBusy
@@ -487,7 +578,7 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 	if err != nil {
 		return Accepted{}, err
 	}
-	turn := agents.TurnRequest{SessionID: uuid.NewString(), Workspace: root, WorkspaceRoot: root, ProjectRootWorkspace: true, Prompt: req.Text, Timeout: 10 * time.Minute, RuntimeTarget: agents.RuntimeLocal, RequestedModel: req.RequestedModel, RequestedMaxTurns: req.RequestedMaxTurns}
+	turn := agents.TurnRequest{SessionID: uuid.NewString(), ProjectID: pid, Workspace: root, WorkspaceRoot: root, ProjectRootWorkspace: true, Prompt: req.Text, Timeout: 10 * time.Minute, RuntimeTarget: agents.RuntimeLocal, RequestedModel: req.RequestedModel, RequestedMaxTurns: req.RequestedMaxTurns, RequestedAgentID: req.RequestedAgentID, RequestedAgentScope: req.RequestedAgentScope, RequestedAgentContentHash: req.RequestedAgentContentHash, RequestedAgentFormat: req.RequestedAgentFormat}
 	if pid == OrchestratorScope {
 		if !s.supportsControl(agents.Provider(d.Session.Provider)) {
 			return Accepted{}, ErrUnsupported
@@ -544,12 +635,28 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 		}
 		turn.Prompt = transcript.String()
 	}
-	m := Message{uuid.NewString(), id, "user", req.Text, "accepted", req.ClientMessageID, stamp()}
+	m := Message{ID: uuid.NewString(), SessionID: id, Role: "user", Text: req.Text, Status: "accepted", ClientMessageID: req.ClientMessageID, CreatedAt: stamp(), RequestedAgentID: req.RequestedAgentID, RequestedAgentScope: req.RequestedAgentScope, RequestedAgentContentHash: req.RequestedAgentContentHash, RequestedAgentFormat: req.RequestedAgentFormat}
+	if req.RequestedAgentID != "" {
+		m.AgentObservation = "requested_unobserved"
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Accepted{}, err
 	}
 	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO workspace_chat_lifecycle(session_id) VALUES(?)`, id); err != nil {
+		return Accepted{}, err
+	}
+	var archivedAt string
+	if err = tx.QueryRowContext(ctx, `SELECT archived_at FROM workspace_chat_lifecycle WHERE session_id=?`, id).Scan(&archivedAt); err != nil {
+		return Accepted{}, err
+	}
+	if archivedAt != "" {
+		return Accepted{}, ErrNotFound
+	}
+	if err = rejectPendingRemoval(ctx, tx, pid, d.Session.WorkspaceID, d.Session.WorkspacePath); err != nil {
+		return Accepted{}, err
+	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_workspaces(session_id,workspace_id,cwd) VALUES(?,?,?) ON CONFLICT(session_id) DO NOTHING`, id, d.Session.WorkspaceID, d.Session.WorkspacePath); err != nil {
 		return Accepted{}, err
 	}
@@ -563,6 +670,16 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 		return Accepted{}, err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_submission_inputs(message_id,requested_model,effort) VALUES(?,?,?)`, m.ID, inputModel, inputEffort); err != nil {
+		return Accepted{}, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_submission_agents(message_id,requested_agent_id,scope,content_hash,format) VALUES(?,?,?,?,?)`, m.ID, req.RequestedAgentID, req.RequestedAgentScope, req.RequestedAgentContentHash, req.RequestedAgentFormat); err != nil {
+		return Accepted{}, err
+	}
+	observation := ""
+	if req.RequestedAgentID != "" {
+		observation = "requested_unobserved"
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_agent_selection(session_id,requested_agent_id,scope,content_hash,format,effective_agent_id,observation) VALUES(?,?,?,?,?,'',?) ON CONFLICT(session_id) DO UPDATE SET requested_agent_id=excluded.requested_agent_id,scope=excluded.scope,content_hash=excluded.content_hash,format=excluded.format,effective_agent_id=CASE WHEN workspace_chat_agent_selection.requested_agent_id<>excluded.requested_agent_id OR workspace_chat_agent_selection.scope<>excluded.scope OR workspace_chat_agent_selection.content_hash<>excluded.content_hash OR workspace_chat_agent_selection.format<>excluded.format THEN '' ELSE workspace_chat_agent_selection.effective_agent_id END,observation=CASE WHEN workspace_chat_agent_selection.requested_agent_id<>excluded.requested_agent_id OR workspace_chat_agent_selection.scope<>excluded.scope OR workspace_chat_agent_selection.content_hash<>excluded.content_hash OR workspace_chat_agent_selection.format<>excluded.format THEN excluded.observation ELSE workspace_chat_agent_selection.observation END`, id, req.RequestedAgentID, req.RequestedAgentScope, req.RequestedAgentContentHash, req.RequestedAgentFormat, observation); err != nil {
 		return Accepted{}, err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_submission_efforts(message_id,effort) VALUES(?,?)`, m.ID, req.RequestedReasoningEffort); err != nil {
@@ -585,6 +702,15 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 	d.Session.UpdatedAt = m.CreatedAt
 	d.Session.RequestedModel = req.RequestedModel
 	d.Session.RequestedReasoningEffort = req.RequestedReasoningEffort
+	agentChanged := req.RequestedAgentID != d.Session.RequestedAgentID || req.RequestedAgentScope != d.Session.RequestedAgentScope || req.RequestedAgentContentHash != d.Session.RequestedAgentContentHash || req.RequestedAgentFormat != d.Session.RequestedAgentFormat
+	d.Session.RequestedAgentID = req.RequestedAgentID
+	d.Session.RequestedAgentScope = req.RequestedAgentScope
+	d.Session.RequestedAgentContentHash = req.RequestedAgentContentHash
+	d.Session.RequestedAgentFormat = req.RequestedAgentFormat
+	if agentChanged {
+		d.Session.EffectiveAgentID = ""
+		d.Session.AgentObservation = observation
+	}
 	if req.RequestedModel != "" && req.RequestedModel != d.Session.EffectiveModel {
 		d.Session.EffectiveModel = ""
 	}
@@ -697,7 +823,23 @@ func (s *Service) Stop(ctx context.Context, pid, id string) (Session, error) {
 		return Session{}, err
 	}
 	if cancel, ok := s.active[id]; ok {
-		if _, err = s.db.ExecContext(ctx, `UPDATE workspace_chat_sessions SET status='stopping',updated_at=? WHERE id=?`, stamp(), id); err != nil {
+		tx, txErr := s.db.BeginTx(ctx, nil)
+		if txErr != nil {
+			s.mu.Unlock()
+			return Session{}, txErr
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO workspace_chat_lifecycle(session_id) VALUES(?)`, id); err == nil {
+			err = rejectPendingRemoval(ctx, tx, pid, d.Session.WorkspaceID, d.Session.WorkspacePath)
+		}
+		if err == nil {
+			_, err = tx.ExecContext(ctx, `UPDATE workspace_chat_sessions SET status='stopping',updated_at=? WHERE id=?`, stamp(), id)
+		}
+		if err == nil {
+			err = tx.Commit()
+		} else {
+			_ = tx.Rollback()
+		}
+		if err != nil {
 			s.mu.Unlock()
 			return Session{}, err
 		}

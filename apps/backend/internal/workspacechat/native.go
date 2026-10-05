@@ -83,6 +83,13 @@ func (s *Service) decorate(ctx context.Context, v *Session) error {
 	}
 	err = s.db.QueryRowContext(ctx, `SELECT requested,observed FROM workspace_chat_efforts WHERE session_id=?`, v.ID).Scan(&v.RequestedReasoningEffort, &v.EffectiveReasoningEffort)
 	if errors.Is(err, sql.ErrNoRows) {
+		err = nil
+	}
+	if err != nil {
+		return err
+	}
+	err = s.db.QueryRowContext(ctx, `SELECT requested_agent_id,scope,content_hash,format,effective_agent_id,observation FROM workspace_chat_agent_selection WHERE session_id=?`, v.ID).Scan(&v.RequestedAgentID, &v.RequestedAgentScope, &v.RequestedAgentContentHash, &v.RequestedAgentFormat, &v.EffectiveAgentID, &v.AgentObservation)
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
 	return err

@@ -174,6 +174,29 @@ async function auditMultiWorktree(win, fixture) {
     if (childDetail.messages.length || childDetail.session.provider_thread_id || inheritedDetail.messages.length || inheritedDetail.session.provider_thread_id) throw new Error('Idle session creation unexpectedly started a provider turn')
     chatResult = 'idle_scoped_native_sessions_verified_no_turn_and_child_default_title_inherited'
   }
+  const inspectorAudit = await run(`
+    await files()
+    const handle = document.querySelector('[role="separator"][aria-label="Resize workspace files"]')
+    if (!handle) throw new Error('File inspector resize control missing')
+    const previous = Number(handle.getAttribute('aria-valuenow'))
+    handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', shiftKey: true, bubbles: true }))
+    await wait(() => Number(handle.getAttribute('aria-valuenow')) > previous, 'file inspector keyboard resize')
+    const resized = Number(handle.getAttribute('aria-valuenow'))
+    const controls = document.querySelector('[aria-label="Workspace tool controls"]')
+    if (!controls?.closest('header')) throw new Error('Tool controls are not inline with the conversation header')
+    if (controls.querySelector('button[title]')) throw new Error('Tool controls still use browser-native title tooltips')
+    const bounds = tools().getBoundingClientRect()
+    const inspector = tools().querySelector('[aria-label="Workspace file sidebar"]').getBoundingClientRect()
+    if (Math.abs(inspector.top - bounds.top) > 1) throw new Error('Inspector still has a duplicate header row')
+    document.querySelector('button[aria-label="Files & terminals"]').click()
+    await wait(() => !tools() || tools().hidden, 'close workspace tools')
+    document.querySelector('button[aria-label="Files & terminals"]').click()
+    await wait(() => tools() && !tools().hidden, 'reopen workspace tools')
+    if (Number(document.querySelector('[aria-label="Resize workspace files"]').getAttribute('aria-valuenow')) !== resized) throw new Error('Inspector width changed after tools toggle')
+    if (document.body.textContent.includes('Usage not observed for this turn')) throw new Error('Absent usage is still rendered as a message')
+    if (!control('Choose agent mode')) throw new Error('Agent mode selector missing')
+    return { inlineToolControls: true, nativeTitlesRemoved: true, inspectorTopOffset: inspector.top - bounds.top, keyboardWidthBefore: previous, keyboardWidthAfter: resized, retainedAfterToggle: true, absentUsageHidden: true, agentPickerVisible: true }
+  `)
   await run(`
     if (control('Refresh workspaces for Workspace audit')) control('Refresh workspaces for Workspace audit').click()
     else {
@@ -317,7 +340,7 @@ async function auditMultiWorktree(win, fixture) {
     await wait(() => document.querySelector('[role="tabpanel"][aria-label="Git & pull requests"]'), 'restore Git review surface')
   `)
   if (fs.readFileSync(path.join(root, 'shared.ts'), 'utf8') !== rootShared) throw new Error('Child audit changed root contents')
-  const result = { worktreeJob: 'completed', creation: 'real_dialog_workspace_only', creationSubmissions: submission.calls, dialogDropdown: dropdownLayout, dialogLayout, childWorkspaceID: job.workspace.id, realGitMembership: true, exactSidebarSelection: true, isolatedFileTrees: true, isolatedSameNameEditorBuffers: true, editorGroupsRestored: true, rootContentsRetained: true, nativeSessions: chatResult, conversationRename: provider ? 'server_persisted_child_scope_wrong_scope_rejected_idle_no_turn' : 'skipped_no_registered_native_codex', providerTurns: 0, alignment, toolMenu }
+  const result = { worktreeJob: 'completed', creation: 'real_dialog_workspace_only', creationSubmissions: submission.calls, dialogDropdown: dropdownLayout, dialogLayout, childWorkspaceID: job.workspace.id, realGitMembership: true, exactSidebarSelection: true, isolatedFileTrees: true, isolatedSameNameEditorBuffers: true, editorGroupsRestored: true, rootContentsRetained: true, nativeSessions: chatResult, conversationRename: provider ? 'server_persisted_child_scope_wrong_scope_rejected_idle_no_turn' : 'skipped_no_registered_native_codex', providerTurns: 0, alignment, toolMenu, inspectorAudit }
   fs.writeFileSync(path.join(reports, 'multi-worktree-smoke-result.json'), JSON.stringify(result, null, 2))
   return result
 }

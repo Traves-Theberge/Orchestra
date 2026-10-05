@@ -22,7 +22,7 @@ function SandboxIcon({ className, size }: { className?: string; size?: number })
 }
 
 export const sidebarItems: SidebarItem[] = [
-  { id: 'ORCHESTRATOR', label: 'Orchestrator', description: 'Coordinate agents across projects and worktrees', icon: Network },
+  { id: 'ORCHESTRATOR', label: 'Maestro', description: 'Coordinate agents across projects and worktrees', icon: Network },
   { id: 'PROJECTS', label: 'Projects', description: 'Chat, files, terminals, Git and tasks', icon: FolderTree },
   { id: 'ISSUES', label: 'Tasks', description: 'Task board and inspector', icon: ListTodo },
   { id: 'AGENTS', label: 'Agents', description: 'Global agent configurations', icon: Cpu },
@@ -41,6 +41,7 @@ export type SectionID =
   | 'SANDBOX'
   | 'SETTINGS'
   | 'DOCS'
+  | 'API_DOCS'
   | 'CONSOLE'
 
 const SECTION_IDS: readonly SectionID[] = [
@@ -52,6 +53,7 @@ const SECTION_IDS: readonly SectionID[] = [
   'SANDBOX',
   'SETTINGS',
   'DOCS',
+  'API_DOCS',
   'CONSOLE',
 ]
 
@@ -68,6 +70,7 @@ export type SectionVisibility = {
   showSandbox: boolean
   showSettings: boolean
   showDocs: boolean
+  showApiDocs: boolean
   showConsole: boolean
 }
 
@@ -80,6 +83,7 @@ const sectionMeta: Record<SectionID, { label: string; title: string }> = {
   SANDBOX: { label: 'Compute', title: 'Remote Execution' },
   SETTINGS: { label: 'System', title: 'Settings' },
   DOCS: { label: 'Knowledge', title: 'Documentation' },
+  API_DOCS: { label: 'API', title: 'API Documentation' },
   CONSOLE: { label: 'Workspace', title: 'Development' },
 }
 
@@ -93,6 +97,7 @@ export function getSectionVisibility(activeSection: SectionID): SectionVisibilit
     showSandbox: activeSection === 'SANDBOX',
     showSettings: activeSection === 'SETTINGS',
     showDocs: activeSection === 'DOCS',
+    showApiDocs: activeSection === 'API_DOCS',
     showConsole: activeSection === 'CONSOLE' || activeSection === 'PROJECTS',
   }
 }

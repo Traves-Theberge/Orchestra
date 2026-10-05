@@ -286,4 +286,22 @@ func TestWorkspaceChatHTTPRoutes(t *testing.T) {
 	if status, _ := call("POST", path+"/stop", `{}`, true); status != 200 {
 		t.Fatalf("stop %d", status)
 	}
+	archiveScope := "?workspace_id=" + url.QueryEscape(sess.WorkspaceID)
+	archiveBody, _ := json.Marshal(workspacechat.ArchiveRequest{WorkspaceID: sess.WorkspaceID, CWD: sess.WorkspacePath, ExpectedStatus: "idle", ExpectedVersion: 0})
+	if status, data = call("POST", path+"/archive"+archiveScope, string(archiveBody), true); status != 200 || !strings.Contains(string(data), `"archived":true`) {
+		t.Fatalf("archive %d %s", status, data)
+	}
+	if status, data = call("GET", base+"/sessions", "", true); status != 200 || strings.Contains(string(data), sess.ID) {
+		t.Fatalf("default sessions list retained archive %d %s", status, data)
+	}
+	if status, data = call("GET", base+"/archives", "", true); status != 200 || !strings.Contains(string(data), sess.WorkspaceID) {
+		t.Fatalf("archive catalog %d %s", status, data)
+	}
+	if status, data = call("GET", path+"/history?workspace_id="+url.QueryEscape(sess.WorkspaceID)+"&cwd="+url.QueryEscape(sess.WorkspacePath), "", true); status != 200 || !strings.Contains(string(data), "Fixture reply") {
+		t.Fatalf("archive history %d %s", status, data)
+	}
+	unarchiveBody, _ := json.Marshal(workspacechat.ArchiveRequest{WorkspaceID: sess.WorkspaceID, CWD: sess.WorkspacePath, ExpectedStatus: "idle", ExpectedVersion: 1})
+	if status, data = call("POST", path+"/unarchive"+archiveScope, string(unarchiveBody), true); status != 200 || !strings.Contains(string(data), `"archived":false`) {
+		t.Fatalf("unarchive %d %s", status, data)
+	}
 }

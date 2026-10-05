@@ -13,7 +13,7 @@ import { ErrorStrip } from '../components/ErrorStrip'
 import { TOKENS } from '../tokens'
 import type { Scope } from '../types'
 import type { FileResourceItem } from './FileResourcePanel'
-import { buildOpenCodeMarkdown, parseOpenCodeMarkdown } from './open-code-frontmatter'
+import { parseOpenCodeMarkdown, updateOpenCodeMarkdown } from './open-code-frontmatter'
 
 interface OpenCodeCommandsPanelProps {
   items: FileResourceItem[]
@@ -168,15 +168,13 @@ function CommandsShell({ items, selected, effectiveSelectedKey, eyebrow, saving,
   const [body, setBody] = useState(parsed.body)
   const [error, setError] = useState('')
 
-  const isDirty = selected
-    ? buildOpenCodeMarkdown({ description, agent, model }, body) !== selected.content
-    : false
+  const isDirty = !!selected && (description !== (parsed.frontmatter.description ?? '') || agent !== (parsed.frontmatter.agent ?? '') || model !== (parsed.frontmatter.model ?? '') || body !== parsed.body)
 
   const handleSave = async () => {
     if (!selected) return
     setError('')
     try {
-      await onSave(selected.path, buildOpenCodeMarkdown({ description, agent, model }, body))
+      await onSave(selected.path, updateOpenCodeMarkdown(selected.content, { description, agent, model }, body))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save')
     }

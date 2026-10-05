@@ -1,4 +1,6 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { AppTooltipProvider } from '@ui/tooltip-wrapper'
+import { type ReactElement } from 'react'
+import { act, cleanup, fireEvent, render as renderBase, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WorkspaceChat } from './WorkspaceChat'
 import { webcrypto } from 'node:crypto'
@@ -640,3 +642,6 @@ describe('WorkspaceChat', () => {
     await waitFor(() => expect(api.sendWorkspaceChatMessage).toHaveBeenCalledExactlyOnceWith(config, 'project-a', id, expect.any(String), 'My first prompt'))
   })
 })
+
+const render = (ui: ReactElement) => renderBase(ui, { wrapper: AppTooltipProvider })
+beforeEach(() => vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} }))

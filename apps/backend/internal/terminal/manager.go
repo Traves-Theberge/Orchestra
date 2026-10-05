@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 
 	"github.com/acarl005/stripansi"
@@ -30,14 +32,16 @@ type Session struct {
 // Manager maintains a registry of active terminal sessions and provides
 // methods to create, retrieve, and close them.
 type Manager struct {
-	sessions map[string]*Session
-	mu       sync.RWMutex
+	sessions            map[string]*Session
+	removingDirectories map[string]struct{}
+	mu                  sync.RWMutex
 }
 
 // NewManager creates a new terminal Manager with an empty session registry.
 func NewManager() *Manager {
 	return &Manager{
-		sessions: make(map[string]*Session),
+		sessions:            make(map[string]*Session),
+		removingDirectories: make(map[string]struct{}),
 	}
 }
 
@@ -49,9 +53,17 @@ func (m *Manager) CreateSession(id string, dir string, command string, args ...s
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if _, removing := m.removingDirectories[canonicalDirectory(dir)]; removing {
+		return nil, fmt.Errorf("workspace is being removed")
+	}
 
-	if s, ok := m.sessions[id]; ok && !s.Closed {
-		return s, nil
+	if s, ok := m.sessions[id]; ok {
+		s.mu.Lock()
+		closed := s.Closed
+		s.mu.Unlock()
+		if !closed {
+			return s, nil
+		}
 	}
 
 	c := exec.Command(command, args...)
@@ -90,6 +102,69 @@ func (m *Manager) CreateSession(id string, dir string, command string, args ...s
 	}()
 
 	return session, nil
+}
+
+// ActiveDirectories returns the exact working directories of current PTY sessions.
+func (m *Manager) ActiveDirectories() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	result := make([]string, 0, len(m.sessions))
+	for _, session := range m.sessions {
+		session.mu.Lock()
+		closed := session.Closed
+		dir := ""
+		if session.Cmd != nil {
+			dir = session.Cmd.Dir
+		}
+		session.mu.Unlock()
+		if !closed && dir != "" {
+			result = append(result, dir)
+		}
+	}
+	return result
+}
+
+// BeginDirectoryRemoval prevents a new PTY from opening in dir while its worktree is removed.
+// The returned release function must run after the filesystem mutation completes.
+func (m *Manager) BeginDirectoryRemoval(dir string) (func(), error) {
+	key := canonicalDirectory(dir)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, exists := m.removingDirectories[key]; exists {
+		return nil, fmt.Errorf("workspace terminal admission is already fenced")
+	}
+	for _, session := range m.sessions {
+		session.mu.Lock()
+		closed := session.Closed
+		cwd := ""
+		if session.Cmd != nil {
+			cwd = session.Cmd.Dir
+		}
+		session.mu.Unlock()
+		if !closed && cwd != "" && canonicalDirectory(cwd) == key {
+			return nil, fmt.Errorf("an active terminal is using this workspace")
+		}
+	}
+	m.removingDirectories[key] = struct{}{}
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			m.mu.Lock()
+			delete(m.removingDirectories, key)
+			m.mu.Unlock()
+		})
+	}, nil
+}
+
+func canonicalDirectory(dir string) string {
+	path := filepath.Clean(dir)
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = filepath.Clean(resolved)
+	}
+	if runtime.GOOS == "windows" {
+		path = strings.ToLower(path)
+	}
+	return path
 }
 
 // GetOrCreateSession returns an existing session by ID or creates a new bash session

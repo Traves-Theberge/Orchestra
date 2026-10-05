@@ -47,7 +47,7 @@ type AgentConfig = {
   max_turns: number
 }
 
-type SettingsTab = 'agents' | 'backend' | 'integrations' | 'shortcuts' | 'notifications'
+type SettingsTab = 'backend' | 'integrations' | 'shortcuts' | 'notifications'
 
 /** Initial column/state for the create-task dialog. The dialog reads `state`
  * to preselect the column the new task lands in. Add fields here only when
@@ -124,7 +124,7 @@ export interface UISlice {
   sidePanelOpen: boolean
   activeSettingsSection: string
   scrollToSettingsSection: ((id: string) => void) | null
-  activeAgentProvider: 'claude' | 'codex' | 'gemini' | 'opencode' | '8gent'
+  activeAgentProvider: 'claude' | 'codex' | 'antigravity' | 'gemini' | 'opencode' | '8gent'
   activeAgentScope: 'GLOBAL' | 'PROJECT'
   activeAgentProjectId: string
   activeAgentCategory: string
@@ -160,7 +160,7 @@ export interface UISlice {
   toggleSidePanel: () => void
   setActiveSettingsSection: (id: string) => void
   setScrollToSettingsSection: (fn: ((id: string) => void) | null) => void
-  setActiveAgentProvider: (provider: 'claude' | 'codex' | 'gemini' | 'opencode' | '8gent') => void
+  setActiveAgentProvider: (provider: 'claude' | 'codex' | 'antigravity' | 'gemini' | 'opencode' | '8gent') => void
   setActiveAgentScope: (scope: 'GLOBAL' | 'PROJECT', projectId?: string) => void
   setActiveAgentCategory: (cat: string) => void
   setAgentCategories: (cats: Array<{ id: string; label: string; icon: unknown }>) => void

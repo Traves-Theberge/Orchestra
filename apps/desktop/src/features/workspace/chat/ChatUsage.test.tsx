@@ -16,7 +16,8 @@ it('shows measured zero separately from absent counters and reported capacity', 
   expect(screen.getByText('Provider thread: 0 tokens')).toBeInTheDocument()
   expect(screen.getByText('Reported context window: 10,000 tokens')).toBeInTheDocument()
 })
-it('keeps unobserved usage unknown', () => {
+it('hides absent usage without inventing counters', () => {
   render(<ChatUsage events={[]} />)
-  expect(screen.getByText('Usage not observed for this turn')).toBeInTheDocument()
+  expect(screen.queryByText('Usage not observed for this turn')).not.toBeInTheDocument()
+  expect(screen.queryByText(/Provider thread:/)).not.toBeInTheDocument()
 })

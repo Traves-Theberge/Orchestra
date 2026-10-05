@@ -80,11 +80,19 @@ func TestGlobalOrchestratorHarnessProcess(t *testing.T) {
 			_ = json.Unmarshal(msg.Params, &p)
 			if msg.Method == "thread/start" {
 				specs, ok := p["dynamicTools"].([]any)
-				if !ok || len(specs) != 1 {
+				if !ok || len(specs) != 2 {
 					os.Exit(11)
 				}
-				tool := specs[0].(map[string]any)
-				if tool["name"] != "orchestra_control" || tool["type"] != "function" {
+				seenTools := map[string]bool{}
+				for _, value := range specs {
+					tool, ok := value.(map[string]any)
+					if !ok || tool["type"] != "function" {
+						os.Exit(12)
+					}
+					name, _ := tool["name"].(string)
+					seenTools[name] = true
+				}
+				if !seenTools["orchestra_control"] || !seenTools["orchestra_resources"] {
 					os.Exit(12)
 				}
 			} else {

@@ -66,6 +66,18 @@ func Connect(dbPath string) (*DB, error) {
 		return nil, fmt.Errorf("failed to create idx_issue_history_issue_id index: %w", err)
 	}
 
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS worktree_removal_requests (
+		request_id TEXT PRIMARY KEY,
+		project_id TEXT NOT NULL,
+		workspace_id TEXT NOT NULL,
+		digest TEXT NOT NULL,
+		receipt TEXT NOT NULL,
+		status TEXT NOT NULL,
+		updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);`); err != nil {
+		return nil, fmt.Errorf("failed to create worktree removal receipts: %w", err)
+	}
+
 	return &DB{DB: db}, nil
 }
 

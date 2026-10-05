@@ -11,9 +11,10 @@ import { PanelFooter } from '../components/PanelFooter'
 import { EmptyStateCard } from '../components/EmptyStateCard'
 import { ErrorStrip } from '../components/ErrorStrip'
 import { TOKENS } from '../tokens'
+import { CustomDropdown } from '@layout/shared/controls'
 import type { Scope } from '../types'
 import type { FileResourceItem } from './FileResourcePanel'
-import { buildOpenCodeMarkdown, parseOpenCodeMarkdown } from './open-code-frontmatter'
+import { parseOpenCodeMarkdown, updateOpenCodeMarkdown } from './open-code-frontmatter'
 
 interface OpenCodeAgentsPanelProps {
   items: FileResourceItem[]
@@ -168,15 +169,14 @@ function AgentsShell({ items, selected, effectiveSelectedKey, eyebrow, saving, o
   const [body, setBody] = useState(parsed.body)
   const [error, setError] = useState('')
 
-  const isDirty = selected
-    ? buildOpenCodeMarkdown({ description, mode, model }, body) !== selected.content
-    : false
+  const isDirty = !!selected && (description !== (parsed.frontmatter.description ?? '') || mode !== (parsed.frontmatter.mode ?? '') || model !== (parsed.frontmatter.model ?? '') || body !== parsed.body)
 
   const handleSave = async () => {
     if (!selected) return
     setError('')
     try {
-      await onSave(selected.path, buildOpenCodeMarkdown({ description, mode, model }, body))
+      if (mode && !['primary', 'subagent', 'all'].includes(mode)) throw new Error('Choose Primary, Subagent or Both before saving.')
+      await onSave(selected.path, updateOpenCodeMarkdown(selected.content, { description, mode, model }, body))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save')
     }
@@ -231,11 +231,15 @@ function AgentsShell({ items, selected, effectiveSelectedKey, eyebrow, saving, o
                 </Field>
 
                 <Field label="Mode">
-                  <select value={mode} onChange={(event) => setMode(event.target.value)} className="w-full max-w-sm h-9 rounded-lg border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20">
-                    <option value="">Default</option>
-                    <option value="subagent">subagent</option>
-                    <option value="agent">agent</option>
-                  </select>
+                  <div role="group" aria-label="Agent mode" className="max-w-sm">
+                    <CustomDropdown value={mode} onChange={setMode} options={[
+                      { value: '', label: 'Harness default' },
+                      { value: 'primary', label: 'Primary conversation agent' },
+                      { value: 'subagent', label: 'Subagent only' },
+                      { value: 'all', label: 'Both primary and subagent' },
+                      ...(mode && !['primary', 'subagent', 'all'].includes(mode) ? [{ value: mode, label: `Unsupported mode: ${mode}` }] : []),
+                    ]} />
+                  </div>
                 </Field>
 
                 <Field label="Model">

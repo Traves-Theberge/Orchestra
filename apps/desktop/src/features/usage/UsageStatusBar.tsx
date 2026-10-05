@@ -286,7 +286,7 @@ function DetailPopover({
   const setSettingsInitialTab = useAppStore((s) => s.setSettingsInitialTab)
   const now = useNow(60_000)
   const openAccountSettings = () => {
-    setSettingsInitialTab('agents')
+    setSettingsInitialTab(undefined)
     setActiveSection('SETTINGS')
   }
   return (

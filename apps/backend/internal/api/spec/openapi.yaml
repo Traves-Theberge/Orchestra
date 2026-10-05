@@ -1,0 +1,4578 @@
+openapi: 3.0.3
+info:
+  title: Orchestra API
+  version: 1.0.0
+  description: |
+    Orchestra is a multi-agent orchestration platform that dispatches coding agents
+    (Claude, Codex, OpenCode, Gemini) to resolve issues from project trackers.
+
+    The daemon (`orchestrad`) binds to `127.0.0.1:3284` by default. All `/api/v1/*`
+    routes require bearer token authentication when `ORCHESTRA_API_TOKEN` is set.
+    Connections from loopback addresses bypass auth automatically.
+
+    **Rate limiting:** 20 req/s sustained, 60 burst (per-IP token bucket). OAuth
+    endpoints use a tighter limit of 5 req/s / 10 burst.
+
+servers:
+  - url: http://127.0.0.1:3284
+    description: Default local daemon
+
+security:
+  - BearerAuth: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: >
+        Pass `Authorization: Bearer <token>` where token matches
+        `ORCHESTRA_API_TOKEN`. Omit on loopback connections.
+
+  schemas:
+    Error:
+      type: object
+      description: Standard error envelope returned by all API errors.
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              example: issue_not_found
+            message:
+              type: string
+              example: issue not found
+        details:
+          type: object
+          additionalProperties: true
+          description: Optional extra context (e.g. partial state on refresh failure).
+
+    Issue:
+      type: object
+      description: >
+        An issue tracked by Orchestra. Issues move through states:
+        Backlog → Todo → In Progress → Review → Done.
+      properties:
+        id:
+          type: string
+          description: Internal UUID.
+        identifier:
+          type: string
+          description: Human-readable short identifier (e.g. PROJ-42).
+        title:
+          type: string
+        description:
+          type: string
+        state:
+          type: string
+          enum: [Backlog, Todo, In Progress, Review, Done]
+        priority:
+          type: integer
+          description: Numeric priority (lower = higher priority).
+        assignee_id:
+          type: string
+          description: Provider name assigned to this issue (e.g. claude, codex).
+        project_id:
+          type: string
+        branch_name:
+          type: string
+          description: Git branch created for this issue.
+        base_sha:
+          type: string
+          description: Git SHA of the commit the branch was created from.
+        url:
+          type: string
+          description: Upstream tracker URL.
+        labels:
+          type: array
+          items:
+            type: string
+        blocked_by:
+          type: array
+          items:
+            $ref: '#/components/schemas/Blocker'
+        provider:
+          type: string
+          description: Agent provider override (claude/codex/gemini/opencode).
+        runtime_target:
+          type: string
+          description: Remote execution target (tailscale/kubernetes node name).
+        disabled_tools:
+          type: array
+          items:
+            type: string
+          description: Tool names disabled for this issue's agent run.
+        feedback:
+          type: string
+          description: Human feedback used when returning issue from Review.
+        pr_url:
+          type: string
+          description: GitHub pull request URL if one was created.
+        plan:
+          type: string
+          description: Agent execution plan text.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          description: Runtime dispatch status (IDLE, RUNNING, RETRYING, etc.).
+        attempts:
+          type: object
+          properties:
+            restart_count:
+              type: integer
+            current_retry_attempt:
+              type: integer
+        workspace:
+          type: object
+          properties:
+            path:
+              type: string
+        running:
+          type: object
+          description: Present when the issue has an active agent session.
+          properties:
+            provider:
+              type: string
+            session_log_path:
+              type: string
+            last_event:
+              type: string
+            last_event_at:
+              type: string
+              format: date-time
+            last_message:
+              type: string
+        retry:
+          type: object
+          description: Present when the issue is in retry backoff.
+          properties:
+            attempt:
+              type: integer
+            error:
+              type: string
+        logs:
+          type: object
+          properties:
+            codex_session_logs:
+              type: array
+              items:
+                type: object
+                properties:
+                  label:
+                    type: string
+                  path:
+                    type: string
+                  url:
+                    type: string
+                    nullable: true
+        recent_events:
+          type: array
+          items:
+            type: object
+            properties:
+              at:
+                type: string
+                format: date-time
+              event:
+                type: string
+              message:
+                type: string
+        last_error:
+          type: string
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/HistoryEntry'
+
+    Blocker:
+      type: object
+      properties:
+        id:
+          type: string
+        identifier:
+          type: string
+        title:
+          type: string
+
+    HistoryEntry:
+      type: object
+      properties:
+        source:
+          type: string
+          enum: [metadata, agent]
+        id:
+          type: string
+        provider:
+          type: string
+        kind:
+          type: string
+        message:
+          type: string
+        input_tokens:
+          type: integer
+        output_tokens:
+          type: integer
+        timestamp:
+          type: string
+          format: date-time
+
+    Project:
+      type: object
+      description: A registered codebase with optional GitHub integration.
+      properties:
+        id:
+          type: string
+          description: SHA-256 hash of the canonical root path (first 16 bytes, hex).
+        name:
+          type: string
+          description: Derived from the directory basename.
+        root_path:
+          type: string
+          description: Absolute path on the server filesystem.
+        remote_url:
+          type: string
+          description: Git remote URL.
+        github_owner:
+          type: string
+        github_repo:
+          type: string
+        github_token:
+          type: string
+          description: Redacted sentinel "<set>" if configured, "" otherwise.
+        tracker_config_id:
+          type: string
+          description: Legacy global tracker config assignment.
+        path_exists:
+          type: boolean
+          description: Whether the root_path exists on the server.
+        issue_source_type:
+          type: string
+          description: Per-project issue source type (github/linear/jira/sqlite/memory).
+        issue_source_endpoint:
+          type: string
+          description: Per-project issue source endpoint or repo slug.
+        issue_source_has_token:
+          type: boolean
+          description: Whether a token is configured for the per-project issue source.
+
+    ProjectStats:
+      type: object
+      properties:
+        total_sessions:
+          type: integer
+        total_input:
+          type: integer
+        total_output:
+          type: integer
+        last_active:
+          type: string
+          format: date-time
+
+    Session:
+      type: object
+      description: An agent execution session linked to a project and provider.
+      properties:
+        id:
+          type: string
+        project_id:
+          type: string
+        project_name:
+          type: string
+        session_uuid:
+          type: string
+        provider:
+          type: string
+        model:
+          type: string
+        branch:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        total_input:
+          type: integer
+        total_output:
+          type: integer
+
+    SessionDetail:
+      allOf:
+        - $ref: '#/components/schemas/Session'
+        - type: object
+          properties:
+            events:
+              type: array
+              items:
+                $ref: '#/components/schemas/Event'
+
+    Event:
+      type: object
+      properties:
+        id:
+          type: string
+        session_id:
+          type: string
+        kind:
+          type: string
+          description: Event kind (tool_use, tool_result, message, etc.).
+        message:
+          type: string
+        raw_payload:
+          type: string
+        input_tokens:
+          type: integer
+        output_tokens:
+          type: integer
+        timestamp:
+          type: string
+          format: date-time
+
+    TrackerConfig:
+      type: object
+      description: A named connection to an external issue tracker.
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          description: Tracker backend type (github/linear/jira).
+        display_name:
+          type: string
+        endpoint:
+          type: string
+          description: API base URL or repository slug (owner/repo for GitHub).
+        auth_method:
+          type: string
+          enum: [apikey, oauth, none]
+        has_token:
+          type: boolean
+          description: Whether an encrypted token is stored.
+        extra:
+          type: string
+          description: JSON string with tracker-specific extra config.
+        created_at:
+          type: integer
+          description: Unix timestamp.
+        updated_at:
+          type: integer
+          description: Unix timestamp.
+
+    WorkItem:
+      type: object
+      description: A work item returned directly from a tracker adapter.
+      properties:
+        id:
+          type: string
+        identifier:
+          type: string
+        source:
+          type: string
+          enum: [github, linear, jira, sqlite, memory]
+        title:
+          type: string
+        description:
+          type: string
+        priority:
+          type: integer
+        state:
+          type: string
+        branch_name:
+          type: string
+        url:
+          type: string
+        project_id:
+          type: string
+        assignee_id:
+          type: string
+        assignees:
+          type: array
+          items:
+            type: string
+        assigned_to_worker:
+          type: boolean
+        labels:
+          type: array
+          items:
+            type: string
+        blocked_by:
+          type: array
+          items:
+            $ref: '#/components/schemas/Blocker'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        provider:
+          type: string
+        runtime_target:
+          type: string
+        disabled_tools:
+          type: array
+          items:
+            type: string
+        base_sha:
+          type: string
+        feedback:
+          type: string
+        pr_url:
+          type: string
+        plan:
+          type: string
+        extra:
+          type: object
+          additionalProperties: true
+
+    TrackerProject:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+
+    TrackerState:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum: [todo, in_progress, done, cancelled]
+
+    MCPServer:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        command:
+          type: string
+          description: Shell command used to start the server (stdin/stdout JSON-RPC).
+
+    GlobalStats:
+      type: object
+      properties:
+        total_tokens:
+          type: integer
+        total_input:
+          type: integer
+        total_output:
+          type: integer
+        total_cache_read:
+          type: integer
+        total_cache_write:
+          type: integer
+        total_thinking:
+          type: integer
+        provider_usage:
+          type: object
+          additionalProperties:
+            type: integer
+        provider_tokens:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/ProviderTokens'
+        model_usage:
+          type: object
+          additionalProperties:
+            type: integer
+        provider_sessions:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/ProviderSessionStats'
+        recent_sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Session'
+
+    ProviderTokens:
+      type: object
+      properties:
+        total:
+          type: integer
+        input:
+          type: integer
+        output:
+          type: integer
+        cache_read:
+          type: integer
+        cache_write:
+          type: integer
+        thinking:
+          type: integer
+
+    ProviderSessionStats:
+      type: object
+      properties:
+        total:
+          type: integer
+        completed:
+          type: integer
+        failed:
+          type: integer
+        avg_duration:
+          type: number
+          format: double
+
+    FileNode:
+      type: object
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+          description: Path relative to the tree root.
+        is_dir:
+          type: boolean
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileNode'
+
+    AgentConfig:
+      type: object
+      properties:
+        commands:
+          type: object
+          additionalProperties:
+            type: string
+          description: Map of provider name → executable command.
+        agent_provider:
+          type: string
+          description: Default provider name.
+        max_turns:
+          type: integer
+          description: Maximum agent turns per issue (1–100).
+
+    GitCommit:
+      type: object
+      properties:
+        hash:
+          type: string
+        author:
+          type: string
+        date:
+          type: string
+        message:
+          type: string
+
+    GitStatusFile:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Two-character porcelain status code (e.g. " M", "A ").
+        path:
+          type: string
+
+    GitBranchDetail:
+      type: object
+      properties:
+        name:
+          type: string
+        current:
+          type: boolean
+        remote:
+          type: string
+        ahead:
+          type: integer
+        behind:
+          type: integer
+        last_commit:
+          type: string
+        last_commit_date:
+          type: string
+
+    PRRequest:
+      type: object
+      required: [title, head, base]
+      properties:
+        title:
+          type: string
+        body:
+          type: string
+        head:
+          type: string
+          description: Source branch name.
+        base:
+          type: string
+          description: Target branch name.
+        owner:
+          type: string
+          description: GitHub owner (inferred from project if omitted).
+        repo:
+          type: string
+          description: GitHub repo (inferred from project if omitted).
+        token:
+          type: string
+          description: GitHub PAT (inferred from project/config/gh CLI if omitted).
+
+    UsageScanState:
+      type: object
+      description: State of the usage file scanner for a provider.
+      properties:
+        enabled:
+          type: boolean
+        scanning:
+          type: boolean
+        last_scan:
+          type: string
+          format: date-time
+        error:
+          type: string
+          nullable: true
+        file_count:
+          type: integer
+        session_count:
+          type: integer
+
+    UsageSummary:
+      type: object
+      description: Aggregated token usage summary for a provider over a range.
+      properties:
+        total_input:
+          type: integer
+        total_output:
+          type: integer
+        total_cache_read:
+          type: integer
+        total_cache_write:
+          type: integer
+        total_cost_usd:
+          type: number
+          format: double
+        session_count:
+          type: integer
+
+    UsageDailyPoint:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        input_tokens:
+          type: integer
+        output_tokens:
+          type: integer
+        cost_usd:
+          type: number
+          format: double
+
+    UsageBreakdownRow:
+      type: object
+      properties:
+        key:
+          type: string
+          description: Model name, project name, or session ID depending on kind.
+        input_tokens:
+          type: integer
+        output_tokens:
+          type: integer
+        cost_usd:
+          type: number
+          format: double
+        session_count:
+          type: integer
+
+    UsageSession:
+      type: object
+      properties:
+        session_id:
+          type: string
+        project:
+          type: string
+        model:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        duration_seconds:
+          type: number
+        input_tokens:
+          type: integer
+        output_tokens:
+          type: integer
+        cost_usd:
+          type: number
+          format: double
+
+    RateLimitState:
+      type: object
+      description: Current Claude API rate limit status.
+      properties:
+        requests_limit:
+          type: integer
+        requests_remaining:
+          type: integer
+        requests_reset:
+          type: string
+          format: date-time
+        tokens_limit:
+          type: integer
+        tokens_remaining:
+          type: integer
+        tokens_reset:
+          type: string
+          format: date-time
+
+paths:
+  # ─── Health ───────────────────────────────────────────────────────────────
+  /healthz:
+    get:
+      tags: [Health]
+      summary: Health check (root)
+      description: >
+        Returns 200 OK with `{"status":"ok"}`. No authentication required.
+      security: []
+      responses:
+        '200':
+          description: Daemon is running.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /api/v1/healthz:
+    get:
+      tags: [Health]
+      summary: Health check (versioned)
+      description: Identical to GET /healthz. No authentication required.
+      security: []
+      responses:
+        '200':
+          description: Daemon is running.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /api/v1/openapi.yaml:
+    get:
+      tags: [Health]
+      summary: OpenAPI spec
+      description: Returns this OpenAPI specification as YAML. No authentication required.
+      security: []
+      responses:
+        '200':
+          description: OpenAPI YAML document.
+          content:
+            text/yaml:
+              schema:
+                type: string
+
+  # ─── State ────────────────────────────────────────────────────────────────
+  /api/v1/state:
+    get:
+      tags: [State]
+      summary: Orchestrator snapshot
+      description: Returns the full in-memory orchestrator state formatted by the presenter layer, including all running, queued, and retry issues with their last-event metadata. Used by the desktop for initial page hydration.
+      responses:
+        '200':
+          description: Current orchestrator snapshot.
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Presenter-formatted state payload.
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/refresh:
+    post:
+      tags: [State]
+      summary: Queue orchestrator refresh
+      description: Enqueues a tracker sync cycle (re-fetches issues from the configured backend) and returns immediately with 202 Accepted. Does not block on the sync completing.
+      responses:
+        '202':
+          description: Refresh queued.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ─── Issues ───────────────────────────────────────────────────────────────
+  /api/v1/issues:
+    get:
+      tags: [Issues]
+      summary: List issues
+      description: >
+        Lists issues from the orchestrator tracker with optional filtering by
+        `states` (comma-separated), `project_id`, and `assignee_id`. Pagination
+        is applied after filtering via `limit`/`offset`; `total` in the response
+        reflects the unfiltered count before pagination.
+      parameters:
+        - name: states
+          in: query
+          description: Comma-separated list of states to filter by.
+          schema:
+            type: string
+            example: "Todo,In Progress"
+        - name: project_id
+          in: query
+          schema:
+            type: string
+        - name: assignee_id
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '200':
+          description: List of issues with total count.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issues:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Issue'
+                  total:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      tags: [Issues]
+      summary: Create issue
+      description: Creates a new issue in the configured tracker. `title` is required; `state` defaults to `Backlog`. The issue will not be dispatched to an agent until it is moved to `Todo` (which requires `title`, `description`, `assignee_id`, and `project_id` all set).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title:
+                  type: string
+                description:
+                  type: string
+                state:
+                  type: string
+                  default: Backlog
+                priority:
+                  type: integer
+                assignee_id:
+                  type: string
+                project_id:
+                  type: string
+                provider:
+                  type: string
+                  description: Agent provider override.
+                runtime_target:
+                  type: string
+                disabled_tools:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '201':
+          description: Issue created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Issue'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/issues/{issue_identifier}:
+    get:
+      tags: [Issues]
+      summary: Get issue
+      description: >
+        Returns full issue detail merging runtime state (running/retry/status)
+        with tracker metadata (title, description, labels, etc.). When the issue
+        is not in the active runtime map, falls back to a tracker search by
+        identifier; returns 404 only when neither source has the issue.
+      parameters:
+        - $ref: '#/components/parameters/IssueIdentifier'
+      responses:
+        '200':
+          description: Issue detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Issue'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags: [Issues]
+      summary: Update issue
+      description: >
+        Partial update — only fields present in the body are changed. State
+        transitions are validated against the allowed graph (Backlog→Todo→In
+        Progress→Review→Done); `title`, `description`, `project_id`, and
+        `assignee_id` are locked once the issue leaves Backlog. Moving from
+        Review back to Todo or In Progress requires `feedback` in the body.
+        Transitioning to Review or Done triggers an auto-commit in the issue's
+        worktree; transitioning to Done also removes the worktree.
+      parameters:
+        - $ref: '#/components/parameters/IssueIdentifier'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                description:
+                  type: string
+                state:
+                  type: string
+                  enum: [Backlog, Todo, In Progress, Review, Done]
+                priority:
+                  type: integer
+                assignee_id:
+                  type: string
+                project_id:
+                  type: string
+                feedback:
+                  type: string
+                  description: Required when moving from Review back to Todo/In Progress.
+                branch_name:
+                  type: string
+                base_sha:
+                  type: string
+                plan:
+                  type: string
+                pr_url:
+                  type: string
+      responses:
+        '200':
+          description: Updated issue.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Issue'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      tags: [Issues]
+      summary: Delete issue
+      description: Permanently deletes the issue from the tracker, stops any running agent sessions, removes the git worktree directory, prunes the worktree reference, and force-deletes the associated branch. Irreversible.
+      parameters:
+        - $ref: '#/components/parameters/IssueIdentifier'
+      responses:
+        '204':
+          description: Issue deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/issues/{issue_identifier}/history:
+    get:
+      tags: [Issues]
+      summary: Issue history
+      description: Returns the unified run history for an issue, combining metadata entries and agent-sourced session events ordered by timestamp. Resolves the issue ID from the runtime map or via tracker search if not currently running.
+      parameters:
+        - $ref: '#/components/parameters/IssueIdentifier'
+      responses:
+        '200':
+          description: History entries.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  history:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/HistoryEntry'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/issues/{issue_identifier}/logs:
+    get:
+      tags: [Issues]
+      summary: Issue session logs
+      description: >
+        Returns the most recent agent session log as plain text. Resolves to the active `SessionLogPath` when the issue is running, otherwise finds the newest `.log` file under `_logs/{identifier}/`. Returns an empty 200 (with a placeholder message) when no logs exist or the issue has no agent history yet.
+      parameters:
+        - $ref: '#/components/parameters/IssueIdentifier'
+      responses:
+        '200':
+          description: Plain-text log content. Returns empty body when no logs exist yet.
+          content:
+            text/plain:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/issues/{issue_identifier}/diff:
+    get:
+      tags: [Issues]
+      summary: Issue git diff
+      description: >
+        Returns the unified git diff for all changes made by the agent on this
+        issue. When `base_sha` and `branch_name` are set, produces a
+        `base_sha...branch_name` committed diff plus any uncommitted worktree
+        changes. Without those fields, scans the worktree root for a directory
+        matching the identifier, then falls back to staged + unstaged + last-commit
+        diff on the project root. Returns an empty body if no changes are found.
+      parameters:
+        - $ref: '#/components/parameters/IssueIdentifier'
+        - name: provider
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Unified diff text.
+          content:
+            text/plain:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/issues/{issue_identifier}/artifacts:
+    get:
+      tags: [Issues]
+      summary: List artifacts
+      description: Lists file artifacts produced by the issue's agent runs. Pass `provider` to scope to a specific agent's output directory.
+      parameters:
+        - $ref: '#/components/parameters/IssueIdentifier'
+        - name: provider
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Artifact list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  artifacts:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/issues/{issue_identifier}/artifacts/{path}:
+    get:
+      tags: [Issues]
+      summary: Get artifact content
+      description: Returns the raw binary content of a specific artifact file. The `path` parameter is a relative path within the artifact directory. Returns 404 when the artifact does not exist.
+      parameters:
+        - $ref: '#/components/parameters/IssueIdentifier'
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: provider
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Raw artifact bytes.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/issues/{issue_identifier}/session:
+    delete:
+      tags: [Issues]
+      summary: Stop issue session
+      description: Stops the active agent session(s) for an issue and resets state to `Todo`. Pass `provider` query param to stop only that provider's session (returns 409 if no session exists for it); omit to stop all sessions. Works even when the issue has no active runtime entry.
+      parameters:
+        - $ref: '#/components/parameters/IssueIdentifier'
+        - name: provider
+          in: query
+          description: Stop only this provider's session. Omit to stop all.
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Session stopped.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: No active session for the specified provider.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/issues/{issue_identifier}/stop:
+    post:
+      tags: [Issues]
+      summary: Stop and reset issue
+      description: >
+        Hard-resets an issue: stops all active agent sessions, removes the git
+        worktree directory, prunes the worktree reference, force-deletes the
+        branch, and resets the issue to `Backlog` while clearing `feedback`,
+        `plan`, `branch_name`, and `base_sha`. Bypasses normal state-transition
+        validation.
+      parameters:
+        - $ref: '#/components/parameters/IssueIdentifier'
+      responses:
+        '200':
+          description: Reset issue.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Issue'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/issues/{issue_identifier}/pr:
+    post:
+      tags: [Issues]
+      summary: Create GitHub pull request
+      description: >
+        Pushes the issue's branch to `origin` (retrying with `--force-with-lease`
+        on failure) and creates a GitHub pull request. `owner`, `repo`, and `token`
+        are resolved in order: request body → project record → global config →
+        `gh auth token`. If a PR already exists for the branch, returns the
+        existing PR instead of erroring. Stores the resulting PR URL on the issue.
+      parameters:
+        - $ref: '#/components/parameters/IssueIdentifier'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PRRequest'
+      responses:
+        '201':
+          description: Pull request created or found.
+          content:
+            application/json:
+              schema:
+                type: object
+                description: GitHub PR object.
+                additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/search:
+    get:
+      tags: [Issues]
+      summary: Search issues
+      description: Full-text search across all issues using the `q` query parameter. Returns 400 if `q` is empty.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Matching issues.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issues:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Issue'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ─── Events (SSE) ─────────────────────────────────────────────────────────
+  /api/v1/events:
+    get:
+      tags: [Events]
+      summary: Subscribe to SSE event stream
+      description: >
+        Long-lived Server-Sent Events stream. On connect, immediately sends a
+        `snapshot` event containing the full current orchestrator state.
+        Subsequent events are emitted for every pub/sub bus message, each
+        followed by another `snapshot`. A periodic `snapshot` is also sent every
+        5 seconds as a keep-alive. Pass `once=1` to receive a single snapshot
+        and close. Reconnect using standard SSE retry logic; `Last-Event-ID` is
+        not currently used for replay.
+      responses:
+        '200':
+          description: SSE stream (keep-alive with periodic heartbeat comments).
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ─── Sessions ─────────────────────────────────────────────────────────────
+  /api/v1/sessions:
+    get:
+      tags: [Sessions]
+      summary: List sessions
+      description: Returns all recorded agent sessions with aggregated token usage, optionally filtered by `project_id`. Supports `limit`/`offset` pagination; `total` reflects the unfiltered count.
+      parameters:
+        - name: project_id
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Sessions with total count.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Session'
+                  total:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /api/v1/sessions/{session_id}:
+    get:
+      tags: [Sessions]
+      summary: Get session detail
+      description: Returns a session record and all its associated events in chronological order. Returns 404 when the session ID is not found.
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Session with events.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ─── Projects ─────────────────────────────────────────────────────────────
+  /api/v1/projects:
+    get:
+      tags: [Projects]
+      summary: List projects
+      description: Returns all registered projects. `github_token` is redacted to `"configured"` when set, `""` otherwise. `path_exists` is populated by a stat check on each `root_path` at request time.
+      responses:
+        '200':
+          description: Project list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Project'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+    post:
+      tags: [Projects]
+      summary: Register project
+      description: >
+        Registers a local directory as a project. The git root and remote URL
+        are detected automatically from `root_path`; if the remote is a GitHub
+        URL, `github_owner` and `github_repo` are populated. Uses upsert
+        semantics — re-registering the same path returns the existing ID.
+        Returns 403 when `root_path` is outside the configured `ProjectRoots`.
+        Pass `issue_source_*` fields to configure the issue source at creation time.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [root_path]
+              properties:
+                root_path:
+                  type: string
+                  description: Absolute path to the project directory.
+                issue_source_type:
+                  type: string
+                issue_source_endpoint:
+                  type: string
+                issue_source_token:
+                  type: string
+      responses:
+        '201':
+          description: Project registered.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/projects/{project_id}:
+    get:
+      tags: [Projects]
+      summary: Get project stats
+      description: Returns aggregate session count, total input/output tokens, and last-active timestamp for the project. Returns 503 when the database is unavailable.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      responses:
+        '200':
+          description: Project stats.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      tags: [Projects]
+      summary: Delete project
+      description: Removes a project and all associated sessions, events, runs, and issues via cascade delete. Does not clean up any worktrees or branches on disk.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      responses:
+        '204':
+          description: Project deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/projects/{project_id}/refresh:
+    post:
+      tags: [Projects]
+      summary: Refresh project git info
+      description: Re-runs `git remote` on the project's `root_path` and updates `github_owner`/`github_repo` if the remote parses as a GitHub URL. Silently skips the git update if the path is unreachable.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      responses:
+        '200':
+          description: Refresh complete.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/projects/{project_id}/issue-source:
+    patch:
+      tags: [Projects]
+      summary: Update issue source
+      description: Sets or replaces the per-project issue source (`issue_source_type`, `issue_source_endpoint`, `issue_source_token`). All three fields are full-replace — omitting a field clears it. Returns the updated project record.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                issue_source_type:
+                  type: string
+                issue_source_endpoint:
+                  type: string
+                issue_source_token:
+                  type: string
+      responses:
+        '200':
+          description: Updated project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/projects/{project_id}/issue-source/test:
+    post:
+      tags: [Projects]
+      summary: Test issue source connection
+      description: >
+        Attempts to connect to the project's configured issue source and returns `{"ok": true}` or `{"ok": false, "error": "..."}`. Does not modify any state.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      responses:
+        '200':
+          description: Connection test result.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  error:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/projects/{project_id}/tracker/issues:
+    get:
+      tags: [Projects]
+      summary: Browse tracker issues
+      description: Fetches work items directly from the project's configured issue source (not the local tracker DB). Supports optional `states` comma-separated filter. Used by the TrackerViewer panel for live browsing.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+        - name: states
+          in: query
+          schema:
+            type: string
+            description: Comma-separated state filter.
+      responses:
+        '200':
+          description: Work items from the tracker.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WorkItem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/projects/{project_id}/file:
+    get:
+      tags: [Projects]
+      summary: Get project file content
+      description: Returns the content of a file within the project as plain text. The `path` query parameter is a relative path from the project root. Returns 403 for paths that escape the project root (path traversal), 404 when the file does not exist.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+        - name: path
+          in: query
+          required: true
+          description: Path relative to project root.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: File content as plain text.
+          content:
+            text/plain:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/projects/{project_id}/tree:
+    get:
+      tags: [Projects]
+      summary: Get project file tree
+      description: >
+        Returns a 2-level directory tree (root + one level of children) for the
+        project or a subdirectory. Skips `.git`, `node_modules`, `dist`, `build`,
+        and `.DS_Store`. Entries are sorted — directories first, then files,
+        both alphabetically.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+        - name: path
+          in: query
+          description: Relative path within the project to list. Defaults to root.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: File tree nodes.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FileNode'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ─── Git operations ────────────────────────────────────────────────────────
+  /api/v1/projects/{project_id}/git:
+    get:
+      tags: [Git]
+      summary: Git commit history
+      description: Returns the last 20 commits for the project root (or a specific `branch`). Returns 403 when the project path is outside authorized roots.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+        - name: branch
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Commit list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GitCommit'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/projects/{project_id}/git/status:
+    get:
+      tags: [Git]
+      summary: Git working tree status
+      description: Returns the working tree's porcelain file status (two-character codes) and the current branch's `ahead`/`behind` counts relative to its remote tracking branch.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      responses:
+        '200':
+          description: Git status.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  files:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GitStatusFile'
+                  branch:
+                    type: object
+                    properties:
+                      ahead:
+                        type: integer
+                      behind:
+                        type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/projects/{project_id}/git/diff:
+    get:
+      tags: [Git]
+      summary: Git diff
+      description: >
+        Returns a unified diff. Pass `hash` for a specific commit diff (`hash~1..hash`),
+        `file` to scope to a single path, or `staged=true` for the index (`--cached`) diff.
+        Omitting all params returns the unstaged working tree diff.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+        - name: hash
+          in: query
+          schema:
+            type: string
+        - name: file
+          in: query
+          schema:
+            type: string
+        - name: staged
+          in: query
+          schema:
+            type: string
+            enum: [true, false]
+      responses:
+        '200':
+          description: Unified diff text.
+          content:
+            text/plain:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/projects/{project_id}/git/commit:
+    post:
+      tags: [Git]
+      summary: Git commit
+      description: Runs `git commit` with the provided `message` in the project directory. Returns 403 when the project path is outside authorized roots, 400 when `message` is empty.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message:
+                  type: string
+      responses:
+        '200':
+          description: Commit successful.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/projects/{project_id}/git/push:
+    post:
+      tags: [Git]
+      summary: Git push
+      description: >
+        Pushes to `remote` (default `origin`) and `branch` (defaults to the
+        current branch, falling back to the repo default branch if detection
+        fails). Returns 403 when the path is outside authorized roots.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                remote:
+                  type: string
+                  default: origin
+                branch:
+                  type: string
+                  description: Defaults to current branch.
+      responses:
+        '200':
+          description: Push successful.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/projects/{project_id}/git/pull:
+    post:
+      tags: [Git]
+      summary: Git pull
+      description: >
+        Pulls from `remote` (default `origin`) and `branch` (defaults to the
+        current branch, falling back to the repo default branch if detection
+        fails). Returns 403 when the path is outside authorized roots.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                remote:
+                  type: string
+                  default: origin
+                branch:
+                  type: string
+      responses:
+        '200':
+          description: Pull successful.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/projects/{project_id}/git/fetch:
+    post:
+      tags: [Git]
+      summary: Git fetch
+      description: Runs `git fetch` for all remotes in the project directory. Returns 403 when the path is outside authorized roots.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      responses:
+        '200':
+          description: Fetch successful.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/projects/{project_id}/git/branches:
+    get:
+      tags: [Git]
+      summary: List branches
+      description: Returns `current` branch name, all local `branches`, and all `remote_branches` for the project.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      responses:
+        '200':
+          description: Branch lists.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  current:
+                    type: string
+                  branches:
+                    type: array
+                    items:
+                      type: string
+                  remote_branches:
+                    type: array
+                    items:
+                      type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      tags: [Git]
+      summary: Create branch
+      description: >
+        Creates a new local branch from the current HEAD using `git branch {name}`.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+      responses:
+        '200':
+          description: Branch created.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/projects/{project_id}/git/branches/detail:
+    get:
+      tags: [Git]
+      summary: List branches with detail
+      description: Returns all local branches with `ahead`/`behind` counts relative to the remote tracking branch, `last_commit` hash, and `last_commit_date`.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      responses:
+        '200':
+          description: Detailed branch list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GitBranchDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/projects/{project_id}/git/branches/{branch}:
+    delete:
+      tags: [Git]
+      summary: Delete branch
+      description: Deletes a local branch using `git branch -D` (force delete). Does not remove any associated remote branch.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+        - name: branch
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Branch deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/projects/{project_id}/git/checkout:
+    post:
+      tags: [Git]
+      summary: Checkout branch
+      description: >
+        Checks out an existing local branch (`git checkout {branch}`). Does not create branches; use POST `/git/branches` first for new branches.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [branch]
+              properties:
+                branch:
+                  type: string
+      responses:
+        '200':
+          description: Checkout successful.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/projects/{project_id}/git/stage:
+    post:
+      tags: [Git]
+      summary: Stage files
+      description: >
+        Stages the specified files for commit (`git add {files...}`). Pass an empty array to stage nothing.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                files:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Files staged.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/projects/{project_id}/git/unstage:
+    post:
+      tags: [Git]
+      summary: Unstage files
+      description: >
+        Removes the specified files from the staging index (`git reset HEAD {files...}`) without discarding working-tree changes.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                files:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Files unstaged.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/projects/{project_id}/git/stash:
+    post:
+      tags: [Git]
+      summary: Git stash
+      description: >
+        Stashes working tree changes with an optional `message`. Equivalent to `git stash push -m {message}`.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message:
+                  type: string
+      responses:
+        '200':
+          description: Stash created.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/projects/{project_id}/git/stash/list:
+    get:
+      tags: [Git]
+      summary: List stashes
+      description: Returns the current stash list (`git stash list`) as an array of stash entry objects.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      responses:
+        '200':
+          description: Stash entries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/projects/{project_id}/git/stash/pop:
+    post:
+      tags: [Git]
+      summary: Pop stash
+      description: Applies the top stash entry and removes it from the stash list (`git stash pop`).
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      responses:
+        '200':
+          description: Stash applied.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/projects/{project_id}/git/stash/apply:
+    post:
+      tags: [Git]
+      summary: Apply stash
+      description: >
+        Applies a stash entry by `index` without removing it from the stash list (`git stash apply stash@{index}`).
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                index:
+                  type: integer
+      responses:
+        '200':
+          description: Stash applied.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/projects/{project_id}/git/stash/drop:
+    post:
+      tags: [Git]
+      summary: Drop stash
+      description: >
+        Discards a stash entry by `index` without applying it (`git stash drop stash@{index}`).
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                index:
+                  type: integer
+      responses:
+        '200':
+          description: Stash dropped.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/projects/{project_id}/git/conflicts:
+    get:
+      tags: [Git]
+      summary: List merge conflicts
+      description: Returns files currently in a conflicted state (both-modified, etc.) in the working tree.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      responses:
+        '200':
+          description: Conflict file list.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/projects/{project_id}/git/merge:
+    post:
+      tags: [Git]
+      summary: Merge branch
+      description: >
+        Merges the specified `branch` into the current branch (`git merge {branch}`). Returns merge result output; may leave the repo in a conflicted state on failure.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [branch]
+              properties:
+                branch:
+                  type: string
+      responses:
+        '200':
+          description: Merge result.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/projects/{project_id}/git/merge/abort:
+    post:
+      tags: [Git]
+      summary: Abort merge
+      description: Aborts an in-progress merge and restores the pre-merge state (`git merge --abort`).
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      responses:
+        '200':
+          description: Merge aborted.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/projects/{project_id}/git/resolve:
+    post:
+      tags: [Git]
+      summary: Resolve conflict
+      description: >
+        Marks a conflicted file as resolved by staging it (`git add {path}`). Does not modify file content; the caller is expected to have already applied the desired resolution.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path]
+              properties:
+                path:
+                  type: string
+      responses:
+        '200':
+          description: Conflict resolved.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/projects/{project_id}/git/default-branch:
+    get:
+      tags: [Git]
+      summary: Get default branch
+      description: Detects and returns the repository's default branch name (typically `main` or `master`) by inspecting `HEAD` of the remote.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      responses:
+        '200':
+          description: Default branch name.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  branch:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ─── GitHub integration ────────────────────────────────────────────────────
+  /api/v1/projects/{project_id}/github/issues:
+    get:
+      tags: [GitHub]
+      summary: List GitHub issues
+      description: Returns GitHub issues for the project's linked repository using the project's stored GitHub token. Supports `state` (`open`/`closed`) and `page` parameters. Returns 502 on upstream GitHub API errors.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+        - name: state
+          in: query
+          schema:
+            type: string
+            enum: [open, closed]
+            default: open
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+      responses:
+        '200':
+          description: GitHub issues with has_more flag.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issues:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                  has_more:
+                    type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+
+    post:
+      tags: [GitHub]
+      summary: Create GitHub issue
+      description: Creates a new issue in the project's linked GitHub repository. `title` is required; `body` and `labels` are optional. Returns 502 on upstream GitHub API errors.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title:
+                  type: string
+                body:
+                  type: string
+                labels:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '201':
+          description: GitHub issue created.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+
+  /api/v1/projects/{project_id}/github/issues/{number}:
+    patch:
+      tags: [GitHub]
+      summary: Update GitHub issue
+      description: Partially updates a GitHub issue (title, body, state, labels) by proxying a PATCH to the GitHub API. Only fields present in the request body are updated.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+        - name: number
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Updated GitHub issue.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+
+  /api/v1/projects/{project_id}/github/pulls:
+    get:
+      tags: [GitHub]
+      summary: List pull requests
+      description: Returns open pull requests for the project's linked GitHub repository. Returns 502 on upstream GitHub API errors.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      responses:
+        '200':
+          description: Pull request list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pulls:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+
+    post:
+      tags: [GitHub]
+      summary: Create pull request (project)
+      description: Creates a GitHub pull request for the project using the project's stored token. Unlike the issue-scoped PR endpoint, this does not push the branch first.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PRRequest'
+      responses:
+        '201':
+          description: Pull request created.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+
+  /api/v1/projects/{project_id}/github/pulls/{number}/diff:
+    get:
+      tags: [GitHub]
+      summary: Pull request diff
+      description: Fetches and returns the unified diff for a GitHub pull request by requesting `application/vnd.github.v3.diff` from the API.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+        - name: number
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Unified diff text.
+          content:
+            text/plain:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/projects/{project_id}/github/pulls/{number}/reviews:
+    get:
+      tags: [GitHub]
+      summary: List PR reviews
+      description: Returns all reviews submitted for the specified pull request number.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+        - name: number
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Review list.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [GitHub]
+      summary: Submit PR review
+      description: Submits a review on a pull request. `event` controls the review type (`COMMENT`, `APPROVE`, or `REQUEST_CHANGES`).
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+        - name: number
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                body:
+                  type: string
+                event:
+                  type: string
+                  enum: [COMMENT, APPROVE, REQUEST_CHANGES]
+      responses:
+        '201':
+          description: Review submitted.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/projects/{project_id}/github/pulls/{number}/comments:
+    get:
+      tags: [GitHub]
+      summary: List PR comments
+      description: Returns all inline review comments on a pull request.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+        - name: number
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Comment list.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/projects/{project_id}/github/pulls/{number}/merge:
+    put:
+      tags: [GitHub]
+      summary: Merge pull request
+      description: Merges a pull request using `merge_method` (`merge`, `squash`, or `rebase`; default `merge`). Returns the GitHub merge result object.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+        - name: number
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                merge_method:
+                  type: string
+                  enum: [merge, squash, rebase]
+                  default: merge
+      responses:
+        '200':
+          description: Merge result.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/projects/{project_id}/github/disconnect:
+    post:
+      tags: [GitHub]
+      summary: Disconnect GitHub
+      description: Removes GitHub integration (owner, repo, token) from the project.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      responses:
+        '200':
+          description: Disconnected.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/projects/{project_id}/github/create-repo:
+    post:
+      tags: [GitHub]
+      summary: Create GitHub repository
+      description: Creates a new GitHub repository and links it to the project.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                private:
+                  type: boolean
+                  default: false
+      responses:
+        '201':
+          description: Repository created and linked.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ─── GitHub OAuth ──────────────────────────────────────────────────────────
+  /api/v1/github/login:
+    get:
+      tags: [GitHub]
+      summary: GitHub OAuth login
+      description: Initiates the GitHub OAuth flow by redirecting to GitHub's authorization URL. No authentication required. Rate-limited to 5 req/s.
+      security: []
+      responses:
+        '302':
+          description: Redirect to GitHub.
+
+  /api/v1/github/callback:
+    get:
+      tags: [GitHub]
+      summary: GitHub OAuth callback
+      description: Completes the GitHub OAuth flow by exchanging the `code` parameter for an access token and redirecting the desktop app. No authentication required. Rate-limited to 5 req/s.
+      security: []
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirect to desktop after token exchange.
+
+  # ─── Tracker configs ──────────────────────────────────────────────────────
+  /api/v1/tracker/configs:
+    get:
+      tags: [TrackerConfigs]
+      summary: List tracker configs
+      description: Returns all stored tracker connection configurations. The encrypted token is never returned; `has_token` indicates whether one is stored.
+      responses:
+        '200':
+          description: Config list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TrackerConfig'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [TrackerConfigs]
+      summary: Create tracker config
+      description: Creates a new named tracker connection. The `token` is AES-encrypted before storage and never returned in responses. `auth_method` defaults to `apikey`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, display_name]
+              properties:
+                type:
+                  type: string
+                  description: Tracker type (github/linear/jira).
+                display_name:
+                  type: string
+                endpoint:
+                  type: string
+                auth_method:
+                  type: string
+                  default: apikey
+                token:
+                  type: string
+                extra:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '201':
+          description: Tracker config created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackerConfig'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/tracker/configs/{config_id}:
+    patch:
+      tags: [TrackerConfigs]
+      summary: Update tracker config
+      description: Partial update of a tracker config — only fields present in the body are changed. If `token` is provided, it is re-encrypted and replaces the stored token.
+      parameters:
+        - name: config_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                display_name:
+                  type: string
+                endpoint:
+                  type: string
+                auth_method:
+                  type: string
+                token:
+                  type: string
+                extra:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Updated config.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackerConfig'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [TrackerConfigs]
+      summary: Delete tracker config
+      description: Permanently removes a tracker config record. Any projects assigned to this config will retain the `tracker_config_id` reference but the config will no longer resolve.
+      parameters:
+        - name: config_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted flag.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/tracker/configs/{config_id}/test:
+    post:
+      tags: [TrackerConfigs]
+      summary: Test tracker connection
+      description: >
+        Instantiates the tracker adapter with the stored credentials and makes
+        a lightweight API call to verify connectivity. Returns
+        `{"ok": true}` or `{"ok": false, "error": "..."}`. Does not modify any state.
+      parameters:
+        - name: config_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Test result.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  error:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/tracker/configs/{config_id}/projects:
+    get:
+      tags: [TrackerConfigs]
+      summary: List tracker projects
+      description: Returns the projects or teams available in the connected tracker (e.g., GitHub repos, Linear teams, Jira projects) using the stored credentials.
+      parameters:
+        - name: config_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Tracker project list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TrackerProject'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/tracker/configs/{config_id}/states:
+    get:
+      tags: [TrackerConfigs]
+      summary: List tracker states
+      description: Returns the workflow states (e.g., todo, in_progress, done) available in the connected tracker for populating state-mapping UI.
+      parameters:
+        - name: config_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: State list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TrackerState'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/tracker/configs/{config_id}/issues:
+    get:
+      tags: [TrackerConfigs]
+      summary: Browse tracker issues
+      description: Returns work items directly from the tracker adapter (not the local DB) using the stored credentials. Supports optional comma-separated `states` filter.
+      parameters:
+        - name: config_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: states
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Work items.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WorkItem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/projects/{project_id}/tracker:
+    post:
+      tags: [TrackerConfigs]
+      summary: Assign tracker config to project
+      description: Links a global tracker config to a project by setting `tracker_config_id`. Pass `config_id=""` to unlink the current config without deleting it.
+      parameters:
+        - $ref: '#/components/parameters/ProjectID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [config_id]
+              properties:
+                config_id:
+                  type: string
+      responses:
+        '200':
+          description: Assignment updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ─── Workspace ────────────────────────────────────────────────────────────
+  /api/v1/workspace/file:
+    get:
+      tags: [Workspace]
+      summary: Read workspace file
+      description: Returns the content of a file as plain text. The `path` parameter must be an absolute path inside the workspace root, a worktree root, or any registered project root. Returns 400 for relative paths or paths that escape all roots.
+      parameters:
+        - name: path
+          in: query
+          required: true
+          description: Absolute path (must be inside a registered root).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: File content as plain text.
+          content:
+            text/plain:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags: [Workspace]
+      summary: Write workspace file
+      description: >
+        Writes the raw request body to a file at the given absolute `path`
+        (must be inside a registered root). Creates or overwrites the file.
+        Capped at 32 MiB — returns 413 if exceeded. Path validation is identical
+        to GET.
+      parameters:
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          text/plain:
+            schema:
+              type: string
+      responses:
+        '200':
+          description: Write successful.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  bytes:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          description: Body exceeds 32 MiB limit.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/workspace/tree:
+    get:
+      tags: [Workspace]
+      summary: List workspace directory
+      description: Returns a flat (non-recursive) directory listing of the given absolute `path` inside a registered root. Returns 400 for paths outside allowed roots.
+      parameters:
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Directory entries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FileNode'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/workspace/dir:
+    post:
+      tags: [Workspace]
+      summary: Create directory
+      description: Creates a directory (and any missing parents) at the given absolute `path` inside a registered root. Returns 409 if the path already exists.
+      parameters:
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Directory created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Path already exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/workspace/rename:
+    post:
+      tags: [Workspace]
+      summary: Rename/move path
+      description: Moves a file or directory from `from` to `to`. Both absolute paths must be inside registered roots. Returns 404 when the source does not exist, 409 when the destination already exists.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, to]
+              properties:
+                from:
+                  type: string
+                  description: Absolute source path.
+                to:
+                  type: string
+                  description: Absolute destination path.
+      responses:
+        '200':
+          description: Rename successful.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Destination already exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/workspace/path:
+    delete:
+      tags: [Workspace]
+      summary: Delete workspace path
+      description: Removes a file or a directory tree (recursively) at the given absolute `path` inside a registered root. Returns 404 when the path does not exist.
+      parameters:
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deletion successful.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/workspace/migration/plan:
+    get:
+      tags: [Workspace]
+      summary: Migration plan
+      description: Returns a dry-run plan showing what files/directories would be moved when migrating from an old workspace root to the current one. Accepts `from` and `to` query params; defaults to the previous workspace default and the current workspace root.
+      responses:
+        '200':
+          description: Migration plan.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/workspace/migrate:
+    post:
+      tags: [Workspace]
+      summary: Run migration
+      description: >
+        Executes a workspace migration, moving files from `from` to `to`.
+        Pass `"dry_run": true` (the default) to preview without making changes.
+        Returns 202 with a result object describing actions taken.
+      responses:
+        '200':
+          description: Migration result.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ─── MCP servers ──────────────────────────────────────────────────────────
+  /api/v1/mcp/tools:
+    get:
+      tags: [MCP]
+      summary: List MCP tools
+      description: Returns all tools advertised by currently running MCP server processes. Returns an empty list when no MCP registry is configured.
+      responses:
+        '200':
+          description: Tool list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tools:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/mcp/servers:
+    get:
+      tags: [MCP]
+      summary: List MCP servers
+      description: Returns all MCP server entries stored in the database. Returns an empty list when the database is unavailable.
+      responses:
+        '200':
+          description: Server list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  servers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MCPServer'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [MCP]
+      summary: Register MCP server
+      description: Persists a new MCP server entry and immediately rebuilds and starts the full MCP registry (all existing servers plus the new one). The new server is available to agents after this call without restart.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, command]
+              properties:
+                name:
+                  type: string
+                command:
+                  type: string
+      responses:
+        '201':
+          description: Server registered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MCPServer'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/mcp/servers/{id}:
+    delete:
+      tags: [MCP]
+      summary: Delete MCP server
+      description: Removes an MCP server entry from the database, then rebuilds the live registry from the remaining DB entries plus static config. Takes effect immediately without restart.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Server deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ─── Agent config ─────────────────────────────────────────────────────────
+  /api/v1/agents:
+    get:
+      tags: [Agents]
+      summary: List configured agents
+      description: Returns the list of agent provider names and their configuration status as known to the orchestrator.
+      responses:
+        '200':
+          description: Agent provider list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agents:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/config/agents:
+    get:
+      tags: [Agents]
+      summary: Get agent config
+      description: Returns the current agent command map (provider name → executable), the default provider name, and `max_turns`.
+      responses:
+        '200':
+          description: Agent configuration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentConfig'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    patch:
+      tags: [Agents]
+      summary: Update agent config (max_turns)
+      description: Updates `max_turns` in the running orchestrator (1–100 inclusive). Other fields are ignored. Returns the full updated config.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                max_turns:
+                  type: integer
+                  minimum: 1
+                  maximum: 100
+      responses:
+        '200':
+          description: Updated config.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentConfig'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [Agents]
+      summary: Replace agent config
+      description: Full-replaces the agent `commands` map and `agent_provider` default in the running orchestrator. Returns 204 on success. Does not persist across restarts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                commands:
+                  type: object
+                  additionalProperties:
+                    type: string
+                agent_provider:
+                  type: string
+      responses:
+        '204':
+          description: Config updated.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/agents/{provider}/mcp:
+    get:
+      tags: [Agents]
+      summary: List provider MCP servers
+      description: Returns MCP server entries from the provider's native config file (e.g., Claude's `settings.json`, Codex/OpenCode/Gemini config). Pass `project_id` to merge project-scoped MCP servers for Claude.
+      parameters:
+        - $ref: '#/components/parameters/Provider'
+      responses:
+        '200':
+          description: MCP server list.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [Agents]
+      summary: Add provider MCP server
+      description: Adds an MCP server entry to the provider's native config file.
+      parameters:
+        - $ref: '#/components/parameters/Provider'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: MCP server added.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/agents/{provider}/mcp/{name}:
+    put:
+      tags: [Agents]
+      summary: Update provider MCP server
+      description: Replaces an MCP server entry by name in the provider's native config file.
+      parameters:
+        - $ref: '#/components/parameters/Provider'
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    patch:
+      tags: [Agents]
+      summary: Toggle provider MCP server
+      description: Enables or disables an MCP server for the provider.
+      parameters:
+        - $ref: '#/components/parameters/Provider'
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    delete:
+      tags: [Agents]
+      summary: Delete provider MCP server
+      parameters:
+        - $ref: '#/components/parameters/Provider'
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/agents/{provider}/permissions:
+    get:
+      tags: [Agents]
+      summary: Get provider permissions
+      description: Returns the normalized permission config (allow/deny/ask tool lists, approval mode) read from the provider's native config file.
+      parameters:
+        - $ref: '#/components/parameters/Provider'
+      responses:
+        '200':
+          description: Permission settings.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [Agents]
+      summary: Set provider permissions
+      description: Writes the permission config (allow/deny/ask tool lists, approval mode) to the provider's native config file, replacing the existing permissions section.
+      parameters:
+        - $ref: '#/components/parameters/Provider'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Permissions updated.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/agents/{provider}/model:
+    get:
+      tags: [Agents]
+      summary: Get provider model
+      description: Returns the model name, effort level, and temperature configured in the provider's native config file.
+      parameters:
+        - $ref: '#/components/parameters/Provider'
+      responses:
+        '200':
+          description: Model config.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [Agents]
+      summary: Set provider model
+      description: Writes the `model` name to the provider's native config file.
+      parameters:
+        - $ref: '#/components/parameters/Provider'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                model:
+                  type: string
+      responses:
+        '200':
+          description: Model updated.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/agents/{provider}/hooks:
+    get:
+      tags: [Agents]
+      summary: Get provider hooks
+      description: Returns the lifecycle hooks (pre-tool, post-tool, etc.) configured in the provider's native config file.
+      parameters:
+        - $ref: '#/components/parameters/Provider'
+      responses:
+        '200':
+          description: Hook config.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [Agents]
+      summary: Set provider hooks
+      description: Writes the hooks configuration to the provider's native config file, replacing the existing hooks section.
+      parameters:
+        - $ref: '#/components/parameters/Provider'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Hooks updated.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/agents/claude/settings:
+    get:
+      tags: [Agents]
+      summary: Get Claude settings
+      description: Returns the parsed contents of Claude's `settings.json` from `~/.claude/`.
+      responses:
+        '200':
+          description: Claude settings.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [Agents]
+      summary: Save Claude settings
+      description: Overwrites Claude's `settings.json` with the provided JSON object.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Settings saved.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/agents/claude/instructions:
+    get:
+      tags: [Agents]
+      summary: Get Claude CLAUDE.md instructions
+      description: Returns the contents of `~/.claude/CLAUDE.md` as a JSON object with a `content` string field.
+      responses:
+        '200':
+          description: Instructions text.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [Agents]
+      summary: Save Claude CLAUDE.md instructions
+      description: Overwrites `~/.claude/CLAUDE.md` with the provided `content` string.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    delete:
+      tags: [Agents]
+      summary: Delete Claude instructions
+      description: Removes `~/.claude/CLAUDE.md` if it exists.
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/agents/claude/rules:
+    get:
+      tags: [Agents]
+      summary: List Claude rules
+      description: Returns all rule files from `~/.claude/rules/` as a list with name and content.
+      responses:
+        '200':
+          description: Rule list.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [Agents]
+      summary: Create/update Claude rule
+      description: >
+        Creates or overwrites a rule file at `~/.claude/rules/{name}.md` with the provided `content`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, content]
+              properties:
+                name:
+                  type: string
+                content:
+                  type: string
+      responses:
+        '200':
+          description: Rule saved.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/agents/claude/rules/{name}:
+    delete:
+      tags: [Agents]
+      summary: Delete Claude rule
+      description: >
+        Removes the rule file `~/.claude/rules/{name}.md`.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/agents/claude/skills:
+    get:
+      tags: [Agents]
+      summary: List Claude skills
+      description: Returns all skill files from `~/.claude/skills/` as a list with name and content.
+      responses:
+        '200':
+          description: Skill list.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [Agents]
+      summary: Create/update Claude skill
+      description: >
+        Creates or overwrites a skill file at `~/.claude/skills/{name}.md` with the provided `content`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, content]
+              properties:
+                name:
+                  type: string
+                content:
+                  type: string
+      responses:
+        '200':
+          description: Skill saved.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/agents/claude/skills/{name}:
+    delete:
+      tags: [Agents]
+      summary: Delete Claude skill
+      description: >
+        Removes the skill file `~/.claude/skills/{name}.md`.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/agents/claude/subagents:
+    get:
+      tags: [Agents]
+      summary: List Claude sub-agents
+      description: Returns all sub-agent configurations from Claude's config directory.
+      responses:
+        '200':
+          description: Sub-agent list.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [Agents]
+      summary: Create/update Claude sub-agent
+      description: Creates or updates a Claude sub-agent configuration entry.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Sub-agent saved.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/agents/claude/subagents/{name}:
+    delete:
+      tags: [Agents]
+      summary: Delete Claude sub-agent
+      description: Removes the named sub-agent configuration entry from Claude's config.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ─── Usage ────────────────────────────────────────────────────────────────
+  /api/v1/usage/{provider}/scan-state:
+    get:
+      tags: [Usage]
+      summary: Usage scan state
+      description: Returns the current scanner state for the given provider — whether scanning is enabled, last scan time, file/session counts, and any error from the last scan.
+      parameters:
+        - $ref: '#/components/parameters/UsageProvider'
+      responses:
+        '200':
+          description: Scan state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsageScanState'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/usage/{provider}/enabled:
+    post:
+      tags: [Usage]
+      summary: Enable/disable usage tracking
+      description: Enables or disables the usage file scanner for the given provider. Triggers an initial scan when enabling. Returns the updated scan state.
+      parameters:
+        - $ref: '#/components/parameters/UsageProvider'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled:
+                  type: boolean
+      responses:
+        '200':
+          description: Updated scan state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsageScanState'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/usage/{provider}/refresh:
+    post:
+      tags: [Usage]
+      summary: Refresh usage data
+      description: >
+        Triggers a synchronous re-scan of the provider's usage files.
+        Pass `"force": true` to bypass any scan-interval throttle.
+        On partial failure, returns 500 with the in-progress state
+        attached as `details.state`.
+      parameters:
+        - $ref: '#/components/parameters/UsageProvider'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                force:
+                  type: boolean
+                  description: Force re-scan even if data appears current.
+      responses:
+        '200':
+          description: Updated scan state after refresh.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsageScanState'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          description: Refresh failed (partial state attached under `details.state`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/usage/{provider}/summary:
+    get:
+      tags: [Usage]
+      summary: Usage summary
+      description: Returns aggregated token usage and estimated cost for the given provider, `scope`, and `range`. Data is read from the in-memory scan results, not the warehouse DB.
+      parameters:
+        - $ref: '#/components/parameters/UsageProvider'
+        - $ref: '#/components/parameters/UsageScope'
+        - $ref: '#/components/parameters/UsageRange'
+      responses:
+        '200':
+          description: Usage summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsageSummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/usage/{provider}/daily:
+    get:
+      tags: [Usage]
+      summary: Daily usage
+      description: Returns per-day token/cost data points for the given `scope` and `range`. Useful for rendering time-series charts.
+      parameters:
+        - $ref: '#/components/parameters/UsageProvider'
+        - $ref: '#/components/parameters/UsageScope'
+        - $ref: '#/components/parameters/UsageRange'
+      responses:
+        '200':
+          description: Daily data points.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UsageDailyPoint'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/usage/{provider}/breakdown:
+    get:
+      tags: [Usage]
+      summary: Usage breakdown
+      description: Returns usage aggregated by `kind` (`model`, `project`, or `session`; default `model`) for the given `scope` and `range`. The `key` field in each row contains the model name, project name, or session ID respectively.
+      parameters:
+        - $ref: '#/components/parameters/UsageProvider'
+        - $ref: '#/components/parameters/UsageScope'
+        - $ref: '#/components/parameters/UsageRange'
+        - name: kind
+          in: query
+          description: Breakdown dimension.
+          schema:
+            type: string
+            enum: [model, project, session]
+            default: model
+      responses:
+        '200':
+          description: Breakdown rows.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UsageBreakdownRow'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/usage/{provider}/sessions:
+    get:
+      tags: [Usage]
+      summary: Usage sessions
+      description: Returns individual session-level usage records for the given `scope` and `range`. Capped at 200 rows per call; use `limit` to request fewer (default 25).
+      parameters:
+        - $ref: '#/components/parameters/UsageProvider'
+        - $ref: '#/components/parameters/UsageScope'
+        - $ref: '#/components/parameters/UsageRange'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 25
+            maximum: 200
+      responses:
+        '200':
+          description: Session rows.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UsageSession'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/usage/rate-limits:
+    get:
+      tags: [Usage]
+      summary: Rate limit status
+      description: Returns the most recently observed Claude API rate limit headers (requests/tokens remaining, reset times). Returns cached values from the last API response; use POST `/rate-limits/refresh` to force a live check.
+      responses:
+        '200':
+          description: Rate limit state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitState'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/usage/rate-limits/refresh:
+    post:
+      tags: [Usage]
+      summary: Refresh rate limits
+      description: Makes a lightweight request to the Claude API to refresh the cached rate limit state and returns the updated values.
+      responses:
+        '200':
+          description: Updated rate limit state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitState'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ─── Warehouse stats ───────────────────────────────────────────────────────
+  /api/v1/warehouse/stats:
+    get:
+      tags: [Usage]
+      summary: Warehouse global stats
+      description: >
+        Returns platform-wide aggregate token usage (including cache read/write and
+        thinking tokens), per-provider and per-model breakdowns, session success/failure
+        stats, and the 50 most recent sessions from the warehouse DB.
+        Accepts `since`, `until` (RFC3339), `provider`, and `project_id` filters.
+        Results are cached in-memory for 30 seconds per unique filter combination.
+      parameters:
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: until
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: provider
+          in: query
+          schema:
+            type: string
+        - name: project_id
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Global stats.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  # ─── STT ──────────────────────────────────────────────────────────────────
+  /api/v1/stt/health:
+    get:
+      tags: [STT]
+      summary: STT health
+      description: Reports whether the Whisper binary and model file are both present and configured. Returns `ready`, `binary` path, `model` path, and `language` in the response.
+      responses:
+        '200':
+          description: STT health status.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  available:
+                    type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/stt/transcribe:
+    post:
+      tags: [STT]
+      summary: Transcribe audio
+      description: Submits base64-encoded audio to the local Whisper binary for transcription. Limited to 8 MB of audio. Optional `language` (BCP-47) overrides the server-configured default. Times out after 30 seconds.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [audio]
+              properties:
+                audio:
+                  type: string
+                  format: byte
+                  description: Base64-encoded audio data.
+                language:
+                  type: string
+                  description: BCP-47 language code (optional).
+      responses:
+        '200':
+          description: Transcription result.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  text:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ─── Terminal ─────────────────────────────────────────────────────────────
+  /api/v1/terminal/{session_id}:
+    get:
+      tags: [Terminal]
+      summary: Terminal WebSocket
+      description: >
+        Upgrades to a WebSocket connection that proxies a PTY session identified
+        by `session_id`. No bearer token authentication is required on this endpoint
+        (authentication occurs separately at the WebSocket handshake level).
+        Send binary frames for terminal input; receive binary frames for output.
+        Send a JSON control frame `{"type":"resize","cols":N,"rows":N}` to resize the PTY.
+      security: []
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '101':
+          description: Switching Protocols — WebSocket connection established.
+        '400':
+          description: Bad request (non-WebSocket request).
+
+  # ─── Unsandbox ────────────────────────────────────────────────────────────
+  /api/v1/unsandbox/status:
+    get:
+      tags: [Unsandbox]
+      summary: Unsandbox status
+      description: Returns the connection status and configuration of the remote unsandbox execution service (configured via environment variables).
+      responses:
+        '200':
+          description: Status.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/unsandbox/execute:
+    post:
+      tags: [Unsandbox]
+      summary: Execute remote command
+      description: >
+        Submits `code` in `language` (default `bash`) to the unsandbox service
+        for async execution with a 900-second TTL. For bash code referencing
+        `claude`, Claude credentials are prepended automatically. Returns a
+        job object with `job_id` and `status: "pending"`. Returns 503 if
+        unsandbox is not configured.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Execution result or job ID.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/unsandbox/sessions:
+    get:
+      tags: [Unsandbox]
+      summary: List unsandbox sessions
+      description: Returns active or recent execution sessions from the unsandbox service.
+      responses:
+        '200':
+          description: Session list.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/unsandbox/services:
+    get:
+      tags: [Unsandbox]
+      summary: List unsandbox services
+      description: Returns available service targets (e.g., language runtimes) exposed by the unsandbox service.
+      responses:
+        '200':
+          description: Service list.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/config/unsandbox:
+    get:
+      tags: [Unsandbox]
+      summary: Get unsandbox config
+      description: Returns the stored unsandbox service configuration (endpoint, credentials, etc.).
+      responses:
+        '200':
+          description: Config.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [Unsandbox]
+      summary: Save unsandbox config
+      description: Persists the unsandbox service configuration. Replaces the existing config.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Saved config.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    delete:
+      tags: [Unsandbox]
+      summary: Delete unsandbox config
+      description: Removes the stored unsandbox service configuration.
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ─── Runtime targets ──────────────────────────────────────────────────────
+  /api/v1/config/runtimes:
+    get:
+      tags: [Runtimes]
+      summary: List available runtimes
+      description: Returns the configured Tailscale and Kubernetes runtime targets from `runtime-targets.json`. Returns defaults when not yet configured.
+      responses:
+        '200':
+          description: Runtime list.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/config/tailscale:
+    get:
+      tags: [Runtimes]
+      summary: Get Tailscale config
+      description: Returns the Tailscale SSH remote execution config (host, user, key path, port, worktree root) from `runtime-targets.json`.
+      responses:
+        '200':
+          description: Tailscale config.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [Runtimes]
+      summary: Save Tailscale config
+      description: Writes Tailscale SSH config fields to `runtime-targets.json`, merging with existing Kubernetes config.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    delete:
+      tags: [Runtimes]
+      summary: Delete Tailscale config
+      description: Clears the Tailscale section of `runtime-targets.json`.
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/config/tailscale/test:
+    get:
+      tags: [Runtimes]
+      summary: Test Tailscale connection
+      description: Attempts an SSH connection to the configured Tailscale host and returns the result.
+      responses:
+        '200':
+          description: Test result.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/config/kubernetes:
+    get:
+      tags: [Runtimes]
+      summary: Get Kubernetes config
+      description: Returns the Kubernetes runtime config (kubeconfig path, namespace, image, service account) from `runtime-targets.json`.
+      responses:
+        '200':
+          description: Kubernetes config.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [Runtimes]
+      summary: Save Kubernetes config
+      description: Writes Kubernetes runtime config fields to `runtime-targets.json`, merging with existing Tailscale config.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    delete:
+      tags: [Runtimes]
+      summary: Delete Kubernetes config
+      description: Clears the Kubernetes section of `runtime-targets.json`.
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/config/kubernetes/test:
+    get:
+      tags: [Runtimes]
+      summary: Test Kubernetes connection
+      description: Verifies connectivity to the configured Kubernetes cluster using the stored kubeconfig and returns the result.
+      responses:
+        '200':
+          description: Test result.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/config/agent-providers:
+    get:
+      tags: [Agents]
+      summary: Get agent provider API keys
+      description: Returns the configuration status of all embedded-agent LLM providers (`openrouter`, `claude`, `openai`, `gemini`). API keys are included when set but the field is omitted entirely when not configured. Stored in `~/.orchestra/agent-providers.json`.
+      responses:
+        '200':
+          description: Provider config.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [Agents]
+      summary: Save agent provider API key
+      description: >
+        Saves or removes an API key for an embedded-agent LLM provider.
+        Pass an empty `api_key` to delete the stored key.
+        Valid providers are `openrouter`, `claude`, `openai`, `gemini`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/telemetry/health:
+    get:
+      tags: [Health]
+      summary: Telemetry health
+      description: Returns whether the warehouse SQLite database is accessible and healthy. Response contains a `healthy` boolean field.
+      responses:
+        '200':
+          description: Telemetry health.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  healthy:
+                    type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer token.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    BadRequest:
+      description: Bad request (invalid JSON, missing required fields, or constraint violation).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Path not within an authorized project or workspace root.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalError:
+      description: Unexpected server error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ServiceUnavailable:
+      description: Service dependency unavailable (e.g. database not initialized).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    BadGateway:
+      description: Upstream GitHub API error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  parameters:
+    IssueIdentifier:
+      name: issue_identifier
+      in: path
+      required: true
+      description: Human-readable issue identifier (e.g. PROJ-42) or UUID.
+      schema:
+        type: string
+
+    ProjectID:
+      name: project_id
+      in: path
+      required: true
+      description: Project ID (SHA-256 hash of canonical root path).
+      schema:
+        type: string
+
+    Provider:
+      name: provider
+      in: path
+      required: true
+      description: Agent provider name (claude/codex/gemini/opencode).
+      schema:
+        type: string
+        enum: [claude, codex, gemini, opencode]
+
+    UsageProvider:
+      name: provider
+      in: path
+      required: true
+      description: Usage provider (claude/codex).
+      schema:
+        type: string
+
+    UsageScope:
+      name: scope
+      in: query
+      description: Aggregation scope.
+      schema:
+        type: string
+        enum: [all, project, session]
+        default: all
+
+    UsageRange:
+      name: range
+      in: query
+      description: Time range for aggregation.
+      schema:
+        type: string
+        enum: [7d, 30d, 90d, 1y]
+        default: 30d
+
+tags:
+  - name: Health
+    description: Daemon health checks and metadata.
+  - name: State
+    description: Orchestrator state snapshot and refresh control.
+  - name: Issues
+    description: Issue lifecycle management — create, read, update, delete, and control.
+  - name: Events
+    description: Real-time SSE event stream.
+  - name: Sessions
+    description: Agent execution session history.
+  - name: Projects
+    description: Project registration and management.
+  - name: Git
+    description: Git operations on registered projects.
+  - name: GitHub
+    description: GitHub API integration (issues, PRs, repos, OAuth).
+  - name: TrackerConfigs
+    description: External issue tracker connection management.
+  - name: Workspace
+    description: File system operations within registered project roots.
+  - name: MCP
+    description: Model Context Protocol server registry.
+  - name: Agents
+    description: Agent provider configuration (Claude, Codex, Gemini, OpenCode).
+  - name: Usage
+    description: Token usage analytics and rate limit monitoring.
+  - name: STT
+    description: Speech-to-text transcription via Whisper.
+  - name: Terminal
+    description: WebSocket PTY terminal multiplexer.
+  - name: Unsandbox
+    description: Remote execution service integration.
+  - name: Runtimes
+    description: Tailscale and Kubernetes runtime target configuration.

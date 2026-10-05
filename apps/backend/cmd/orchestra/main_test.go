@@ -99,7 +99,7 @@ func TestRunCLICheckPRBodySuccess(t *testing.T) {
 }
 
 func TestRunCLIObservationDispatchPreservesArguments(t *testing.T) {
-	for _, command := range []string{"status", "project", "task"} {
+	for _, command := range []string{"status", "project", "task", "agent", "skill"} {
 		var stdout, stderr bytes.Buffer
 		called := false
 		code := runCLI([]string{"orchestra", command, "--json"}, &stdout, &stderr, cliRunner{observe: func(args []string, out, errOut io.Writer) int {
@@ -118,7 +118,7 @@ func TestRunCLIObservationDispatchPreservesArguments(t *testing.T) {
 func TestRunCLIHelpDocumentsTaskIdentities(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := runCLI([]string{"orchestra", "--help"}, &stdout, &stderr, cliRunner{})
-	if code != 0 || stderr.Len() != 0 || !strings.Contains(stdout.String(), "--identifier") || !strings.Contains(stdout.String(), "ORCHESTRA_API_TOKEN") {
+	if code != 0 || stderr.Len() != 0 || !strings.Contains(stdout.String(), "--identifier") || !strings.Contains(stdout.String(), "ORCHESTRA_API_TOKEN") || !strings.Contains(stdout.String(), "agent|skill") {
 		t.Fatalf("incomplete help: %d %s", code, stdout.String())
 	}
 }

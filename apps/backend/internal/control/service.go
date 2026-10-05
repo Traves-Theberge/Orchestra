@@ -34,11 +34,12 @@ type Request struct {
 	Provider      string `json:"provider,omitempty"`
 }
 type Service struct {
-	db           *db.DB
-	orchestrator *orchestrator.Service
-	registry     *trackerregistry.Registry
-	mu           sync.Mutex
-	roots        []string
+	db               *db.DB
+	orchestrator     *orchestrator.Service
+	registry         *trackerregistry.Registry
+	mu               sync.Mutex
+	roots            []string
+	resourceExecutor func(context.Context, map[string]any) map[string]any
 }
 
 func New(database *db.DB, orchestratorService *orchestrator.Service, registry *trackerregistry.Registry, roots ...[]string) (*Service, error) {
@@ -62,6 +63,16 @@ func success(data any) map[string]any { return map[string]any{"success": true, "
 
 // Execute is shared by authenticated HTTP/CLI and the scoped native-tool adapter.
 func (s *Service) Execute(ctx context.Context, name string, arguments map[string]any) map[string]any {
+	if name == "orchestra_resources" {
+		if s.resourceExecutor == nil {
+			return failure("unsupported_tool", "Agent and skill authoring is unavailable")
+		}
+		result := s.resourceExecutor(ctx, arguments)
+		if message, ok := result["error"].(string); ok && message != "" {
+			return map[string]any{"success": false, "error": map[string]any{"code": "resource_operation_failed", "message": message}, "data": result}
+		}
+		return success(result)
+	}
 	if name != "orchestra_control" {
 		return failure("unsupported_tool", "Only declared Orchestra control tools are available")
 	}
@@ -172,6 +183,12 @@ func (s *Service) Execute(ctx context.Context, name string, arguments map[string
 	}
 	out["request_id"] = req.RequestID
 	return out
+}
+
+// ConfigureResourceExecutor binds native authoring to the same scoped domain used by HTTP.
+// Configure this before publishing the executor to a running provider session.
+func (s *Service) ConfigureResourceExecutor(executor func(context.Context, map[string]any) map[string]any) {
+	s.resourceExecutor = executor
 }
 
 func (s *Service) projectClient(ctx context.Context, pid string) (tracker.Client, error) {

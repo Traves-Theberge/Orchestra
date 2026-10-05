@@ -24,6 +24,7 @@ interface OverviewPanelProps {
 const providerLabel: Record<Provider, string> = {
   claude: 'Claude',
   codex: 'Codex',
+  antigravity: 'Antigravity',
   gemini: 'Gemini',
   opencode: 'OpenCode',
   '8gent': '8gent',

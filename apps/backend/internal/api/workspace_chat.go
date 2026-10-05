@@ -85,7 +85,8 @@ func (s *Server) GetWorkspaceChatSessions(w http.ResponseWriter, r *http.Request
 	if !s.chatReady(w) {
 		return
 	}
-	v, err := s.workspaceChat.List(chatContext(r), chi.URLParam(r, "project_id"))
+	includeArchived := r.URL.Query().Get("include_archived") == "true"
+	v, err := s.workspaceChat.ListWithArchived(chatContext(r), chi.URLParam(r, "project_id"), includeArchived)
 	if err != nil {
 		s.chatError(w, err)
 		return

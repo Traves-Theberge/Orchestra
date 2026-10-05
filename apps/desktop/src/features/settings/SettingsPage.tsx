@@ -8,7 +8,6 @@ import {
   ChevronUp,
   CircleDashed,
   Copy,
-  Cpu,
   Database,
   Download,
   ExternalLink,
@@ -158,7 +157,6 @@ const CONTRAST_PAIRS: Array<{ label: string; foreground: ThemeRoleKey; backgroun
 
 const SECTIONS = [
   { id: 'connections', label: 'Connections', icon: Database },
-  { id: 'agents', label: 'Agents', icon: Cpu },
   { id: 'integrations', label: 'Integrations', icon: Cable },
   { id: 'appearance', label: 'Appearance', icon: Paintbrush },
   { id: 'terminal', label: 'Terminal', icon: Terminal },
@@ -252,7 +250,7 @@ export function SettingsPage({
   onNotifSoundChange?: (sound: string) => void
   onNotifMutedChange?: (muted: boolean) => void
   onNotifVolumeChange?: (volume: number) => void
-  initialTab?: 'backend' | 'agents' | 'integrations' | 'shortcuts' | 'notifications'
+  initialTab?: 'backend' | 'integrations' | 'shortcuts' | 'notifications'
 }) {
   const { isMac } = usePlatform()
   const theme = useAppStore(s => s.theme)
@@ -308,7 +306,6 @@ export function SettingsPage({
     if (!initialTab) return
     const tabToSection: Record<string, SectionId> = {
       backend: 'connections',
-      agents: 'agents',
       integrations: 'integrations',
       shortcuts: 'shortcuts',
       notifications: 'notifications',
@@ -351,9 +348,14 @@ export function SettingsPage({
     return () => el.removeEventListener('scroll', handleScroll)
   }, [])
 
-  const scrollToSection = useCallback((id: SectionId) => {
+  const scrollToSection = useCallback((id: string) => {
     const el = scrollRef.current
     if (!el) return
+    if (id === '__top__') {
+      el.scrollTo({ top: 0, behavior: 'instant' })
+      useAppStore.getState().setActiveSettingsSection('connections')
+      return
+    }
     const target = el.querySelector(`[data-settings-section="${id}"]`)
     if (!target) return
 
@@ -411,19 +413,17 @@ export function SettingsPage({
           </section>
 
           {/* ── Agents ── */}
-          <section data-settings-section="agents" className="rounded-xl transition-colors duration-500 scroll-mt-4">
-            <SectionHeading icon={Cpu} title="Agents" description="Workspace chat uses local agent providers" />
-            <div className="mt-4 space-y-6">
-              <p className="text-sm text-muted-foreground">Choose a local provider when starting a conversation in your workspace. Provider availability comes from the connected backend.</p>
-              <UnsandboxConfigForm config={config} disabled={savingConfig || loadingConfig} />
-            </div>
-          </section>
-
           {/* ── Integrations ── */}
           <section data-settings-section="integrations" className="rounded-xl transition-colors duration-500 scroll-mt-4">
             <SectionHeading icon={Cable} title="Integrations" description="GitHub, Linear, Jira, and other service connections" />
             <div className="mt-4">
               <IntegrationsPane config={config} />
+            </div>
+            <div className="mt-8 rounded-2xl border border-border/40 bg-gradient-to-b from-card via-card to-muted/20 p-6 shadow-sm">
+              <SectionHeading icon={Globe} title="Remote execution" description="Configure Unsandbox credentials for remote code execution" />
+              <div className="mt-4">
+                <UnsandboxConfigForm config={config} disabled={savingConfig || loadingConfig} />
+              </div>
             </div>
           </section>
 

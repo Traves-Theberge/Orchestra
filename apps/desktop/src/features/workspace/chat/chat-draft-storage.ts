@@ -1,4 +1,5 @@
 import type { BackendConfig } from '@core/api/client'
+import type { AgentSelection } from '@core/api/agent-catalog'
 
 export type ChatDraftReceipt = {
   version: 1
@@ -6,7 +7,8 @@ export type ChatDraftReceipt = {
   provider: string
   drafts: Record<string, string>
   title?: string
-  creation: { sessionId: string; provider: string; title?: string } | null
+  creation: { sessionId: string; provider: string; title?: string; agent?: AgentSelection } | null
+  agents?: Record<string, AgentSelection | null>
   submission: { sessionId: string; messageId: string; text: string } | null
   reply: { sessionId: string; requestId: string } | null
   blockedRequests: Record<string, boolean>
@@ -31,10 +33,13 @@ function decodeReceipt(serialized: string | null): ChatDraftReceipt | null {
     const value = raw as Partial<ChatDraftReceipt>
     const strings = (v: unknown): v is Record<string, string> => !!v && typeof v === 'object' && !Array.isArray(v) && Object.values(v).every(s => typeof s === 'string')
     const identity = (v: unknown, fields: string[]) => v === null || (!!v && typeof v === 'object' && fields.every(f => typeof (v as Record<string, unknown>)[f] === 'string' && (v as Record<string, unknown>)[f] !== ''))
+    const agent = (v: unknown) => v === null || (!!v && typeof v === 'object' && ['agent_id', 'agent_scope', 'agent_content_hash', 'agent_format'].every(f => typeof (v as Record<string, unknown>)[f] === 'string') && ['project', 'global'].includes((v as AgentSelection).agent_scope))
     if (value.version !== 1 || typeof value.sessionId !== 'string' || typeof value.provider !== 'string' || !strings(value.drafts)
       || (value.title !== undefined && typeof value.title !== 'string')
       || !identity(value.creation, ['sessionId', 'provider']) || !identity(value.submission, ['sessionId', 'messageId', 'text'])
       || (value.creation?.title !== undefined && typeof value.creation.title !== 'string')
+      || (value.creation?.agent !== undefined && !agent(value.creation.agent))
+      || (value.agents !== undefined && (!value.agents || Array.isArray(value.agents) || typeof value.agents !== 'object' || !Object.values(value.agents).every(agent)))
       || !identity(value.reply, ['sessionId', 'requestId']) || typeof value.uncertainSession !== 'string'
       || !value.blockedRequests || typeof value.blockedRequests !== 'object' || !Object.values(value.blockedRequests).every(v => typeof v === 'boolean')) return null
     return value as ChatDraftReceipt

@@ -4,6 +4,7 @@ import type { Provider, CategoryDef } from './types'
 export const PROVIDERS: { id: Provider; label: string; description: string }[] = [
   { id: 'claude', label: 'Claude', description: "Anthropic's Claude Code — deep reasoning and careful analysis" },
   { id: 'codex', label: 'Codex', description: "OpenAI's Codex — fast iteration and broad knowledge" },
+  { id: 'antigravity', label: 'Antigravity', description: 'Google Antigravity harness — independent configuration and capabilities' },
   { id: 'gemini', label: 'Gemini', description: "Google's Gemini CLI — multimodal and context-aware" },
   { id: 'opencode', label: 'OpenCode', description: 'Community-driven — flexible and extensible' },
   { id: '8gent', label: '8gent', description: 'Open-source autonomous coding agent — local-first, self-evolving' },
@@ -67,6 +68,7 @@ export const EIGHTGENT_CATEGORIES: CategoryDef[] = [
 ]
 
 export const MODELS_BY_PROVIDER: Record<Provider, { value: string; label: string }[]> = {
+  antigravity: [],
   claude: [
     { value: 'sonnet', label: 'Sonnet (latest)' },
     { value: 'opus', label: 'Opus (latest)' },
@@ -120,6 +122,7 @@ export const MODELS_BY_PROVIDER: Record<Provider, { value: string; label: string
 }
 
 export const HOOK_EVENTS_BY_PROVIDER: Record<Provider, string[]> = {
+  antigravity: [],
   claude: ['SessionStart', 'SessionEnd', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PermissionRequest', 'Notification', 'Stop', 'SubagentStop', 'PreCompact'],
   codex: [],
   gemini: ['SessionStart', 'SessionEnd', 'BeforeAgent', 'AfterAgent', 'BeforeModel', 'AfterModel', 'BeforeToolSelection'],
@@ -128,6 +131,7 @@ export const HOOK_EVENTS_BY_PROVIDER: Record<Provider, string[]> = {
 }
 
 export const EFFORT_LEVELS: Record<Provider, string[]> = {
+  antigravity: [],
   claude: ['low', 'medium', 'high'],
   codex: ['low', 'medium', 'high', 'very-high', 'max', 'reasoning'],
   gemini: ['low', 'medium', 'high'],
@@ -136,6 +140,7 @@ export const EFFORT_LEVELS: Record<Provider, string[]> = {
 }
 
 export const APPROVAL_MODES: Record<Provider, { label: string; value: string }[]> = {
+  antigravity: [],
   claude: [
     { label: 'Default (interactive)', value: 'default' },
     { label: 'Accept Edits', value: 'acceptEdits' },

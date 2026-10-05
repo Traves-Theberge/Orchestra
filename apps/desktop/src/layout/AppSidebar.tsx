@@ -6,7 +6,6 @@ import {
   ChartNoAxesColumn,
   ChevronLeft,
   ChevronRight,
-  Cpu,
   Database,
   FileText,
   FlaskConical,
@@ -37,11 +36,10 @@ import { PROVIDERS } from '@features/agents/constants'
 
 type SidebarView = 'primary' | 'settings' | 'projects' | 'console' | 'agents' | 'docs'
 
-const DRILLDOWN_SECTIONS: ReadonlySet<string> = new Set(['SETTINGS', 'PROJECTS', 'CONSOLE', 'AGENTS', 'DOCS'])
+const DRILLDOWN_SECTIONS: ReadonlySet<string> = new Set(['SETTINGS', 'PROJECTS', 'CONSOLE', 'AGENTS', 'DOCS', 'API_DOCS'])
 
 const SETTINGS_SECTIONS = [
   { id: 'connections', label: 'Connections', icon: Database },
-  { id: 'agents', label: 'Agents', icon: Cpu },
   { id: 'integrations', label: 'Integrations', icon: Cable },
   { id: 'appearance', label: 'Appearance', icon: Paintbrush },
   { id: 'terminal', label: 'Terminal', icon: Terminal },
@@ -99,6 +97,7 @@ function sectionToView(section: string): SidebarView {
     case 'CONSOLE': return 'console'
     case 'AGENTS': return 'agents'
     case 'DOCS': return 'docs'
+    case 'API_DOCS': return 'docs'
     default: return 'primary'
   }
 }
@@ -133,10 +132,8 @@ export function AppSidebar({
 
   const openSwagger = () => {
     if (!config) return
-    const url = `${config.baseUrl}/api/docs`
-    const bridge = (window as { orchestraDesktop?: { openExternal?: (u: string) => void } }).orchestraDesktop
-    if (bridge?.openExternal) bridge.openExternal(url)
-    else window.open(url, '_blank', 'noopener,noreferrer')
+    onSectionChange('API_DOCS')
+    setView('docs')
   }
 
   const [previousSection, setPreviousSection] = useState(activeSection)
@@ -146,6 +143,10 @@ export function AppSidebar({
   }
 
   const handleItemClick = (id: string) => {
+    if (id === 'SETTINGS') {
+      useAppStore.getState().setActiveSettingsSection('connections')
+      useAppStore.getState().scrollToSettingsSection?.('__top__')
+    }
     onSectionChange(id)
     if (DRILLDOWN_SECTIONS.has(id)) {
       setView(sectionToView(id))
@@ -154,7 +155,14 @@ export function AppSidebar({
     }
   }
 
-  const handleBack = useCallback(() => setView('primary'), [])
+  const handleBack = useCallback(() => {
+    if (activeSection === 'API_DOCS') {
+      onSectionChange('DOCS')
+      setView('docs')
+      return
+    }
+    setView('primary')
+  }, [activeSection, onSectionChange])
 
   // Drag-to-resize
   const onDragMouseDown = (e: React.MouseEvent) => {
@@ -509,7 +517,9 @@ function SidebarFooterIcons({
             title="API Docs"
             aria-label="API Docs"
             onClick={onOpenApiDocs}
-            className="size-9 shrink-0 rounded-lg flex items-center justify-center text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.06] transition-colors"
+            aria-current={activeSection === 'API_DOCS' ? 'page' : undefined}
+            data-testid="sidebar-api-docs"
+            className={`size-9 shrink-0 rounded-lg flex items-center justify-center transition-colors ${activeSection === 'API_DOCS' ? 'bg-foreground/[0.08] text-primary' : 'text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.06]'}`}
           >
             <Globe className="size-[17px]" strokeWidth={1.8} />
           </button>
@@ -540,7 +550,7 @@ function SidebarFooterIcons({
 
 function SubNavHeader({ label, onBack }: { label: string; onBack: () => void }) {
   return (
-    <div className="flex items-center gap-1.5 px-2 pt-2 pb-1.5 shrink-0 border-b border-border/20 mb-1">
+    <div className="flex items-center gap-1.5 px-2 pt-2 pb-1.5 shrink-0 mb-1">
       <button
         type="button"
         data-testid="sidebar-back"
@@ -627,7 +637,7 @@ function ConsoleSubNav({ onBack, onInspectTask }: { onBack: () => void; onInspec
       </div>
 
       {/* Project switcher */}
-      <div className="px-2 py-1.5 border-b border-border/20 shrink-0">
+      <div className="px-2 py-1.5 shrink-0">
         <ProjectControls projects={projects} query={projectQuery} onQueryChange={setProjectQuery} onSelect={selectProject} onAddProject={() => useAppStore.getState().setCreateProjectDialogOpen(true)} onNewTask={() => useAppStore.getState().openCreateTaskDialog()} />
       </div>
 
@@ -639,6 +649,8 @@ function ConsoleSubNav({ onBack, onInspectTask }: { onBack: () => void; onInspec
 
 function AgentsSubNav({ onBack }: { onBack: () => void }) {
   const activeProvider = useAppStore(s => s.activeAgentProvider)
+  const availableAgents = useAppStore(s => s.availableAgents)
+  const providerTabs = PROVIDERS.filter(provider => availableAgents.some(id => id.toLowerCase() === provider.id))
   const setActiveProvider = useAppStore(s => s.setActiveAgentProvider)
   const activeCategory = useAppStore(s => s.activeAgentCategory)
   const setActiveCategory = useAppStore(s => s.setActiveAgentCategory)
@@ -662,7 +674,7 @@ function AgentsSubNav({ onBack }: { onBack: () => void }) {
 
       {/* Provider icon tabs */}
       <div className="px-2 pb-2 shrink-0 flex items-center gap-1 flex-wrap">
-        {PROVIDERS.map(({ id, label, description }) => {
+        {providerTabs.map(({ id, label, description }) => {
           const active = activeProvider === id
           return (
             <AppTooltip

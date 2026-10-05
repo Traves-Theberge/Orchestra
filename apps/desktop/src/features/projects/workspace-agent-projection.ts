@@ -5,6 +5,7 @@ export type WorkspaceAgentRow = {
   key: string
   source: 'native' | 'runtime'
   sessionId: string
+  session?: WorkspaceChatSession
   taskId?: string
   taskIdentifier?: string
   provider: string
@@ -36,7 +37,7 @@ export function projectWorkspaceAgentRows(
   running: ScopedRuntime[],
 ): WorkspaceAgentRow[] {
   const native = sessions.filter(session => !!session.id && session.project_id === projectId && session.workspace_id === workspace.id && sameObservedPath(session.workspace_path || '', workspace.path)).map(session => ({
-    key: `native:${session.id}`, source: 'native' as const, sessionId: session.id,
+    key: `native:${session.id}`, source: 'native' as const, sessionId: session.id, session,
     provider: session.provider, title: session.title || 'Conversation',
     preview: session.last_message || session.error || session.status,
     status: session.status, model: session.effective_model || session.requested_model || '',

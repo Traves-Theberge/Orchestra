@@ -40,6 +40,7 @@ import { useAppStore } from '@core/store'
 // Lazy-loaded heavy sections
 const AgentsDashboard = lazy(() => import('@features/agents/AgentsDashboard').then(m => ({ default: m.AgentsDashboard })))
 const DocsDashboard = lazy(() => import('@features/docs/DocsDashboard').then(m => ({ default: m.DocsDashboard })))
+const ApiDocsDashboard = lazy(() => import('@features/docs/ApiDocsDashboard').then(m => ({ default: m.ApiDocsDashboard })))
 const SettingsPage = lazy(() => import('@layout/panels').then(m => ({ default: m.SettingsPage })))
 const WorkspaceLayout = lazy(() => import('@features/workspace/WorkspaceLayout').then(m => ({ default: m.WorkspaceLayout })))
 const SandboxDashboard = lazy(() => import('@features/sandbox/SandboxDashboard').then(m => ({ default: m.SandboxDashboard })))
@@ -398,7 +399,7 @@ export default function App() {
       >
         <div className="flex flex-col flex-1 min-w-0 min-h-0 h-full">
           {config && <section className={`${sectionVisibility.showOrchestrator ? 'flex' : 'hidden'} min-h-0 flex-1 flex-col`} aria-label="Global orchestrator">
-            <SectionErrorBoundary name="Orchestrator"><WorkspaceChat config={config} projectId="__orchestrator__" projectName="Orchestrator" active={sectionVisibility.showOrchestrator} /></SectionErrorBoundary>
+            <SectionErrorBoundary name="Orchestrator"><WorkspaceChat config={config} projectId="__orchestrator__" projectName="Maestro" active={sectionVisibility.showOrchestrator} /></SectionErrorBoundary>
           </section>}
           {sectionVisibility.showAgents ? (
             <SectionErrorBoundary name="Agents">
@@ -445,6 +446,16 @@ export default function App() {
               <section className="flex-1 flex flex-col min-h-0">
                 <Suspense fallback={<SectionLoader />}>
                   <DocsDashboard config={config} theme={theme} />
+                </Suspense>
+              </section>
+            </SectionErrorBoundary>
+          ) : null}
+
+          {config && sectionVisibility.showApiDocs ? (
+            <SectionErrorBoundary name="API Documentation">
+              <section className="flex-1 flex flex-col min-h-0">
+                <Suspense fallback={<SectionLoader />}>
+                  <ApiDocsDashboard config={config} />
                 </Suspense>
               </section>
             </SectionErrorBoundary>

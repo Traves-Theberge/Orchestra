@@ -60,6 +60,13 @@ func NormalizeProvider(s string) Provider {
 type TurnRequest struct {
 	// RequestedModel is authoring intent, not a claim about the observed model.
 	RequestedModel string
+	// RequestedAgentID is a harness-native primary agent identifier. It is
+	// kept separate from model selection and is never expanded into prompt text.
+	RequestedAgentID          string
+	RequestedAgentScope       string
+	RequestedAgentContentHash string
+	RequestedAgentFormat      string
+	ProjectID                 string
 	// RequestedMaxTurns is retained for validation; its budget semantics are not implemented.
 	RequestedMaxTurns *int
 	SessionID         string
@@ -80,6 +87,12 @@ type TurnRequest struct {
 	// DeveloperInstructions are scoped to this provider thread, never account settings.
 	DeveloperInstructions string
 	RuntimeTarget         RuntimeTarget
+}
+
+// AgentSelectionValidator is an opt-in capability. A catalog row or a native
+// definition file alone does not prove that a runner can apply the profile.
+type AgentSelectionValidator interface {
+	ValidateAgentSelection(context.Context, TurnRequest) error
 }
 
 // RequestedModelValidator is an explicit runner opt-in to applying a requested

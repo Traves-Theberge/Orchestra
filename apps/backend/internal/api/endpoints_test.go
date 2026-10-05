@@ -634,16 +634,20 @@ func TestGetWarehouseStatsWithoutDB(t *testing.T) {
 // OpenAPI
 // ---------------------------------------------------------------------------
 
-func TestGetOpenAPIYAMLNotFound(t *testing.T) {
-	// With default setup, openapi.yaml likely doesn't exist at the expected path
+func TestGetOpenAPIYAML(t *testing.T) {
 	router := newTestRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.yaml", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
-	// Should return 404 if spec file is missing, or 200 if it exists
-	if rec.Code != http.StatusOK && rec.Code != http.StatusNotFound {
-		t.Fatalf("expected 200 or 404, got %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/yaml; charset=utf-8" {
+		t.Fatalf("unexpected content type %q", got)
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("openapi:")) {
+		t.Fatal("response does not contain an OpenAPI document")
 	}
 }
 

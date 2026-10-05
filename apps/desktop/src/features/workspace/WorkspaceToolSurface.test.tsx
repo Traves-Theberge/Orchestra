@@ -1,4 +1,6 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { type ReactElement } from 'react'
+import { AppTooltipProvider } from '@ui/tooltip-wrapper'
+import { act, cleanup, fireEvent, render as renderBase, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { resetAppStore, useAppStore } from '@core/store'
 import { getActiveWorkspaceContextId } from '@core/store/workspace-context'
@@ -82,3 +84,7 @@ it('keeps failed creation visible without opening a nonexistent editor and dismi
   await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Document creation was not confirmed'))
   expect(openFile).not.toHaveBeenCalled()
 })
+
+const render = (ui: ReactElement) => renderBase(ui, { wrapper: AppTooltipProvider })
+
+beforeEach(() => vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} }))

@@ -3,6 +3,8 @@ import { ArrowDown, ArrowUp, CheckCircle2, ChevronRight, Loader2, MessageSquare,
 import { MarkdownRenderer } from '@ui/MarkdownRenderer'
 import { ChatMessage } from './ChatMessage'
 import { HarnessPicker } from './HarnessPicker'
+import { AgentPicker } from './AgentPicker'
+import { type AgentSelection } from '@core/api/agent-catalog'
 import { useAppStore } from '@core/store'
 import { ChatUsage } from './ChatUsage'
 import { chatDraftStorageKey, readChatDraftReceipt, writeChatDraftReceipt } from './chat-draft-storage'
@@ -105,6 +107,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
   const [providers, setProviders] = useState<WorkspaceChatProvider[]>([])
   const [sessions, setSessions] = useState<WorkspaceChatSession[]>([])
   const [provider, setProvider] = useState('')
+  const [agentSelections, setAgentSelections] = useState<Record<string, AgentSelection | null>>({})
   const [modelSelection, setModelSelection] = useState({ key: '', model: '' })
   const [effortSelection, setEffortSelection] = useState({ key: '', model: '', effort: '' })
   const [modelCatalog, setModelCatalog] = useState<{ key: string; data?: WorkspaceChatModelCatalog; error?: string }>({ key: '' })
@@ -127,7 +130,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
   const mutationPending = useRef(false)
   const submitted = useRef<{ sessionId: string; messageId: string; text: string } | null>(null)
   const submittedReply = useRef<{ sessionId: string; requestId: string } | null>(null)
-  const creating = useRef<{ sessionId: string; provider: string; title?: string; uncertain: boolean } | null>(null)
+  const creating = useRef<{ sessionId: string; provider: string; title?: string; agent?: AgentSelection; uncertain: boolean } | null>(null)
   const storageKey = useRef('')
   const storageBaseUrl = config.baseUrl
   const storageApiToken = config.apiToken
@@ -140,6 +143,10 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
   const [showJump, setShowJump] = useState(false)
   const working = isWorking(snapshot?.session)
   const selectedProvider = providers.find(p => p.id === provider)
+  const agentHarness = snapshot?.session.provider || creating.current?.provider || provider
+  const agentKey = JSON.stringify([sessionId, agentHarness])
+  const inheritedAgent = snapshot?.session.requested_agent_id && snapshot.session.requested_agent_scope ? { agent_id: snapshot.session.requested_agent_id, agent_scope: snapshot.session.requested_agent_scope, agent_content_hash: snapshot.session.requested_agent_content_hash ?? '', agent_format: snapshot.session.requested_agent_format ?? '' } : undefined
+  const selectedAgent = Object.hasOwn(agentSelections, agentKey) ? agentSelections[agentKey] ?? undefined : inheritedAgent
   const nativeSession = snapshot?.session.id === sessionId && snapshot?.session.conversation_mode === 'native_session'
   const nativeComposer = nativeSession || (!sessionId && selectedProvider?.conversation_mode === 'native_session')
   const catalogProvider = nativeSession ? snapshot.session.provider : !sessionId && selectedProvider?.conversation_mode === 'native_session' ? provider : ''
@@ -159,7 +166,8 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
     if (!storageKey.current) return
     if (!writeChatDraftReceipt(storageKey.current, {
       version: 1, sessionId: selectedId, provider, drafts: drafts.current, title: draftTitle,
-      creation: creating.current ? { sessionId: creating.current.sessionId, provider: creating.current.provider, title: creating.current.title } : null,
+      agents: agentSelections,
+      creation: creating.current ? { sessionId: creating.current.sessionId, provider: creating.current.provider, title: creating.current.title, agent: creating.current.agent } : null,
       submission: submitted.current, reply: submittedReply.current,
       blockedRequests: submittedReply.current ? { ...blockedRequests, [submittedReply.current.requestId]: true } : blockedRequests, uncertainSession,
     })) setStorageWarning('Draft storage is unavailable. Keep this tab open to retain unsent drafts and recovery identities.')
@@ -172,6 +180,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
       const saved = readChatDraftReceipt(key)
       if (saved) {
         setDraftTitle(saved.title ?? '')
+        setAgentSelections(saved.agents ?? {})
         // Input typed while the digest is loading belongs to the fresh draft.
         drafts.current = { ...saved.drafts, ...drafts.current }
         creating.current = saved.creation ? { ...saved.creation, uncertain: true } : null
@@ -341,7 +350,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
     creation.uncertain = false
     void mutate(async () => {
       const epoch = generation.current
-      const session = creation.title ? await createWorkspaceChatSession(config, projectId, creation.provider, creation.sessionId, { title: creation.title }) : await createWorkspaceChatSession(config, projectId, creation.provider, creation.sessionId)
+      const session = creation.title || creation.agent ? await createWorkspaceChatSession(config, projectId, creation.provider, creation.sessionId, { ...(creation.title ? { title: creation.title } : {}), ...creation.agent }) : await createWorkspaceChatSession(config, projectId, creation.provider, creation.sessionId)
       if (generation.current !== epoch) return
       if (session.project_id !== projectId || session.provider !== creation.provider || session.id !== creation.sessionId) throw new Error('Created conversation belongs to another workspace or provider.')
       const result = await fetchWorkspaceChat(config, projectId, creation.sessionId)
@@ -365,11 +374,12 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
     void mutate(async () => {
       const epoch = generation.current
       if (!sessionId) {
-        creating.current = { sessionId: targetId, provider, title: draftTitle || undefined, uncertain: false }
+        creating.current = { sessionId: targetId, provider, title: draftTitle || undefined, agent: selectedAgent, uncertain: false }
+        if (selectedAgent) setAgentSelections(previous => ({ ...previous, [JSON.stringify([targetId, provider])]: selectedAgent }))
         setSessionId(targetId)
         drafts.current[targetId] = text
         persist(targetId)
-        const session = draftTitle ? await createWorkspaceChatSession(config, projectId, provider, targetId, { title: draftTitle }) : await createWorkspaceChatSession(config, projectId, provider, targetId)
+        const session = draftTitle || selectedAgent ? await createWorkspaceChatSession(config, projectId, provider, targetId, { ...(draftTitle ? { title: draftTitle } : {}), ...selectedAgent }) : await createWorkspaceChatSession(config, projectId, provider, targetId)
         if (generation.current !== epoch) return
         if (session.project_id !== projectId || session.provider !== provider || session.id !== targetId) throw new Error('Created conversation belongs to another workspace or provider.')
         creating.current = null
@@ -378,7 +388,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
       }
       // Save the client message identity before crossing the dispatch boundary.
       persist(targetId)
-      const result = selectedEffort
+      const result = selectedAgent ? await sendWorkspaceChatMessage(config, projectId, targetId, messageId, text, selectedModel || undefined, selectedEffort || undefined, selectedAgent) : selectedEffort
         ? await sendWorkspaceChatMessage(config, projectId, targetId, messageId, text, selectedModel || undefined, selectedEffort)
         : selectedModel ? await sendWorkspaceChatMessage(config, projectId, targetId, messageId, text, selectedModel)
         : await sendWorkspaceChatMessage(config, projectId, targetId, messageId, text)
@@ -510,6 +520,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
                 }
                 setProvider(id)
               }} />
+            <AgentPicker config={config} projectId={projectId} harness={agentHarness} selection={selectedAgent} disabled={loading || pending || working || !!creating.current || !!submitted.current || !!submittedReply.current || !!uncertainSession} onChange={value => setAgentSelections(previous => ({ ...previous, [agentKey]: value ?? null }))} />
             {selectedModel && effortOptions.length > 0 && <select aria-label="Reasoning effort for next turn" value={selectedEffort} disabled={pending || working} onChange={e => setEffortSelection({ key: catalogKey, model: effortModel?.model ?? '', effort: e.target.value })} className="min-w-0 max-w-32 rounded-md border-0 bg-transparent py-1 text-[11px] text-muted-foreground"><option value="">Inherit provider setting</option>{effortOptions.map(e => <option key={e.reasoning_effort} value={e.reasoning_effort}>{e.reasoning_effort}</option>)}</select>}
             <span className="flex-1" />
             {working ? <button aria-label="Stop current turn" title="Interrupt current turn (Escape)" disabled={pending || snapshot?.session.status === 'stopping'} onClick={interrupt} className="shrink-0 rounded-full border border-border bg-background p-2 disabled:opacity-40"><Square className="size-3.5" /></button>

@@ -112,34 +112,35 @@ type RefreshResult struct {
 // concurrency limits, tracks running and retrying issues, and interfaces with
 // the issue tracker, workspace, and MCP subsystems.
 type Service struct {
-	mu               sync.RWMutex
-	running          []RunningEntry
-	retrying         []RetryEntry
-	codexTotals      CodexTotals
-	rateLimits       any
-	refreshPending   bool
-	trackerClient    tracker.Client
-	agentRegistry    *agents.Registry
-	agentCommands    map[string]string
-	agentProvider    string
-	activeStates     []string
-	terminalStates   []string
-	maxConcurrent    int
-	maxTurns         int
-	maxByState       map[string]int
-	claimed          map[string]bool
-	cancels          map[string]context.CancelFunc
-	maxRetryAttempts int64
-	workspaceService workspace.Service
-	workspaceRoot    string
-	retryBaseDelay   time.Duration
-	retryMaxDelay    time.Duration
-	stallTimeout     time.Duration
-	db               *db.DB
-	mcpRegistry      *mcp.Registry
-	mcpServers       map[string]string
-	trackerReg       *trackerregistry.Registry
-	onRetryExhausted func(issueID, issueIdentifier, issueState string)
+	mu                       sync.RWMutex
+	running                  []RunningEntry
+	retrying                 []RetryEntry
+	codexTotals              CodexTotals
+	rateLimits               any
+	refreshPending           bool
+	trackerClient            tracker.Client
+	agentRegistry            *agents.Registry
+	agentCommands            map[string]string
+	agentProvider            string
+	activeStates             []string
+	terminalStates           []string
+	maxConcurrent            int
+	maxTurns                 int
+	maxByState               map[string]int
+	claimed                  map[string]bool
+	cancels                  map[string]context.CancelFunc
+	maxRetryAttempts         int64
+	workspaceService         workspace.Service
+	workspaceRoot            string
+	retryBaseDelay           time.Duration
+	retryMaxDelay            time.Duration
+	stallTimeout             time.Duration
+	db                       *db.DB
+	workspaceRemovalProjects map[string]bool
+	mcpRegistry              *mcp.Registry
+	mcpServers               map[string]string
+	trackerReg               *trackerregistry.Registry
+	onRetryExhausted         func(issueID, issueIdentifier, issueState string)
 }
 
 // IssueRuntime bundles the running and retry state for a single issue,
@@ -155,19 +156,66 @@ type IssueRuntime struct {
 // concurrency, retry policy, and stall detection.
 func NewService() *Service {
 	return &Service{
-		running:          make([]RunningEntry, 0),
-		retrying:         make([]RetryEntry, 0),
-		activeStates:     []string{"todo", "in progress"},
-		terminalStates:   []string{"done", "cancelled", "canceled", "closed", "duplicate"},
-		maxConcurrent:    16,
-		maxByState:       map[string]int{},
-		claimed:          map[string]bool{},
-		cancels:          make(map[string]context.CancelFunc),
-		maxRetryAttempts: 5,
-		retryBaseDelay:   5 * time.Second,
-		retryMaxDelay:    10 * time.Minute,
-		stallTimeout:     20 * time.Minute,
+		running:                  make([]RunningEntry, 0),
+		retrying:                 make([]RetryEntry, 0),
+		activeStates:             []string{"todo", "in progress"},
+		terminalStates:           []string{"done", "cancelled", "canceled", "closed", "duplicate"},
+		maxConcurrent:            16,
+		maxByState:               map[string]int{},
+		claimed:                  map[string]bool{},
+		cancels:                  make(map[string]context.CancelFunc),
+		workspaceRemovalProjects: make(map[string]bool),
+		maxRetryAttempts:         5,
+		retryBaseDelay:           5 * time.Second,
+		retryMaxDelay:            10 * time.Minute,
+		stallTimeout:             20 * time.Minute,
 	}
+}
+
+// BeginWorkspaceRemoval fences new task dispatches for a project while a
+// selected checkout is being removed. Existing runs in that project block
+// only when they are preparing a checkout (path unknown) or using this path.
+func (s *Service) BeginWorkspaceRemoval(projectID, worktreePath string) (func(), error) {
+	if projectID == "" || worktreePath == "" {
+		return nil, errors.New("workspace removal scope is unavailable")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.workspaceRemovalProjects[projectID] {
+		return nil, errors.New("another workspace removal is pending for this project")
+	}
+	for _, entry := range s.running {
+		if entry.ProjectID != projectID {
+			continue
+		}
+		if entry.WorktreePath == "" || sameFilesystemPath(entry.WorktreePath, worktreePath) {
+			return nil, errors.New("an agent run is active or preparing in this workspace")
+		}
+	}
+	// Retry entries do not retain a workspace path, so their ownership cannot
+	// be safely distinguished. Hold removal until retry observations settle.
+	if len(s.retrying) > 0 {
+		return nil, errors.New("a retry has unresolved workspace ownership")
+	}
+	s.workspaceRemovalProjects[projectID] = true
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			s.mu.Lock()
+			delete(s.workspaceRemovalProjects, projectID)
+			s.mu.Unlock()
+		})
+	}, nil
+}
+
+func sameFilesystemPath(left, right string) bool {
+	left = filepath.Clean(left)
+	right = filepath.Clean(right)
+	if os.PathSeparator == '\\' {
+		left = strings.ToLower(left)
+		right = strings.ToLower(right)
+	}
+	return left == right
 }
 
 // RegisterCancel stores a cancellation function for an active run, keyed by issue ID.
@@ -1051,6 +1099,9 @@ func (s *Service) enqueueCandidates(candidates []tracker.Issue) {
 	terminal := normalizeStateSet(s.terminalStates)
 
 	for _, issue := range candidates {
+		if s.workspaceRemovalProjects[issue.ProjectID] || s.projectRemovalUnresolvedLocked(issue.ProjectID) {
+			continue
+		}
 		if len(s.running) >= s.maxConcurrent {
 			return
 		}
@@ -1161,6 +1212,30 @@ func (s *Service) stateSlotsAvailableLocked(issueState string) bool {
 	return used < limit
 }
 
+// projectRemovalUnresolvedLocked is a durable dispatch fence. Database errors
+// fail closed because an unknown removal receipt may represent a partial Git effect.
+func (s *Service) projectRemovalUnresolvedLocked(projectID string) bool {
+	if s.db == nil {
+		return false
+	}
+	var count int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM worktree_removal_requests WHERE project_id=? AND status IN ('pending','unknown')`, projectID).Scan(&count); err != nil {
+		return true
+	}
+	return count > 0
+}
+
+func (s *Service) anyRemovalUnresolvedLocked() bool {
+	if s.db == nil {
+		return false
+	}
+	var count int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM worktree_removal_requests WHERE status IN ('pending','unknown')`).Scan(&count); err != nil {
+		return true
+	}
+	return count > 0
+}
+
 func (s *Service) releaseDueRetries() {
 	now := time.Now().UTC()
 	s.mu.Lock()
@@ -1168,6 +1243,10 @@ func (s *Service) releaseDueRetries() {
 
 	remaining := make([]RetryEntry, 0, len(s.retrying))
 	for _, retry := range s.retrying {
+		if len(s.workspaceRemovalProjects) > 0 || s.anyRemovalUnresolvedLocked() {
+			remaining = append(remaining, retry)
+			continue
+		}
 		dueAt, err := time.Parse(time.RFC3339, retry.DueAt)
 		if err != nil || dueAt.After(now) || len(s.running) >= s.maxConcurrent {
 			remaining = append(remaining, retry)

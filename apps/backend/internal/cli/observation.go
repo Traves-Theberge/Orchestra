@@ -28,6 +28,10 @@ const Help = `usage: orchestra <command>
   control tasks --project <project-id> --json
   control worktrees --project <project-id> --json
   control status --json
+  agent|skill list --project <project-id> --harness <CODEX|CLAUDE|OPENCODE|GEMINI|8GENT> --scope <effective|project|global> [--workspace <workspace-id>] --json
+  agent|skill show --project <project-id> --harness <harness> --scope <scope> [--workspace <workspace-id>] --id <exact-native-id> --json
+  agent|skill create|update|delete --project <project-id> --harness <harness> --scope <project|global> [--workspace <workspace-id>] --id <exact-native-id> --request-id <uuid> [--expected-hash <sha256>] [--format <native-format>] [--content-file <path>]
+  agent|skill receipt --project <project-id> --request-id <uuid> --json
 
 Observation commands accept --base-url <origin>, or ORCHESTRA_BASE_URL.
 ORCHESTRA_API_TOKEN must be set in the environment; there is no token flag.
@@ -36,7 +40,7 @@ Success: versioned JSON envelope on stdout. Failure: JSON error on stderr, nonze
 Task show returns the tracked task, not a guessed worktree, run or provider session.
 Create makes a Backlog task. Queue requests Todo admission, not an observed agent/worktree.
 Mutations persist request identity; unknown outcomes require receipt/task reconciliation.
-No destructive stop/pause/delete, worktree creation/removal or PR mutations are exposed.`
+No task stop/reset/delete, project deletion, worktree create/removal, terminal send/wait or PR mutations are exposed. Agent/skill file deletion is hash-guarded and scoped.`
 
 const maxResponseBytes = 8 << 20
 
@@ -73,6 +77,9 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 			fmt.Fprintln(stdout, Help)
 			return 0
 		}
+	}
+	if isResourceCommand(args) {
+		return runResource(ctx, args, stdout, stderr, getenv)
 	}
 	c, err := parse(args)
 	if err != nil {

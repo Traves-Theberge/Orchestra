@@ -1,6 +1,6 @@
 ---
 name: orchestra-cli
-description: Inspect Orchestra projects and issue-backed tasks, create Backlog tasks, queue complete tasks, and reconcile durable control receipts through the Orchestra CLI. Orca-managed worktrees use the separate Orca CLI skill.
+description: Inspect Orchestra projects and issue-backed tasks, create Backlog tasks, queue complete tasks, reconcile control receipts, and scope native agent/skill authoring through the Orchestra CLI. Orca-managed worktrees use the separate Orca CLI skill.
 ---
 
 # Orchestra CLI
@@ -73,3 +73,26 @@ Use `control tasks` for that strict project-source observation; legacy `task lis
 The backend persists mutation intent before sending the effect. Reusing the same request ID with identical arguments returns its recorded result; different arguments conflict. A pending/unknown receipt is never automatically replayed. After a timeout or unknown result, inspect the receipt and intended project task inventory. Do not create a new request ID merely to get around uncertainty. Hosted-source failures can occur after an issue was created, so the receipt may honestly remain unknown.
 
 Task metadata update, explicit dispatch/retry/stop, project import, worktree create/remove, terminal send/wait and PR mutation remain unavailable CLI commands. “Pause” must not map to destructive legacy stop/reset. Do not use ad hoc curl, Git or Orca operations to bypass those missing shared controls, and do not invent durable run/attempt or provider-turn acknowledgements.
+
+## Inspect and author native agent resources
+
+Use the executable's `agent` and `skill` commands for provider-native named definitions. These commands call the shared agent catalog API; they do not write files from the CLI process, start a provider, select an effective agent, or change account/global provider settings.
+
+```text
+orchestra agent list --project <project-id> --harness OPENCODE --scope effective --workspace <workspace-id> --json
+orchestra agent show --project <project-id> --harness OPENCODE --scope project --workspace <workspace-id> --id team/planner --json
+orchestra agent create --project <project-id> --harness OPENCODE --scope project --workspace <workspace-id> --id team/planner --request-id <uuid> --format opencode-v1 --content-file ./planner.md --json
+orchestra agent update --project <project-id> --harness OPENCODE --scope project --workspace <workspace-id> --id team/planner --request-id <uuid> --expected-hash <sha256> --format opencode-v1 --content-file ./planner.md --json
+orchestra agent delete --project <project-id> --harness OPENCODE --scope project --workspace <workspace-id> --id team/planner --request-id <uuid> --expected-hash <sha256> --json
+orchestra skill list --project <project-id> --harness CODEX --scope project --json
+orchestra agent list --project __orchestrator__ --harness OPENCODE --scope global --json
+orchestra agent receipt --project <same-project-id> --request-id <uuid> --json
+```
+
+`list` and `show` accept `effective`, `project` or `global` scope. Effective scope is read-only and reports the global and selected project resources together; a project worktree is selected by its observed workspace ID, never by a path. Use `--id` exactly as reported by the provider-native catalog, including nested IDs such as `team/planner`; do not add provider-specific filename extensions. Harness values are `CODEX`, `CLAUDE`, `OPENCODE`, `GEMINI` and `8GENT`; a provider's catalog may report unavailable or unsupported capabilities. Discovery is not proof that Orchestra can select or enforce a definition.
+
+Mutations require `project` or `global` scope, one canonical UUID `--request-id`, and one exact resource ID. Create/update read content only from the explicitly named `--content-file`, preserve its text, and send it to the API. Update/delete require the latest `content_hash` returned by `show` or `list` as `--expected-hash`; a stale hash conflicts without applying that mutation. Global resources are shared user-level native files: use `--project __orchestrator__ --scope global` to make that shared ownership explicit. The reserved `__orchestrator__` scope cannot be used for project resources. Do not store secrets in authored resources.
+
+The backend persists mutation identity and a receipt before the filesystem effect. It returns `pending`, `completed`, or `unknown`; startup can convert pending work to unknown. Network, timeout, malformed response or server error means the result may be unknown. Keep the original request ID and inspect `agent receipt`/`skill receipt` for the same project before deciding what to do. The CLI never retries a mutation automatically. Do not issue the same intent with a new request ID while the first result is unresolved. A completed receipt confirms the catalog file operation only; it does not prove a provider can run, load or select that resource.
+
+The persistent native orchestrator exposes the same backend service as `orchestra_resources`, with strict JSON keys `operation`, `project_id`, `workspace_id`, `harness`, `scope`, `kind`, `resource_id`, `request_id`, `expected_hash`, `format` and `content`. Operations are `list`, `get`, `create`, `update`, `delete` and `receipt`; kinds are `agent_definition`, `skill` and the narrowly allowlisted `orchestra_config`. List returns metadata, get returns raw content plus hash. Use exact native resource IDs, never host paths. Project resources require an exact observed `workspace_id`; effective scope is read-only. The reserved `project_id: __orchestrator__` is global-only and refers to shared user-level agent/skill/config ownership. Its `orchestra_config` access is limited to Orchestra's own `workspace.json`; it does not authorize provider account credentials or other provider settings. The tool and CLI share the same UUID receipt, expected-hash and uncertainty rules.

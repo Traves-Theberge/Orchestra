@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/orchestra/orchestra/apps/backend/internal/agentcatalog"
 	"github.com/orchestra/orchestra/apps/backend/internal/agents"
 )
 
@@ -31,12 +32,74 @@ func (s *Service) CreateWithRequest(ctx context.Context, pid string, req CreateR
 		}
 		existing = err == nil
 	}
+	if hasAgentIntent(req.RequestedAgentID, req.RequestedAgentScope, req.RequestedAgentContentHash, req.RequestedAgentFormat) {
+		if existing {
+			if err := s.matchAgentIntent(ctx, req.ClientSessionID, req.RequestedAgentID, req.RequestedAgentScope, req.RequestedAgentContentHash, req.RequestedAgentFormat); err != nil {
+				return Session{}, err
+			}
+		} else if err := s.validateAgentIntent(ctx, pid, req.Provider, req.RequestedAgentID, req.RequestedAgentScope, req.RequestedAgentContentHash, req.RequestedAgentFormat); err != nil {
+			return Session{}, err
+		}
+	}
 	if !existing && (req.RequestedModel != "" || req.RequestedReasoningEffort != "") {
 		if err := s.validateCreationOptions(ctx, pid, req); err != nil {
 			return Session{}, err
 		}
 	}
 	return s.createWithRequest(ctx, pid, req)
+}
+
+func hasAgentIntent(id, scope, hash, format string) bool {
+	return id != "" || scope != "" || hash != "" || format != ""
+}
+
+func (s *Service) validateAgentIntent(ctx context.Context, pid, provider, id, scope, hash, format string) error {
+	if id == "" || (scope != string(agentcatalog.ScopeProject) && scope != string(agentcatalog.ScopeGlobal)) || hash == "" {
+		return ErrInvalid
+	}
+	if pid == OrchestratorScope && scope != string(agentcatalog.ScopeGlobal) {
+		return ErrForbidden
+	}
+	if s.agentCatalog == nil {
+		return fmt.Errorf("%w: agent catalog is unavailable", ErrUnsupported)
+	}
+	workspaceID, _, _, err := s.scope(ctx, pid)
+	if err != nil {
+		return err
+	}
+	if err = s.agentCatalog.ValidateSelection(ctx, pid, workspaceID, provider, agentcatalog.Scope(scope), id, hash, format); err != nil {
+		if errors.Is(err, agentcatalog.ErrInvalid) {
+			return ErrInvalid
+		}
+		if errors.Is(err, agentcatalog.ErrForbidden) {
+			return ErrForbidden
+		}
+		if errors.Is(err, agentcatalog.ErrNotFound) || errors.Is(err, agentcatalog.ErrConflict) {
+			return ErrConflict
+		}
+		return fmt.Errorf("%w: %v", ErrUnsupported, err)
+	}
+	turn := agents.TurnRequest{ProjectID: pid, RequestedAgentID: id, RequestedAgentScope: scope, RequestedAgentContentHash: hash, RequestedAgentFormat: format, RuntimeTarget: agents.RuntimeLocal}
+	if err = s.registry.ValidateTurnOptions(agents.NormalizeProvider(provider), turn); err != nil {
+		return fmt.Errorf("%w: %v", ErrUnsupported, err)
+	}
+	return nil
+}
+
+func (s *Service) matchAgentIntent(ctx context.Context, sessionID, id, scope, hash, format string) error {
+	var storedID, storedScope, storedHash, storedFormat string
+	err := s.db.QueryRowContext(ctx, `SELECT requested_agent_id,scope,content_hash,format FROM workspace_chat_agent_selection WHERE session_id=?`, sessionID).Scan(&storedID, &storedScope, &storedHash, &storedFormat)
+	if errors.Is(err, sql.ErrNoRows) {
+		storedID, storedScope, storedHash, storedFormat = "", "", "", ""
+		err = nil
+	}
+	if err != nil {
+		return err
+	}
+	if storedID != id || storedScope != scope || storedHash != hash || storedFormat != format {
+		return ErrConflict
+	}
+	return nil
 }
 
 func (s *Service) validateCreationOptions(ctx context.Context, pid string, req CreateRequest) error {
@@ -76,5 +139,5 @@ func (s *Service) matchCreationOptions(ctx context.Context, id string, req Creat
 	if model != req.RequestedModel || effort != req.RequestedReasoningEffort {
 		return ErrConflict
 	}
-	return nil
+	return s.matchAgentIntent(ctx, id, req.RequestedAgentID, req.RequestedAgentScope, req.RequestedAgentContentHash, req.RequestedAgentFormat)
 }

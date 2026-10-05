@@ -1,5 +1,7 @@
+import { AppTooltipProvider } from '@ui/tooltip-wrapper'
+import { type ReactElement } from 'react'
 import { useState, type ReactNode } from 'react'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render as renderBase, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resetAppStore, useAppStore } from '@core/store'
 import { GLOBAL_PROJECT_ID } from '@core/store/types'
@@ -41,9 +43,9 @@ describe('WorkspaceLayout chat ownership', () => {
     expect(childDraft).toHaveValue('Child draft')
     expect(useAppStore.getState().requestedWorkspaceConversation?.workspaceId).toBe('wt_child')
   })
-  it('opens the file tree from the Files & editor tab', () => {
+  it('opens the file tree from the Files & terminals tab', () => {
     render(<WorkspaceLayout />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Files & editor' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Files & terminals' }))
     expect(screen.getByLabelText('Workspace tools')).toBeVisible()
     expect(screen.getByText('Select a file to open it in the editor')).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Files & terminals' }))
@@ -90,7 +92,8 @@ describe('WorkspaceLayout chat ownership', () => {
     expect(screen.getByRole('tab', { name: 'Workspace' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByLabelText('Workspace tools')).toBeVisible()
     fireEvent.click(screen.getByRole('tab', { name: 'Tasks' }))
-    fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add workspace tool' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'New terminal' }))
     expect(onAddTerminal).toHaveBeenCalledOnce()
     expect(screen.getByRole('tab', { name: 'Workspace' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByLabelText('Workspace tools')).toBeVisible()
@@ -124,3 +127,7 @@ describe('WorkspaceLayout chat ownership', () => {
     expect(screen.getByLabelText('Draft a')).toHaveValue('')
   })
 })
+
+const render = (ui: ReactElement) => renderBase(ui, { wrapper: AppTooltipProvider })
+beforeEach(() => vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} }))
+afterEach(() => vi.unstubAllGlobals())

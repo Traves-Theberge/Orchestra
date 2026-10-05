@@ -270,13 +270,13 @@ function buildHeaders(config: BackendConfig): HeadersInit {
 
 function workspaceRequestURL(config: BackendConfig, path: string): string {
   const url = new URL(path, config.baseUrl)
-  if (config.workspaceId && /^\/api\/v1\/projects\/[^/]+\/(?:git|chat)(?:\/|$)/.test(url.pathname) && !url.pathname.endsWith('/git/worktrees')) {
+  if (config.workspaceId && /^\/api\/v1\/projects\/[^/]+\/(?:git|chat)(?:\/|$)/.test(url.pathname) && !url.pathname.endsWith('/git/worktrees') && !url.pathname.includes('/git/worktrees/')) {
     url.searchParams.set('workspace_id', config.workspaceId)
   }
   return url.toString()
 }
 
-async function requestJSON<T>(config: BackendConfig, path: string, init?: RequestInit, timeoutMs = 30000): Promise<T> {
+export async function requestJSON<T>(config: BackendConfig, path: string, init?: RequestInit, timeoutMs = 30000): Promise<T> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
 
@@ -335,17 +335,24 @@ export type WorkspaceChatSession = {
   workspace_id?: string
   workspace_path?: string
   id: string; project_id: string; provider: string; title: string
-  status: 'idle' | 'running' | 'stopping' | 'failed' | 'interrupted'
+  status: 'idle' | 'running' | 'stopping' | 'failed' | 'interrupted' | 'unknown'
   conversation_mode: string; created_at: string; updated_at: string; error?: string
+  archived?: boolean; archived_at?: string; lifecycle_version?: number
   provider_thread_id?: string; requested_model?: string; effective_model?: string
   approval_policy?: string; sandbox_mode?: string
   requested_reasoning_effort?: string
   effective_reasoning_effort?: string
+  requested_agent_id?: string; requested_agent_scope?: 'project' | 'global'
+  requested_agent_content_hash?: string; requested_agent_format?: string
+  effective_agent_id?: string; agent_observation?: string
 }
 export type WorkspaceChatMessage = {
   id: string; session_id: string; role: 'user' | 'assistant' | 'system'; text: string
   status: 'accepted' | 'completed' | 'failed' | 'cancelled' | 'unknown'
   client_message_id?: string; created_at: string
+  requested_agent_id?: string; requested_agent_scope?: 'project' | 'global'
+  requested_agent_content_hash?: string; requested_agent_format?: string
+  effective_agent_id?: string; agent_observation?: string
 }
 export type WorkspaceChatEvent = {
   sequence: number; type: string; thread_id?: string; turn_id?: string; item_id?: string
@@ -373,7 +380,33 @@ export function fetchWorkspaceChatModels(config: BackendConfig, projectId: strin
 export function listWorkspaceChatSessions(config: BackendConfig, projectId: string) {
   return requestJSON<{ sessions: WorkspaceChatSession[] }>(config, `${workspaceChatPath(projectId)}/sessions`)
 }
-export function createWorkspaceChatSession(config: BackendConfig, projectId: string, provider: string, clientSessionId?: string, preferences?: { requested_model?: string; requested_reasoning_effort?: string; title?: string }) {
+export function listWorkspaceChatArchives(config: BackendConfig, projectId: string) {
+  return requestJSON<{ sessions: WorkspaceChatSession[] }>({ ...config, workspaceId: undefined },
+    `${workspaceChatPath(projectId)}/archives`)
+}
+export function fetchArchivedWorkspaceChat(config: BackendConfig, projectId: string, sessionId: string, workspaceId: string, cwd: string) {
+  const scopedConfig = { ...config, workspaceId: undefined }
+  const query = new URLSearchParams({ workspace_id: workspaceId, cwd })
+  return requestJSON<WorkspaceChatSnapshot>(scopedConfig,
+    `${workspaceChatPath(projectId)}/sessions/${encodeURIComponent(sessionId)}/history?${query.toString()}`)
+}
+export function setWorkspaceChatArchived(
+  config: BackendConfig,
+  projectId: string,
+  sessionId: string,
+  scope: { workspace_id: string; cwd: string },
+  expectedStatus: WorkspaceChatSession['status'],
+  expectedVersion: number,
+  archived: boolean,
+) {
+  const action = archived ? 'archive' : 'unarchive'
+  return requestJSON<{ session: WorkspaceChatSession }>(config,
+    `${workspaceChatPath(projectId)}/sessions/${encodeURIComponent(sessionId)}/${action}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...scope, expected_status: expectedStatus, expected_version: expectedVersion }),
+    })
+}
+export function createWorkspaceChatSession(config: BackendConfig, projectId: string, provider: string, clientSessionId?: string, preferences?: { requested_model?: string; requested_reasoning_effort?: string; title?: string; agent_id?: string; agent_scope?: string; agent_content_hash?: string; agent_format?: string }) {
   return requestJSON<WorkspaceChatSession>(config, `${workspaceChatPath(projectId)}/sessions`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, ...preferences, ...(clientSessionId ? { client_session_id: clientSessionId } : {}) }),
   })
@@ -386,10 +419,10 @@ export function renameWorkspaceChatSession(config: BackendConfig, projectId: str
     method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, expected_title: expectedTitle }),
   })
 }
-export function sendWorkspaceChatMessage(config: BackendConfig, projectId: string, sessionId: string, clientMessageId: string, text: string, requestedModel?: string, requestedReasoningEffort?: string) {
+export function sendWorkspaceChatMessage(config: BackendConfig, projectId: string, sessionId: string, clientMessageId: string, text: string, requestedModel?: string, requestedReasoningEffort?: string, agent?: { agent_id: string; agent_scope: string; agent_content_hash: string; agent_format: string }) {
   return requestJSON<{ session: WorkspaceChatSession; message: WorkspaceChatMessage }>(config,
     `${workspaceChatPath(projectId)}/sessions/${encodeURIComponent(sessionId)}/messages`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client_message_id: clientMessageId, text, ...(requestedModel ? { requested_model: requestedModel } : {}), ...(requestedReasoningEffort ? { requested_reasoning_effort: requestedReasoningEffort } : {}) }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client_message_id: clientMessageId, text, ...(requestedModel ? { requested_model: requestedModel } : {}), ...(requestedReasoningEffort ? { requested_reasoning_effort: requestedReasoningEffort } : {}), ...agent }),
     })
 }
 export function stopWorkspaceChatTurn(config: BackendConfig, projectId: string, sessionId: string) {
@@ -438,6 +471,10 @@ async function requestText(config: BackendConfig, path: string, init?: RequestIn
   } finally {
     clearTimeout(timeout)
   }
+}
+
+export function fetchOpenAPISpec(config: BackendConfig): Promise<string> {
+  return requestText(config, '/api/v1/openapi.yaml')
 }
 
 /**
@@ -1179,6 +1216,43 @@ export async function fetchWorktreeJob(config: BackendConfig, projectId: string,
 }
 export function fetchProjectWorktrees(config: BackendConfig, projectId: string) {
   return requestJSON<{ worktrees: ProjectWorktree[] }>(config, `/api/v1/projects/${encodeURIComponent(projectId)}/git/worktrees`)
+}
+
+export type WorktreeRemovalReceipt = {
+  request_id: string
+  project_id: string
+  workspace_id: string
+  status: 'pending' | 'completed' | 'rejected' | 'unknown'
+  path?: string
+  branch?: string
+  head?: string
+  message?: string
+}
+
+export async function removeProjectWorktree(
+  config: BackendConfig,
+  projectId: string,
+  workspaceId: string,
+  requestId: string,
+): Promise<WorktreeRemovalReceipt> {
+  const result = await requestJSON<{ removal: WorktreeRemovalReceipt }>(
+    config,
+    `/api/v1/projects/${encodeURIComponent(projectId)}/git/worktrees/${encodeURIComponent(workspaceId)}`,
+    { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ request_id: requestId }) },
+  )
+  return result.removal
+}
+
+export async function getProjectWorktreeRemoval(
+  config: BackendConfig,
+  projectId: string,
+  requestId: string,
+): Promise<WorktreeRemovalReceipt> {
+  const result = await requestJSON<{ removal: WorktreeRemovalReceipt }>(
+    config,
+    `/api/v1/projects/${encodeURIComponent(projectId)}/worktree-removals/${encodeURIComponent(requestId)}`,
+  )
+  return result.removal
 }
 
 /**

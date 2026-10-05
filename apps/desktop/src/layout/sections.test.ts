@@ -13,6 +13,12 @@ describe('sections', () => {
     expect(isSectionID('STUDIO')).toBe(false)
   })
 
+  it('opens the API reference as an internal section', () => {
+    expect(isSectionID('API_DOCS')).toBe(true)
+    expect(getSectionVisibility('API_DOCS').showApiDocs).toBe(true)
+    expect(getSectionVisibility('API_DOCS').showDocs).toBe(false)
+  })
+
   it('sidebarItems does not contain STUDIO', () => {
     expect(sidebarItems.find(i => i.id === 'STUDIO')).toBeUndefined()
   })

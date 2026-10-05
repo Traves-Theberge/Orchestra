@@ -1,6 +1,6 @@
 import type { LucideIcon } from 'lucide-react'
 
-export type Provider = 'claude' | 'codex' | 'gemini' | 'opencode' | '8gent'
+export type Provider = 'claude' | 'codex' | 'antigravity' | 'gemini' | 'opencode' | '8gent'
 export type CategoryId =
   | 'overview'
   | 'settings'
@@ -26,4 +26,3 @@ export interface CategoryDef {
   icon: LucideIcon | string
   pinned?: boolean
 }
-

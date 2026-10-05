@@ -3,8 +3,11 @@ package workspacechat
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/orchestra/orchestra/apps/backend/internal/agentcatalog"
 	"github.com/orchestra/orchestra/apps/backend/internal/agents"
 )
 
@@ -82,6 +85,60 @@ func TestCreationPreferencesPersistWithoutTurnAndBindRetryIdentity(t *testing.T)
 	}
 	if _, err = reopened.CreateWithRequest(t.Context(), pid, req); err != nil {
 		t.Fatalf("creation replay after turn failed: %v", err)
+	}
+}
+
+func TestUnsupportedAgentSelectionIsRejectedBeforeSessionOrMessageAcceptance(t *testing.T) {
+	runner := &recordingRunner{}
+	s, database, pid, repo := fixture(t, runner)
+	home := filepath.Join(filepath.Dir(repo), "home")
+	if err := os.MkdirAll(filepath.Join(home, ".codex", "agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	definition := "name = \"review\"\ndescription = \"Reviewer\"\n"
+	if err := os.WriteFile(filepath.Join(home, ".codex", "agents", "review.toml"), []byte(definition), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := agentcatalog.New(database, []string{filepath.Dir(repo)}, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.ConfigureAgentCatalog(catalog)
+	items, err := catalog.List(t.Context(), agentcatalog.Request{ProjectID: pid, Harness: "CODEX", Scope: agentcatalog.ScopeGlobal})
+	if err != nil || len(items.Items) != 1 {
+		t.Fatalf("catalog fixture: %#v %v", items, err)
+	}
+	selected := CreateRequest{Provider: "CODEX", RequestedAgentID: "review", RequestedAgentScope: "global", RequestedAgentContentHash: items.Items[0].ContentHash, RequestedAgentFormat: items.Items[0].Format}
+	if _, err = s.CreateWithRequest(t.Context(), pid, selected); !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("configured but unverified agent should fail before create, got %v", err)
+	}
+	var count int
+	if err = database.QueryRow(`SELECT COUNT(*) FROM workspace_chat_sessions`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("unsupported agent created a session: count=%d error=%v", count, err)
+	}
+	sess, err := s.CreateWithRequest(t.Context(), pid, CreateRequest{Provider: "CODEX"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Send(t.Context(), pid, sess.ID, SendRequest{ClientMessageID: "bad-agent", Text: "do not send", RequestedAgentID: "review", RequestedAgentScope: "global", RequestedAgentContentHash: items.Items[0].ContentHash, RequestedAgentFormat: items.Items[0].Format})
+	if !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("fresh send with an unverified agent should fail preflight: %v", err)
+	}
+	if err = database.QueryRow(`SELECT COUNT(*) FROM workspace_chat_messages`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("rejected agent intent was accepted as a message: count=%d error=%v", count, err)
+	}
+	accepted, err := s.Send(t.Context(), pid, sess.ID, SendRequest{ClientMessageID: "provider-default", Text: "safe default"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	awaitIdle(t, s, pid, sess.ID)
+	if _, err = s.Send(t.Context(), pid, sess.ID, SendRequest{ClientMessageID: "provider-default", Text: "safe default", RequestedAgentID: "review", RequestedAgentScope: "global", RequestedAgentContentHash: items.Items[0].ContentHash, RequestedAgentFormat: items.Items[0].Format}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("replay accepted a changed agent tuple: %v", err)
+	}
+	if accepted.Session.RequestedAgentID != "" {
+		t.Fatalf("provider-default send fabricated an agent identity: %#v", accepted.Session)
 	}
 }
 
