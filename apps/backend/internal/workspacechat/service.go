@@ -23,6 +23,9 @@ import (
 )
 
 const Mode = "transcript_replay"
+
+// OrchestratorScope is a durable conversation scope, never a catalog project.
+const OrchestratorScope = "__orchestrator__"
 const maxText = 64 * 1024
 
 var ErrBusy = errors.New("project workspace has an active or unsettled chat turn")
@@ -97,16 +100,19 @@ type Accepted struct {
 	Message Message `json:"message"`
 }
 type Service struct {
-	db             *db.DB
-	registry       Registry
-	roots          []string
-	mu             sync.Mutex
-	active         map[string]context.CancelFunc
-	closed         bool
-	wg             sync.WaitGroup
-	native         map[string]agents.NativeSession
-	nativeFailures sync.Map
-	nativePrefixes map[string]string
+	db                   *db.DB
+	registry             Registry
+	roots                []string
+	mu                   sync.Mutex
+	active               map[string]context.CancelFunc
+	closed               bool
+	wg                   sync.WaitGroup
+	native               map[string]agents.NativeSession
+	nativeFailures       sync.Map
+	nativePrefixes       map[string]string
+	orchestratorRoot     string
+	orchestratorTools    []map[string]any
+	orchestratorExecutor agents.ToolExecutor
 }
 
 // New recovers incomplete deliveries as unknown; it never resubmits them.
@@ -139,6 +145,16 @@ func New(database *db.DB, registry Registry, roots []string) (*Service, error) {
 }
 func stamp() string { return time.Now().UTC().Format(time.RFC3339Nano) }
 func (s *Service) root(ctx context.Context, projectID string) (string, error) {
+	if projectID == OrchestratorScope {
+		if s.orchestratorRoot == "" {
+			return "", ErrForbidden
+		}
+		root, err := filepath.EvalSymlinks(s.orchestratorRoot)
+		if err != nil || root != s.orchestratorRoot {
+			return "", ErrForbidden
+		}
+		return root, nil
+	}
 	p, err := s.db.GetProjectByID(ctx, projectID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -197,6 +213,10 @@ func (s *Service) Providers(ctx context.Context, pid string) ([]Provider, error)
 		if s.supportsNative(p.id) {
 			mode, resume = "native_session", true
 		}
+		if pid == OrchestratorScope && !s.supportsControl(p.id) {
+			enabled = false
+			reason = "This harness has no native Orchestra control-tool adapter"
+		}
 		result = append(result, Provider{string(p.id), p.label, enabled, reason, mode, resume})
 	}
 	return result, nil
@@ -223,6 +243,9 @@ func (s *Service) CreateWithRequest(ctx context.Context, pid string, req CreateR
 		return Session{}, err
 	}
 	p := agents.NormalizeProvider(provider)
+	if pid == OrchestratorScope && !s.supportsControl(p) {
+		return Session{}, ErrUnsupported
+	}
 	if identity != "" {
 		existing, err := scanSession(s.db.QueryRowContext(ctx, `SELECT `+sessionFields+` FROM workspace_chat_sessions WHERE id=?`, identity))
 		if err == nil {
@@ -411,6 +434,14 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 		return Accepted{}, err
 	}
 	turn := agents.TurnRequest{SessionID: uuid.NewString(), Workspace: root, WorkspaceRoot: root, ProjectRootWorkspace: true, Prompt: req.Text, Timeout: 10 * time.Minute, RuntimeTarget: agents.RuntimeLocal, RequestedModel: req.RequestedModel, RequestedMaxTurns: req.RequestedMaxTurns}
+	if pid == OrchestratorScope {
+		if !s.supportsControl(agents.Provider(d.Session.Provider)) {
+			return Accepted{}, ErrUnsupported
+		}
+		turn.ToolSpecs = s.orchestratorTools
+		turn.ToolExecutor = s.orchestratorExecutor
+		turn.DeveloperInstructions = "You are Orchestra's persistent cross-project orchestrator. Your working directory is an owned control profile, not a repository. Use orchestra_control for authoritative project/task observations and authorized mutations. Resolve exact project and task IDs. Preserve Kanban and separate queued task, running agent, live worktree and reviewed/merged PR observations. Create Backlog tasks before queuing complete tasks. Every mutation requires one stable UUID request_id. After an unknown outcome inspect its receipt and project tasks; never blindly repeat with a new identity. Pause/stop/delete, project import and PR mutation are unavailable through these tools. Do not edit provider account/global settings. Only act within the user's requested scope."
+	}
 	if req.RequestedMaxTurns != nil {
 		return Accepted{}, ErrUnsupported
 	}

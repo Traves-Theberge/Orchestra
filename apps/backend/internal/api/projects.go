@@ -283,6 +283,9 @@ func (s *Server) CreateProject(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		RootPath            string `json:"root_path"`
+		Source              string `json:"source"`
+		Name                string `json:"name"`
+		RemoteURL           string `json:"remote_url"`
 		IssueSourceType     string `json:"issue_source_type"`
 		IssueSourceEndpoint string `json:"issue_source_endpoint"`
 		IssueSourceToken    string `json:"issue_source_token"`
@@ -296,6 +299,13 @@ func (s *Server) CreateProject(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "invalid_request", "root_path is required")
 		return
 	}
+
+	preparedPath, err := prepareProjectSource(r.Context(), req.Source, req.RootPath, req.Name, req.RemoteURL, s.config.ProjectRoots)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "project_setup_failed", err.Error())
+		return
+	}
+	req.RootPath = preparedPath
 
 	// Get Git Info
 	gitRoot, remoteURL, err := git.ProjectInfo(r.Context(), req.RootPath)
@@ -1402,7 +1412,8 @@ func (s *Server) PostGitCreateBranch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name string `json:"name"`
+		Name       string `json:"name"`
+		StartPoint string `json:"start_point"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid_json", "invalid request body")
@@ -1414,7 +1425,7 @@ func (s *Server) PostGitCreateBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := git.CreateBranch(r.Context(), project.RootPath, req.Name); err != nil {
+	if err := git.CreateBranchFrom(r.Context(), project.RootPath, req.Name, req.StartPoint); err != nil {
 		s.logger.Error().Err(err).Str("project_id", projectID).Msg("git create branch failed")
 		writeJSONError(w, http.StatusInternalServerError, "git_create_branch_failed", "git create branch failed")
 		return

@@ -77,7 +77,9 @@ type TurnRequest struct {
 	ToolExecutor         ToolExecutor
 	ToolSpecs            []map[string]any
 	ResourceSpecs        []map[string]any
-	RuntimeTarget        RuntimeTarget
+	// DeveloperInstructions are scoped to this provider thread, never account settings.
+	DeveloperInstructions string
+	RuntimeTarget         RuntimeTarget
 }
 
 // RequestedModelValidator is an explicit runner opt-in to applying a requested

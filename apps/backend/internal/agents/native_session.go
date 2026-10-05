@@ -69,6 +69,11 @@ func (r *Registry) SupportsNativeSession(provider Provider) bool {
 	return p == ProviderCodex && strings.TrimSpace(r.nativeCommands[p]) != ""
 }
 
+// Native control requires the interactive adapter's actual dynamic-tool protocol.
+func (r *Registry) SupportsNativeTools(provider Provider) bool {
+	return NormalizeProvider(string(provider)) == ProviderCodex && r.SupportsNativeSession(provider)
+}
+
 // SetNativeCommand configures the independent interactive provider command.
 // Empty explicitly disables native chat; batch commands and dangerous flags are never reused.
 func (r *Registry) SetNativeCommand(provider Provider, command string) {

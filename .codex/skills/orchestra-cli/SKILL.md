@@ -1,6 +1,6 @@
 ---
 name: orchestra-cli
-description: Inspect Orchestra CLI project and issue-backed task state, select the correct backend and task identity, and explain execution observations. Use for Orchestra CLI or Orchestra project/task operations. Orca-managed worktrees use the separate Orca CLI skill.
+description: Inspect Orchestra projects and issue-backed tasks, create Backlog tasks, queue complete tasks, and reconcile durable control receipts through the Orchestra CLI. Orca-managed worktrees use the separate Orca CLI skill.
 ---
 
 # Orchestra CLI
@@ -48,8 +48,28 @@ Read [the task-system contract](references/task-system.md) when interpreting tas
 - Requested provider/model/budget values are intent, not effective runtime configuration. Do not infer that an installed executable can honor them. Current native adapters reject explicit unsupported model/turn requests.
 - A merged PR is not an observed Done task. Task workflow state, runtime status, hosted issue state and reviewed-head state are separate observations.
 
-## Mutation and unsupported requests
+## Create and queue issue-backed tasks
 
-This slice does not provide task create/update/dispatch/stop, project import, worktree create/remove, terminal send/wait, PR mutation or orchestration commands. Report the missing capability and continue any relevant read-only inspection; do not fall back to ad hoc curl, Git, or Orca commands that bypass the shared task system. When a newer CLI advertises mutations, read its current guide and preserve the user's authorized scope.
+Use these commands only when the selected executable advertises them:
 
-Before task mutation is supported, review the legacy effects in the task-system reference. In particular, “pause” must not be translated to destructive stop/reset, and changing a task to Review/Done can have commit/cleanup effects. Do not invent idempotency, a durable run identity, safe restart/resume, or a provider-turn acknowledgement that the backend does not supply. On an uncertain mutation outcome, reconcile before repeating rather than issuing another create/dispatch.
+```text
+orchestra task create --project <project-id> --request-id <uuid> --title <title> --description <text> --assignee <worker-id> --provider CODEX --json
+orchestra task queue --project <project-id> --id <task-id> --request-id <uuid> --expected-state Backlog --json
+orchestra control receipt --request-id <uuid> --json
+orchestra control projects --json
+orchestra control tasks --project <project-id> --json
+orchestra control worktrees --project <project-id> --json
+orchestra control status --json
+```
+
+Generate and retain one canonical UUID per intended mutation before issuing it. Create produces Backlog only. Queue requires the exact project/task identity, complete title/description/assignee/provider, and current Backlog state. Its Todo acceptance is an admission request; observe subsequent runtime/worktree state separately. A queue response is not a started agent or live worktree.
+
+Queue currently supports local SQLite tasks with a conditional state update. Hosted queue is unavailable until that tracker adapter provides a guarded transition; do not substitute a legacy patch after this rejection. Hosted observation/create still depend on the selected adapter's actual support and returned scope.
+
+These commands use the same bounded control service as the persistent top-level native orchestrator. They resolve the selected project's tracker without falling back to a different global tracker. A configured source that cannot be resolved fails closed. Native orchestrator conversations use reserved scope `__orchestrator__` and an owned control directory, not a fake catalog project; currently only the Codex native adapter exposes these control tools.
+
+Use `control tasks` for that strict project-source observation; legacy `task list/show` retain the routing limitations described above. `control worktrees` observes the authorized Git worktree registry with exact paths, HEADs and branches. A listed Git worktree is not proof of an agent session or an active process.
+
+The backend persists mutation intent before sending the effect. Reusing the same request ID with identical arguments returns its recorded result; different arguments conflict. A pending/unknown receipt is never automatically replayed. After a timeout or unknown result, inspect the receipt and intended project task inventory. Do not create a new request ID merely to get around uncertainty. Hosted-source failures can occur after an issue was created, so the receipt may honestly remain unknown.
+
+Task metadata update, explicit dispatch/retry/stop, project import, worktree create/remove, terminal send/wait and PR mutation remain unavailable CLI commands. “Pause” must not map to destructive legacy stop/reset. Do not use ad hoc curl, Git or Orca operations to bypass those missing shared controls, and do not invent durable run/attempt or provider-turn acknowledgements.

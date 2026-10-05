@@ -29,7 +29,7 @@ func runCLI(args []string, stdout io.Writer, stderr io.Writer, runner cliRunner)
 	case "help", "--help", "-h":
 		fmt.Fprintln(stdout, cli.Help)
 		return 0
-	case "status", "project", "task":
+	case "status", "project", "task", "control":
 		if runner.observe != nil {
 			return runner.observe(args[1:], stdout, stderr)
 		}

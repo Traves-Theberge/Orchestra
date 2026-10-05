@@ -55,6 +55,9 @@ type codexNativeSession struct {
 	pumpDone         chan struct{}
 	done             chan struct{}
 	onEvent          NativeEventHandler
+	toolExecutor     ToolExecutor
+	toolNames        map[string]bool
+	toolContext      context.Context
 }
 
 // startCodexNativeProcess only initializes the protocol, without creating a thread.
@@ -128,6 +131,21 @@ func NewCodexNativeSession(ctx context.Context, command string, request TurnRequ
 	fail := func(err error) (NativeSession, error) { _ = s.Close(); return nil, err }
 	method := "thread/start"
 	params := map[string]any{"cwd": request.Workspace}
+	if request.DeveloperInstructions != "" {
+		params["developerInstructions"] = request.DeveloperInstructions
+	}
+	// Dynamic tools are stored with the provider thread at creation. Resume reuses
+	// those declarations; ThreadResumeParams does not accept dynamicTools.
+	if threadID == "" && len(request.ToolSpecs) > 0 {
+		params["dynamicTools"] = request.ToolSpecs
+	}
+	s.toolExecutor = request.ToolExecutor
+	s.toolNames = map[string]bool{}
+	for _, spec := range request.ToolSpecs {
+		if name, ok := spec["name"].(string); ok {
+			s.toolNames[name] = true
+		}
+	}
 	if threadID != "" {
 		method = "thread/resume"
 		params["threadId"] = threadID
@@ -468,6 +486,10 @@ func (s *codexNativeSession) serverRequest(msg nativeRPC) {
 		_ = s.write(map[string]any{"id": msg.ID, "error": map[string]any{"code": -32600, "message": "Request outside active Orchestra turn"}})
 		return
 	}
+	if msg.Method == "item/tool/call" {
+		s.executeDynamicTool(msg)
+		return
+	}
 	if msg.Method != "item/commandExecution/requestApproval" && msg.Method != "item/fileChange/requestApproval" && msg.Method != "item/tool/requestUserInput" {
 		_ = s.write(map[string]any{"id": msg.ID, "error": map[string]any{"code": -32601, "message": "Native request unsupported by Orchestra"}})
 		s.fail(fmt.Errorf("unsupported native request %s", msg.Method))
@@ -475,6 +497,49 @@ func (s *codexNativeSession) serverRequest(msg nativeRPC) {
 	}
 	payload, _ := json.Marshal(map[string]any{"method": msg.Method, "params": msg.Params})
 	s.emit(NativeEvent{Type: "server_request", ThreadID: p.ThreadID, TurnID: p.TurnID, ItemID: p.ItemID, RequestID: key, Payload: payload})
+}
+
+// The reader remains independent while a bounded tool call executes. Only tools
+// declared for this thread and requests belonging to its active turn may run.
+func (s *codexNativeSession) executeDynamicTool(msg nativeRPC) {
+	var p struct {
+		ThreadID  string         `json:"threadId"`
+		TurnID    string         `json:"turnId"`
+		CallID    string         `json:"callId"`
+		Namespace string         `json:"namespace"`
+		Tool      string         `json:"tool"`
+		Arguments map[string]any `json:"arguments"`
+	}
+	err := json.Unmarshal(msg.Params, &p)
+	s.mu.Lock()
+	executor, ctx := s.toolExecutor, s.toolContext
+	allowed := s.toolNames[p.Tool] && executor != nil && ctx != nil && p.TurnID == s.activeTurn
+	s.mu.Unlock()
+	result := map[string]any{"success": false, "error": "Tool unavailable or outside active turn"}
+	if err == nil && allowed && p.CallID != "" && p.Namespace == "" && p.Arguments != nil {
+		callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		if callCtx.Err() == nil {
+			s.emit(NativeEvent{Type: "orchestra/tool/started", ThreadID: p.ThreadID, TurnID: p.TurnID, ItemID: p.CallID, Payload: msg.Params})
+			result = executor(callCtx, p.Tool, p.Arguments)
+		}
+		cancel()
+	}
+	text, marshalErr := json.Marshal(result)
+	if marshalErr != nil {
+		text = []byte(`{"success":false,"error":"Tool result encoding failed; inspect before repeating"}`)
+	}
+	success, _ := result["success"].(bool)
+	if marshalErr != nil {
+		success = false
+	}
+	response := map[string]any{"success": success, "contentItems": []map[string]string{{"type": "inputText", "text": string(text)}}}
+	if err := s.write(map[string]any{"id": msg.ID, "result": response}); err != nil {
+		s.fail(fmt.Errorf("native tool response outcome unknown: %w", err))
+	}
+	s.mu.Lock()
+	delete(s.requests, string(msg.ID))
+	s.mu.Unlock()
+	s.emit(NativeEvent{Type: "orchestra/tool/completed", ThreadID: p.ThreadID, TurnID: p.TurnID, ItemID: p.CallID, Payload: json.RawMessage(text)})
 }
 
 func (s *codexNativeSession) SendTurn(ctx context.Context, text, model string) (NativeTurnResult, error) {
@@ -498,6 +563,7 @@ func (s *codexNativeSession) SendTurnWithOptions(ctx context.Context, text strin
 		return NativeTurnResult{}, errors.New("native turn already active")
 	}
 	s.starting = true
+	s.toolContext = ctx
 	s.turnReady = make(chan struct{})
 	s.turnEvents = make(chan nativeRPC, 256)
 	turnEvents := s.turnEvents
@@ -506,6 +572,7 @@ func (s *codexNativeSession) SendTurnWithOptions(ctx context.Context, text strin
 		s.mu.Lock()
 		s.starting = false
 		s.activeTurn = ""
+		s.toolContext = nil
 		s.requests = map[string]nativePendingRequest{}
 		s.mu.Unlock()
 	}()

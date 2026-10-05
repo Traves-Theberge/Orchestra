@@ -375,32 +375,7 @@ func ValidMergeHeadSHA(sha string) bool {
 
 // ListPRReviews fetches all reviews for a pull request.
 func ListPRReviews(ctx context.Context, owner, repo, token string, prNumber int) ([]map[string]any, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/pulls/%d/reviews", owner, repo, prNumber)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("Authorization", "token "+token)
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, apiError(resp)
-	}
-
-	var reviews []map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&reviews); err != nil {
-		return nil, err
-	}
-
-	return reviews, nil
+	return listReviewPages(ctx, owner, repo, token, prNumber, "reviews")
 }
 
 // SubmitPRReview submits a review on a pull request.
@@ -511,32 +486,7 @@ func MergePR(ctx context.Context, owner, repo, token string, prNumber int, metho
 
 // ListPRComments fetches all review comments on a pull request.
 func ListPRComments(ctx context.Context, owner, repo, token string, prNumber int) ([]map[string]any, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/pulls/%d/comments", owner, repo, prNumber)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("Authorization", "token "+token)
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, apiError(resp)
-	}
-
-	var comments []map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&comments); err != nil {
-		return nil, err
-	}
-
-	return comments, nil
+	return listReviewPages(ctx, owner, repo, token, prNumber, "comments")
 }
 
 // CreateRepoRequest represents the payload for creating a GitHub repository.

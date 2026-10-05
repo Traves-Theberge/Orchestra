@@ -1,4 +1,4 @@
-// Package cli exposes read-only observations of the same backend used by the UI.
+// Package cli exposes observations and bounded controls of the backend used by the UI.
 package cli
 
 import (
@@ -21,19 +21,29 @@ const Help = `usage: orchestra <command>
   project show <project-id> --json
   task list [--project <project-id>] [--states <comma-separated>] --json
   task show (--id <task-id> | --identifier <issue-identifier>) [--project <project-id>] --json
+  task create --project <project-id> --request-id <uuid> --title <title> [--description <text>] [--assignee <id>] [--provider <harness>] --json
+  task queue --project <project-id> --id <task-id> --request-id <uuid> --expected-state Backlog --json
+  control receipt --request-id <uuid> --json
+  control projects --json
+  control tasks --project <project-id> --json
+  control worktrees --project <project-id> --json
+  control status --json
 
 Observation commands accept --base-url <origin>, or ORCHESTRA_BASE_URL.
 ORCHESTRA_API_TOKEN must be set in the environment; there is no token flag.
 Only HTTPS or loopback HTTP origins are accepted. Requests time out after 10 seconds.
 Success: versioned JSON envelope on stdout. Failure: JSON error on stderr, nonzero exit.
 Task show returns the tracked task, not a guessed worktree, run or provider session.
-No create, dispatch, retry, worktree or orchestration mutation commands exist yet.`
+Create makes a Backlog task. Queue requests Todo admission, not an observed agent/worktree.
+Mutations persist request identity; unknown outcomes require receipt/task reconciliation.
+No destructive stop/pause/delete, worktree creation/removal or PR mutations are exposed.`
 
 const maxResponseBytes = 8 << 20
 
 type command struct {
-	name, baseURL, project, states, id, identifier string
-	show                                           bool
+	name, baseURL, project, states, id, identifier                   string
+	show                                                             bool
+	requestID, title, description, assignee, provider, expectedState string
 }
 
 type envelope struct {
@@ -82,7 +92,13 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	client := &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
-	data, code, err := observe(ctx, client, u, token, c)
+	var data any
+	var code string
+	if c.name == "task create" || c.name == "task queue" || strings.HasPrefix(c.name, "control ") {
+		data, code, err = controlRequest(ctx, client, u, token, c)
+	} else {
+		data, code, err = observe(ctx, client, u, token, c)
+	}
 	if err != nil {
 		return fail(stderr, code, err.Error(), 1)
 	}
@@ -109,6 +125,12 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	if c.name == "status" {
 		scope = map[string]string{"source": "backend_snapshot"}
 	}
+	if strings.HasPrefix(c.name, "control ") || c.name == "task create" || c.name == "task queue" {
+		scope["source"] = "orchestra_control"
+		if c.requestID != "" {
+			scope["request_id"] = c.requestID
+		}
+	}
 	origin := *u
 	origin.Path = ""
 	scope["backend_base_url"] = origin.String()
@@ -126,9 +148,9 @@ func parse(args []string) (command, error) {
 	}
 	c.name = args[0]
 	args = args[1:]
-	if c.name == "project" || c.name == "task" {
-		if len(args) == 0 || (args[0] != "list" && args[0] != "show") {
-			return c, errors.New("use project/task list or show")
+	if c.name == "project" || c.name == "task" || c.name == "control" {
+		if len(args) == 0 || !((c.name == "project" && (args[0] == "list" || args[0] == "show")) || (c.name == "task" && (args[0] == "list" || args[0] == "show" || args[0] == "create" || args[0] == "queue")) || (c.name == "control" && (args[0] == "receipt" || args[0] == "projects" || args[0] == "tasks" || args[0] == "worktrees" || args[0] == "status"))) {
+			return c, errors.New("use project list/show, task list/show/create/queue, or control projects/tasks/worktrees/status/receipt")
 		}
 		c.show = args[0] == "show"
 		c.name += " " + args[0]
@@ -167,7 +189,7 @@ func parse(args []string) (command, error) {
 		case "--base-url":
 			c.baseURL = value
 		case "--project":
-			if !strings.HasPrefix(c.name, "task ") {
+			if !strings.HasPrefix(c.name, "task ") && c.name != "control tasks" && c.name != "control worktrees" {
 				return c, errors.New("--project is only supported for tasks")
 			}
 			c.project = value
@@ -177,8 +199,8 @@ func parse(args []string) (command, error) {
 			}
 			c.states = value
 		case "--id":
-			if c.name != "task show" {
-				return c, errors.New("--id is only supported for task show")
+			if c.name != "task show" && c.name != "task queue" {
+				return c, errors.New("--id is only supported for task show/queue")
 			}
 			c.id = value
 		case "--identifier":
@@ -186,6 +208,30 @@ func parse(args []string) (command, error) {
 				return c, errors.New("--identifier is only supported for task show")
 			}
 			c.identifier = value
+		case "--request-id":
+			if c.name != "task create" && c.name != "task queue" && c.name != "control receipt" {
+				return c, errors.New("--request-id only supports mutations/receipt")
+			}
+			c.requestID = value
+		case "--title", "--description", "--assignee", "--provider":
+			if c.name != "task create" {
+				return c, errors.New("task metadata flags only support task create")
+			}
+			switch arg {
+			case "--title":
+				c.title = value
+			case "--description":
+				c.description = value
+			case "--assignee":
+				c.assignee = value
+			case "--provider":
+				c.provider = value
+			}
+		case "--expected-state":
+			if c.name != "task queue" || value != "Backlog" {
+				return c, errors.New("queue requires --expected-state Backlog")
+			}
+			c.expectedState = value
 		default:
 			return c, errors.New("unknown option or unexpected positional argument")
 		}
@@ -195,6 +241,18 @@ func parse(args []string) (command, error) {
 	}
 	if c.name == "task show" && ((c.id == "") == (c.identifier == "")) {
 		return c, errors.New("task show requires exactly one of --id or --identifier")
+	}
+	if c.name == "task create" && (c.project == "" || c.requestID == "" || c.title == "") {
+		return c, errors.New("task create requires --project, --request-id and --title")
+	}
+	if c.name == "task queue" && (c.project == "" || c.id == "" || c.requestID == "" || c.expectedState != "Backlog") {
+		return c, errors.New("task queue requires --project, --id, --request-id and --expected-state Backlog")
+	}
+	if c.name == "control receipt" && c.requestID == "" {
+		return c, errors.New("control receipt requires --request-id")
+	}
+	if (c.name == "control tasks" || c.name == "control worktrees") && c.project == "" {
+		return c, errors.New("scoped control observations require --project")
 	}
 	return c, nil
 }

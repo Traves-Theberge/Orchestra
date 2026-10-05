@@ -115,7 +115,21 @@ func Fetch(ctx context.Context, dir string) error {
 
 // CreateBranch creates and checks out a new branch with the given name.
 func CreateBranch(ctx context.Context, dir, name string) error {
-	cmd := exec.CommandContext(ctx, "git", "checkout", "-b", name)
+	return CreateBranchFrom(ctx, dir, name, "")
+}
+
+// CreateBranchFrom creates and checks out a branch in one operation, so a
+// rejected start point does not first switch the user's working directory.
+func CreateBranchFrom(ctx context.Context, dir, name, startPoint string) error {
+	if strings.HasPrefix(name, "-") || strings.HasPrefix(startPoint, "-") {
+		return fmt.Errorf("branch name and start point must not start with an option")
+	}
+	args := []string{"checkout", "-b", name}
+	if startPoint != "" {
+		args = append(args, startPoint)
+	}
+	args = append(args, "--")
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

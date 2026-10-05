@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/orchestra/orchestra/apps/backend/internal/config"
+	"github.com/orchestra/orchestra/apps/backend/internal/control"
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
 	"github.com/orchestra/orchestra/apps/backend/internal/observability"
 	"github.com/orchestra/orchestra/apps/backend/internal/orchestrator"
@@ -30,20 +32,21 @@ import (
 // Server holds shared dependencies for all HTTP handlers, including the
 // logger, orchestrator service, database, pub/sub bus, and configuration.
 type Server struct {
-	logger        zerolog.Logger
-	orchestrator  *orchestrator.Service
-	workspaceRoot string
-	worktreeRoot  string
-	authToken     string
-	pubsub        *observability.PubSub
-	db            *db.DB
-	config        *config.Config
-	termManager   *terminal.Manager
-	usageService  *usage.Service
-	registry      *trackerregistry.Registry
-	studioMgr     *studio.Manager
-	studioTpls    *templates.Store
-	workspaceChat *workspacechat.Service
+	logger              zerolog.Logger
+	orchestrator        *orchestrator.Service
+	workspaceRoot       string
+	worktreeRoot        string
+	authToken           string
+	pubsub              *observability.PubSub
+	db                  *db.DB
+	config              *config.Config
+	termManager         *terminal.Manager
+	usageService        *usage.Service
+	registry            *trackerregistry.Registry
+	studioMgr           *studio.Manager
+	studioTpls          *templates.Store
+	workspaceChat       *workspacechat.Service
+	orchestratorControl *control.Service
 }
 
 // SetStudioTemplateStore wires a template store onto the server for the
@@ -98,6 +101,17 @@ func NewRouterWithPubSub(
 	}
 	if len(chat) > 0 {
 		server.workspaceChat = chat[0]
+	}
+	if server.workspaceChat != nil && warehouseDB != nil {
+		controlService, err := control.New(warehouseDB, orchestratorService, registry, cfg.ProjectRoots)
+		if err == nil {
+			err = server.workspaceChat.ConfigureOrchestrator(filepath.Join(cfg.WorkspaceRoot, ".orchestra", "orchestrator"), control.ToolSpecs(), controlService.Execute)
+		}
+		if err == nil {
+			server.orchestratorControl = controlService
+		} else {
+			logger.Warn().Err(err).Msg("native orchestrator control unavailable")
+		}
 	}
 	r := chi.NewRouter()
 
@@ -257,6 +271,7 @@ func NewRouterWithPubSub(
 	protected.Get("/api/v1/projects/{project_id}/git/diff", server.GetProjectGitDiff)
 	protected.Post("/api/v1/projects/{project_id}/refresh", server.RefreshProject)
 	protected.Get("/api/v1/projects/{project_id}", server.GetProject)
+	protected.Get("/api/v1/projects/{project_id}/git/worktrees", server.GetProjectWorktrees)
 	protected.Delete("/api/v1/projects/{project_id}", server.DeleteProject)
 	protected.Post("/api/v1/projects/{project_id}/git/commit", server.PostGitCommit)
 	protected.Post("/api/v1/projects/{project_id}/git/push", server.PostGitPush)
@@ -346,6 +361,15 @@ func NewRouterWithPubSub(
 	protected.Post("/api/v1/issues/{issue_identifier}/stop", server.PostIssueStop)
 
 	protected.Get("/api/v1/projects/{project_id}/chat/providers", server.GetWorkspaceChatProviders)
+	protected.Get("/api/v1/orchestrator/chat/providers", orchestratorChatScope(server.GetWorkspaceChatProviders))
+	protected.Get("/api/v1/orchestrator/chat/providers/{provider}/models", orchestratorChatScope(server.GetWorkspaceChatModels))
+	protected.Get("/api/v1/orchestrator/chat/sessions", orchestratorChatScope(server.GetWorkspaceChatSessions))
+	protected.Post("/api/v1/orchestrator/chat/sessions", orchestratorChatScope(server.PostWorkspaceChatSession))
+	protected.Get("/api/v1/orchestrator/chat/sessions/{session_id}", orchestratorChatScope(server.GetWorkspaceChatSession))
+	protected.Post("/api/v1/orchestrator/chat/sessions/{session_id}/messages", orchestratorChatScope(server.PostWorkspaceChatMessage))
+	protected.Post("/api/v1/orchestrator/chat/sessions/{session_id}/stop", orchestratorChatScope(server.PostWorkspaceChatStop))
+	protected.Post("/api/v1/orchestrator/chat/sessions/{session_id}/requests/{request_id}/reply", orchestratorChatScope(server.PostWorkspaceChatReply))
+	protected.Post("/api/v1/orchestrator/control", server.PostOrchestratorControl)
 	protected.Get("/api/v1/projects/{project_id}/chat/providers/{provider}/models", server.GetWorkspaceChatModels)
 	protected.Get("/api/v1/projects/{project_id}/chat/sessions", server.GetWorkspaceChatSessions)
 	protected.Post("/api/v1/projects/{project_id}/chat/sessions", server.PostWorkspaceChatSession)
