@@ -216,7 +216,7 @@ func Run(logger zerolog.Logger) error {
 	defer chatService.Close()
 	router := api.NewRouterWithPubSub(logger, orchestratorService, &cfg, pubsub, warehouseDB, termManager, usageService, trackerRegistry, studioMgr, studioTpls, chatService)
 
-	cleanupTerminalWorkspaces(orchestratorService, trackerClient, workspaceService, cfg.WorkspaceHooks, warehouseDB, logger)
+	observeRetainedTerminalWorkspaces(orchestratorService, trackerClient, logger)
 
 	go startGarbageCollector(orchestratorService, warehouseDB, workspaceService, cfg.TelemetryRetentionDays, logger)
 	go startRefreshWorker(orchestratorService, trackerRegistry, warehouseDB, pubsub, logger)
@@ -1306,34 +1306,20 @@ func extractGitHubIssueNumber(url string) int {
 	return n
 }
 
-// cleanupTerminalWorkspaces removes workspaces for issues that have reached a
-// terminal state, called once at startup to reclaim disk space.
-func cleanupTerminalWorkspaces(service *orchestrator.Service, trackerClient tracker.Client, workspaceService workspace.Service, hooks workspace.Hooks, warehouseDB *db.DB, logger zerolog.Logger) {
+// A terminal task state does not authorize deleting its checkout. Startup only
+// observes retained tasks; cleanup needs an explicit ownership/retention decision.
+func observeRetainedTerminalWorkspaces(service *orchestrator.Service, trackerClient tracker.Client, logger zerolog.Logger) {
 	if trackerClient == nil {
 		return
 	}
 	terminalStates := service.TerminalStates()
 	issues, err := trackerClient.FetchIssuesByStates(context.Background(), terminalStates)
 	if err != nil {
-		logger.Warn().Err(err).Msg("startup terminal workspace cleanup skipped")
+		logger.Warn().Err(err).Msg("startup retained-workspace observation unavailable")
 		return
 	}
 
-	ctx := context.Background()
-	for _, issue := range issues {
-		if issue.BranchName == "" || issue.ProjectID == "" {
-			continue
-		}
-		project, projErr := warehouseDB.GetProjectByID(ctx, issue.ProjectID)
-		if projErr != nil {
-			logger.Warn().Err(projErr).Str("project_id", issue.ProjectID).Msg("startup cleanup: project lookup failed")
-			continue
-		}
-		wtPath := workspaceService.WorktreePath(project.ID, issue.BranchName)
-		if err := workspaceService.RemoveWorktree(project.RootPath, wtPath, hooks); err != nil {
-			logger.Warn().Err(err).Str("issue_identifier", issue.Identifier).Msg("startup worktree cleanup failed")
-		}
-	}
+	logger.Info().Int("terminal_tasks", len(issues)).Msg("retained terminal task workspaces; startup does not authorize Git cleanup")
 }
 
 // startGarbageCollector runs hourly to prune old database events and clean up

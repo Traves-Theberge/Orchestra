@@ -69,3 +69,29 @@ Both real native Windows API smoke modes passed locally: unauthenticated loopbac
 and token-authenticated fixture. These are actual API/process checks, not a
 signed Electron application or provider/chat E2E claim. CI is rerun on the fixed
 script before merge.
+
+## Restart retention and native desktop navigation
+
+Review identified an independent startup path that force-removed all terminal
+task worktrees. Startup now only observes those tasks; it has no workspace,
+Git or cleanup-hook capability. This follows the same reference distinction
+between displayed state and authorized workspace effects described above.
+
+`TestPersistedDoneWorkspaceSurvivesStartupObservation` creates a real linked
+worktree and SQLite task, persists Done, closes and reopens the database twice,
+and invokes the exact production startup observation boundary with fresh tracker
+and orchestrator instances. It checks persisted identity, branch, HEAD, status,
+unpublished files and ignored output. The native Windows test passed together
+with the manual-transition regressions. This is a persistent-database/startup
+boundary test, not a full new-process recovery or provider-session E2E test.
+
+Hosted run `37248769605` passed Linux desktop smoke and Windows build/API smoke,
+but its native Electron check incorrectly expected primary navigation while a
+fresh profile opens the Console drilldown. The smoke now exercises the sidebar
+back action before requiring primary navigation. Renderer/API assertions remain
+required. Typecheck and the app renderer smoke suite passed locally (27 tests,
+two existing skips); native Electron CI must pass before merge.
+
+The full Linux backend race rerun passed after the startup change (API 88.786s,
+app 5.902s). The renderer production build also passed. Electron smoke copies
+its actual launch screenshot into the uploaded CI reports directory.
