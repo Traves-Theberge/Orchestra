@@ -10,9 +10,11 @@ import {
   Play,
   Plus,
   Rows,
+  Search,
   Square,
   ClipboardList,
   Trash2,
+  X,
 } from 'lucide-react'
 
 import { Button } from '@ui/button'
@@ -50,9 +52,23 @@ const COLUMN_TO_STATE: Record<string, string> = {
   done: 'Done',
 }
 
-const STATE_TO_COLUMN: Record<string, string> = Object.fromEntries(
-  Object.entries(COLUMN_TO_STATE).map(([k, v]) => [v, k]),
-)
+const normalizeState = (state: string | undefined) => state?.trim().toLowerCase() ?? ''
+const getIssueActionRef = (issue: IssueListItem): string =>
+  issue.identifier || issue.issue_identifier || issue.issue_id || issue.id || ''
+
+const normalizeSearchText = (value: string) =>
+  value.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase()
+
+const matchesSearch = (query: string, fields: Array<string | undefined>) => {
+  const tokens = normalizeSearchText(query).trim().split(/\s+/).filter(Boolean)
+  if (tokens.length === 0) return true
+  const searchable = normalizeSearchText(fields.filter(Boolean).join(' '))
+  return tokens.every((token) => searchable.includes(token))
+}
+
+const DRAG_TYPE_KEY = 'application/x-orchestra-kanban-type'
+const DRAG_ISSUE_KEY = 'application/x-orchestra-kanban-issue'
+const DRAG_COLUMN_KEY = 'application/x-orchestra-kanban-column'
 
 const EMPTY_ISSUES: IssueListItem[] = []
 const EMPTY_PROJECTS: Project[] = []
@@ -124,6 +140,7 @@ export function KanbanBoard({
   const [stateFilter, setStateFilter] = useState<string>('all')
   const [projectFilter, setProjectFilter] = useState<string>(projects.length === 1 ? projects[0].id : 'all')
   const [viewMode, setViewMode] = useState<'board' | 'list'>('board')
+  const [backlogSearch, setBacklogSearch] = useState('')
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [issueToDelete, setIssueToDelete] = useState<{ identifier: string; title?: string } | null>(null)
   const [deleteTaskPending, setDeleteTaskPending] = useState(false)
@@ -153,14 +170,14 @@ export function KanbanBoard({
       e.preventDefault()
       return
     }
-    e.dataTransfer.setData('issueIdentifier', issueIdentifier)
-    e.dataTransfer.setData('type', 'issue')
+    e.dataTransfer.setData(DRAG_ISSUE_KEY, issueIdentifier)
+    e.dataTransfer.setData(DRAG_TYPE_KEY, 'issue')
     e.dataTransfer.effectAllowed = 'move'
   }
 
   const handleColumnDragStart = (e: React.DragEvent, columnId: string) => {
-    e.dataTransfer.setData('columnId', columnId)
-    e.dataTransfer.setData('type', 'column')
+    e.dataTransfer.setData(DRAG_COLUMN_KEY, columnId)
+    e.dataTransfer.setData(DRAG_TYPE_KEY, 'column')
     setDraggingColumnId(columnId)
   }
 
@@ -174,9 +191,9 @@ export function KanbanBoard({
     setIsDraggingOver(null)
     setDraggingColumnId(null)
 
-    const type = e.dataTransfer.getData('type')
+    const type = e.dataTransfer.getData(DRAG_TYPE_KEY)
     if (type === 'column') {
-      const sourceColumnId = e.dataTransfer.getData('columnId')
+      const sourceColumnId = e.dataTransfer.getData(DRAG_COLUMN_KEY)
       if (!sourceColumnId || sourceColumnId === targetColumnId) return
 
       const newOrder = [...columnOrder]
@@ -188,7 +205,7 @@ export function KanbanBoard({
       return
     }
 
-    const issueIdentifier = e.dataTransfer.getData('issueIdentifier')
+    const issueIdentifier = e.dataTransfer.getData(DRAG_ISSUE_KEY)
     if (!issueIdentifier || !onIssueUpdate) return
 
     const allowedDragTransitions: Record<string, string[]> = {
@@ -200,12 +217,12 @@ export function KanbanBoard({
     }
 
     // Find the issue being dragged to determine its current column
-    const issue = boardIssues.find(
-      (i) => (i.identifier || i.issue_identifier) === issueIdentifier
-    )
+    const issue = boardIssues.find((i) => getIssueActionRef(i) === issueIdentifier)
     if (!issue) return
 
-    const currentColumnId = STATE_TO_COLUMN[issue.state] || ''
+    const currentColumnId = Object.entries(COLUMN_TO_STATE).find(
+      ([, state]) => normalizeState(state) === normalizeState(issue.state),
+    )?.[0] || ''
     if (currentColumnId === targetColumnId) return
 
     // Check if the transition is allowed
@@ -214,11 +231,7 @@ export function KanbanBoard({
 
     // Backlog → Todo: validate required fields first
     if (currentColumnId === 'backlog' && targetColumnId === 'todo') {
-      const missing: string[] = []
-      if (!issue.title?.trim()) missing.push('title')
-      if (!issue.description?.trim()) missing.push('description')
-      if (!issue.assignee_id || issue.assignee_id === 'Unassigned') missing.push('assignee')
-      if (!issue.project_id) missing.push('project')
+      const missing = getBacklogMissingFields(issue)
       if (missing.length > 0) {
         setDragValidationMsg(`Cannot move to Todo — missing: ${missing.join(', ')}. Open the task to fill in required fields.`)
         setTimeout(() => setDragValidationMsg(null), 5000)
@@ -240,7 +253,7 @@ export function KanbanBoard({
   }
 
   const enrichedIssues = boardIssues.map((issue) => {
-    const issueID = issue.issue_id || issue.id || ''
+    const issueID = issue.issue_id || issue.id || issue.identifier || issue.issue_identifier || ''
     let lane: EnrichedIssue['lane'] = null
     let detail = issue.title || issue.description || 'No Title'
     let at = issue.created_at || ''
@@ -264,7 +277,7 @@ export function KanbanBoard({
     return {
       ...issue,
       issue_id: issueID,
-      issue_identifier: issue.identifier || issue.issue_identifier,
+      issue_identifier: issue.identifier || issue.issue_identifier || issue.issue_id || issue.id,
       lane,
       detail,
       at,
@@ -272,14 +285,36 @@ export function KanbanBoard({
   })
 
   const filterItem = (item: EnrichedIssue) => {
-    const stateMatch = stateFilter === 'all' || item.state === stateFilter
+    const stateMatch = stateFilter === 'all' || normalizeState(item.state) === normalizeState(stateFilter)
     const projectMatch = projectFilter === 'all' || item.project_id === projectFilter
     return stateMatch && projectMatch
   }
 
-  const stateIs = (s: string, target: string) => s.toLowerCase() === target.toLowerCase()
+  const stateIs = (s: string, target: string) => normalizeState(s) === normalizeState(target)
   const visibleIssues = enrichedIssues.filter(filterItem)
-  const backlogItems = visibleIssues.filter((i) => stateIs(i.state, 'Backlog'))
+  const backlogCandidates = visibleIssues.filter((i) => stateIs(i.state, 'Backlog'))
+  const matchesBacklogSearch = (item: EnrichedIssue) => {
+    const assignee = item.assignee_id || ''
+    const normalizedAssignee = assignee.replace(/^agent-/i, '')
+    const projectName = projects.find((candidate) => candidate.id === item.project_id)?.name
+    const assigneeKey = normalizeSearchText(assignee).replace(/^agent-/, '')
+    const agentName = availableAgents.find((agent) => normalizeSearchText(agent).replace(/^agent-/, '') === assigneeKey)
+    return matchesSearch(backlogSearch, [
+      item.title,
+      item.description,
+      item.issue_identifier,
+      item.identifier,
+      item.issue_id,
+      item.id,
+      assignee,
+      normalizedAssignee,
+      agentName,
+      projectName,
+      typeof item.provider === 'string' ? item.provider : undefined,
+      item.last_message,
+    ])
+  }
+  const backlogItems = backlogCandidates.filter(matchesBacklogSearch)
   const todoItems = visibleIssues.filter((i) => stateIs(i.state, 'Todo'))
   const inProgressItems = visibleIssues.filter((i) => stateIs(i.state, 'In Progress'))
   const reviewItems = visibleIssues.filter((i) => stateIs(i.state, 'Review'))
@@ -324,15 +359,17 @@ export function KanbanBoard({
   ]
 
   const orderedColumns = columnOrder.map((id) => columns.find((column) => column.id === id)!)
-  const filteredList = enrichedIssues.filter(filterItem)
+  const filteredList = enrichedIssues.filter((item) =>
+    filterItem(item) && (!stateIs(item.state, 'Backlog') || matchesBacklogSearch(item)),
+  )
 
-  const getActionIssueRef = (item: EnrichedIssue): string => item.issue_identifier || item.issue_id || ''
+  const getActionIssueRef = (item: EnrichedIssue): string => getIssueActionRef(item)
 
-  const getBacklogMissingFields = (item: EnrichedIssue): string[] => {
+  const getBacklogMissingFields = (item: Pick<IssueListItem, 'title' | 'description' | 'assignee_id' | 'project_id'>): string[] => {
     const missing: string[] = []
     if (!item.title?.trim()) missing.push('title')
     if (!item.description?.trim()) missing.push('description')
-    if (!item.assignee_id || item.assignee_id === 'Unassigned') missing.push('assignee')
+    if (!item.assignee_id?.trim() || item.assignee_id.trim().toLowerCase() === 'unassigned') missing.push('assignee')
     if (!item.project_id) missing.push('project')
     return missing
   }
@@ -435,6 +472,44 @@ export function KanbanBoard({
         )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {activeTab === 'board' && (
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="relative w-44 sm:w-56">
+                <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/50" />
+                <input
+                  type="search"
+                  aria-label="Search Backlog tasks"
+                  aria-controls="kanban-column-backlog"
+                  placeholder="Search Backlog…"
+                  autoComplete="off"
+                  value={backlogSearch}
+                  onChange={(event) => setBacklogSearch(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape' && backlogSearch) {
+                      event.preventDefault()
+                      setBacklogSearch('')
+                    }
+                  }}
+                  className="h-8 w-full rounded-md border border-border/50 bg-background pl-8 pr-8 text-[11px] text-foreground placeholder:text-muted-foreground/45 focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/15"
+                />
+                {backlogSearch && (
+                  <button
+                    type="button"
+                    aria-label="Clear Backlog search"
+                    onClick={() => setBacklogSearch('')}
+                    className="absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded text-muted-foreground/60 hover:bg-muted hover:text-foreground"
+                  >
+                    <X aria-hidden="true" className="size-3.5" />
+                  </button>
+                )}
+              </div>
+              {backlogSearch.trim() && (
+                <span aria-live="polite" className="whitespace-nowrap text-[10px] tabular-nums text-muted-foreground/60">
+                  {backlogItems.length} of {backlogCandidates.length}
+                </span>
+              )}
+            </div>
+          )}
           <button
             onClick={() => handleCreateClick('backlog')}
             className="h-8 px-3.5 inline-flex items-center gap-1.5 rounded-md bg-foreground text-background hover:bg-foreground/90 text-[12px] font-semibold tracking-tight transition-colors"
@@ -473,6 +548,7 @@ export function KanbanBoard({
             <div className="flex items-center rounded-md bg-muted/30 p-0.5">
               <AppTooltip content="Board view">
                 <button
+                  aria-label="Board view"
                   onClick={() => setViewMode('board')}
                   className={`grid h-7 w-8 place-items-center rounded transition-colors ${viewMode === 'board' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground/60 hover:text-foreground'}`}
                 >
@@ -481,6 +557,7 @@ export function KanbanBoard({
               </AppTooltip>
               <AppTooltip content="List view">
                 <button
+                  aria-label="List view"
                   onClick={() => setViewMode('list')}
                   className={`grid h-7 w-8 place-items-center rounded transition-colors ${viewMode === 'list' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground/60 hover:text-foreground'}`}
                 >
@@ -533,6 +610,8 @@ export function KanbanBoard({
           {orderedColumns.map((column) => (
             <div
               key={column.id}
+              id={`kanban-column-${column.id}`}
+              data-testid={`kanban-column-${column.id}`}
               className={`flex flex-col min-h-0 transition-opacity ${draggingColumnId === column.id ? 'opacity-30' : ''}`}
               onDragOver={(e) => handleDragOver(e, column.id)}
               onDragLeave={() => setIsDraggingOver(null)}
@@ -561,7 +640,19 @@ export function KanbanBoard({
                   {loadingState ? (
                     SKELETON_ROW_KEYS.map((k) => <Skeleton key={k} className="h-20 w-full rounded-lg" />)
                   ) : column.items.length === 0 ? (
-                    column.id === 'backlog' ? (
+                    column.id === 'backlog' && backlogSearch.trim() && backlogCandidates.length > 0 ? (
+                      <div className="flex min-h-full flex-col items-center justify-center gap-2 px-3 text-center">
+                        <Search className="size-4 text-muted-foreground/35" aria-hidden="true" />
+                        <p className="text-[10px] font-medium text-muted-foreground/55">No Backlog tasks match “{backlogSearch.trim()}”</p>
+                        <button
+                          type="button"
+                          onClick={() => setBacklogSearch('')}
+                          className="text-[10px] font-semibold text-primary hover:underline"
+                        >
+                          Clear search
+                        </button>
+                      </div>
+                    ) : column.id === 'backlog' ? (
                       <button
                         type="button"
                         className="w-full min-h-full flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border/30 hover:border-border/60 hover:bg-foreground/[0.02] transition-all group/empty"
@@ -583,6 +674,8 @@ export function KanbanBoard({
                         key={item.issue_id}
                         draggable
                         role="button"
+                        aria-label={`Task ${getActionIssueRef(item)}: ${item.title || item.description || 'Untitled'}`}
+                        data-testid={`kanban-task-${item.issue_id}`}
                         tabIndex={0}
                         onDragStart={(e) => handleDragStart(e, getActionIssueRef(item))}
                         className={`group relative cursor-grab rounded-lg border active:cursor-grabbing transition-all overflow-hidden ${
@@ -673,7 +766,7 @@ export function KanbanBoard({
                           )}
 
                           {/* Backlog readiness indicator */}
-                          {item.state === 'Backlog' && (() => {
+                          {stateIs(item.state, 'Backlog') && (() => {
                             const missing = getBacklogMissingFields(item)
                             if (missing.length === 0) return null
                             return (
@@ -722,7 +815,7 @@ export function KanbanBoard({
           {filteredList.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center p-12 text-center text-muted-foreground/40">
               <ClipboardList className="size-12 mb-4 opacity-20" />
-              <p className="text-sm italic uppercase tracking-widest font-bold">No tasks match current filters</p>
+              <p className="text-sm italic uppercase tracking-widest font-bold">{backlogSearch.trim() ? `No Backlog tasks match “${backlogSearch.trim()}”` : 'No tasks match current filters'}</p>
             </div>
           ) : (
             <div className="flex-1 overflow-auto custom-scrollbar">
