@@ -96,7 +96,8 @@ describe('AgentsDashboard', () => {
       // AgentsSubNav uses this same store action for its scope dropdown.
       useAppStore.getState().setActiveAgentScope('PROJECT', 'project-1')
     })
-    expect(screen.getByText(/specific to Nautilus/)).toBeTruthy()
+    expect(screen.getByText('Harness setup')).toBeTruthy()
+    expect(mockUseCodexConfig).toHaveBeenLastCalledWith(expect.anything(), 'PROJECT', 'project-1')
     act(() => useAppStore.getState().setActiveAgentCategory('mcp'))
     expect(mockUseCodexConfig).toHaveBeenLastCalledWith(expect.anything(), 'PROJECT', 'project-1')
     expect(screen.getByText(/Project MCP configuration is read-only here/)).toBeTruthy()
@@ -269,6 +270,7 @@ describe('AgentsDashboard', () => {
     render(<AgentsDashboard config={{ baseUrl: 'http://localhost:4010', apiToken: 'test' }} />)
     expect(screen.getByRole('alert').textContent).toContain('403 forbidden')
     expect(screen.queryByText('Codex Config Panel')).toBeNull()
+    expect(screen.queryByText('Harness setup')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Retry configuration' }))
     expect(reload).toHaveBeenCalledOnce()
   })

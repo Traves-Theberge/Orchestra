@@ -3,6 +3,7 @@ import { useEffect, useMemo } from 'react'
 import { useAppStore } from '@core/store'
 import { selectedProjectWorkspace } from '@core/store/workspace-context'
 import { AgentResourcesPanel } from './panels/AgentResourcesPanel'
+import { HarnessSetupPanel } from './panels/HarnessSetupPanel'
 import { AlertCircle } from 'lucide-react'
 import type { BackendConfig, Project } from '@core/api/types'
 import type { ProviderFileEntry } from '@core/api/client'
@@ -347,7 +348,7 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
         {/* Detail panel */}
         <div className="flex flex-1 min-h-0">
             <div className="flex-1 min-w-0 min-h-0">
-              {config && ['claude', 'codex', 'opencode', 'antigravity'].includes(provider) && (category === 'agents' || category === 'skills') ? (
+              {config && category === 'overview' && !readFailure && !readLoading ? <HarnessSetupPanel key={JSON.stringify([config.baseUrl, config.apiToken, provider, agentHubProjectId, resourceWorkspace?.workspaceId])} config={agentHubScope === 'PROJECT' && resourceWorkspace && !resourceWorkspace.registered ? { ...config, workspaceId: resourceWorkspace.workspaceId } : { ...config, workspaceId: undefined }} provider={provider} projectId={agentHubProjectId ?? '__orchestrator__'} /> : config && ['claude', 'codex', 'opencode', 'antigravity'].includes(provider) && (category === 'agents' || category === 'skills') ? (
                 scope === 'PROJECT' && !projectId ? <p className="p-5 text-sm text-muted-foreground">Select a project to edit its agent resources.</p> : <AgentResourcesPanel key={JSON.stringify([config.baseUrl, config.apiToken, projectId, resourceWorkspace?.workspaceId, provider, scope, category])} config={scope === 'PROJECT' && resourceWorkspace && !resourceWorkspace.registered ? { ...config, workspaceId: resourceWorkspace.workspaceId } : { ...config, workspaceId: undefined }} projectId={scope === 'GLOBAL' ? '__orchestrator__' : projectId!} harness={provider} scope={scope === 'GLOBAL' ? 'global' : 'project'} kind={category === 'skills' ? 'skill' : 'agent_definition'} />
               ) : provider === 'antigravity' ? (
                 <div className="space-y-3 p-5"><h2 className="text-sm font-semibold">Antigravity</h2><p className="text-sm text-muted-foreground">Antigravity has its own harness and configuration. Its native agent and skill authoring capabilities are reported by the catalog; unsupported operations remain unavailable.</p><p className="text-xs text-muted-foreground">CLI presence alone does not confirm authentication, native sessions or agent selection.</p></div>

@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestEmbeddedOpenAPISpecMatchesRepositorySource(t *testing.T) {
@@ -14,5 +16,41 @@ func TestEmbeddedOpenAPISpecMatchesRepositorySource(t *testing.T) {
 	}
 	if !bytes.Equal(openAPISpec, source) {
 		t.Fatal("embedded API spec differs from docs/openapi.yaml")
+	}
+}
+
+func TestOpenAPILifecycleAndAgentCatalogRoutesParse(t *testing.T) {
+	var document struct {
+		OpenAPI string                          `yaml:"openapi"`
+		Paths   map[string]map[string]yaml.Node `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(openAPISpec, &document); err != nil {
+		t.Fatalf("parse embedded OpenAPI document: %v", err)
+	}
+	if document.OpenAPI != "3.0.3" {
+		t.Fatalf("unexpected OpenAPI version %q", document.OpenAPI)
+	}
+	want := map[string][]string{
+		"/api/v1/projects/{project_id}/agent-catalog":                        {"get"},
+		"/api/v1/projects/{project_id}/agent-catalog/resource":               {"get", "post", "put", "delete"},
+		"/api/v1/projects/{project_id}/agent-catalog/receipts/{request_id}":  {"get"},
+		"/api/v1/projects/{project_id}/git/worktrees/{workspace_id}":         {"delete"},
+		"/api/v1/projects/{project_id}/worktree-removals/{request_id}":       {"get"},
+		"/api/v1/projects/{project_id}/chat/archives":                        {"get"},
+		"/api/v1/projects/{project_id}/chat/sessions/{session_id}/archive":   {"post"},
+		"/api/v1/projects/{project_id}/chat/sessions/{session_id}/unarchive": {"post"},
+		"/api/v1/projects/{project_id}/chat/sessions/{session_id}/history":   {"get"},
+	}
+	for path, methods := range want {
+		operations, ok := document.Paths[path]
+		if !ok {
+			t.Errorf("OpenAPI paths missing implemented route %s", path)
+			continue
+		}
+		for _, method := range methods {
+			if _, ok := operations[method]; !ok {
+				t.Errorf("OpenAPI route %s missing method %s", path, method)
+			}
+		}
 	}
 }

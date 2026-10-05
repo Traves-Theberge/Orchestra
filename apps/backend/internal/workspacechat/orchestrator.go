@@ -30,6 +30,9 @@ func (s *Service) ConfigureOrchestrator(root string, tools []map[string]any, exe
 	if err != nil {
 		return err
 	}
+	if err := provisionMaestroProfile(resolved); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.orchestratorRoot != "" {

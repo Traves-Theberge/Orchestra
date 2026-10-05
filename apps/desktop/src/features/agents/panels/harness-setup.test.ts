@@ -1,0 +1,21 @@
+import { describe, expect, it } from 'vitest'
+import { buildCommandRegistrationPatch, getRegisteredCommand, isHarnessRegistered } from './harness-setup'
+
+describe('harness setup helpers', () => {
+  it('matches provider IDs without changing the stored spelling', () => {
+    const commands = { codex: 'codex exec {{prompt}}', OPENCODE: 'opencode run {{prompt}}' }
+    expect(getRegisteredCommand(commands, 'CODEX')).toBe('codex exec {{prompt}}')
+    expect(isHarnessRegistered(['codex', 'GEMINI'], 'CODEX')).toBe(true)
+  })
+
+  it('patches only the selected command and preserves the fetched default', () => {
+    const patch = buildCommandRegistrationPatch(
+      { CODEX: 'codex exec {{prompt}}', CLAUDE: 'claude -p {{prompt}}' },
+      'codex',
+      ' codex exec --json {{prompt}} ',
+      'CLAUDE',
+    )
+    expect(patch).toEqual({ commands: { CODEX: 'codex exec --json {{prompt}}' }, agent_provider: 'CLAUDE' })
+    expect(patch.commands).not.toHaveProperty('CLAUDE')
+  })
+})

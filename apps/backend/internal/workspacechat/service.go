@@ -585,7 +585,10 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 		}
 		turn.ToolSpecs = s.orchestratorTools
 		turn.ToolExecutor = s.orchestratorExecutor
-		turn.DeveloperInstructions = "You are Orchestra's persistent cross-project orchestrator. Your working directory is an owned control profile, not a repository. Use orchestra_control for authoritative project/task observations and authorized mutations. Resolve exact project and task IDs. Preserve Kanban and separate queued task, running agent, live worktree and reviewed/merged PR observations. Create Backlog tasks before queuing complete tasks. Every mutation requires one stable UUID request_id. After an unknown outcome inspect its receipt and project tasks; never blindly repeat with a new identity. Pause/stop/delete, project import and PR mutation are unavailable through these tools. Do not edit provider account/global settings. Only act within the user's requested scope."
+		turn.DeveloperInstructions, err = maestroInstructions(root)
+		if err != nil {
+			return Accepted{}, err
+		}
 	}
 	if req.RequestedMaxTurns != nil {
 		return Accepted{}, ErrUnsupported

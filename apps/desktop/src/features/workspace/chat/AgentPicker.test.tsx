@@ -14,8 +14,9 @@ it('uses global Maestro scope and keeps unverified definitions unselectable', as
   render(<AppTooltipProvider><AgentPicker config={config} projectId="__orchestrator__" harness="OPENCODE" disabled={false} onChange={change} /></AppTooltipProvider>)
   await waitFor(() => expect(fetchAgentCatalog).toHaveBeenCalledWith(config, '__orchestrator__', 'OPENCODE', 'global'))
   fireEvent.click(screen.getByRole('button', { name: 'Choose agent mode' }))
+  expect(screen.getByRole('option', { name: 'Maestro' })).toBeInTheDocument()
   expect(await screen.findByRole('option', { name: /Security/ })).toBeDisabled()
-  fireEvent.click(screen.getByRole('option', { name: 'Provider default' }))
+  fireEvent.click(screen.getByRole('option', { name: 'Maestro' }))
   expect(change).toHaveBeenCalledWith(undefined)
 })
 it('preserves exact nested native ID, scope and hash for a verified selection', async () => {
@@ -52,5 +53,26 @@ it('keeps Tab in the composer when no other primary mode is supported', async ()
   composer.focus()
   expect(fireEvent.keyDown(composer, { key: 'Tab' })).toBe(false)
   expect(composer).toHaveFocus()
-  expect(screen.getByRole('status')).toHaveTextContent('Default is the only supported mode.')
+  expect(screen.getByRole('status')).toHaveTextContent('Maestro is the only supported mode.')
+})
+
+it('uses the provider default label in regular workspace scopes', async () => {
+  render(<AppTooltipProvider><AgentPicker config={config} projectId="project-1" harness="OPENCODE" disabled={false} onChange={vi.fn()} /></AppTooltipProvider>)
+  fireEvent.click(screen.getByRole('button', { name: 'Choose agent mode' }))
+  expect(await screen.findByRole('option', { name: 'Provider default' })).toBeInTheDocument()
+})
+
+it('keeps Maestro available when the global catalog cannot load', async () => {
+  vi.mocked(fetchAgentCatalog).mockRejectedValue(new Error('offline'))
+  render(<AppTooltipProvider><AgentPicker config={config} projectId="__orchestrator__" harness="OPENCODE" disabled={false} onChange={vi.fn()} /></AppTooltipProvider>)
+  fireEvent.click(screen.getByRole('button', { name: 'Choose agent mode' }))
+  expect(await screen.findByText('Agent catalog unavailable. Maestro is available.')).toBeInTheDocument()
+})
+
+it('labels the loading fallback as Maestro without blocking the default option', () => {
+  vi.mocked(fetchAgentCatalog).mockReturnValue(new Promise(() => {}))
+  render(<AppTooltipProvider><AgentPicker config={config} projectId="__orchestrator__" harness="OPENCODE" disabled={false} onChange={vi.fn()} /></AppTooltipProvider>)
+  fireEvent.click(screen.getByRole('button', { name: 'Choose agent mode' }))
+  expect(screen.getByText('Loading agents… Maestro is available.')).toBeInTheDocument()
+  expect(screen.getByRole('option', { name: 'Maestro' })).toBeInTheDocument()
 })

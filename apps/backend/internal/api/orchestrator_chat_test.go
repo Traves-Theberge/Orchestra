@@ -101,6 +101,15 @@ func TestGlobalOrchestratorHarnessProcess(t *testing.T) {
 			if !strings.Contains(fmt.Sprint(p["developerInstructions"]), "persistent cross-project orchestrator") {
 				os.Exit(13)
 			}
+			if !strings.Contains(fmt.Sprint(p["developerInstructions"]), "agent name is Maestro") {
+				os.Exit(14)
+			}
+			if !strings.Contains(fmt.Sprint(p["developerInstructions"]), "Loaded Orchestra CLI skill") {
+				os.Exit(16)
+			}
+			if _, err := os.Stat(filepath.Join(fmt.Sprint(p["cwd"]), ".agents", "skills", "orchestra-cli", "SKILL.md")); err != nil {
+				os.Exit(15)
+			}
 			respond(map[string]any{"thread": map[string]string{"id": thread}, "model": "native-fixture-model", "approvalPolicy": "on-request", "sandbox": map[string]string{"type": "workspaceWrite"}})
 		case "turn/start":
 			var p struct {

@@ -731,6 +731,223 @@ components:
           type: string
           format: date-time
 
+    AgentCatalog:
+      type: object
+      description: Provider-native agent and skill observations for the requested project/workspace/harness scope. Listing does not imply the harness can select a definition as its primary agent.
+      required: [project_id, harness, scope, observation, selection_capability, capabilities, items]
+      properties:
+        project_id: { type: string }
+        workspace_id: { type: string, description: Exact selected child checkout ID when applicable. }
+        root: { type: string, description: Observed project root for project scope. }
+        harness: { type: string, enum: [CLAUDE, CODEX, GEMINI, OPENCODE, 8GENT, ANTIGRAVITY] }
+        scope: { type: string, enum: [project, global, effective] }
+        observation: { type: string, enum: [observed, unavailable, unsupported] }
+        selection_capability: { type: string }
+        runtime_version: { type: string }
+        reason: { type: string }
+        capabilities:
+          type: object
+          required: [list, create, update, delete, select_primary]
+          properties:
+            list: { type: boolean }
+            create: { type: boolean }
+            update: { type: boolean }
+            delete: { type: boolean }
+            select_primary: { type: boolean, description: Current authoring endpoint never performs primary-agent selection. }
+            selection_reason: { type: string }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AgentResource' }
+
+    AgentResource:
+      type: object
+      required: [item_id, id, kind, harness, scope, path, content_hash, display_name, selectable_as_primary, selection_status]
+      properties:
+        item_id: { type: string }
+        id: { type: string, description: Resource ID relative to the provider-native resource directory. }
+        agent_id: { type: string }
+        kind: { type: string, enum: [agent_definition, skill, orchestra_config] }
+        harness: { type: string, enum: [CLAUDE, CODEX, GEMINI, OPENCODE, 8GENT, ANTIGRAVITY] }
+        scope: { type: string, enum: [project, global] }
+        path: { type: string, description: Observed absolute resource path. }
+        content_hash: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        format: { type: string }
+        display_name: { type: string }
+        description: { type: string }
+        mode: { type: string }
+        selectable_as_primary: { type: boolean }
+        selection_status: { type: string }
+        reason: { type: string }
+        content: { type: string, description: Present on a single-resource GET; omitted from catalog lists. }
+
+    AgentResourceMutationBody:
+      type: object
+      additionalProperties: false
+      required: [request_id]
+      properties:
+        request_id: { type: string, format: uuid, description: Stable non-nil UUID used to deduplicate this exact mutation and retrieve its durable receipt. }
+        expected_hash: { type: string, pattern: '^sha256:[0-9a-f]{64}$', description: Required for update and delete; omitted for create. }
+        content: { type: string, maxLength: 1048576, description: Native definition or skill content for create/update. }
+        format: { type: string, description: Native serialization format when required by the selected harness/resource kind. }
+
+    AgentResourceReceipt:
+      type: object
+      required: [request_id, status, project_id, harness, scope, kind, resource_id]
+      properties:
+        request_id: { type: string, format: uuid }
+        status: { type: string, enum: [pending, completed, unknown] }
+        project_id: { type: string }
+        workspace_id: { type: string }
+        harness: { type: string, enum: [CLAUDE, CODEX, GEMINI, OPENCODE, 8GENT, ANTIGRAVITY] }
+        scope: { type: string, enum: [project, global] }
+        kind: { type: string, enum: [agent_definition, skill, orchestra_config] }
+        resource_id: { type: string }
+        path: { type: string }
+        content_hash: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        message: { type: string }
+        updated_at: { type: string, format: date-time }
+
+    WorktreeRemovalRequest:
+      type: object
+      additionalProperties: false
+      required: [request_id]
+      properties:
+        request_id: { type: string, format: uuid, description: Stable non-nil UUID. A replay observes the same removal receipt and never starts another Git effect. }
+
+    WorktreeRemovalReceipt:
+      type: object
+      required: [request_id, project_id, workspace_id, status]
+      properties:
+        request_id: { type: string, format: uuid }
+        project_id: { type: string }
+        workspace_id: { type: string, description: Exact registered Git worktree ID selected for removal. }
+        status: { type: string, enum: [pending, unknown, rejected, completed] }
+        path: { type: string, description: Canonical checkout path revalidated before the Git effect. }
+        branch: { type: string, description: Retained local branch name; this operation does not delete branches. }
+        head: { type: string, description: HEAD observed at preflight. }
+        message: { type: string }
+
+    WorktreeRemovalResponse:
+      type: object
+      required: [removal]
+      properties:
+        removal: { $ref: '#/components/schemas/WorktreeRemovalReceipt' }
+
+    WorkspaceChatSession:
+      type: object
+      required: [id, project_id, provider, title, status, created_at, updated_at, archived, lifecycle_version]
+      properties:
+        id: { type: string }
+        project_id: { type: string }
+        workspace_id: { type: string, description: Stable workspace identity stored when the session was created. }
+        workspace_path: { type: string, description: Exact canonical cwd stored when the session was created. }
+        provider: { type: string }
+        title: { type: string }
+        status: { type: string }
+        conversation_mode: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        error: { type: string }
+        provider_thread_id: { type: string }
+        requested_model: { type: string }
+        effective_model: { type: string }
+        approval_policy: { type: string }
+        sandbox_mode: { type: string }
+        requested_reasoning_effort: { type: string }
+        effective_reasoning_effort: { type: string }
+        archived: { type: boolean }
+        archived_at: { type: string, format: date-time }
+        lifecycle_version: { type: integer, format: int64, minimum: 0 }
+        requested_agent_id: { type: string }
+        requested_agent_scope: { type: string }
+        requested_agent_content_hash: { type: string }
+        requested_agent_format: { type: string }
+        effective_agent_id: { type: string }
+        agent_observation: { type: string }
+
+    WorkspaceChatArchiveRequest:
+      type: object
+      additionalProperties: false
+      required: [workspace_id, cwd, expected_status, expected_version]
+      properties:
+        workspace_id: { type: string, description: Exact stored workspace identity for this chat session. }
+        cwd: { type: string, format: path, description: Exact canonical workspace path bound to the session; must still resolve to a live checkout for archive/unarchive. }
+        expected_status: { type: string, description: Current session status observed by the caller; optimistic-concurrency precondition. }
+        expected_version: { type: integer, format: int64, minimum: 0, description: Current lifecycle_version; optimistic-concurrency precondition. }
+
+    WorkspaceChatSessionResponse:
+      type: object
+      required: [session]
+      properties:
+        session: { $ref: '#/components/schemas/WorkspaceChatSession' }
+
+    WorkspaceChatArchiveList:
+      type: object
+      required: [sessions]
+      properties:
+        sessions:
+          type: array
+          items: { $ref: '#/components/schemas/WorkspaceChatSession' }
+
+    WorkspaceChatMessage:
+      type: object
+      properties:
+        id: { type: string }
+        session_id: { type: string }
+        role: { type: string }
+        text: { type: string }
+        status: { type: string }
+        client_message_id: { type: string }
+        created_at: { type: string, format: date-time }
+        requested_agent_id: { type: string }
+        requested_agent_scope: { type: string }
+        requested_agent_content_hash: { type: string }
+        requested_agent_format: { type: string }
+        effective_agent_id: { type: string }
+        agent_observation: { type: string }
+
+    WorkspaceChatEvent:
+      type: object
+      properties:
+        sequence: { type: integer, format: int64 }
+        type: { type: string }
+        thread_id: { type: string }
+        turn_id: { type: string }
+        item_id: { type: string }
+        request_id: { type: string }
+        delta: { type: string }
+        payload: { type: object, additionalProperties: true }
+        usage: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
+
+    WorkspaceChatRuntimeRequest:
+      type: object
+      properties:
+        id: { type: string }
+        turn_id: { type: string }
+        method: { type: string }
+        params: { type: object, additionalProperties: true }
+        status: { type: string }
+        answer: { type: object, additionalProperties: true }
+        client_response_id: { type: string }
+        created_at: { type: string, format: date-time }
+
+    WorkspaceChatHistory:
+      type: object
+      required: [session, messages, events, requests, cursor]
+      properties:
+        session: { $ref: '#/components/schemas/WorkspaceChatSession' }
+        messages:
+          type: array
+          items: { $ref: '#/components/schemas/WorkspaceChatMessage' }
+        events:
+          type: array
+          items: { $ref: '#/components/schemas/WorkspaceChatEvent' }
+        requests:
+          type: array
+          items: { $ref: '#/components/schemas/WorkspaceChatRuntimeRequest' }
+        cursor: { type: integer, format: int64 }
+
 paths:
   # ─── Health ───────────────────────────────────────────────────────────────
   /healthz:
@@ -785,6 +1002,321 @@ paths:
                 type: string
 
   # ─── State ────────────────────────────────────────────────────────────────
+  /api/v1/projects/{project_id}/agent-catalog:
+    get:
+      tags: [Agents]
+      summary: List scoped native agent resources
+      description: Lists harness-owned agent definitions, skills, and supported workspace configuration. Scope defaults to effective (global plus project); project scope resolves the exact workspace_id checkout. Discovery does not establish primary-agent selection capability.
+      parameters:
+        - { name: project_id, in: path, required: true, schema: { type: string } }
+        - { name: harness, in: query, required: true, schema: { type: string, enum: [CLAUDE, CODEX, GEMINI, OPENCODE, 8GENT, ANTIGRAVITY] } }
+        - { name: scope, in: query, schema: { type: string, enum: [project, global, effective], default: effective } }
+        - { name: workspace_id, in: query, description: Exact checkout identity for project scope., schema: { type: string } }
+      responses:
+        '200':
+          description: Scoped catalog and observed capabilities.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentCatalog' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /api/v1/projects/{project_id}/agent-catalog/resource:
+    get:
+      tags: [Agents]
+      summary: Read one scoped native agent resource
+      description: Returns the native resource content and current SHA-256 content hash. Scope, harness, kind, resource ID, and workspace identity (for project scope) must match the observed item.
+      parameters:
+        - { name: project_id, in: path, required: true, schema: { type: string } }
+        - { name: harness, in: query, required: true, schema: { type: string, enum: [CLAUDE, CODEX, GEMINI, OPENCODE, 8GENT, ANTIGRAVITY] } }
+        - { name: scope, in: query, schema: { type: string, enum: [project, global, effective], default: effective } }
+        - { name: workspace_id, in: query, description: Exact checkout identity for project scope., schema: { type: string } }
+        - { name: kind, in: query, required: true, schema: { type: string, enum: [agent_definition, skill, orchestra_config] } }
+        - { name: resource_id, in: query, required: true, description: ID relative to the native resource directory., schema: { type: string } }
+      responses:
+        '200':
+          description: Native resource with content.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentResource' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+    post:
+      tags: [Agents]
+      summary: Create a native agent resource
+      description: Creates a provider-native definition/skill or supported workspace configuration. Mutations require project or global scope, a stable non-nil UUID request_id, and harness-native content. This route does not select a primary agent.
+      parameters:
+        - { name: project_id, in: path, required: true, schema: { type: string } }
+        - { name: harness, in: query, required: true, schema: { type: string, enum: [CLAUDE, CODEX, GEMINI, OPENCODE, 8GENT, ANTIGRAVITY] } }
+        - { name: scope, in: query, required: true, schema: { type: string, enum: [project, global] } }
+        - { name: workspace_id, in: query, description: Exact checkout identity for project scope., schema: { type: string } }
+        - { name: kind, in: query, required: true, schema: { type: string, enum: [agent_definition, skill, orchestra_config] } }
+        - { name: resource_id, in: query, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: '#/components/schemas/AgentResourceMutationBody' }
+                - type: object
+                  required: [content]
+      responses:
+        '200':
+          description: Mutation receipt.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentResourceReceipt' }
+        '202':
+          description: Mutation outcome is unknown. Inspect this request receipt; the filesystem effect is never replayed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentResourceReceipt' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+    put:
+      tags: [Agents]
+      summary: Update a native agent resource
+      description: Replaces content only when expected_hash equals the current resource hash. Use a stable non-nil UUID request_id; replay returns its durable receipt and never repeats the write.
+      parameters:
+        - { name: project_id, in: path, required: true, schema: { type: string } }
+        - { name: harness, in: query, required: true, schema: { type: string, enum: [CLAUDE, CODEX, GEMINI, OPENCODE, 8GENT, ANTIGRAVITY] } }
+        - { name: scope, in: query, required: true, schema: { type: string, enum: [project, global] } }
+        - { name: workspace_id, in: query, description: Exact checkout identity for project scope., schema: { type: string } }
+        - { name: kind, in: query, required: true, schema: { type: string, enum: [agent_definition, skill, orchestra_config] } }
+        - { name: resource_id, in: query, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: '#/components/schemas/AgentResourceMutationBody' }
+                - type: object
+                  required: [expected_hash, content]
+      responses:
+        '200':
+          description: Mutation receipt.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentResourceReceipt' }
+        '202':
+          description: Mutation outcome is unknown. Inspect the same request receipt before retrying.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentResourceReceipt' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+    delete:
+      tags: [Agents]
+      summary: Delete a native agent resource
+      description: Deletes only if expected_hash matches the current content. It removes one native file only, never a directory tree. Stable request_id allows receipt reconciliation without repeating the filesystem effect.
+      parameters:
+        - { name: project_id, in: path, required: true, schema: { type: string } }
+        - { name: harness, in: query, required: true, schema: { type: string, enum: [CLAUDE, CODEX, GEMINI, OPENCODE, 8GENT, ANTIGRAVITY] } }
+        - { name: scope, in: query, required: true, schema: { type: string, enum: [project, global] } }
+        - { name: workspace_id, in: query, description: Exact checkout identity for project scope., schema: { type: string } }
+        - { name: kind, in: query, required: true, schema: { type: string, enum: [agent_definition, skill, orchestra_config] } }
+        - { name: resource_id, in: query, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: '#/components/schemas/AgentResourceMutationBody' }
+                - type: object
+                  required: [expected_hash]
+      responses:
+        '200':
+          description: Mutation receipt.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentResourceReceipt' }
+        '202':
+          description: Mutation outcome is unknown. Inspect the same request receipt before retrying.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentResourceReceipt' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /api/v1/projects/{project_id}/agent-catalog/receipts/{request_id}:
+    get:
+      tags: [Agents]
+      summary: Read agent resource mutation receipt
+      description: Reads the durable project-scoped receipt for a UUID mutation request. It never initiates or replays the mutation.
+      parameters:
+        - { name: project_id, in: path, required: true, schema: { type: string } }
+        - { name: request_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Mutation receipt.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentResourceReceipt' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /api/v1/projects/{project_id}/git/worktrees/{workspace_id}:
+    delete:
+      tags: [Git]
+      summary: Remove a clean linked worktree
+      description: Removes only the exact registered linked checkout selected by workspace_id. Registered/project roots, main, locked/prunable, busy/uncertain, and tracked/untracked/ignored-dirty worktrees are refused. Project identity, workspace identity, canonical path, branch, and HEAD are revalidated immediately before the non-force Git worktree remove. This does not recursively delete files, delete the local branch, or mutate chat/provider transcripts. A durable receipt records the effect and reconciliation outcome.
+      parameters:
+        - { name: project_id, in: path, required: true, schema: { type: string } }
+        - { name: workspace_id, in: path, required: true, description: Exact registered Git worktree identity., schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorktreeRemovalRequest' }
+      responses:
+        '200':
+          description: Final completed or rejected result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorktreeRemovalResponse' }
+        '202':
+          description: Pending or ambiguous effect; poll this same request receipt before taking another action.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorktreeRemovalResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /api/v1/projects/{project_id}/worktree-removals/{request_id}:
+    get:
+      tags: [Git]
+      summary: Read or reconcile a worktree removal receipt
+      description: Reads the durable project/request receipt. Unknown effects are reconciled from Git membership and exact path/branch/HEAD evidence; the route never repeats Git removal.
+      parameters:
+        - { name: project_id, in: path, required: true, schema: { type: string } }
+        - { name: request_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Final removal receipt.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorktreeRemovalResponse' }
+        '202':
+          description: Receipt remains pending or unknown; poll the same request ID.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorktreeRemovalResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /api/v1/projects/{project_id}/chat/archives:
+    get:
+      tags: [Workspace]
+      summary: List archived workspace chat sessions
+      description: With no workspace filters, reads archived session metadata from the database across the project without inspecting checkout paths. Supplying both workspace_id and cwd filters by that exact stored identity/path; supplying only one is invalid.
+      parameters:
+        - { name: project_id, in: path, required: true, schema: { type: string } }
+        - { name: workspace_id, in: query, description: Exact stored workspace ID; provide together with cwd., schema: { type: string } }
+        - { name: cwd, in: query, description: Exact stored canonical path; provide together with workspace_id., schema: { type: string, format: path } }
+      responses:
+        '200':
+          description: Archived session metadata.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceChatArchiveList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /api/v1/projects/{project_id}/chat/sessions/{session_id}/archive:
+    post:
+      tags: [Workspace]
+      summary: Archive workspace chat metadata
+      description: Archives only session lifecycle metadata; chat messages, provider history, transcripts, and provider sessions are retained. Requires the exact stored project/session/workspace_id/cwd identity, matching expected_status and lifecycle_version, a live checkout, and no active or unsettled work.
+      parameters:
+        - { name: project_id, in: path, required: true, schema: { type: string } }
+        - { name: session_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkspaceChatArchiveRequest' }
+      responses:
+        '200':
+          description: Updated session metadata.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceChatSessionResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /api/v1/projects/{project_id}/chat/sessions/{session_id}/unarchive:
+    post:
+      tags: [Workspace]
+      summary: Restore workspace chat metadata
+      description: Clears only archive metadata, preserving chat messages and provider history. Requires the exact stored project/session/workspace_id/cwd identity, matching expected_status and lifecycle_version, a live checkout, and no active or unsettled work.
+      parameters:
+        - { name: project_id, in: path, required: true, schema: { type: string } }
+        - { name: session_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkspaceChatArchiveRequest' }
+      responses:
+        '200':
+          description: Updated session metadata.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceChatSessionResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /api/v1/projects/{project_id}/chat/sessions/{session_id}/history:
+    get:
+      tags: [Workspace]
+      summary: Read archived history after checkout removal
+      description: Database-only read of the archived session, messages, provider events and requests. It does not resolve/read the checkout, launch a provider, or mutate transcripts. Access is fenced by exact stored project/session/workspace_id/cwd identity; the session must be archived.
+      parameters:
+        - { name: project_id, in: path, required: true, schema: { type: string } }
+        - { name: session_id, in: path, required: true, schema: { type: string } }
+        - { name: workspace_id, in: query, required: true, description: Exact stored workspace identity., schema: { type: string } }
+        - { name: cwd, in: query, required: true, description: Exact stored canonical checkout path; no filesystem resolution is performed., schema: { type: string, format: path } }
+        - { name: after, in: query, description: Nonnegative event/request cursor., schema: { type: integer, format: int64, minimum: 0, default: 0 } }
+      responses:
+        '200':
+          description: Stored archived conversation history.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceChatHistory' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
   /api/v1/state:
     get:
       tags: [State]
@@ -4470,6 +5002,18 @@ paths:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Optimistic precondition failed, target is in use, or a lifecycle request conflicts with its durable receipt.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    UnprocessableEntity:
+      description: The requested harness/resource combination is unsupported or native content is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
     InternalError:
       description: Unexpected server error.
       content:
@@ -4555,17 +5099,17 @@ tags:
   - name: Projects
     description: Project registration and management.
   - name: Git
-    description: Git operations on registered projects.
+    description: Git operations and guarded linked-worktree lifecycle controls on registered projects.
   - name: GitHub
     description: GitHub API integration (issues, PRs, repos, OAuth).
   - name: TrackerConfigs
     description: External issue tracker connection management.
   - name: Workspace
-    description: File system operations within registered project roots.
+    description: File-system operations and workspace chat lifecycle/history within registered project roots.
   - name: MCP
     description: Model Context Protocol server registry.
   - name: Agents
-    description: Agent provider configuration (Claude, Codex, Gemini, OpenCode).
+    description: Agent provider configuration and scoped native agent/skill resource observation and authoring (Claude, Codex, Gemini, OpenCode, and supported harnesses).
   - name: Usage
     description: Token usage analytics and rate limit monitoring.
   - name: STT

@@ -197,6 +197,15 @@ async function auditMultiWorktree(win, fixture) {
     if (!control('Choose agent mode')) throw new Error('Agent mode selector missing')
     return { inlineToolControls: true, nativeTitlesRemoved: true, inspectorTopOffset: inspector.top - bounds.top, keyboardWidthBefore: previous, keyboardWidthAfter: resized, retainedAfterToggle: true, absentUsageHidden: true, agentPickerVisible: true }
   `)
+  const dragPoint = await run(`const handle = document.querySelector('[aria-label="Resize workspace files"]'); const bounds = handle.getBoundingClientRect(); return { x: Math.round(bounds.left + bounds.width / 2), y: Math.round(bounds.top + Math.min(bounds.height / 2, 100)), width: Number(handle.getAttribute('aria-valuenow')) }`)
+  win.webContents.sendInputEvent({ type: 'mouseMove', x: dragPoint.x, y: dragPoint.y })
+  win.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, x: dragPoint.x, y: dragPoint.y })
+  win.webContents.sendInputEvent({ type: 'mouseMove', x: dragPoint.x + 32, y: dragPoint.y })
+  win.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, x: dragPoint.x + 32, y: dragPoint.y })
+  inspectorAudit.nativePointerWidth = await run(`await wait(() => Number(document.querySelector('[aria-label="Resize workspace files"]').getAttribute('aria-valuenow')) > ${dragPoint.width}, 'native file inspector pointer drag'); return Number(document.querySelector('[aria-label="Resize workspace files"]').getAttribute('aria-valuenow'))`)
+  const hoverPoint = await run(`const bounds = control('Toggle workspace files').getBoundingClientRect(); return { x: Math.round(bounds.left + bounds.width / 2), y: Math.round(bounds.top + bounds.height / 2) }`)
+  win.webContents.sendInputEvent({ type: 'mouseMove', ...hoverPoint })
+  inspectorAudit.tooltip = await run(`await wait(() => [...document.querySelectorAll('[role="tooltip"]')].some(node => node.textContent.includes('Files')), 'styled toolbar tooltip'); const tip = [...document.querySelectorAll('[role="tooltip"]')].find(node => node.textContent.includes('Files')); const bounds = tip.getBoundingClientRect(); if (bounds.left < 0 || bounds.right > innerWidth || bounds.top < 0 || bounds.bottom > innerHeight) throw new Error('Tooltip outside viewport'); return { visible: true, viewportContained: true }`)
   await run(`
     if (control('Refresh workspaces for Workspace audit')) control('Refresh workspaces for Workspace audit').click()
     else {

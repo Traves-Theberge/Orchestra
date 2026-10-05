@@ -1,0 +1,4 @@
+interface:
+  display_name: "Orchestra CLI"
+  short_description: "Inspect tasks and author scoped agent resources"
+  default_prompt: "Use $orchestra-cli to inspect the selected project or author scoped native agent and skill resources."
