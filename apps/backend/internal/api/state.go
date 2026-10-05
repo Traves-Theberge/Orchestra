@@ -635,8 +635,8 @@ func validateFieldLocking(currentState string, updates map[string]any) string {
 }
 
 // PatchIssue handles PATCH /api/v1/issues/{issue_identifier} by applying
-// partial updates to an issue. When the state is changed to "Review" or "Done",
-// an auto-commit is triggered on the associated project.
+// partial updates to an issue. Board state changes do not publish Git changes or
+// remove checkouts; those effects belong to explicit execution/retention flows.
 func (s *Server) PatchIssue(w http.ResponseWriter, r *http.Request) {
 	identifier := chi.URLParam(r, "issue_identifier")
 	var fields map[string]json.RawMessage
@@ -693,43 +693,6 @@ func (s *Server) PatchIssue(w http.ResponseWriter, r *http.Request) {
 	if issue == nil {
 		writeJSONError(w, http.StatusNotFound, "issue_not_found", "issue not found")
 		return
-	}
-
-	// Auto-commit when manually moved to Review (agent auto-commit only fires via RecordRunSuccess)
-	if newState, ok := updates["state"].(string); ok && (newState == "Review" || newState == "Done") {
-		if issue.ProjectID != "" && s.db != nil {
-			project, projErr := s.db.GetProjectByID(r.Context(), issue.ProjectID)
-			if projErr == nil && project.RootPath != "" {
-				// Prefer worktree path if the issue has a branch and the worktree exists
-				commitDir := project.RootPath
-				if issue.BranchName != "" && s.worktreeRoot != "" {
-					wtPath := filepath.Join(s.worktreeRoot, project.ID, issue.BranchName)
-					if info, err := os.Stat(wtPath); err == nil && info.IsDir() {
-						commitDir = wtPath
-					}
-				}
-				commitMsg := fmt.Sprintf("feat(%s): %s\n\nVia Orchestra", issue.Identifier, issue.Title)
-				if commitErr := git.Commit(r.Context(), commitDir, commitMsg); commitErr != nil {
-					s.logger.Debug().Err(commitErr).Msg("auto-commit on state change (may have no changes)")
-				}
-
-				// Clean up worktree when issue moves to Done
-				if newState == "Done" && issue.BranchName != "" && s.worktreeRoot != "" {
-					wsSvc := workspace.Service{Root: s.worktreeRoot}
-					if cleanupErr := wsSvc.CleanupWorktree(project.RootPath, project.ID, issue.BranchName); cleanupErr != nil {
-						s.logger.Warn().Err(cleanupErr).
-							Str("issue", issue.Identifier).
-							Str("branch", issue.BranchName).
-							Msg("worktree cleanup failed on Done transition")
-					} else {
-						s.logger.Info().
-							Str("issue", issue.Identifier).
-							Str("branch", issue.BranchName).
-							Msg("worktree cleaned up on Done transition")
-					}
-				}
-			}
-		}
 	}
 
 	writeJSON(w, http.StatusOK, issue)

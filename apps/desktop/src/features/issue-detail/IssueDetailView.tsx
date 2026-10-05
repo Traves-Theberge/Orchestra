@@ -390,7 +390,7 @@ export function IssueDetailView({
                   Request Changes
                 </button>
               </AppTooltip>
-              <AppTooltip content="Close this task and clean up the worktree" side="bottom">
+              <AppTooltip content="Move this task to Done and retain its worktree" side="bottom">
                 <button
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest text-red-500 border border-red-500/30 hover:bg-red-500/10 transition-colors"
                   onClick={async () => { await onUpdate({ state: 'Done' }); dispatchWorkflow({ type: 'set-state', value: 'Done' }) }}
