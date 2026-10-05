@@ -51,3 +51,21 @@ including the API package (104.967s). Full desktop renderer tests passed:
 separately after completion. No production repo, tracker,
 provider authentication or user checkout is used by these fixtures. Full hosted
 issue-to-agent-to-reviewed-PR execution remains an open acceptance gate.
+
+## CI startup correction
+
+The first PR desktop-smoke run `37248284650` failed on Linux at API readiness:
+the 20-second timer included a cold `go run` build. Its Windows matrix lane was
+also unsuccessful; it supplied no independent passing Windows smoke evidence.
+The script now awaits an explicit bounded Go build before starting the API's
+readiness timer. Compilation errors, launch errors and early backend exit are
+separate failures. It runs the backend in an owned temporary directory using
+the credential-free fixture environment, SQLite tracker, isolated workflow and
+provider/data/config homes. It does not inherit account tracker credentials or
+execute tasks from the repository's normal workflow.
+
+This reuses the [fixture isolation reference review](ade-fixture-isolation-review-2026-10-04.md).
+Both real native Windows API smoke modes passed locally: unauthenticated loopback
+and token-authenticated fixture. These are actual API/process checks, not a
+signed Electron application or provider/chat E2E claim. CI is rerun on the fixed
+script before merge.

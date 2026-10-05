@@ -1,9 +1,13 @@
-import { spawn } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { createWriteStream } from 'node:fs'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { tmpdir } from 'node:os'
 import { setTimeout as delay } from 'node:timers/promises'
+import { promisify } from 'node:util'
+import { fixtureEnvironment } from './fixture-environment.mjs'
+
+const execFileAsync = promisify(execFile)
 
 let smokeLogStream = null
 let backendLogStream = null
@@ -127,11 +131,14 @@ async function verifySSESnapshot(baseUrl, token, label) {
   }
 }
 
-async function waitForBackend(baseUrl, token, timeoutMs = 20000) {
+async function waitForBackend(baseUrl, token, timeoutMs = 20000, child = null) {
   const start = Date.now()
   let lastError = null
 
   while (Date.now() - start < timeoutMs) {
+    if (child && (child.exitCode !== null || child.signalCode !== null)) {
+      throw new Error(`backend exited before readiness (code ${child.exitCode}, signal ${child.signalCode}); see backend.log`)
+    }
     try {
       await requestJSON(baseUrl, token, '/api/v1/state', undefined, 200)
       return
@@ -144,21 +151,39 @@ async function waitForBackend(baseUrl, token, timeoutMs = 20000) {
   throw new Error(`backend did not become ready within ${timeoutMs}ms: ${String(lastError)}`)
 }
 
-function startGoBackend(baseUrl, requireAuth, token) {
+async function startGoBackend(baseUrl, requireAuth, token) {
   const parsed = new URL(baseUrl)
-  const host = requireAuth ? '0.0.0.0' : parsed.hostname
+  const host = parsed.hostname
   const port = parsed.port || (parsed.protocol === 'https:' ? '443' : '80')
 
-  const workspaceRoot = path.join(tmpdir(), `orchestra_smoke_${Date.now()}`)
-  const child = spawn('go', ['run', './cmd/orchestrad'], {
-    cwd: '../backend',
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), 'orchestra-smoke-backend-'))
+  const binary = path.join(fixtureRoot, process.platform === 'win32' ? 'orchestrad.exe' : 'orchestrad')
+  console.log('Building Go backend before the startup readiness check ...')
+  try {
+    await execFileAsync('go', ['build', '-o', binary, './cmd/orchestrad'], {
+      cwd: path.resolve('../backend'), windowsHide: true, timeout: 300000, maxBuffer: 8 * 1024 * 1024,
+    })
+  } catch (error) {
+    throw new Error(`backend build failed before startup: ${error.stderr || error.message}`)
+  }
+  for (const directory of ['home', 'appdata', 'localappdata', 'tmp', 'state']) {
+    await mkdir(path.join(fixtureRoot, directory), { recursive: true })
+  }
+  const workflowFile = path.join(fixtureRoot, 'WORKFLOW.md')
+  await writeFile(workflowFile, '# Isolated API smoke fixture\nNo provider tasks are scheduled.\n')
+  const child = spawn(binary, [], {
+    cwd: fixtureRoot,
     detached: process.platform !== 'win32',
     windowsHide: true,
     env: {
-      ...process.env,
+      ...fixtureEnvironment(fixtureRoot),
       ORCHESTRA_SERVER_HOST: host,
       ORCHESTRA_SERVER_PORT: port,
-      ORCHESTRA_WORKSPACE_ROOT: workspaceRoot,
+      ORCHESTRA_WORKSPACE_ROOT: path.join(fixtureRoot, 'state'),
+      ORCHESTRA_PROJECT_ROOTS: path.join(fixtureRoot, 'state'),
+      ORCHESTRA_WORKFLOW_FILE: workflowFile,
+      ORCHESTRA_TRACKER_TYPE: 'sqlite',
+      ORCHESTRA_TELEMETRY_PROVIDERS: 'none',
       ORCHESTRA_API_TOKEN: requireAuth ? token : '',
     },
     stdio: 'pipe',
@@ -173,11 +198,16 @@ function startGoBackend(baseUrl, requireAuth, token) {
     if (backendLogStream) backendLogStream.write(chunk)
   })
 
+  await new Promise((resolve, reject) => {
+    child.once('spawn', resolve)
+    child.once('error', reject)
+  })
+
   return child
 }
 
 async function stopProcess(child) {
-  if (!child || child.killed) {
+  if (!child || child.killed || child.exitCode !== null || child.signalCode !== null) {
     return
   }
 
@@ -366,10 +396,10 @@ async function main() {
   try {
     if (spawnBackend) {
       console.log(`Starting Go backend at ${baseUrl} ...`)
-      backendProcess = startGoBackend(baseUrl, requireAuth, token)
+      backendProcess = await startGoBackend(baseUrl, requireAuth, token)
     }
 
-    await waitForBackend(baseUrl, token)
+    await waitForBackend(baseUrl, token, 20000, backendProcess)
     await runFlow(baseUrl, token, requireAuth)
     console.log(`Smoke flow passed against ${baseUrl}`)
     console.log(`Smoke logs saved at ${resolvedLogDir}`)
