@@ -24,3 +24,9 @@ The audit initially selected a hidden retained workspace header after the select
 ## Deliberate adaptation
 
 The Orchestra pane combines actions for files, search, workspace tools, and chat refresh because they operate on the same resizable workspace surface. Git content shares that surface and toolbar; its editor/terminal content remains mounted in a hidden wrapper to preserve state. In direct chat contexts without a workspace toolbar slot, refresh remains in the chat header.
+
+## Duplicate Files control removal
+
+At the user's request, the toolbar no longer includes the separate `Toggle workspace files` folder icon. The existing add-tool menu's **File viewer** action and workspace Files navigation remain the entry points. Search remains conditional on an open inspector, and its close action remains available. The pinned T3 panel controls and Orca panel-visibility hook above were reinspected; both use explicit visibility actions, but neither establishes a requirement for this duplicate Orchestra folder control. Removing the duplicate is a deliberate adaptation to Orchestra's existing menu.
+
+`WorkspaceToolSurface.test.tsx` passes all seven tests after the removal, including opening Files from the real menu, switching to Search, returning through the menu, and closing the inspector without hiding the tools pane. Changed-file ESLint passes. These component checks do not certify native pointer interaction; the earlier native toolbar receipts describe the UI before this removal.

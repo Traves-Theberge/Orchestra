@@ -69,7 +69,6 @@ export function WorkspaceToolSurface({ children, filesRequest, onAddTerminal, on
     setInspector('files')
   }
   const toolbar = <div aria-label="Workspace tool controls" className="flex h-10 shrink-0 items-center gap-1 px-3 pt-1">
-      <AppTooltip content="Files" side="bottom"><button type="button" aria-label="Toggle workspace files" aria-pressed={inspector === 'files'} onClick={() => { setInspector(current => current === 'files' ? null : 'files'); if (toolsOpen === false) onToggleTools?.() }} className="rounded p-1.5 text-muted-foreground hover:bg-muted"><Folder size={13} /></button></AppTooltip>
       {inspector && <AppTooltip content="Search files" side="bottom"><button type="button" aria-label="Toggle workspace search" aria-pressed={inspector === 'search'} onClick={() => { setInspector(current => current === 'search' ? null : 'search'); if (toolsOpen === false) onToggleTools?.() }} className="rounded p-1.5 text-muted-foreground hover:bg-muted"><Search size={13} /></button></AppTooltip>}
       {inspector && <AppTooltip content="Close file sidebar" side="bottom"><button type="button" aria-label="Close workspace file sidebar" onClick={() => setInspector(null)} className="rounded p-1 text-muted-foreground hover:bg-muted"><X size={12} /></button></AppTooltip>}
       <span className="flex-1" />
