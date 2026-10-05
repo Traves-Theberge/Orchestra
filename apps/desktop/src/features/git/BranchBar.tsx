@@ -50,8 +50,10 @@ export function BranchBar({
   const [hoveredBranch, setHoveredBranch] = useState<string | null>(null)
 
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const dropdownTriggerRef = useRef<HTMLButtonElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const stashRef = useRef<HTMLDivElement>(null)
+  const stashTriggerRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (creating) inputRef.current?.focus()
@@ -70,12 +72,14 @@ export function BranchBar({
       }
     }
     function handleEscape(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && (dropdownOpen || stashOpen || creating || confirmAction)) {
+        const focusTarget = stashOpen ? stashTriggerRef.current : dropdownTriggerRef.current
         setDropdownOpen(false)
         setStashOpen(false)
         setCreating(false)
         setNewName('')
         setConfirmAction(null)
+        focusTarget?.focus()
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -84,7 +88,7 @@ export function BranchBar({
       document.removeEventListener('mousedown', handleClickOutside)
       document.removeEventListener('keydown', handleEscape)
     }
-  }, [])
+  }, [dropdownOpen, stashOpen, creating, confirmAction])
 
   async function handleCheckout(branch: string) {
     if (branch === currentBranch || loading) return
@@ -170,6 +174,7 @@ export function BranchBar({
       {/* Branch dropdown trigger */}
       <div className="relative" ref={dropdownRef}>
         <button
+          ref={dropdownTriggerRef}
           data-testid="branch-trigger"
           onClick={() => setDropdownOpen((v) => !v)}
           disabled={loading}
@@ -374,7 +379,7 @@ export function BranchBar({
 
         <div className="relative shrink-0" ref={stashRef}>
           <AppTooltip content={`Stash${stashes && stashes.length > 0 ? ` (${stashes.length})` : ''}`}>
-            <button onClick={() => setStashOpen((v) => !v)} disabled={loading} className={iconBtn}>
+            <button ref={stashTriggerRef} onClick={() => setStashOpen((v) => !v)} disabled={loading} aria-label="Open stashes" aria-expanded={stashOpen} className={iconBtn}>
               <Archive size={12} />
               {stashes && stashes.length > 0 && (
                 <span className="absolute -top-0.5 -right-0.5 inline-flex items-center justify-center min-w-[14px] h-[14px] px-1 rounded-full bg-muted-foreground/70 text-[8.5px] font-bold tabular-nums text-background">

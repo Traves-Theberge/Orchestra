@@ -92,6 +92,7 @@ export function KanbanBoard({
   const setSelectedProjectID = useAppStore(s => s.setSelectedProjectID)
   const [projectPickerOpen, setProjectPickerOpen] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
+  const projectPickerTriggerRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (!projectPickerOpen) return
@@ -100,8 +101,18 @@ export function KanbanBoard({
         setProjectPickerOpen(false)
       }
     }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setProjectPickerOpen(false)
+        projectPickerTriggerRef.current?.focus()
+      }
+    }
     document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+      document.removeEventListener('keydown', onKeyDown)
+    }
   }, [projectPickerOpen])
 
   const handleCreateClick = (columnId: string) => {
@@ -391,7 +402,11 @@ export function KanbanBoard({
         {activeTab === 'workitems' && projects.length > 0 && (
           <div className="relative ml-2" ref={pickerRef}>
             <button
+              ref={projectPickerTriggerRef}
               onClick={() => setProjectPickerOpen(v => !v)}
+              aria-label="Choose work items project"
+              aria-haspopup="listbox"
+              aria-expanded={projectPickerOpen}
               className="h-8 px-2.5 rounded-md text-[12px] font-medium inline-flex items-center gap-1.5 border border-border/40 bg-background hover:bg-foreground/[0.04] text-foreground/80 transition-colors"
             >
               <Folder size={12} className="text-muted-foreground/60 shrink-0" />
@@ -404,7 +419,7 @@ export function KanbanBoard({
                 {projects.map((p, idx) => (
                   <button
                     key={p.id}
-                    onClick={() => { setSelectedProjectID(p.id); setProjectPickerOpen(false) }}
+                    onClick={() => { setSelectedProjectID(p.id); setProjectPickerOpen(false); projectPickerTriggerRef.current?.focus() }}
                     className={`w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-foreground/[0.04] transition-colors ${idx > 0 ? 'border-t border-border/20' : ''} ${p.id === selectedProjectID ? 'bg-foreground/[0.06]' : ''}`}
                   >
                     <span className={`size-1.5 rounded-full shrink-0 ${p.id === selectedProjectID ? 'bg-primary' : 'bg-muted-foreground/30'}`} />

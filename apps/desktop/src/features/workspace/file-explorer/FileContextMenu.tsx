@@ -108,6 +108,8 @@ function Item({
   return (
     <button
       type="button"
+      role="menuitem"
+      aria-label={label}
       onClick={onClick}
       className={`flex items-center gap-2.5 w-full px-3 py-1.5 text-[12.5px] font-medium text-left transition-colors hover:bg-accent/60 ${
         destructive ? 'text-destructive hover:text-destructive' : 'text-foreground'

@@ -13,7 +13,7 @@ vi.mock('@core/api/client', () => ({
   gitStashPop: vi.fn(() => Promise.resolve()),
 }))
 
-import { gitCheckout, gitCreateBranch } from '@core/api/client'
+import { gitCheckout, gitCreateBranch, gitStash } from '@core/api/client'
 import { BranchBar } from './BranchBar'
 
 const mockConfig = { baseUrl: 'http://localhost:4010', token: 'dev-token' }
@@ -85,6 +85,62 @@ describe('BranchBar', () => {
     await waitFor(() => {
       expect(onBranchChange).toHaveBeenCalled()
     })
+  })
+
+  it('dismisses without checkout on Escape or outside click, and shows scoped checkout failure', async () => {
+    const onBranchChange = vi.fn()
+    const user = userEvent.setup()
+    render(<><BranchBar {...defaultProps} onBranchChange={onBranchChange} /><button>Outside branch menu</button></>)
+
+    await user.click(screen.getByTestId('branch-trigger'))
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByText('feature-a')).toBeNull()
+    expect(gitCheckout).not.toHaveBeenCalled()
+
+    await user.click(screen.getByTestId('branch-trigger'))
+    fireEvent.mouseDown(screen.getByRole('button', { name: 'Outside branch menu' }))
+    expect(screen.queryByText('feature-a')).toBeNull()
+    expect(gitCheckout).not.toHaveBeenCalled()
+
+    vi.mocked(gitCheckout).mockRejectedValueOnce(new Error('branch belongs to another worktree'))
+    await user.click(screen.getByTestId('branch-trigger'))
+    await user.click(screen.getByTestId('branch-row-feature-a'))
+    await waitFor(() => expect(screen.getByText('branch belongs to another worktree')).toBeInTheDocument())
+    expect(gitCheckout).toHaveBeenCalledExactlyOnceWith(mockConfig, 'proj-1', 'feature-a')
+    expect(onBranchChange).not.toHaveBeenCalled()
+  })
+
+  it('opens the stash panel, restores focus on Escape, and scopes stash creation to the current project', async () => {
+    const user = userEvent.setup()
+    const onBranchChange = vi.fn()
+    render(<BranchBar {...defaultProps} onBranchChange={onBranchChange} />)
+
+    const trigger = screen.getByRole('button', { name: 'Open stashes' })
+    await user.click(trigger)
+    expect(screen.getByText('No stashes')).toBeInTheDocument()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByText('No stashes')).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+    expect(gitStash).not.toHaveBeenCalled()
+
+    await user.click(trigger)
+    await user.click(screen.getByRole('button', { name: 'Stash changes' }))
+    await waitFor(() => expect(gitStash).toHaveBeenCalledExactlyOnceWith(mockConfig, 'proj-1'))
+    await waitFor(() => expect(onBranchChange).toHaveBeenCalledOnce())
+    expect(screen.queryByText('No stashes')).not.toBeInTheDocument()
+  })
+
+  it('applies and closes the matching stash entry without triggering unrelated branch actions', async () => {
+    const user = userEvent.setup()
+    const onStashApply = vi.fn()
+    const onBranchChange = vi.fn()
+    render(<BranchBar {...defaultProps} stashes={[{ ref: 'stash@{0}', message: 'fixture change' }]} onStashApply={onStashApply} onBranchChange={onBranchChange} />)
+
+    await user.click(screen.getByRole('button', { name: 'Open stashes' }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(onStashApply).toHaveBeenCalledExactlyOnceWith('stash@{0}')
+    expect(onBranchChange).not.toHaveBeenCalled()
+    expect(screen.queryByText('fixture change')).not.toBeInTheDocument()
   })
 
   it('shows create branch input when "+ New branch" clicked', async () => {

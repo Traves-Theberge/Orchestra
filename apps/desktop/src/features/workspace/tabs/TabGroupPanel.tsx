@@ -84,8 +84,10 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        const focusTarget = plusOpen ? plusRef.current : splitRef.current
         setPlusOpen(false)
         setSplitOpen(false)
+        focusTarget?.focus()
       }
     }
     document.addEventListener('mousedown', onDoc)
@@ -95,6 +97,15 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
       document.removeEventListener('keydown', onKey)
     }
   }, [plusOpen, splitOpen])
+
+  const closePlusMenu = () => {
+    setPlusOpen(false)
+    plusRef.current?.focus()
+  }
+  const closeSplitMenu = () => {
+    setSplitOpen(false)
+    splitRef.current?.focus()
+  }
 
   const closeTab = useCallback(
     (ref: TabRef) => {
@@ -296,6 +307,9 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
           {/* + button — pinned right after the last tab */}
           <button
             ref={plusRef}
+            aria-label="Add tab"
+            aria-haspopup="menu"
+            aria-expanded={plusOpen}
             onClick={() => {
               if (!plusOpen && plusRef.current) {
                 const r = plusRef.current.getBoundingClientRect()
@@ -319,6 +333,9 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
           <WorkspaceToolsControls />
           <button
             ref={splitRef}
+            aria-label="Split group"
+            aria-haspopup="menu"
+            aria-expanded={splitOpen}
             onClick={() => {
               if (!splitOpen && splitRef.current) {
                 const r = splitRef.current.getBoundingClientRect()
@@ -403,7 +420,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
             label="New Terminal"
             shortcut="Ctrl+T"
             onClick={() => {
-              setPlusOpen(false)
+              closePlusMenu()
               setFocusedGroup(projectId, group.id)
               const id = `shell-${Date.now()}`
               const { project: proj, cwd } = workspaceRoot()
@@ -421,7 +438,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
             label="New Browser Tab"
             shortcut="Ctrl+Shift+B"
             onClick={() => {
-              setPlusOpen(false)
+              closePlusMenu()
               setFocusedGroup(projectId, group.id)
               openBrowserTab(undefined, projectId)
             }}
@@ -431,7 +448,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
             label="New Markdown"
             shortcut="Ctrl+Shift+M"
             onClick={async () => {
-              setPlusOpen(false)
+              closePlusMenu()
               setFocusedGroup(projectId, group.id)
               const root = workspaceRoot().cwd || explorerRoot
               if (!root) {
@@ -469,7 +486,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
               icon={getAgentIcon(agent, 13)}
               label={agentLabel(agent)}
               onClick={() => {
-                setPlusOpen(false)
+                closePlusMenu()
                 setFocusedGroup(projectId, group.id)
                 const id = `shell-${Date.now()}`
                 const { project: proj, cwd } = workspaceRoot()
@@ -491,7 +508,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
             icon={<Settings size={13} className="text-muted-foreground" />}
             label="Agent settings…"
             onClick={() => {
-              setPlusOpen(false)
+              closePlusMenu()
               setActiveSection('AGENTS')
             }}
           />
@@ -513,20 +530,26 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
           onMouseDown={(e) => e.stopPropagation()}
         >
           <button
-            onClick={() => { splitGroup(projectId, group.id, 'horizontal'); setSplitOpen(false) }}
+            role="menuitem"
+            aria-label="Split right"
+            onClick={() => { splitGroup(projectId, group.id, 'horizontal'); closeSplitMenu() }}
             className="flex items-center gap-2.5 w-full px-3 py-1.5 text-[12px] font-medium text-foreground/90 hover:text-foreground hover:bg-accent/60 text-left transition-colors"
           >
             <SplitSquareHorizontal size={11} /> Split right
           </button>
           <button
-            onClick={() => { splitGroup(projectId, group.id, 'vertical'); setSplitOpen(false) }}
+            role="menuitem"
+            aria-label="Split down"
+            onClick={() => { splitGroup(projectId, group.id, 'vertical'); closeSplitMenu() }}
             className="flex items-center gap-2.5 w-full px-3 py-1.5 text-[12px] font-medium text-foreground/90 hover:text-foreground hover:bg-accent/60 text-left transition-colors"
           >
             <SplitSquareVertical size={11} /> Split down
           </button>
           <div className="my-1 h-px bg-border/40" />
           <button
-            onClick={() => { closeGroup(projectId, group.id); setSplitOpen(false) }}
+            role="menuitem"
+            aria-label="Close group"
+            onClick={() => { closeGroup(projectId, group.id); closeSplitMenu() }}
             className="flex items-center gap-2.5 w-full px-3 py-1.5 text-[12px] font-medium text-muted-foreground hover:text-foreground hover:bg-accent/60 text-left transition-colors"
           >
             <X size={11} /> Close group
@@ -561,6 +584,8 @@ function PlusMenuItem({
   return (
     <button
       type="button"
+      role="menuitem"
+      aria-label={label}
       onClick={onClick}
       className="flex items-center gap-2.5 w-full px-3 py-1.5 text-[12.5px] font-medium text-foreground hover:bg-accent/60 text-left transition-colors"
     >

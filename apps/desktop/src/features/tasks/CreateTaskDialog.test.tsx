@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CreateTaskDialog } from './CreateTaskDialog'
 import type { BackendConfig, IssueCreatePayload } from '@core/api/client'
@@ -32,6 +32,8 @@ const projects: Project[] = [
 function renderDialog(overrides?: {
   projects?: Project[]
   initialProjectID?: string
+  availableAgents?: string[]
+  availableRuntimes?: { target: string; configured: boolean }[]
   onSubmit?: (payload: IssueCreatePayload) => Promise<void>
 }) {
   const onSubmit = overrides?.onSubmit ?? vi.fn(async () => {})
@@ -43,7 +45,8 @@ function renderDialog(overrides?: {
       onOpenChange={onOpenChange}
       config={config}
       initialState="open"
-      availableAgents={['codex']}
+      availableAgents={overrides?.availableAgents ?? ['codex']}
+      availableRuntimes={overrides?.availableRuntimes}
       projects={overrides?.projects ?? projects}
       initialProjectID={overrides?.initialProjectID ?? 'proj-1'}
       onSubmit={onSubmit}
@@ -88,5 +91,35 @@ describe('CreateTaskDialog', () => {
     const error = await screen.findByText('Title must be at least 3 characters')
     expect(error).toBeTruthy()
     expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('submits the exact project, assignee, and configured runtime selected from the task menus', async () => {
+    const onSubmit = vi.fn(async (_payload: IssueCreatePayload) => {})
+    renderDialog({
+      availableAgents: ['codex', 'opencode'],
+      availableRuntimes: [{ target: 'GCP', configured: true }],
+      onSubmit,
+    })
+
+    fireEvent.change(screen.getByPlaceholderText('What needs to be done?'), { target: { value: 'Fixture task' } })
+    fireEvent.change(screen.getByPlaceholderText(/Describe the task for the agent/), { target: { value: 'Fixture description' } })
+    fireEvent.click(screen.getByRole('button', { name: /Alpha/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Beta' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Codexcodex' }))
+    fireEvent.click(screen.getByRole('button', { name: 'OpenCodeopencode' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Local' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Gcp' }))
+    fireEvent.click(screen.getByRole('button', { name: /Create task/i }))
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledExactlyOnceWith({
+      title: 'Fixture task',
+      description: 'Fixture description',
+      state: 'Backlog',
+      assignee_id: 'agent-opencode',
+      project_id: 'proj-2',
+      provider: 'opencode',
+      runtime_target: 'GCP',
+      disabled_tools: [],
+    }))
   })
 })

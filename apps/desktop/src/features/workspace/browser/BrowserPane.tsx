@@ -37,6 +37,7 @@ export function BrowserPane() {
   const [maximized, setMaximized] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const menuTriggerRef = useRef<HTMLButtonElement>(null)
   const { grabState, lastPayload, armGrab, handleConsoleMessage, resetGrab } = useGrabMode()
 
   useEffect(() => {
@@ -44,7 +45,12 @@ export function BrowserPane() {
     const onDown = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
     }
-    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false) }
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setMenuOpen(false)
+        menuTriggerRef.current?.focus()
+      }
+    }
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onEsc)
     return () => {
@@ -52,6 +58,11 @@ export function BrowserPane() {
       document.removeEventListener('keydown', onEsc)
     }
   }, [menuOpen])
+
+  const closeMenu = () => {
+    setMenuOpen(false)
+    menuTriggerRef.current?.focus()
+  }
 
   const urlSource = JSON.stringify([activeTab?.id, activeTab?.url])
   const [previousUrlSource, setPreviousUrlSource] = useState(urlSource)
@@ -289,7 +300,11 @@ export function BrowserPane() {
         </button>
         <div ref={menuRef} className="relative">
           <button
+            ref={menuTriggerRef}
             onClick={() => setMenuOpen((v) => !v)}
+            aria-label="Browser options"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
             className={`grid place-items-center size-8 rounded-full transition-colors ${
               menuOpen ? 'bg-foreground/[0.08] text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06]'
             }`}
@@ -304,7 +319,7 @@ export function BrowserPane() {
                 label="Copy URL"
                 onClick={() => {
                   if (activeTab.url) navigator.clipboard.writeText(activeTab.url)
-                  setMenuOpen(false)
+                  closeMenu()
                 }}
               />
               <BrowserMenuItem
@@ -312,7 +327,7 @@ export function BrowserPane() {
                 label="Set as homepage"
                 onClick={() => {
                   if (activeTab.url) setBrowserHomepage(activeTab.url)
-                  setMenuOpen(false)
+                  closeMenu()
                 }}
               />
               <BrowserMenuItem
@@ -322,7 +337,7 @@ export function BrowserPane() {
                   if (activeTab.url && !activeTab.url.startsWith('view-source:')) {
                     openBrowserTab(`view-source:${activeTab.url}`, activeTab.projectId)
                   }
-                  setMenuOpen(false)
+                  closeMenu()
                 }}
               />
               <div className="my-1 border-t border-border/40" />
@@ -340,7 +355,7 @@ export function BrowserPane() {
                     }
                   } catch { /* ignore — best-effort */ }
                   wv?.reload?.()
-                  setMenuOpen(false)
+                  closeMenu()
                 }}
               />
             </div>

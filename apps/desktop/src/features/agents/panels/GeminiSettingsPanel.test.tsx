@@ -33,4 +33,30 @@ describe('GeminiSettingsPanel', () => {
       '{\n  "general": {\n    "preferredEditor": "zed"\n  }\n}\n',
     )
   })
+
+  it('keeps provider settings selection in the file scope until the explicit save action', () => {
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    const item = { ...settingsItem, content: '{"telemetry":{"target":"local"}}\n' }
+    render(
+      <GeminiSettingsPanel
+        items={[item]}
+        scope="PROJECT"
+        projectName="Fixture project"
+        saving={null}
+        onSave={onSave}
+        onCreate={vi.fn()}
+      />,
+    )
+
+    const target = screen.getByText('Target').parentElement?.querySelector('select')
+    expect(target).not.toBeNull()
+    fireEvent.change(target!, { target: { value: 'gcp' } })
+    expect(onSave).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByText('Save'))
+
+    expect(onSave).toHaveBeenCalledExactlyOnceWith(
+      '/tmp/settings.json',
+      '{\n  "telemetry": {\n    "target": "gcp"\n  }\n}\n',
+    )
+  })
 })

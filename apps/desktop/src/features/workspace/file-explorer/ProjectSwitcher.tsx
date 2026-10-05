@@ -18,6 +18,7 @@ export function ProjectSwitcher({ projects }: ProjectSwitcherProps) {
 
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (!open) return
@@ -26,8 +27,18 @@ export function ProjectSwitcher({ projects }: ProjectSwitcherProps) {
         setOpen(false)
       }
     }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpen(false)
+        triggerRef.current?.focus()
+      }
+    }
     document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
   }, [open])
 
   const activeProject = projects.find((p) => p.id === activeProjectId)
@@ -40,8 +51,10 @@ export function ProjectSwitcher({ projects }: ProjectSwitcherProps) {
   return (
     <div className="relative w-full" ref={ref}>
       <button
+        ref={triggerRef}
         onClick={() => setOpen((v) => !v)}
         className="group flex items-center gap-1.5 w-full px-2 h-7 rounded text-left hover:bg-muted/40 transition-colors"
+        aria-label="Switch project"
         aria-haspopup="listbox"
         aria-expanded={open}
       >
@@ -75,6 +88,7 @@ export function ProjectSwitcher({ projects }: ProjectSwitcherProps) {
                         setActiveProjectId(id)
                         setSelectedProjectID(id)
                         setOpen(false)
+                        triggerRef.current?.focus()
                       }}
                       className="flex items-center gap-2 flex-1 py-1.5 text-left min-w-0"
                     >
@@ -119,6 +133,7 @@ export function ProjectSwitcher({ projects }: ProjectSwitcherProps) {
                   onClick={() => {
                     openProjectTab(p.id, p.root_path ?? null)
                     setOpen(false)
+                    triggerRef.current?.focus()
                   }}
                   className="flex items-center gap-2 w-full px-2 py-1.5 hover:bg-accent rounded text-left"
                 >
