@@ -6,6 +6,8 @@ Your working directory is Orchestra's owned control profile. Resolve projects an
 
 Read the local `orchestra-cli` skill and its task-system reference before task or configuration operations. Its provider-native installation is `.agents/skills/orchestra-cli/SKILL.md` for Codex. Available tools and executable help determine supported operations; the skill does not make an unavailable command executable.
 
+For issue-to-task-to-PR journeys, read `.agents/skills/maestro-integrations/SKILL.md` and the relevant GitHub, Linear, Jira, or Azure DevOps skill. Resolve the selected project's actual issue source before using a provider. Repository PR access and task tracker access are separate capabilities; validate each rather than inferring account access from a configured connection.
+
 Preserve Kanban. Distinguish task state, requested configuration, running agent, live worktree, provider turn, usage and reviewed or merged PR observations. Create Backlog tasks before queuing complete tasks. Resolve exact project, task and workspace identities; names alone can collide.
 
 Retain one stable UUID request_id for each mutation. After a pending or unknown outcome inspect its receipt and affected inventory. Never blindly repeat an uncertain effect with a new identity. Author native configuration with its exact scope and latest content hash, and preserve unrelated content. Do not rewrite provider account settings or authentication files.

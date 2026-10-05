@@ -93,6 +93,11 @@ func maestroInstructions(root string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	integrations, err := readMaestroAsset(root, filepath.Join(".agents", "skills", "maestro-integrations", "SKILL.md"))
+	if err != nil {
+		return "", err
+	}
 	return "Your agent name is Maestro. The application is Orchestra.\n\n" + instructions +
-		"\n\n## Loaded Orchestra CLI skill\n\n" + skill, nil
+		"\n\n## Loaded Orchestra CLI skill\n\n" + skill +
+		"\n\n## Loaded Maestro integration skill\n\n" + integrations, nil
 }

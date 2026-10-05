@@ -56,6 +56,36 @@ func TestMaestroBundledSkillMatchesExecutableCLISkill(t *testing.T) {
 	}
 }
 
+func TestMaestroIntegrationSkillsSurviveProfileReopen(t *testing.T) {
+	root := t.TempDir()
+	skills := []string{"maestro-integrations", "maestro-github", "maestro-linear", "maestro-jira", "maestro-azure-devops"}
+	if err := provisionMaestroProfile(root); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range skills {
+		source, err := os.ReadFile(filepath.Join("..", "..", "..", "..", ".codex", "skills", name, "SKILL.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		content, err := os.ReadFile(filepath.Join(root, ".agents", "skills", name, "SKILL.md"))
+		if err != nil || !bytes.Equal(source, content) {
+			t.Fatalf("integration skill missing or differs: %s (%v)", name, err)
+		}
+	}
+	custom := "local integration guidance"
+	path := filepath.Join(root, ".agents", "skills", "maestro-integrations", "SKILL.md")
+	if err := os.WriteFile(path, []byte(custom), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := provisionMaestroProfile(root); err != nil {
+		t.Fatal(err)
+	}
+	instructions, err := maestroInstructions(root)
+	if err != nil || !strings.Contains(instructions, custom) {
+		t.Fatalf("integration router customization was overwritten or not loaded: %v", err)
+	}
+}
+
 func TestMaestroProfileRejectsRedirectedSkillDirectory(t *testing.T) {
 	root := t.TempDir()
 	outside := t.TempDir()
