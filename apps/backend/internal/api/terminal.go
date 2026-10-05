@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/websocket"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
+	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
 )
 
 func (s *Server) TerminalWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -32,33 +33,58 @@ func (s *Server) TerminalWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Resolve project path if provided
 	dir := s.workspaceRoot
 	if projectID != "" {
+		if s.db == nil {
+			writeJSONError(w, http.StatusServiceUnavailable, "project_unavailable", "project lookup is unavailable")
+			return
+		}
 		project, err := s.db.GetProjectByID(r.Context(), projectID)
-		if err == nil {
-			dir = project.RootPath
+		if err != nil {
+			writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
+			return
+		}
+		if err := workspace.ValidateProjectPath(project.RootPath, s.config.ProjectRoots); err != nil {
+			writeJSONError(w, http.StatusForbidden, "unauthorized_project_path", "unauthorized project path")
+			return
+		}
+		dir = project.RootPath
 
-			// For issue-scoped terminals, use the worktree path if available
-			if strings.HasPrefix(sessionID, "issue-") && s.worktreeRoot != "" {
-				issueIdent := strings.TrimPrefix(sessionID, "issue-")
-				if issues, listErr := s.orchestrator.ListIssues(r.Context(), tracker.IssueFilter{}); listErr == nil {
-					for _, iss := range issues {
-						if iss.Identifier == issueIdent && iss.BranchName != "" {
-							wtPath := filepath.Join(s.worktreeRoot, project.ID, iss.BranchName)
-							if info, statErr := os.Stat(wtPath); statErr == nil && info.IsDir() {
-								dir = wtPath
-							}
-							break
+		// For issue-scoped terminals, use the worktree path if available
+		if strings.HasPrefix(sessionID, "issue-") && s.worktreeRoot != "" {
+			issueIdent := strings.TrimPrefix(sessionID, "issue-")
+			if issues, listErr := s.orchestrator.ListIssues(r.Context(), tracker.IssueFilter{}); listErr == nil {
+				for _, iss := range issues {
+					if iss.Identifier == issueIdent && iss.BranchName != "" {
+						wtPath := filepath.Join(s.worktreeRoot, project.ID, iss.BranchName)
+						if info, statErr := os.Stat(wtPath); statErr == nil && info.IsDir() {
+							dir = wtPath
 						}
+						break
 					}
 				}
 			}
 		}
 	}
 
-	// Explicit cwd override takes precedence over project lookup, but only if
-	// it's an absolute path that exists as a directory.
-	if cwdOverride != "" && filepath.IsAbs(cwdOverride) {
-		if info, err := os.Stat(cwdOverride); err == nil && info.IsDir() {
-			dir = cwdOverride
+	// An explicit checkout must never silently become a different checkout.
+	if cwdOverride != "" {
+		if !filepath.IsAbs(cwdOverride) {
+			writeJSONError(w, http.StatusBadRequest, "invalid_terminal_cwd", "terminal cwd must be an absolute directory path")
+			return
+		}
+		dir = cwdOverride
+	}
+	if projectID != "" || cwdOverride != "" {
+		if !filepath.IsAbs(dir) {
+			writeJSONError(w, http.StatusBadRequest, "invalid_terminal_cwd", "terminal cwd must be an absolute directory path")
+			return
+		}
+		if err := workspace.ValidateProjectPath(dir, s.config.ProjectRoots); err != nil {
+			writeJSONError(w, http.StatusForbidden, "unauthorized_terminal_path", "unauthorized terminal path")
+			return
+		}
+		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+			writeJSONError(w, http.StatusBadRequest, "invalid_terminal_cwd", "terminal cwd is unavailable or is not a directory")
+			return
 		}
 	}
 
