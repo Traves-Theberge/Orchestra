@@ -64,8 +64,8 @@ export function AgentPicker({ config, projectId, harness, disabled, selection, o
   }, [data, definitions, selection, disabled, open, onChange, isMaestroScope])
   return <>
     <AppTooltip content="Agent mode · Tab to cycle supported modes" side="top"><button ref={button} type="button" aria-label="Choose agent mode" aria-haspopup="listbox" aria-expanded={open} disabled={disabled || !harness}
-      onClick={event => { const bounds = event.currentTarget.getBoundingClientRect(); setRect({ left: bounds.left, top: bounds.top }); setOpen(current => !current) }} className="flex max-w-44 items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1 text-[11px] disabled:opacity-40">
-      <Bot size={14} /><span className="truncate">{selected?.display_name || selection?.agent_id || defaultLabel}</span><ChevronDown size={12} />
+      onClick={event => { const bounds = event.currentTarget.getBoundingClientRect(); setRect({ left: bounds.left, top: bounds.top }); setOpen(current => !current) }} className={`flex max-w-44 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition-colors disabled:opacity-40 ${open ? 'border-primary/35 bg-primary/10' : 'border-border/50 bg-background/70 hover:border-border hover:bg-accent/70'}`}>
+      <Bot size={14} className="shrink-0 text-primary" /><span className="truncate">{selected?.display_name || selection?.agent_id || defaultLabel}</span><ChevronDown size={12} className={`shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
     </button></AppTooltip>
     {cycleNotice && <span role="status" className="max-w-48 text-[10px] text-muted-foreground">{cycleNotice}</span>}
     {open && !disabled && rect && createPortal(<div ref={popup} role="listbox" aria-label="Agent modes" className="fixed z-[150] max-h-80 w-72 max-w-[calc(100vw-16px)] overflow-auto rounded-lg border border-border bg-popover p-1 shadow-xl"

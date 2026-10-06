@@ -360,9 +360,27 @@ function createWindow() {
   // Remove the menu entirely for a cleaner look
   Menu.setApplicationMenu(null)
 
+  // Open external links (verification pages, guides, docs) in default browser
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http:') || url.startsWith('https:') || url.startsWith('mailto:')) {
+      shell.openExternal(url)
+    }
+    return { action: 'deny' }
+  })
+
   // Enforce Content Security Policy on all responses
   const isDev = !!process.env.VITE_DEV_SERVER_URL
   win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    // Only apply Orchestra desktop CSP to local application resources,
+    // avoiding stripping CSS/JS/fonts from external webviews/auth flows.
+    const isApp = details.url.startsWith('file:') ||
+                  details.url.startsWith('http://localhost') ||
+                  details.url.startsWith('http://127.0.0.1')
+    if (!isApp) {
+      callback({ responseHeaders: details.responseHeaders })
+      return
+    }
+
     // In dev mode, Vite injects inline scripts for React fast refresh preamble
     // cdn.jsdelivr.net is needed for ONNX Runtime JSEP modules loaded dynamically
     // by @huggingface/transformers in the Whisper voice worker.

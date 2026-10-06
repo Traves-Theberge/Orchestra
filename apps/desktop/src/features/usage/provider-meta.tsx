@@ -30,7 +30,7 @@ function providerIconMeta(provider: QuotaProvider): ProviderIconMeta {
     case 'opencode':
       return { src: './opencode.png', invert: false }
     case 'antigravity':
-      return { src: './Google_Symbol_1.png', invert: false }
+      return { src: './antigravity.png', invert: false }
     case '8gent':
       return { src: './8gent.png', invert: false }
   }

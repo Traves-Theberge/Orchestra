@@ -236,12 +236,25 @@ func (s *Service) Providers(ctx context.Context, pid string) ([]Provider, error)
 	choices := []struct {
 		id    agents.Provider
 		label string
-	}{{agents.ProviderCodex, "Codex"}, {agents.ProviderClaude, "Claude Code"}, {agents.ProviderOpenCode, "OpenCode"}}
+	}{
+		{agents.ProviderCodex, "Codex"},
+		{agents.ProviderClaude, "Claude Code"},
+		{agents.ProviderOpenCode, "OpenCode"},
+		{agents.ProviderAntigravity, "Antigravity"},
+		{agents.Provider8gent, "8gent"},
+	}
+	known := map[agents.Provider]bool{
+		agents.ProviderCodex:       true,
+		agents.ProviderClaude:      true,
+		agents.ProviderOpenCode:    true,
+		agents.ProviderAntigravity: true,
+		agents.Provider8gent:       true,
+	}
 	if catalog, ok := s.registry.(interface{ Providers() []agents.Provider }); ok {
 		registered := catalog.Providers()
 		sort.Slice(registered, func(i, j int) bool { return registered[i] < registered[j] })
 		for _, id := range registered {
-			if id == agents.ProviderCodex || id == agents.ProviderClaude || id == agents.ProviderOpenCode {
+			if known[id] {
 				continue
 			}
 			choices = append(choices, struct {

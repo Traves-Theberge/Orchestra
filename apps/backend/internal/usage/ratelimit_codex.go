@@ -96,7 +96,7 @@ func fetchCodexRateLimitsInHome(ctx context.Context, home string) *ProviderRateL
 	cctx, cancel := context.WithTimeout(ctx, codexRPCTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(cctx, "codex", "-s", "read-only", "-a", "untrusted", "app-server")
+	cmd := exec.CommandContext(cctx, "codex", "-s", "read-only", "-a", "never", "app-server")
 	if home != "" {
 		cmd.Env = harnessaccounts.CodexProcessEnv(home)
 	}
