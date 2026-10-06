@@ -47,7 +47,7 @@
     "@monaco-editor/react": "^4.7.0",
     "@radix-ui/react-dialog": "^1.1.4",
     "@radix-ui/react-slot": "^1.1.1",
-    "@radix-ui/react-tooltip": "^1.2.8",
+    "@radix-ui/react-tooltip": "^1.2.16",
     "@tailwindcss/postcss": "^4.2.2",
     "@tailwindcss/typography": "^0.5.19",
     "@tanstack/react-virtual": "^3.13.24",
