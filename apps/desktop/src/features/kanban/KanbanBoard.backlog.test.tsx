@@ -51,16 +51,20 @@ function mount(boardIssues = issues, onIssueUpdate = vi.fn(async () => {})) {
   return onIssueUpdate
 }
 
-describe('Kanban Backlog search and drag', () => {
-  it('searches Backlog title, body, ID, assignee and project with normalized multi-token matching', () => {
+describe('Kanban task search and drag', () => {
+  it('searches title, body, ID, assignee and project across every column with normalized multi-token matching', () => {
     mount()
-    const search = screen.getByRole('searchbox', { name: 'Search Backlog tasks' })
+    const search = screen.getByRole('searchbox', { name: 'Search tasks' })
 
     fireEvent.change(search, { target: { value: 'resume INDEX' } })
     expect(screen.getByTestId('kanban-task-task-12')).toBeInTheDocument()
     expect(screen.queryByTestId('kanban-task-task-13')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('kanban-task-task-14')).not.toBeInTheDocument()
+    expect(screen.getByText('1 of 3')).toBeInTheDocument()
+
+    fireEvent.change(search, { target: { value: 'resume' } })
     expect(screen.getByTestId('kanban-task-task-14')).toBeInTheDocument()
-    expect(screen.getByText('1 of 2')).toBeInTheDocument()
+    expect(screen.getByText('2 of 3')).toBeInTheDocument()
 
     fireEvent.change(search, { target: { value: 'orc-13 jane orchestra' } })
     expect(screen.getByTestId('kanban-task-task-13')).toBeInTheDocument()
@@ -71,39 +75,39 @@ describe('Kanban Backlog search and drag', () => {
     expect(screen.queryByTestId('kanban-task-task-13')).not.toBeInTheDocument()
 
     fireEvent.change(search, { target: { value: 'no-match' } })
-    expect(screen.getByText('No Backlog tasks match “no-match”')).toBeInTheDocument()
-    expect(screen.getByText('0 of 2')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Clear search' }))
+    expect(screen.getAllByText('No tasks match “no-match”').length).toBeGreaterThan(0)
+    expect(screen.getByText('0 of 3')).toBeInTheDocument()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Clear search' })[0])
     expect(search).toHaveValue('')
     expect(screen.getByTestId('kanban-task-task-12')).toBeInTheDocument()
   })
 
-  it('clears the search by its button or Escape and leaves non-Backlog lanes unfiltered', () => {
+  it('clears the search by its button or Escape and filters every lane', () => {
     mount()
-    const search = screen.getByRole('searchbox', { name: 'Search Backlog tasks' })
+    const search = screen.getByRole('searchbox', { name: 'Search tasks' })
     fireEvent.change(search, { target: { value: 'ORC-12' } })
     expect(screen.queryByTestId('kanban-task-task-13')).not.toBeInTheDocument()
-    expect(screen.getByTestId('kanban-task-task-14')).toBeInTheDocument()
+    expect(screen.queryByTestId('kanban-task-task-14')).not.toBeInTheDocument()
 
     fireEvent.keyDown(search, { key: 'Escape' })
     expect(search).toHaveValue('')
     expect(screen.getByTestId('kanban-task-task-13')).toBeInTheDocument()
 
     fireEvent.change(search, { target: { value: 'ORC-12' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Clear Backlog search' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Clear task search' }))
     expect(search).toHaveValue('')
     expect(screen.getByTestId('kanban-task-task-12')).toBeInTheDocument()
     expect(screen.getByTestId('kanban-task-task-14')).toBeInTheDocument()
   })
 
-  it('applies the Backlog query in List view without filtering other states', () => {
+  it('applies the query in List view to every state', () => {
     mount()
     fireEvent.click(screen.getByRole('button', { name: 'List view' }))
-    const search = screen.getByRole('searchbox', { name: 'Search Backlog tasks' })
+    const search = screen.getByRole('searchbox', { name: 'Search tasks' })
     fireEvent.change(search, { target: { value: 'ORC-12' } })
 
-    expect(screen.getAllByText('Improve résumé search')).toHaveLength(2)
-    expect(screen.getByText('ORC-14')).toBeInTheDocument()
+    expect(screen.getAllByText('Improve résumé search')).toHaveLength(1)
+    expect(screen.queryByText('ORC-14')).not.toBeInTheDocument()
     expect(screen.queryByText('Repair sidebar layout')).not.toBeInTheDocument()
   })
 
@@ -146,5 +150,18 @@ describe('Kanban Backlog search and drag', () => {
 
     expect(onIssueUpdate).not.toHaveBeenCalled()
     expect(screen.getByText(/Cannot move to Todo.*description, assignee/)).toBeInTheDocument()
+  })
+
+  it('virtualizes long columns instead of rendering every card', () => {
+    const many: IssueListItem[] = Array.from({ length: 500 }, (_, i) => ({ issue_id: `bulk-${i}`, identifier: `ORC-${1000 + i}`, state: 'Backlog', title: `Bulk task ${i}`, project_id: project.id }))
+    mount(many)
+    expect(screen.queryAllByTestId(/^kanban-task-bulk-/).length).toBeLessThan(100)
+    expect(screen.getByText('500')).toBeInTheDocument()
+  })
+
+  it('focuses task search with the / shortcut', () => {
+    mount()
+    fireEvent.keyDown(window, { key: '/' })
+    expect(screen.getByRole('searchbox', { name: 'Search tasks' })).toHaveFocus()
   })
 })

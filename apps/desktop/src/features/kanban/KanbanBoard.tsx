@@ -1,4 +1,6 @@
-import { lazy, Suspense, useEffect, useId, useState, useRef } from 'react'
+import { cloneElement, Fragment, lazy, Suspense, useEffect, useId, useState, useRef, type ReactElement, type ReactNode, type RefObject } from 'react'
+import { createPortal } from 'react-dom'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import {
   AlertCircle,
   ChevronDown,
@@ -75,6 +77,80 @@ const EMPTY_PROJECTS: Project[] = []
 const EMPTY_AGENTS: string[] = []
 const SKELETON_ROW_KEYS = ['s1', 's2', 's3'] as const
 
+// Columns and the list only virtualize past this size, so everyday boards keep
+// plain DOM (and their CSS transitions) while thousands of tasks stay smooth.
+const VIRTUALIZE_AT = 60
+
+/** Renders only the visible cards of a long column; the scroll element is the column body. */
+function VirtualCards<T>({ items, getKey, render }: { items: T[]; getKey: (item: T) => string; render: (item: T) => ReactNode }) {
+  const anchorRef = useRef<HTMLDivElement>(null)
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const virtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => anchorRef.current?.parentElement ?? null,
+    estimateSize: () => 104,
+    overscan: 8,
+    getItemKey: (index) => getKey(items[index]),
+  })
+  return (
+    <div ref={anchorRef} className="relative w-full shrink-0" style={{ height: virtualizer.getTotalSize() }}>
+      {virtualizer.getVirtualItems().map((row) => (
+        <div key={row.key} data-index={row.index} ref={virtualizer.measureElement} className="absolute left-0 top-0 w-full pb-1.5" style={{ transform: `translateY(${row.start}px)` }}>
+          {render(items[row.index])}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** Table-body rows for long lists, padded above and below so the scrollbar stays true. */
+function VirtualTableRows<T>({ items, getKey, render, scrollRef, columns }: { items: T[]; getKey: (item: T) => string; render: (item: T) => ReactElement; scrollRef: RefObject<HTMLDivElement | null>; columns: number }) {
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const virtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 64,
+    overscan: 10,
+    getItemKey: (index) => getKey(items[index]),
+  })
+  const rows = virtualizer.getVirtualItems()
+  const top = rows[0]?.start ?? 0
+  const bottom = virtualizer.getTotalSize() - (rows.at(-1)?.end ?? 0)
+  return (
+    <>
+      {top > 0 && <tr aria-hidden="true"><td colSpan={columns} style={{ height: top, padding: 0 }} /></tr>}
+      {rows.map((row) => (
+        <Fragment key={row.key}>{cloneElement(render(items[row.index]) as ReactElement<Record<string, unknown>>, { ref: virtualizer.measureElement, 'data-index': row.index })}</Fragment>
+      ))}
+      {bottom > 0 && <tr aria-hidden="true"><td colSpan={columns} style={{ height: bottom, padding: 0 }} /></tr>}
+    </>
+  )
+}
+
+// Which columns a card may be dropped on, by source column.
+const DRAG_TRANSITIONS: Record<string, string[]> = {
+  backlog: ['todo'],
+  todo: ['progress'],
+  progress: [],      // Auto-moves to review on completion
+  review: ['todo', 'done'],
+  done: [],          // Terminal
+}
+
+/**
+ * Hides the browser's drag preview. Chromium snapshots the card's area inside
+ * the scrolling column (picking up neighbouring cards) and renders it
+ * translucent, so the board draws its own preview that follows the pointer.
+ */
+let transparentDragImage: HTMLImageElement | null = null
+function hideNativeDragImage(e: React.DragEvent) {
+  if (typeof Image === 'undefined' || !e.dataTransfer.setDragImage) return
+  if (!transparentDragImage) {
+    transparentDragImage = new Image()
+    transparentDragImage.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+  }
+  e.dataTransfer.setDragImage(transparentDragImage, 0, 0)
+}
+
 export function KanbanBoard({
   config,
   project,
@@ -140,7 +216,7 @@ export function KanbanBoard({
   const [stateFilter, setStateFilter] = useState<string>('all')
   const [projectFilter, setProjectFilter] = useState<string>(projects.length === 1 ? projects[0].id : 'all')
   const [viewMode, setViewMode] = useState<'board' | 'list'>('board')
-  const [backlogSearch, setBacklogSearch] = useState('')
+  const [taskSearch, setTaskSearch] = useState('')
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [issueToDelete, setIssueToDelete] = useState<{ identifier: string; title?: string } | null>(null)
   const [deleteTaskPending, setDeleteTaskPending] = useState(false)
@@ -152,8 +228,27 @@ export function KanbanBoard({
   const [feedbackText, setFeedbackText] = useState('')
   const [feedbackPending, setFeedbackPending] = useState(false)
   const [draggingColumnId, setDraggingColumnId] = useState<string | null>(null)
+  const [draggingIssueId, setDraggingIssueId] = useState<string | null>(null)
+  const listScrollRef = useRef<HTMLDivElement>(null)
+  const [dragPreview, setDragPreview] = useState<{ item: EnrichedIssue; width: number; offsetX: number; offsetY: number; x: number; y: number } | null>(null)
+  const previewRef = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
   const feedbackId = useId()
 
+
+  // "/" jumps to task search unless the user is already typing somewhere.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return
+      const target = event.target as HTMLElement | null
+      if (target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return
+      if (!searchRef.current) return
+      event.preventDefault()
+      searchRef.current.focus()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   useEffect(() => {
     if (projects.length === 1) {
@@ -165,7 +260,7 @@ export function KanbanBoard({
     return target instanceof Element && !!target.closest('[data-no-drag="true"]')
   }
 
-  const handleDragStart = (e: React.DragEvent, issueIdentifier: string) => {
+  const handleDragStart = (e: React.DragEvent<HTMLElement>, issueIdentifier: string) => {
     if (isNoDragTarget(e.target)) {
       e.preventDefault()
       return
@@ -173,6 +268,38 @@ export function KanbanBoard({
     e.dataTransfer.setData(DRAG_ISSUE_KEY, issueIdentifier)
     e.dataTransfer.setData(DRAG_TYPE_KEY, 'issue')
     e.dataTransfer.effectAllowed = 'move'
+    hideNativeDragImage(e)
+    const rect = e.currentTarget.getBoundingClientRect()
+    const item = enrichedIssues.find((candidate) => getActionIssueRef(candidate) === issueIdentifier)
+    if (item) setDragPreview({ item, width: rect.width, offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top, x: rect.left, y: rect.top })
+    // Defer so the drag has started before the source card dims.
+    requestAnimationFrame(() => setDraggingIssueId(issueIdentifier))
+  }
+
+  // Move the preview with the pointer straight in the DOM, no re-render per frame.
+  useEffect(() => {
+    if (!dragPreview) return
+    const { offsetX, offsetY } = dragPreview
+    const onDragOver = (event: DragEvent) => {
+      if (!event.clientX && !event.clientY) return
+      const node = previewRef.current
+      if (node) node.style.transform = `translate(${event.clientX - offsetX}px, ${event.clientY - offsetY}px)`
+    }
+    document.addEventListener('dragover', onDragOver)
+    return () => document.removeEventListener('dragover', onDragOver)
+  }, [dragPreview])
+
+  const handleDragEnd = () => {
+    setDragPreview(null)
+    setDraggingIssueId(null)
+    setDraggingColumnId(null)
+    setIsDraggingOver(null)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    // dragleave also fires when moving onto a child; only clear on leaving the column.
+    if (e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) return
+    setIsDraggingOver(null)
   }
 
   const handleColumnDragStart = (e: React.DragEvent, columnId: string) => {
@@ -183,6 +310,11 @@ export function KanbanBoard({
 
   const handleDragOver = (e: React.DragEvent, columnId: string) => {
     e.preventDefault()
+    if (dragSourceColumn && !dropTargets.includes(columnId)) {
+      e.dataTransfer.dropEffect = 'none'
+      setIsDraggingOver(null)
+      return
+    }
     setIsDraggingOver(columnId)
   }
 
@@ -190,6 +322,8 @@ export function KanbanBoard({
     e.preventDefault()
     setIsDraggingOver(null)
     setDraggingColumnId(null)
+    setDraggingIssueId(null)
+    setDragPreview(null)
 
     const type = e.dataTransfer.getData(DRAG_TYPE_KEY)
     if (type === 'column') {
@@ -208,13 +342,6 @@ export function KanbanBoard({
     const issueIdentifier = e.dataTransfer.getData(DRAG_ISSUE_KEY)
     if (!issueIdentifier || !onIssueUpdate) return
 
-    const allowedDragTransitions: Record<string, string[]> = {
-      backlog: ['todo'],
-      todo: ['progress'],
-      progress: [],      // Auto-moves to review on completion
-      review: ['todo', 'done'],
-      done: [],           // Terminal
-    }
 
     // Find the issue being dragged to determine its current column
     const issue = boardIssues.find((i) => getIssueActionRef(i) === issueIdentifier)
@@ -226,7 +353,7 @@ export function KanbanBoard({
     if (currentColumnId === targetColumnId) return
 
     // Check if the transition is allowed
-    const allowed = allowedDragTransitions[currentColumnId]
+    const allowed = DRAG_TRANSITIONS[currentColumnId]
     if (!allowed || !allowed.includes(targetColumnId)) return
 
     // Backlog → Todo: validate required fields first
@@ -293,13 +420,13 @@ export function KanbanBoard({
   const stateIs = (s: string, target: string) => normalizeState(s) === normalizeState(target)
   const visibleIssues = enrichedIssues.filter(filterItem)
   const backlogCandidates = visibleIssues.filter((i) => stateIs(i.state, 'Backlog'))
-  const matchesBacklogSearch = (item: EnrichedIssue) => {
+  const matchesTaskSearch = (item: EnrichedIssue) => {
     const assignee = item.assignee_id || ''
     const normalizedAssignee = assignee.replace(/^agent-/i, '')
     const projectName = projects.find((candidate) => candidate.id === item.project_id)?.name
     const assigneeKey = normalizeSearchText(assignee).replace(/^agent-/, '')
     const agentName = availableAgents.find((agent) => normalizeSearchText(agent).replace(/^agent-/, '') === assigneeKey)
-    return matchesSearch(backlogSearch, [
+    return matchesSearch(taskSearch, [
       item.title,
       item.description,
       item.issue_identifier,
@@ -314,11 +441,12 @@ export function KanbanBoard({
       item.last_message,
     ])
   }
-  const backlogItems = backlogCandidates.filter(matchesBacklogSearch)
-  const todoItems = visibleIssues.filter((i) => stateIs(i.state, 'Todo'))
-  const inProgressItems = visibleIssues.filter((i) => stateIs(i.state, 'In Progress'))
-  const reviewItems = visibleIssues.filter((i) => stateIs(i.state, 'Review'))
-  const doneItemsList = visibleIssues.filter((i) => stateIs(i.state, 'Done'))
+  const backlogItems = backlogCandidates.filter(matchesTaskSearch)
+  const searchedIssues = taskSearch.trim() ? visibleIssues.filter(matchesTaskSearch) : visibleIssues
+  const todoItems = searchedIssues.filter((i) => stateIs(i.state, 'Todo'))
+  const inProgressItems = searchedIssues.filter((i) => stateIs(i.state, 'In Progress'))
+  const reviewItems = searchedIssues.filter((i) => stateIs(i.state, 'Review'))
+  const doneItemsList = searchedIssues.filter((i) => stateIs(i.state, 'Done'))
 
   const columns: {
     id: string
@@ -359,8 +487,11 @@ export function KanbanBoard({
   ]
 
   const orderedColumns = columnOrder.map((id) => columns.find((column) => column.id === id)!)
+  const draggingItem = draggingIssueId ? enrichedIssues.find((item) => getActionIssueRef(item) === draggingIssueId) : undefined
+  const dragSourceColumn = draggingItem ? Object.entries(COLUMN_TO_STATE).find(([, state]) => normalizeState(state) === normalizeState(draggingItem.state))?.[0] ?? '' : ''
+  const dropTargets = dragSourceColumn ? DRAG_TRANSITIONS[dragSourceColumn] ?? [] : []
   const filteredList = enrichedIssues.filter((item) =>
-    filterItem(item) && (!stateIs(item.state, 'Backlog') || matchesBacklogSearch(item)),
+    filterItem(item) && matchesTaskSearch(item),
   )
 
   const getActionIssueRef = (item: EnrichedIssue): string => getIssueActionRef(item)
@@ -418,6 +549,226 @@ export function KanbanBoard({
   }
 
   const activeProject = projects.find(p => p.id === selectedProjectID) ?? null
+
+  const renderCard = (item: EnrichedIssue, column: { dot: string }) => (
+      <div
+        key={item.issue_id}
+        draggable
+        role="button"
+        aria-label={`Task ${getActionIssueRef(item)}: ${item.title || item.description || 'Untitled'}`}
+        data-testid={`kanban-task-${item.issue_id}`}
+        tabIndex={0}
+        onDragStart={(e) => handleDragStart(e, getActionIssueRef(item))}
+        onDragEnd={handleDragEnd}
+        className={`group relative cursor-grab rounded-lg border active:cursor-grabbing transition-[opacity,transform,box-shadow,border-color] duration-150 overflow-hidden ${draggingIssueId === getActionIssueRef(item) ? 'opacity-40 scale-[0.97] ' : ''}${
+          item.lane === 'running'
+            ? 'border-emerald-500/40 bg-emerald-500/[0.03] shadow-[0_0_12px_0_rgba(16,185,129,0.12)] hover:shadow-[0_0_16px_0_rgba(16,185,129,0.2)]'
+            : item.lane === 'retrying'
+            ? 'border-amber-500/40 bg-amber-500/[0.03] shadow-[0_0_10px_0_rgba(245,158,11,0.1)]'
+            : item.state === 'In Progress'
+            ? 'border-blue-500/20 bg-blue-500/[0.02]'
+            : 'border-border/30 bg-card hover:border-border/60 hover:shadow-sm'
+        }`}
+        onClick={() => void onInspectIssue(getActionIssueRef(item))}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            void onInspectIssue(getActionIssueRef(item))
+          }
+        }}
+      >
+        {/* Left accent */}
+        <div className={`absolute left-0 top-0 bottom-0 w-[2px] ${
+          item.lane === 'running'
+            ? 'bg-emerald-500 animate-pulse'
+            : item.lane === 'retrying'
+            ? 'bg-amber-500 animate-pulse'
+            : item.state === 'In Progress'
+            ? 'bg-blue-400 opacity-40'
+            : `${column.dot} opacity-60`
+        }`} />
+
+        <div className="pl-3 pr-2.5 pt-2.5 pb-2">
+          {/* Top row: ID + actions */}
+          <div className="flex items-center justify-between gap-1 mb-1.5">
+            <span className="font-mono text-[9px] font-semibold text-muted-foreground/30 tracking-wider">
+              {item.issue_identifier}
+            </span>
+            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity" data-no-drag="true">
+              {item.url && typeof item.url === 'string' && item.url.includes('github.com') && (
+                <Github size={9} className="text-muted-foreground/30" />
+              )}
+              {item.state === 'Todo' && item.assignee_id && item.assignee_id !== 'Unassigned' && onIssueUpdate && (
+                <AppTooltip content="Launch agent session">
+                  <button type="button" data-no-drag="true" className="p-0.5 rounded hover:text-emerald-500 hover:bg-emerald-500/10 text-muted-foreground/40 transition-colors" onClick={(e) => { e.stopPropagation(); void onIssueUpdate(getActionIssueRef(item), { state: 'In Progress' }) }}>
+                    <Play className="size-2.5 fill-current" />
+                  </button>
+                </AppTooltip>
+              )}
+              {item.state === 'In Progress' && onStopSession && (
+                <AppTooltip content="Stop session">
+                  <button type="button" data-no-drag="true" className="p-0.5 rounded hover:text-amber-500 hover:bg-amber-500/10 text-muted-foreground/40 transition-colors" onClick={(e) => { e.stopPropagation(); void onStopSession(getActionIssueRef(item)) }}>
+                    <Square className="size-2 fill-current" />
+                  </button>
+                </AppTooltip>
+              )}
+              {onIssueDelete && (
+                <AppTooltip content="Delete">
+                  <button type="button" data-no-drag="true" aria-label={`Delete task ${item.issue_identifier}`} className="p-0.5 rounded hover:text-destructive hover:bg-destructive/10 text-muted-foreground/40 transition-colors" onClick={(e) => { e.stopPropagation(); setDeleteTaskError(''); setIssueToDelete({ identifier: getActionIssueRef(item), title: item.title }); setDeleteDialogOpen(true) }}>
+                    <Trash2 className="size-2.5" />
+                  </button>
+                </AppTooltip>
+              )}
+            </div>
+          </div>
+
+          {/* Title */}
+          <p className="line-clamp-2 text-[11.5px] font-medium leading-snug text-foreground/75 group-hover:text-foreground transition-colors mb-2.5">
+            {item.title || item.description || item.last_message || item.error || 'Untitled'}
+          </p>
+
+          {/* Status ticker */}
+          {item.lane === 'running' && (
+            <div className="flex items-center gap-1.5 mb-2 overflow-hidden">
+              <div className="size-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+              <p className="text-[9px] text-emerald-600 dark:text-emerald-400 truncate font-medium">{item.detail}</p>
+            </div>
+          )}
+          {item.lane === 'retrying' && (
+            <div className="flex items-center gap-1.5 mb-2 overflow-hidden">
+              <div className="size-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
+              <p className="text-[9px] text-amber-600 dark:text-amber-400 truncate font-medium">{item.detail}</p>
+            </div>
+          )}
+          {item.state === 'In Progress' && !item.lane && (
+            <div className="flex items-center gap-1.5 mb-2">
+              <div className="size-1.5 rounded-full bg-blue-400 shrink-0" />
+              <p className="text-[9px] text-blue-400/60 font-medium">Queued</p>
+            </div>
+          )}
+
+          {/* Backlog readiness indicator */}
+          {stateIs(item.state, 'Backlog') && (() => {
+            const missing = getBacklogMissingFields(item)
+            if (missing.length === 0) return null
+            return (
+              <AppTooltip content={`Needs before queuing: ${missing.join(', ')}`}>
+                <div className="flex items-center gap-1 mb-2 cursor-default" data-no-drag="true">
+                  <AlertCircle className="size-2.5 text-amber-500/60 shrink-0" />
+                  <span className="text-[8.5px] text-amber-500/60 font-medium truncate">Needs {missing.join(', ')}</span>
+                </div>
+              </AppTooltip>
+            )
+          })()}
+
+          {/* Footer */}
+          <div className="flex items-center justify-between gap-1">
+            <div className="flex items-center gap-1.5 min-w-0">
+              {projects.length > 1 && item.project_id && (
+                <span className="text-[9px] text-muted-foreground/30 truncate">
+                  {projects.find(p => p.id === item.project_id)?.name}
+                </span>
+              )}
+            </div>
+            <div data-no-drag="true" className="shrink-0">
+              <AgentSelector
+                value={item.assignee_id || ''}
+                agents={availableAgents}
+                onChange={(value) => {
+                  if (onIssueUpdate) {
+                    void onIssueUpdate(getActionIssueRef(item), { assignee_id: value, provider: value.replace('agent-', '') })
+                  }
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+  )
+  const renderRow = (item: EnrichedIssue) => (
+        <tr
+          key={item.issue_id}
+          className="group hover:bg-muted/30 transition-colors cursor-pointer"
+          onClick={() => void onInspectIssue(getActionIssueRef(item))}
+        >
+          <td className="p-4 whitespace-nowrap">
+            <span className="font-mono text-xs font-bold text-primary">{item.issue_identifier}</span>
+          </td>
+          <td className="p-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
+                {item.title || item.detail || 'No Title'}
+              </span>
+              {item.lane === 'running' && (
+                <AppTooltip content="Live session">
+                  <div className="size-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                </AppTooltip>
+              )}
+            </div>
+          </td>
+          <td className="p-4">
+            <AgentSelector
+              value={item.assignee_id || ''}
+              agents={availableAgents}
+              onChange={(value) => {
+                if (onIssueUpdate) {
+                    const agentName = value.replace('agent-', '')
+                    void onIssueUpdate(getActionIssueRef(item), { assignee_id: value, provider: agentName })
+                }
+              }}
+            />
+          </td>
+          <td className="p-4 whitespace-nowrap">
+            <div className="flex items-center gap-2">
+              <div className={`size-1.5 rounded-full ${item.state === 'Done' ? 'bg-primary' : item.state === 'In Progress' ? 'bg-amber-500 animate-pulse' : 'bg-muted-foreground/40'}`} />
+              <span className="text-xs font-medium text-muted-foreground">{item.state}</span>
+            </div>
+          </td>
+          <td className="px-2 py-4 text-right">
+            <div className="flex items-center justify-end gap-1">
+              {item.state === 'Todo' && item.assignee_id && item.assignee_id !== 'Unassigned' && onIssueUpdate && (
+                <button
+                  type="button"
+                  className="p-1 rounded-md text-emerald-500/60 hover:text-emerald-500 hover:bg-emerald-500/10 transition-all active:scale-95"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void onIssueUpdate(getActionIssueRef(item), { state: 'In Progress' })
+                  }}
+                >
+                  <Play className="size-3.5 fill-current" />
+                </button>
+              )}
+              {item.state === 'In Progress' && onStopSession && (
+                <button
+                  type="button"
+                  className="p-1 rounded-md text-amber-500/60 hover:text-amber-500 hover:bg-amber-500/10 transition-all active:scale-95"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void onStopSession(getActionIssueRef(item))
+                  }}
+                >
+                  <Square className="size-3 fill-current" />
+                </button>
+              )}
+              {onIssueDelete && (
+                <button
+                  type="button"
+                  aria-label={`Delete task ${item.issue_identifier}`}
+                  className="p-1 rounded-md text-muted-foreground/60 hover:text-red-500 hover:bg-red-500/10 transition-all cursor-pointer"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setDeleteTaskError('')
+                    setIssueToDelete({ identifier: getActionIssueRef(item), title: item.title })
+                    setDeleteDialogOpen(true)
+                  }}
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              )}
+            </div>
+          </td>
+        </tr>
+  )
 
   return (
     <div className="flex-1 flex flex-col min-h-0 gap-y-5">
@@ -488,35 +839,35 @@ export function KanbanBoard({
               <div className="relative w-44 sm:w-56">
                 <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/50" />
                 <input
+                  ref={searchRef}
                   type="search"
-                  aria-label="Search Backlog tasks"
-                  aria-controls="kanban-column-backlog"
-                  placeholder="Search Backlog…"
+                  aria-label="Search tasks"
+                  placeholder="Search tasks…  /"
                   autoComplete="off"
-                  value={backlogSearch}
-                  onChange={(event) => setBacklogSearch(event.currentTarget.value)}
+                  value={taskSearch}
+                  onChange={(event) => setTaskSearch(event.currentTarget.value)}
                   onKeyDown={(event) => {
-                    if (event.key === 'Escape' && backlogSearch) {
+                    if (event.key === 'Escape' && taskSearch) {
                       event.preventDefault()
-                      setBacklogSearch('')
+                      setTaskSearch('')
                     }
                   }}
                   className="h-8 w-full rounded-md border border-border/50 bg-background pl-8 pr-8 text-[11px] text-foreground placeholder:text-muted-foreground/45 focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/15"
                 />
-                {backlogSearch && (
+                {taskSearch && (
                   <button
                     type="button"
-                    aria-label="Clear Backlog search"
-                    onClick={() => setBacklogSearch('')}
+                    aria-label="Clear task search"
+                    onClick={() => setTaskSearch('')}
                     className="absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded text-muted-foreground/60 hover:bg-muted hover:text-foreground"
                   >
                     <X aria-hidden="true" className="size-3.5" />
                   </button>
                 )}
               </div>
-              {backlogSearch.trim() && (
+              {taskSearch.trim() && (
                 <span aria-live="polite" className="whitespace-nowrap text-[10px] tabular-nums text-muted-foreground/60">
-                  {backlogItems.length} of {backlogCandidates.length}
+                  {searchedIssues.length} of {visibleIssues.length}
                 </span>
               )}
             </div>
@@ -612,9 +963,9 @@ export function KanbanBoard({
               key={column.id}
               id={`kanban-column-${column.id}`}
               data-testid={`kanban-column-${column.id}`}
-              className={`flex flex-col min-h-0 transition-opacity ${draggingColumnId === column.id ? 'opacity-30' : ''}`}
+              className={`flex flex-col min-h-0 transition-opacity duration-200 ${draggingColumnId === column.id || (dragSourceColumn && column.id !== dragSourceColumn && !dropTargets.includes(column.id)) ? 'opacity-30' : ''}`}
               onDragOver={(e) => handleDragOver(e, column.id)}
-              onDragLeave={() => setIsDraggingOver(null)}
+              onDragLeave={handleDragLeave}
               onDrop={(e) => handleDrop(e, column.id)}
             >
               {/* Column header */}
@@ -622,6 +973,7 @@ export function KanbanBoard({
                 className="flex cursor-grab items-center gap-2 p-3 active:cursor-grabbing shrink-0"
                 draggable
                 onDragStart={(e) => handleColumnDragStart(e, column.id)}
+                onDragEnd={handleDragEnd}
               >
                 <span className={`block size-2 rounded-full shrink-0 ${column.dot}`} />
                 <span className="text-[9px] font-semibold uppercase tracking-widest text-foreground/40 flex-1 truncate">{column.title}</span>
@@ -633,20 +985,27 @@ export function KanbanBoard({
               {/* Column body */}
               <div className={`flex-1 min-h-0 flex flex-col mx-1 mb-1 rounded-xl overflow-hidden transition-all ${
                 isDraggingOver === column.id
-                  ? 'ring-1 ring-primary/40 bg-primary/[0.03]'
+                  ? 'ring-2 ring-primary/60 bg-primary/[0.07]'
+                  : dropTargets.includes(column.id)
+                  ? 'ring-1 ring-primary/30 bg-primary/[0.03]'
                   : 'bg-muted/[0.03]'
               }`}>
                 <div className="flex-1 flex flex-col gap-1.5 p-2 min-h-0 overflow-y-auto overflow-x-hidden">
+                  {isDraggingOver === column.id && dropTargets.includes(column.id) && (
+                    <div className="shrink-0 grid h-14 place-items-center rounded-lg border border-dashed border-primary/50 bg-primary/[0.06] text-[10.5px] font-medium text-primary/80 animate-in fade-in zoom-in-95 duration-150">
+                      Move to {column.title}
+                    </div>
+                  )}
                   {loadingState ? (
                     SKELETON_ROW_KEYS.map((k) => <Skeleton key={k} className="h-20 w-full rounded-lg" />)
                   ) : column.items.length === 0 ? (
-                    column.id === 'backlog' && backlogSearch.trim() && backlogCandidates.length > 0 ? (
+                    taskSearch.trim() ? (
                       <div className="flex min-h-full flex-col items-center justify-center gap-2 px-3 text-center">
                         <Search className="size-4 text-muted-foreground/35" aria-hidden="true" />
-                        <p className="text-[10px] font-medium text-muted-foreground/55">No Backlog tasks match “{backlogSearch.trim()}”</p>
+                        <p className="text-[10px] font-medium text-muted-foreground/55">No tasks match “{taskSearch.trim()}”</p>
                         <button
                           type="button"
-                          onClick={() => setBacklogSearch('')}
+                          onClick={() => setTaskSearch('')}
                           className="text-[10px] font-semibold text-primary hover:underline"
                         >
                           Clear search
@@ -669,140 +1028,9 @@ export function KanbanBoard({
                       </div>
                     )
                   ) : (
-                    column.items.map((item) => (
-                      <div
-                        key={item.issue_id}
-                        draggable
-                        role="button"
-                        aria-label={`Task ${getActionIssueRef(item)}: ${item.title || item.description || 'Untitled'}`}
-                        data-testid={`kanban-task-${item.issue_id}`}
-                        tabIndex={0}
-                        onDragStart={(e) => handleDragStart(e, getActionIssueRef(item))}
-                        className={`group relative cursor-grab rounded-lg border active:cursor-grabbing transition-all overflow-hidden ${
-                          item.lane === 'running'
-                            ? 'border-emerald-500/40 bg-emerald-500/[0.03] shadow-[0_0_12px_0_rgba(16,185,129,0.12)] hover:shadow-[0_0_16px_0_rgba(16,185,129,0.2)]'
-                            : item.lane === 'retrying'
-                            ? 'border-amber-500/40 bg-amber-500/[0.03] shadow-[0_0_10px_0_rgba(245,158,11,0.1)]'
-                            : item.state === 'In Progress'
-                            ? 'border-blue-500/20 bg-blue-500/[0.02]'
-                            : 'border-border/30 bg-card hover:border-border/60 hover:shadow-sm'
-                        }`}
-                        onClick={() => void onInspectIssue(getActionIssueRef(item))}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault()
-                            void onInspectIssue(getActionIssueRef(item))
-                          }
-                        }}
-                      >
-                        {/* Left accent */}
-                        <div className={`absolute left-0 top-0 bottom-0 w-[2px] ${
-                          item.lane === 'running'
-                            ? 'bg-emerald-500 animate-pulse'
-                            : item.lane === 'retrying'
-                            ? 'bg-amber-500 animate-pulse'
-                            : item.state === 'In Progress'
-                            ? 'bg-blue-400 opacity-40'
-                            : `${column.dot} opacity-60`
-                        }`} />
-
-                        <div className="pl-3 pr-2.5 pt-2.5 pb-2">
-                          {/* Top row: ID + actions */}
-                          <div className="flex items-center justify-between gap-1 mb-1.5">
-                            <span className="font-mono text-[9px] font-semibold text-muted-foreground/30 tracking-wider">
-                              {item.issue_identifier}
-                            </span>
-                            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity" data-no-drag="true">
-                              {item.url && typeof item.url === 'string' && item.url.includes('github.com') && (
-                                <Github size={9} className="text-muted-foreground/30" />
-                              )}
-                              {item.state === 'Todo' && item.assignee_id && item.assignee_id !== 'Unassigned' && onIssueUpdate && (
-                                <AppTooltip content="Launch agent session">
-                                  <button type="button" data-no-drag="true" className="p-0.5 rounded hover:text-emerald-500 hover:bg-emerald-500/10 text-muted-foreground/40 transition-colors" onClick={(e) => { e.stopPropagation(); void onIssueUpdate(getActionIssueRef(item), { state: 'In Progress' }) }}>
-                                    <Play className="size-2.5 fill-current" />
-                                  </button>
-                                </AppTooltip>
-                              )}
-                              {item.state === 'In Progress' && onStopSession && (
-                                <AppTooltip content="Stop session">
-                                  <button type="button" data-no-drag="true" className="p-0.5 rounded hover:text-amber-500 hover:bg-amber-500/10 text-muted-foreground/40 transition-colors" onClick={(e) => { e.stopPropagation(); void onStopSession(getActionIssueRef(item)) }}>
-                                    <Square className="size-2 fill-current" />
-                                  </button>
-                                </AppTooltip>
-                              )}
-                              {onIssueDelete && (
-                                <AppTooltip content="Delete">
-                                  <button type="button" data-no-drag="true" aria-label={`Delete task ${item.issue_identifier}`} className="p-0.5 rounded hover:text-destructive hover:bg-destructive/10 text-muted-foreground/40 transition-colors" onClick={(e) => { e.stopPropagation(); setDeleteTaskError(''); setIssueToDelete({ identifier: getActionIssueRef(item), title: item.title }); setDeleteDialogOpen(true) }}>
-                                    <Trash2 className="size-2.5" />
-                                  </button>
-                                </AppTooltip>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Title */}
-                          <p className="line-clamp-2 text-[11.5px] font-medium leading-snug text-foreground/75 group-hover:text-foreground transition-colors mb-2.5">
-                            {item.title || item.description || item.last_message || item.error || 'Untitled'}
-                          </p>
-
-                          {/* Status ticker */}
-                          {item.lane === 'running' && (
-                            <div className="flex items-center gap-1.5 mb-2 overflow-hidden">
-                              <div className="size-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                              <p className="text-[9px] text-emerald-600 dark:text-emerald-400 truncate font-medium">{item.detail}</p>
-                            </div>
-                          )}
-                          {item.lane === 'retrying' && (
-                            <div className="flex items-center gap-1.5 mb-2 overflow-hidden">
-                              <div className="size-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
-                              <p className="text-[9px] text-amber-600 dark:text-amber-400 truncate font-medium">{item.detail}</p>
-                            </div>
-                          )}
-                          {item.state === 'In Progress' && !item.lane && (
-                            <div className="flex items-center gap-1.5 mb-2">
-                              <div className="size-1.5 rounded-full bg-blue-400 shrink-0" />
-                              <p className="text-[9px] text-blue-400/60 font-medium">Queued</p>
-                            </div>
-                          )}
-
-                          {/* Backlog readiness indicator */}
-                          {stateIs(item.state, 'Backlog') && (() => {
-                            const missing = getBacklogMissingFields(item)
-                            if (missing.length === 0) return null
-                            return (
-                              <AppTooltip content={`Needs before queuing: ${missing.join(', ')}`}>
-                                <div className="flex items-center gap-1 mb-2 cursor-default" data-no-drag="true">
-                                  <AlertCircle className="size-2.5 text-amber-500/60 shrink-0" />
-                                  <span className="text-[8.5px] text-amber-500/60 font-medium truncate">Needs {missing.join(', ')}</span>
-                                </div>
-                              </AppTooltip>
-                            )
-                          })()}
-
-                          {/* Footer */}
-                          <div className="flex items-center justify-between gap-1">
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              {projects.length > 1 && item.project_id && (
-                                <span className="text-[9px] text-muted-foreground/30 truncate">
-                                  {projects.find(p => p.id === item.project_id)?.name}
-                                </span>
-                              )}
-                            </div>
-                            <div data-no-drag="true" className="shrink-0">
-                              <AgentSelector
-                                value={item.assignee_id || ''}
-                                agents={availableAgents}
-                                onChange={(value) => {
-                                  if (onIssueUpdate) {
-                                    void onIssueUpdate(getActionIssueRef(item), { assignee_id: value, provider: value.replace('agent-', '') })
-                                  }
-                                }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))
+                    column.items.length > VIRTUALIZE_AT
+                      ? <VirtualCards items={column.items} getKey={(item) => item.issue_id} render={(item) => renderCard(item, column)} />
+                      : column.items.map((item) => renderCard(item, column))
                   )}
                 </div>
               </div>
@@ -815,10 +1043,10 @@ export function KanbanBoard({
           {filteredList.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center p-12 text-center text-muted-foreground/40">
               <ClipboardList className="size-12 mb-4 opacity-20" />
-              <p className="text-sm italic uppercase tracking-widest font-bold">{backlogSearch.trim() ? `No Backlog tasks match “${backlogSearch.trim()}”` : 'No tasks match current filters'}</p>
+              <p className="text-sm italic uppercase tracking-widest font-bold">{taskSearch.trim() ? `No tasks match “${taskSearch.trim()}”` : 'No tasks match current filters'}</p>
             </div>
           ) : (
-            <div className="flex-1 overflow-auto custom-scrollbar">
+            <div ref={listScrollRef} className="flex-1 overflow-auto custom-scrollbar">
               <table className="w-full text-left border-collapse">
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b bg-muted/80 backdrop-blur text-[10px] uppercase tracking-wider font-bold text-muted-foreground">
@@ -830,90 +1058,9 @@ export function KanbanBoard({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/40">
-                  {filteredList.map((item) => (
-                    <tr
-                      key={item.issue_id}
-                      className="group hover:bg-muted/30 transition-colors cursor-pointer"
-                      onClick={() => void onInspectIssue(getActionIssueRef(item))}
-                    >
-                      <td className="p-4 whitespace-nowrap">
-                        <span className="font-mono text-xs font-bold text-primary">{item.issue_identifier}</span>
-                      </td>
-                      <td className="p-4">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
-                            {item.title || item.detail || 'No Title'}
-                          </span>
-                          {item.lane === 'running' && (
-                            <AppTooltip content="Live session">
-                              <div className="size-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                            </AppTooltip>
-                          )}
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        <AgentSelector
-                          value={item.assignee_id || ''}
-                          agents={availableAgents}
-                          onChange={(value) => {
-                            if (onIssueUpdate) {
-                                const agentName = value.replace('agent-', '')
-                                void onIssueUpdate(getActionIssueRef(item), { assignee_id: value, provider: agentName })
-                            }
-                          }}
-                        />
-                      </td>
-                      <td className="p-4 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          <div className={`size-1.5 rounded-full ${item.state === 'Done' ? 'bg-primary' : item.state === 'In Progress' ? 'bg-amber-500 animate-pulse' : 'bg-muted-foreground/40'}`} />
-                          <span className="text-xs font-medium text-muted-foreground">{item.state}</span>
-                        </div>
-                      </td>
-                      <td className="px-2 py-4 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          {item.state === 'Todo' && item.assignee_id && item.assignee_id !== 'Unassigned' && onIssueUpdate && (
-                            <button
-                              type="button"
-                              className="p-1 rounded-md text-emerald-500/60 hover:text-emerald-500 hover:bg-emerald-500/10 transition-all active:scale-95"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                void onIssueUpdate(getActionIssueRef(item), { state: 'In Progress' })
-                              }}
-                            >
-                              <Play className="size-3.5 fill-current" />
-                            </button>
-                          )}
-                          {item.state === 'In Progress' && onStopSession && (
-                            <button
-                              type="button"
-                              className="p-1 rounded-md text-amber-500/60 hover:text-amber-500 hover:bg-amber-500/10 transition-all active:scale-95"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                void onStopSession(getActionIssueRef(item))
-                              }}
-                            >
-                              <Square className="size-3 fill-current" />
-                            </button>
-                          )}
-                          {onIssueDelete && (
-                            <button
-                              type="button"
-                              aria-label={`Delete task ${item.issue_identifier}`}
-                              className="p-1 rounded-md text-muted-foreground/60 hover:text-red-500 hover:bg-red-500/10 transition-all cursor-pointer"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setDeleteTaskError('')
-                                setIssueToDelete({ identifier: getActionIssueRef(item), title: item.title })
-                                setDeleteDialogOpen(true)
-                              }}
-                            >
-                              <Trash2 className="size-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {filteredList.length > VIRTUALIZE_AT
+                    ? <VirtualTableRows items={filteredList} getKey={(item) => item.issue_id} render={renderRow} scrollRef={listScrollRef} columns={5} />
+                    : filteredList.map(renderRow)}
                 </tbody>
               </table>
             </div>
@@ -1036,6 +1183,16 @@ export function KanbanBoard({
       </Dialog>
         </>
       ) : null}
+      {dragPreview && createPortal(
+        <div ref={previewRef} aria-hidden="true" className="pointer-events-none fixed left-0 top-0 z-[9999]"
+          style={{ width: dragPreview.width, transform: `translate(${dragPreview.x}px, ${dragPreview.y}px)` }}>
+          <div className="rotate-[1.5deg] scale-[1.03] rounded-lg border border-primary/40 bg-card px-3 py-2.5 shadow-2xl shadow-black/40 ring-1 ring-primary/20 animate-in zoom-in-95 duration-100">
+            <span className="font-mono text-[9px] font-semibold tracking-wider text-muted-foreground/50">{dragPreview.item.issue_identifier}</span>
+            <p className="mt-1 line-clamp-2 text-[12px] font-semibold leading-snug text-foreground">{dragPreview.item.title || dragPreview.item.description || 'Untitled'}</p>
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   )
 }
