@@ -1,5 +1,4 @@
 import { useRef, useState, useSyncExternalStore, type ReactNode, type CSSProperties } from 'react'
-import { WorkspaceToolsContext } from './workspace-tools-context'
 
 const query = '(min-width: 1024px)'
 const isWide = () => window.matchMedia?.(query).matches ?? true
@@ -18,11 +17,6 @@ export function ResizableWorkspace({ storageKey, toolsOpen, chat, tools }: {
   storageKey: string; toolsOpen: boolean; chat: ReactNode; tools: ReactNode
 }) {
   const wide = useSyncExternalStore(subscribe, isWide, () => true)
-  const [presentation, setPresentation] = useState({ key: storageKey, open: toolsOpen, maximized: false })
-  const currentPresentation = presentation.key === storageKey && presentation.open === toolsOpen
-  if (!currentPresentation) setPresentation({ key: storageKey, open: toolsOpen, maximized: false })
-  const maximized = currentPresentation && toolsOpen && presentation.maximized
-  const setMaximized = (value: boolean) => setPresentation({ key: storageKey, open: toolsOpen, maximized: value })
   const [size, setSize] = useState(() => ({ key: storageKey, percent: read(storageKey) }))
   const drag = useRef<{ pointerId: number; key: string; percent: number } | null>(null)
   if (size.key !== storageKey) setSize({ key: storageKey, percent: read(storageKey) })
@@ -32,15 +26,9 @@ export function ResizableWorkspace({ storageKey, toolsOpen, chat, tools }: {
     setSize({ key: storageKey, percent: next })
     try { localStorage.setItem(storageKey, String(next)) } catch { /* Resizing still works without persistence. */ }
   }
-  return <WorkspaceToolsContext.Provider value={{ maximized, toolbarHosted: true, toggle: () => setMaximized(!maximized) }}><div className="flex min-h-0 flex-1 flex-col lg:flex-row" style={{ '--chat-share': `${percent}%` } as CSSProperties}
-    onKeyDown={event => {
-      if (event.key === 'Escape' && !event.defaultPrevented && maximized) {
-        event.preventDefault()
-        setMaximized(false)
-      }
-    }}>
-    <div aria-label="Workspace chat pane" hidden={maximized} className={`${maximized ? 'hidden' : ''} min-h-0 min-w-0`} style={{ flex: toolsOpen ? '0 1 var(--chat-share)' : '1 1 0%' }}>{chat}</div>
-    {toolsOpen && !maximized && <div role="separator" aria-orientation={wide ? 'vertical' : 'horizontal'} aria-label="Resize chat and workspace tools" aria-valuemin={25} aria-valuemax={80} aria-valuenow={Math.round(percent)} tabIndex={0}
+  return <div className="flex min-h-0 flex-1 flex-col lg:flex-row" style={{ '--chat-share': `${percent}%` } as CSSProperties}>
+    <div aria-label="Workspace chat pane" className="min-h-0 min-w-0" style={{ flex: toolsOpen ? '0 1 var(--chat-share)' : '1 1 0%' }}>{chat}</div>
+    {toolsOpen && <div role="separator" aria-orientation={wide ? 'vertical' : 'horizontal'} aria-label="Resize chat and workspace tools" aria-valuemin={25} aria-valuemax={80} aria-valuenow={Math.round(percent)} tabIndex={0}
       title="Drag to resize · Arrow keys to adjust · Double-click to reset"
       className="group relative z-10 h-2 shrink-0 touch-none cursor-row-resize select-none bg-transparent hover:bg-primary/10 focus-visible:bg-primary/10 focus-visible:outline-none lg:h-auto lg:w-2 lg:cursor-col-resize"
       onDoubleClick={() => save(60)}
@@ -77,6 +65,6 @@ export function ResizableWorkspace({ storageKey, toolsOpen, chat, tools }: {
       onPointerUp={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId) }}
       onPointerCancel={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId) }}
     />}
-    <div aria-label="Workspace tools" data-maximized={maximized} hidden={!toolsOpen} className={`${toolsOpen ? 'flex' : 'hidden'} min-h-0 min-w-0 flex-1`}>{tools}</div>
-  </div></WorkspaceToolsContext.Provider>
+    <div aria-label="Workspace tools" hidden={!toolsOpen} className={`${toolsOpen ? 'flex' : 'hidden'} min-h-0 min-w-0 flex-1`}>{tools}</div>
+  </div>
 }

@@ -12,7 +12,6 @@ import {
 import { useAppStore } from '@core/store'
 import { isSideTab } from '@core/store/group-helpers'
 import type { TabGroup, TabRef, WorkspaceContextID } from '@core/store/types'
-import { WorkspaceToolsControls } from '../WorkspaceToolsControls'
 import { WorkspaceEmptyTools } from '../WorkspaceEmptyTools'
 import { TabContextMenu } from './TabContextMenu'
 import { ToolbarTabSlotContext } from './toolbar-tab-slot'
@@ -280,7 +279,6 @@ export function TabGroupPanel({ projectId, group: rawGroup, isFocused, siblingGr
 
         {/* Split + close-group menu + controls — far right */}
         <div className="flex items-center shrink-0 pr-1 gap-0.5">
-          {!inToolbar && <WorkspaceToolsControls inToolbar={false} />}
           {siblingGroupIds.length > 1 && (
             <button
               onClick={() => closeGroup(projectId, group.id)}

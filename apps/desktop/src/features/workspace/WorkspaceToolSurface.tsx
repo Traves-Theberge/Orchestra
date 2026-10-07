@@ -6,7 +6,6 @@ import { useAppStore } from '@core/store'
 import { getActiveWorkspaceContextId } from '@core/store/workspace-context'
 import { FileExplorer } from './file-explorer/FileExplorer'
 import { WorkspaceSearch } from './panels/WorkspaceSearch'
-import { WorkspaceToolsControls } from './WorkspaceToolsControls'
 import { ResizableInspector } from './ResizableInspector'
 import { ToolbarTabSlotContext } from './tabs/toolbar-tab-slot'
 
@@ -29,7 +28,6 @@ export function WorkspaceToolSurface({ children, filesRequest, toolsOpen, onTogg
   const toolbar = <div aria-label="Workspace tool controls" className={toolbarSlot ? 'flex h-full min-w-0 flex-1 items-center gap-1' : 'flex h-10 shrink-0 items-center gap-1 px-3 pt-1'}>
       <div ref={setTabSlot} data-testid="workspace-toolbar-tabs" className={trailing ? 'flex h-full min-w-0 items-center' : 'flex h-full min-w-0 flex-1 items-center'} />
       {trailing && <>{trailing}<span className="flex-1" /></>}
-      <WorkspaceToolsControls inToolbar />
       {onToggleTools && <AppTooltip content="Hide workspace tools" side="bottom"><button type="button" onClick={onToggleTools} aria-label="Hide workspace tools" aria-pressed={toolsOpen} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent"><PanelRight size={16} /></button></AppTooltip>}
     </div>
   const fullFilesView = inspector === 'files' && !hasActiveTools

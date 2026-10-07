@@ -16,7 +16,6 @@ import { ResizableSplit } from './ResizableSplit'
 import { CreateRepoDialog } from './CreateRepoDialog'
 import { ConflictBanner } from './ConflictBanner'
 import { useGitActions } from './use-git-actions'
-import { WorkspaceToolsControls } from '../workspace/WorkspaceToolsControls'
 
 type SubTab = 'changes' | 'history' | 'branches' | 'prs' | 'issues'
 
@@ -139,7 +138,6 @@ function ScopedGitTab({
           </button>
         </AppTooltip>
 
-        <div className="mr-2"><WorkspaceToolsControls /></div>
 
         <div role="tablist" aria-label="Project Git" className="flex w-full min-w-0 items-center gap-0 overflow-x-auto px-2">
           {subTabs.map((tab) => {

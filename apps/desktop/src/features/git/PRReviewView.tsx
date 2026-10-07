@@ -5,7 +5,6 @@ import { fetchPRSnapshot, fetchPRReviews, fetchPRReviewComments, submitPRReview,
 import { PullRequestCodeView } from './PullRequestCodeView'
 import { PRConversations } from './PRConversations'
 import { PRTimeline } from './PRTimeline'
-import { WorkspaceToolsControls } from '../workspace/WorkspaceToolsControls'
 import { useAppStore } from '@core/store'
 
 type ReviewTab = 'summary' | 'timeline' | 'code'
@@ -139,7 +138,6 @@ function PRReviewPanel({
               <span className={`size-1.5 rounded-full ${status.dot}`} />
               <span className={`text-[10.5px] font-medium tracking-tight ${status.text}`}>{status.label}</span>
             </span>
-          <WorkspaceToolsControls />
         </div>
         <h2 title={currentPR.title} className="truncate text-sm font-semibold">{currentPR.title}</h2>
         <div className="text-xs text-muted-foreground">{currentPR.user.login} · opened {new Date(currentPR.created_at).toLocaleDateString()}</div>

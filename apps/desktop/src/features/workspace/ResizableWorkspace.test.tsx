@@ -2,9 +2,8 @@ import { type ReactElement } from 'react'
 import { AppTooltipProvider } from '@ui/tooltip-wrapper'
 import { cleanup, fireEvent, render as renderBase, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { useEffect, useState } from 'react'
+
 import { ResizableWorkspace } from './ResizableWorkspace'
-import { WorkspaceToolsControls } from './WorkspaceToolsControls'
 
 beforeEach(() => localStorage.clear())
 afterEach(cleanup)
@@ -37,56 +36,8 @@ it('keeps workspace ratios separate and removes the divider when tools close', (
   expect(screen.getByLabelText('Workspace tools')).not.toBeVisible()
 })
 
-it('maximizes the whole tools surface without remounting sessions and restores the saved split', () => {
-  const mounted = vi.fn()
-  const disposed = vi.fn()
-  function Session() {
-    const [value, setValue] = useState('')
-    useEffect(() => { mounted(); return disposed }, [])
-    return <><WorkspaceToolsControls inToolbar /><input aria-label="Session state" value={value} onChange={event => setValue(event.target.value)} /></>
-  }
-  render(<ResizableWorkspace {...props} tools={<Session />} storageKey="workspace-a" />)
-  fireEvent.keyDown(screen.getByRole('separator'), { key: 'ArrowLeft', shiftKey: true })
-  fireEvent.change(screen.getByLabelText('Session state'), { target: { value: 'Retained browser/terminal state' } })
-  const session = screen.getByLabelText('Session state')
-  fireEvent.click(screen.getByRole('button', { name: 'Maximize workspace tools' }))
-  expect(screen.getByLabelText('Workspace chat pane')).not.toBeVisible()
-  expect(screen.getByLabelText('Workspace tools')).toHaveAttribute('data-maximized', 'true')
-  expect(screen.queryByRole('separator')).not.toBeInTheDocument()
-  expect(screen.getByLabelText('Session state')).toBe(session)
-  expect(session).toHaveValue('Retained browser/terminal state')
-  expect(mounted).toHaveBeenCalledTimes(1)
-  expect(disposed).not.toHaveBeenCalled()
-  fireEvent.click(screen.getByRole('button', { name: 'Restore workspace tools' }))
-  expect(screen.getByLabelText('Workspace chat pane')).toBeVisible()
-  expect(screen.getByRole('separator')).toHaveAttribute('aria-valuenow', '50')
-  expect(localStorage.getItem('workspace-a')).toBe('50')
-  fireEvent.click(screen.getByRole('button', { name: 'Maximize workspace tools' }))
-  fireEvent.keyDown(session, { key: 'Escape' })
-  expect(screen.getByRole('separator')).toHaveAttribute('aria-valuenow', '50')
-})
 
-it('keeps a single maximize action in the pane toolbar when legacy child headers request one', () => {
-  const tools = <><WorkspaceToolsControls /><div aria-label="Workspace tool controls"><WorkspaceToolsControls inToolbar /></div></>
-  render(<ResizableWorkspace {...props} tools={tools} storageKey="workspace-toolbar" />)
-  const maximize = screen.getByRole('button', { name: 'Maximize workspace tools' })
-  expect(screen.getAllByRole('button', { name: 'Maximize workspace tools' })).toHaveLength(1)
-  expect(screen.getByLabelText('Workspace tool controls')).toContainElement(maximize)
-  fireEvent.click(maximize)
-  expect(screen.getByLabelText('Workspace tools')).toHaveAttribute('data-maximized', 'true')
-})
 
-it('leaves maximize mode when switching workspace or closing tools', () => {
-  const view = render(<ResizableWorkspace {...props} tools={<WorkspaceToolsControls inToolbar />} storageKey="workspace-a" />)
-  fireEvent.click(screen.getByRole('button', { name: 'Maximize workspace tools' }))
-  view.rerender(<ResizableWorkspace {...props} tools={<WorkspaceToolsControls inToolbar />} storageKey="workspace-b" />)
-  expect(screen.getByLabelText('Workspace chat pane')).toBeVisible()
-  fireEvent.click(screen.getByRole('button', { name: 'Maximize workspace tools' }))
-  view.rerender(<ResizableWorkspace {...props} tools={<WorkspaceToolsControls inToolbar />} storageKey="workspace-b" toolsOpen={false} />)
-  expect(screen.getByLabelText('Workspace chat pane')).toBeVisible()
-  view.rerender(<ResizableWorkspace {...props} tools={<WorkspaceToolsControls inToolbar />} storageKey="workspace-b" />)
-  expect(screen.getByRole('separator')).toBeInTheDocument()
-})
 
 const render = (ui: ReactElement) => renderBase(ui, { wrapper: AppTooltipProvider })
 

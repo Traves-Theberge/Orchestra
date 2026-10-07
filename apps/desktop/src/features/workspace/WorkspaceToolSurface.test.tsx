@@ -8,7 +8,6 @@ import { WorkspaceEmptyTools } from './WorkspaceEmptyTools'
 
 vi.mock('./file-explorer/FileExplorer', () => ({ FileExplorer: () => <div role="tree" className="h-full w-full">Checkout files</div> }))
 vi.mock('./panels/WorkspaceSearch', () => ({ WorkspaceSearch: () => <div>Checkout search</div> }))
-vi.mock('./WorkspaceToolsControls', () => ({ WorkspaceToolsControls: () => <button>Maximize workspace tools</button> }))
 
 beforeEach(() => {
   resetAppStore()
@@ -16,7 +15,7 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
-it('keeps the borderless control strip with the tab slot, maximize, then hide tools last', () => {
+it('keeps the borderless control strip with the tab slot and hide tools last, without maximize', () => {
   const onToggleTools = vi.fn()
   render(<WorkspaceToolSurface toolsOpen onToggleTools={onToggleTools}><div>Tools</div></WorkspaceToolSurface>)
   const toolbar = screen.getByLabelText('Workspace tool controls')
@@ -24,9 +23,8 @@ it('keeps the borderless control strip with the tab slot, maximize, then hide to
   expect(toolbar).not.toHaveClass('border-t', 'border-b')
   expect(screen.queryByRole('button', { name: 'Add workspace tool' })).not.toBeInTheDocument()
   expect(toolbar).toContainElement(screen.getByTestId('workspace-toolbar-tabs'))
-  const maximize = screen.getByRole('button', { name: 'Maximize workspace tools' })
+  expect(screen.queryByRole('button', { name: /Maximize workspace tools|Restore workspace tools/ })).not.toBeInTheDocument()
   const hide = screen.getByRole('button', { name: 'Hide workspace tools' })
-  expect(maximize.compareDocumentPosition(hide) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(hide).not.toHaveAttribute('title')
   fireEvent.click(hide)
   expect(onToggleTools).toHaveBeenCalledOnce()

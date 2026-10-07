@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resetAppStore, useAppStore } from '@core/store'
 import { TabGroupPanel } from './TabGroupPanel'
 
-vi.mock('../WorkspaceToolsControls', () => ({ WorkspaceToolsControls: () => null }))
 vi.mock('../editor/EditorContent', () => ({ EditorContent: () => null }))
 vi.mock('../browser/BrowserContent', () => ({ BrowserContent: () => null }))
 vi.mock('@features/terminal/TerminalView', () => ({ TerminalView: () => null }))
