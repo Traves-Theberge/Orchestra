@@ -379,6 +379,10 @@ export function fetchWorkspaceChatModels(config: BackendConfig, projectId: strin
   return requestJSON<WorkspaceChatModelCatalog>(config,
     `${workspaceChatPath(projectId)}/providers/${encodeURIComponent(provider)}/models`)
 }
+/** Permanently deletes an idle conversation and its history (409 while a turn is running). */
+export async function deleteWorkspaceChatSession(config: BackendConfig, projectId: string, sessionId: string): Promise<void> {
+  await requestJSON<void>(config, `${workspaceChatPath(projectId)}/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' })
+}
 export function listWorkspaceChatSessions(config: BackendConfig, projectId: string) {
   return requestJSON<{ sessions: WorkspaceChatSession[] }>(config, `${workspaceChatPath(projectId)}/sessions`)
 }
