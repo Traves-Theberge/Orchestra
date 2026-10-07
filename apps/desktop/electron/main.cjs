@@ -341,28 +341,9 @@ function applyManagedBackendProfile() {
 
 const APP_ICON = path.join(__dirname, 'assets', 'icon.png')
 
-// App zoom: browser-style steps, remembered across launches.
-const ZOOM_STEPS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2]
-function zoomPath() {
-  return path.join(app.getPath('userData'), 'zoom.json')
-}
-function clampZoom(factor) {
-  return Number.isFinite(factor) ? Math.min(ZOOM_STEPS[ZOOM_STEPS.length - 1], Math.max(ZOOM_STEPS[0], factor)) : 1
-}
-function readZoom() {
-  try { return clampZoom(JSON.parse(fsSync.readFileSync(zoomPath(), 'utf8')).factor) } catch { return 1 }
-}
-function stepZoom(current, direction) {
-  // Move to the next preset step in the given direction from the current factor.
-  if (direction > 0) return ZOOM_STEPS.find(step => step > current + 0.001) ?? ZOOM_STEPS[ZOOM_STEPS.length - 1]
-  return [...ZOOM_STEPS].reverse().find(step => step < current - 0.001) ?? ZOOM_STEPS[0]
-}
-function applyZoom(win, factor) {
-  const next = clampZoom(factor)
-  win.webContents.setZoomFactor(next)
-  try { fsSync.writeFileSync(zoomPath(), JSON.stringify({ factor: next })) } catch { /* zoom still applies this session */ }
-  win.webContents.send('orchestra:zoom-changed', next)
-  return next
+// Zoom scales only the chats (the renderer applies it); the window itself stays at 100%.
+function requestChatZoom(win, request) {
+  win.webContents.send('orchestra:chat-zoom', request)
 }
 
 function createWindow() {
@@ -462,7 +443,7 @@ function createWindow() {
   })
 
   win.webContents.on('did-finish-load', () => {
-    applyZoom(win, readZoom())
+    win.webContents.setZoomFactor(1)
   })
   // Ctrl+mouse wheel and trackpad pinch (which Chromium reports as Ctrl+wheel).
   // A pinch emits a burst of events, so step at most once per 120ms.
@@ -471,7 +452,7 @@ function createWindow() {
     const now = Date.now()
     if (now - lastZoomStep < 120) return
     lastZoomStep = now
-    applyZoom(win, stepZoom(win.webContents.getZoomFactor(), direction === 'in' ? 1 : -1))
+    requestChatZoom(win, direction === 'in' ? 'in' : 'out')
   })
 
   // Intercept Ctrl+1-8 before Chromium consumes them, and wire F12 / Ctrl+Shift+I
@@ -484,7 +465,7 @@ function createWindow() {
       const zoomKey = input.key === '=' || input.key === '+' ? 1 : input.key === '-' || input.key === '_' ? -1 : input.key === '0' && !input.shift ? 0 : null
       if (zoomKey !== null) {
         event.preventDefault()
-        applyZoom(win, zoomKey === 0 ? 1 : stepZoom(win.webContents.getZoomFactor(), zoomKey))
+        requestChatZoom(win, zoomKey === 0 ? 'reset' : zoomKey > 0 ? 'in' : 'out')
         return
       }
     }
@@ -547,15 +528,6 @@ ipcMain.handle('orchestra:set-agent-token', async (_event, { name, value }) => {
   }
   await persistTokens()
   return true
-})
-
-ipcMain.handle('orchestra:get-zoom', () => readZoom())
-ipcMain.handle('orchestra:set-zoom', (event, request) => {
-  const win = BrowserWindow.fromWebContents(event.sender)
-  if (!win) return readZoom()
-  const current = win.webContents.getZoomFactor()
-  const next = request === 'in' ? stepZoom(current, 1) : request === 'out' ? stepZoom(current, -1) : request === 'reset' ? 1 : Number(request)
-  return applyZoom(win, next)
 })
 
 ipcMain.handle('orchestra:get-backend-config', () => {

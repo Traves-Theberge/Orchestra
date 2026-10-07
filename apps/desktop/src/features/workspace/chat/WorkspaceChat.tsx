@@ -5,6 +5,7 @@ import { MarkdownRenderer } from '@ui/MarkdownRenderer'
 import { AppTooltip } from '@ui/tooltip-wrapper'
 import { HarnessIcon } from '@ui/HarnessIcon'
 import { ChatMessage } from './ChatMessage'
+import { useChatZoom } from './chat-zoom'
 import { extractHtmlRendersFromEvents, type HtmlRenderReference } from './html-render'
 
 const IMPLEMENT_REFERENCE_HTML_LIMIT = 24_000
@@ -262,6 +263,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
   const followRef = useRef(true)
   const [showJump, setShowJump] = useState(false)
   const working = isWorking(snapshot?.session)
+  const chatZoom = useChatZoom()
   const selectedProvider = providers.find(p => p.id.toLowerCase() === (snapshot?.session.provider || creating.current?.provider || provider).toLowerCase())
   const legacyGeminiSession = snapshot?.session.id === sessionId && snapshot.session.provider.toLowerCase() === 'gemini'
   const agentHarness = snapshot?.session.provider || creating.current?.provider || provider
@@ -783,7 +785,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
       <div className="relative min-h-0 flex-1">
       <MessageRail messages={messages} timelineRef={timelineRef} />
       <div ref={timelineRef} aria-label="Chat timeline" onScroll={e => { const el = e.currentTarget; followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120; setShowJump(!followRef.current) }} className="h-full overflow-y-auto px-4 py-6 sm:px-6">
-        <div role="log" aria-label="Conversation messages" className="mx-auto max-w-[760px] space-y-5 pb-4">
+        <div role="log" aria-label="Conversation messages" className="mx-auto max-w-[760px] space-y-5 pb-4" style={{ zoom: chatZoom }}>
           {messages.map((message, index) => {
             const turnEvents = datedTimeline ? eventsBetween(index === 0 ? -Infinity : Date.parse(messages[index - 1].created_at), Date.parse(message.created_at)) : []
             const htmlRenders = extractHtmlRendersFromEvents(turnEvents)
@@ -827,7 +829,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
         </button>
       )}
       </div>
-      <footer data-chat-composer-placement={draftHero ? 'centered' : 'docked'} className={`${draftHero ? 'absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2' : 'mx-auto shrink-0'} w-full max-w-[808px] px-4 pb-3 pt-1 sm:px-6`}>
+      <footer data-chat-composer-placement={draftHero ? 'centered' : 'docked'} className={`${draftHero ? 'absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2' : 'mx-auto shrink-0'} w-full max-w-[808px] px-4 pb-3 pt-1 sm:px-6`} style={{ zoom: chatZoom }}>
         {draftHero && <div className="relative mb-7 px-1"><div className="pointer-events-none absolute -left-20 -top-20 size-64 rounded-full bg-primary/[0.055] blur-3xl" aria-hidden="true" /><h3 className="relative max-w-[680px] text-[clamp(27px,3vw,38px)] font-semibold leading-[1.16] tracking-[-0.035em] text-foreground">What would you like to build?</h3><p className="relative mt-3 max-w-[550px] text-[14px] leading-6 text-muted-foreground">Describe a goal, ask a question, or make a change. Start wherever you are.</p></div>}
         <div aria-label="Agent decisions" className="mb-2 max-h-[40vh] space-y-2 overflow-auto">{snapshot?.requests?.filter(request => request.status === 'pending').map(request => <RuntimeRequestCard key={`${sessionId}:${request.id}`} request={request} disabled={pending || !working || !!observationError || !!blockedRequests[request.id]} onReply={answer => reply(request, answer)} />)}</div>
         {legacyGeminiSession && <p role="status" className="mb-2 text-xs text-muted-foreground">Gemini conversation history is preserved and read-only. Choose a current harness to start a new conversation.</p>}
