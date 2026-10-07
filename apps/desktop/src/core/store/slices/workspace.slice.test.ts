@@ -294,3 +294,71 @@ describe('mergeSideGroups', () => {
     expect(state.projectGroups.p.a).toEqual({ id: 'a', tabs: [{ type: 'files', id: 'files' }, { type: 'git', id: 'git' }], activeTabId: 'git' })
   })
 })
+
+describe('WorkspaceSlice — terminal panes', () => {
+  const seedTerminalTab = async () => {
+    const { useAppStore, resetAppStore } = await import('../index')
+    resetAppStore()
+    useAppStore.setState({
+      projects: [{ id: 'proj', name: 'Alpha', root_path: '/alpha', remote_url: '' }],
+      openTerminals: [{ id: 'shell-1', title: 'Alpha Shell', projectId: 'proj', cwd: '/alpha/wt' }, { id: 'other', title: 'Other' }],
+    })
+    useAppStore.getState().addTabToGroup('ctx', { type: 'terminal', id: 'shell-1' })
+    return useAppStore
+  }
+
+  it('split adds a pane with a new terminal in the same project and cwd, focused', async () => {
+    const store = await seedTerminalTab()
+    const id = store.getState().splitTerminalTab('ctx', 'shell-1')
+    expect(id).toBeTruthy()
+    const split = store.getState().projectCenterTabs.ctx.terminalSplits?.['shell-1']
+    expect(split).toEqual({ panes: ['shell-1', id], focusedId: id, sizes: [0.5, 0.5] })
+    expect(store.getState().openTerminals.find(t => t.id === id)).toMatchObject({ title: 'Alpha Shell', projectId: 'proj', cwd: '/alpha/wt' })
+    expect(store.getState().openTerminals.find(t => t.id === id)?.initialCommand).toBeUndefined()
+    expect(store.getState().projectCenterTabs.ctx.tabs).toEqual([{ type: 'terminal', id: 'shell-1' }])
+  })
+
+  it('caps a tab at four panes', async () => {
+    const store = await seedTerminalTab()
+    for (let i = 0; i < 3; i++) expect(store.getState().splitTerminalTab('ctx', 'shell-1')).toBeTruthy()
+    expect(store.getState().splitTerminalTab('ctx', 'shell-1')).toBeNull()
+    expect(store.getState().projectCenterTabs.ctx.terminalSplits?.['shell-1'].panes).toHaveLength(4)
+  })
+
+  it('closing a pane removes only that pane and its terminal', async () => {
+    const store = await seedTerminalTab()
+    const id = store.getState().splitTerminalTab('ctx', 'shell-1')!
+    store.getState().closeTerminalPane('ctx', 'shell-1', 'shell-1')
+    expect(store.getState().projectCenterTabs.ctx.terminalSplits?.['shell-1']).toEqual({ panes: [id], focusedId: id, sizes: [1] })
+    expect(store.getState().projectCenterTabs.ctx.tabs).toEqual([{ type: 'terminal', id: 'shell-1' }])
+    expect(store.getState().openTerminals.map(t => t.id)).toEqual(['other', id])
+  })
+
+  it('closing the last pane closes the tab', async () => {
+    const store = await seedTerminalTab()
+    const id = store.getState().splitTerminalTab('ctx', 'shell-1')!
+    store.getState().closeTerminalPane('ctx', 'shell-1', id)
+    store.getState().closeTerminalPane('ctx', 'shell-1', 'shell-1')
+    expect(store.getState().projectCenterTabs.ctx.tabs).toEqual([])
+    expect(store.getState().projectCenterTabs.ctx.terminalSplits?.['shell-1']).toBeUndefined()
+    expect(store.getState().openTerminals.map(t => t.id)).toEqual(['other'])
+  })
+
+  it('closing the tab cleans up every pane terminal', async () => {
+    const store = await seedTerminalTab()
+    store.getState().splitTerminalTab('ctx', 'shell-1')
+    store.getState().splitTerminalTab('ctx', 'shell-1')
+    store.getState().closeTerminalTab('ctx', 'shell-1')
+    expect(store.getState().projectCenterTabs.ctx.tabs).toEqual([])
+    expect(store.getState().projectCenterTabs.ctx.terminalSplits?.['shell-1']).toBeUndefined()
+    expect(store.getState().openTerminals.map(t => t.id)).toEqual(['other'])
+  })
+
+  it('focuses and resizes panes', async () => {
+    const store = await seedTerminalTab()
+    store.getState().splitTerminalTab('ctx', 'shell-1')
+    store.getState().focusTerminalPane('ctx', 'shell-1', 'shell-1')
+    store.getState().resizeTerminalPanes('ctx', 'shell-1', [3, 1])
+    expect(store.getState().projectCenterTabs.ctx.terminalSplits?.['shell-1']).toMatchObject({ focusedId: 'shell-1', sizes: [0.75, 0.25] })
+  })
+})

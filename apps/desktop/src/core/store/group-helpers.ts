@@ -3,7 +3,12 @@
  * The tree leaves carry a `groupId`; branches are splits.
  */
 
-import type { CenterTabType, SideTabType, TabGroupLayoutNode, TabRef } from './types'
+import type { CenterTabState, CenterTabType, SideTabType, TabGroupLayoutNode, TabRef, TerminalSplit } from './types'
+
+/** The panes of a terminal tab; an unsplit tab is a single pane holding the tab's own terminal. */
+export function terminalSplitFor(center: CenterTabState | undefined, tabId: string): TerminalSplit {
+  return center?.terminalSplits?.[tabId] ?? { panes: [tabId], focusedId: tabId, sizes: [1] }
+}
 
 const CENTER_TAB_TYPES: ReadonlySet<TabRef['type']> = new Set<CenterTabType>(['editor', 'browser', 'terminal', 'conversations'])
 

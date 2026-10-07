@@ -53,10 +53,11 @@ export async function createMarkdownDocument(contextId: WorkspaceContextID) {
 /** Remove a tab from its strip, then dispose the underlying resource. */
 export function closeWorkspaceTab(contextId: WorkspaceContextID, ref: TabRef) {
   const state = useAppStore.getState()
+  // Terminal tabs may hold several split panes; close the tab and every pane's terminal.
+  if (ref.type === 'terminal') { state.closeTerminalTab(contextId, ref.id); return }
   state.removeTabFromGroup(contextId, ref.id)
   if (ref.type === 'editor') state.closeFile(ref.id)
   if (ref.type === 'browser') state.closeBrowserTab(ref.id)
-  if (ref.type === 'terminal') state.setOpenTerminals(useAppStore.getState().openTerminals.filter(t => t.id !== ref.id))
 }
 
 /** Display title (and dirty flag) for a tab. */

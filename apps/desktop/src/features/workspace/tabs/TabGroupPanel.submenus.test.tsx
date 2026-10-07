@@ -76,5 +76,12 @@ describe('workspace tab group menus', () => {
     expect(screen.getByRole('tab', { name: /^Git/ })).toBeInTheDocument()
   })
 
+  it('never offers a split control in the Files/Git panel', () => {
+    mount()
+    expect(screen.queryByRole('button', { name: /split/i })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Add tab' }))
+    expect(screen.queryByRole('menuitem', { name: /split/i })).not.toBeInTheDocument()
+  })
+
 
 })

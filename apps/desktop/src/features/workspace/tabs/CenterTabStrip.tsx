@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { FileText, Folder, GitBranch, Globe, MessageSquare, Plus, Settings, Terminal, X } from 'lucide-react'
+import { FileText, Folder, GitBranch, Globe, MessageSquare, Plus, Settings, SplitSquareHorizontal, Terminal, X } from 'lucide-react'
 import { useAppStore } from '@core/store'
 import { getAgentIcon } from '@layout/shared/controls'
-import type { CenterTabState, TabRef, WorkspaceContextID } from '@core/store/types'
+import { MAX_TERMINAL_PANES, type CenterTabState, type TabRef, type WorkspaceContextID } from '@core/store/types'
+import { terminalSplitFor } from '@core/store/group-helpers'
 import { TabContextMenu } from './TabContextMenu'
 import { TabContent, TabIcon } from './TabContent'
 import { AGENT_LAUNCHERS, closeWorkspaceTab, createMarkdownDocument, openTerminalTab, tabTitle } from './tab-actions'
@@ -23,6 +24,7 @@ export function CenterTabs({ projectId }: { projectId: WorkspaceContextID }) {
   const openTerminals = useAppStore(s => s.openTerminals)
   const selectCenterTab = useAppStore(s => s.selectCenterTab)
   const reorderCenterTabs = useAppStore(s => s.reorderCenterTabs)
+  const terminalSplits = useAppStore(s => s.projectCenterTabs[projectId]?.terminalSplits)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; tab: TabRef } | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [dropIndicator, setDropIndicator] = useState<{ index: number; side: 'before' | 'after' } | null>(null)
@@ -30,7 +32,10 @@ export function CenterTabs({ projectId }: { projectId: WorkspaceContextID }) {
   return <>
     {tabs.map((ref, index) => {
       const active = selectedId === ref.id
-      const { title, isDirty } = tabTitle(ref, { openFiles, browserTabs, openTerminals })
+      // A split terminal tab is titled after its focused pane.
+      const split = ref.type === 'terminal' ? terminalSplitFor({ tabs, selectedId: '', history: [], terminalSplits }, ref.id) : undefined
+      const { title, isDirty } = tabTitle(split ? { type: 'terminal', id: split.focusedId } : ref, { openFiles, browserTabs, openTerminals })
+      const canSplit = !!split && split.panes.length < MAX_TERMINAL_PANES
       return <div
         key={`${ref.type}-${ref.id}`}
         className="relative inline-flex h-7 shrink-0"
@@ -95,6 +100,20 @@ export function CenterTabs({ projectId }: { projectId: WorkspaceContextID }) {
             <X size={12} />
           </span>
         </button>
+        {active && split && (
+          <button
+            type="button"
+            aria-label="Split terminal"
+            title={canSplit ? 'Split terminal' : `Split terminal (max ${MAX_TERMINAL_PANES} panes)`}
+            disabled={!canSplit}
+            draggable={false}
+            onMouseDown={e => e.stopPropagation()}
+            onClick={() => useAppStore.getState().splitTerminalTab(projectId, ref.id)}
+            className="ml-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+          >
+            <SplitSquareHorizontal size={14} strokeWidth={2} />
+          </button>
+        )}
       </div>
     })}
     {contextMenu && <TabContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)} onCloseTab={() => closeWorkspaceTab(projectId, contextMenu.tab)} />}

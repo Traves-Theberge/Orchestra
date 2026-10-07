@@ -141,4 +141,60 @@ describe('center tabs', () => {
     fireEvent.drop(first, { dataTransfer })
     expect(useAppStore.getState().projectCenterTabs.a.tabs.map(t => t.id)).toEqual(['/a/notes.md', 'shell-1'])
   })
+
+  it('shows the split button only while a terminal tab is selected', () => {
+    seed()
+    expect(screen.queryByRole('button', { name: 'Split terminal' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: /Alpha Shell/ }))
+    expect(screen.getByRole('button', { name: 'Split terminal' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: /notes\.md/ }))
+    expect(screen.queryByRole('button', { name: 'Split terminal' })).not.toBeInTheDocument()
+  })
+
+  it('splits a terminal into side-by-side panes, focuses and closes panes', () => {
+    seed()
+    fireEvent.click(screen.getByRole('tab', { name: /Alpha Shell/ }))
+    const original = screen.getByText('Terminal shell-1')
+    fireEvent.click(screen.getByRole('button', { name: 'Split terminal' }))
+    const split = useAppStore.getState().projectCenterTabs.a.terminalSplits!['shell-1']
+    const added = split.panes[1]
+    expect(screen.getAllByText(/^Terminal /)).toHaveLength(2)
+    expect(screen.getByText(`Terminal ${added}`)).toBeVisible()
+    // The original shell was not remounted by the split.
+    expect(screen.getByText('Terminal shell-1')).toBe(original)
+    expect(screen.getAllByRole('tab')).toHaveLength(2)
+
+    useAppStore.getState().setOpenTerminals(useAppStore.getState().openTerminals.map(t => t.id === 'shell-1' ? { ...t, title: 'Build Shell' } : t))
+    fireEvent.mouseDown(original)
+    expect(useAppStore.getState().projectCenterTabs.a.terminalSplits!['shell-1'].focusedId).toBe('shell-1')
+    expect(screen.getByRole('tab', { name: /Build Shell/ })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close pane Build Shell' }))
+    expect(screen.queryByText('Terminal shell-1')).toBeNull()
+    expect(screen.getByText(`Terminal ${added}`)).toBeVisible()
+    expect(useAppStore.getState().openTerminals.map(t => t.id)).toEqual([added])
+    expect(useAppStore.getState().projectCenterTabs.a.tabs.map(t => t.id)).toEqual(['shell-1', '/a/notes.md'])
+  })
+
+  it('keeps split panes mounted while switching tabs', () => {
+    seed()
+    fireEvent.click(screen.getByRole('tab', { name: /Alpha Shell/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Split terminal' }))
+    const panes = screen.getAllByText(/^Terminal /)
+    fireEvent.click(screen.getByRole('tab', { name: /notes\.md/ }))
+    expect(screen.getAllByText(/^Terminal /)).toEqual(panes)
+    panes.forEach(pane => expect(pane).not.toBeVisible())
+    fireEvent.click(screen.getByRole('tab', { name: /Shell/ }))
+    expect(screen.getAllByText(/^Terminal /)).toEqual(panes)
+    panes.forEach(pane => expect(pane).toBeVisible())
+  })
+
+  it('closing a split tab closes all of its terminals', () => {
+    seed()
+    fireEvent.click(screen.getByRole('tab', { name: /Alpha Shell/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Split terminal' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Close Shell$/ }))
+    expect(screen.queryAllByText(/^Terminal /)).toHaveLength(0)
+    expect(useAppStore.getState().openTerminals).toEqual([])
+  })
 })

@@ -88,6 +88,21 @@ export interface CenterTabState {
   selectedId: string
   /** Previously selected ids, most recent last (used to fall back when closing). */
   history: string[]
+  /** Side-by-side terminal panes per terminal tab id. Absent = the tab's single terminal. */
+  terminalSplits?: Record<string, TerminalSplit>
+}
+
+/** Maximum number of side-by-side terminal panes in one terminal tab. */
+export const MAX_TERMINAL_PANES = 4
+
+/** Terminal panes inside one terminal center tab (the tab id stays stable while panes come and go). */
+export interface TerminalSplit {
+  /** Terminal ids (openTerminals), left to right. */
+  panes: string[]
+  /** Focused pane; the tab shows its title. */
+  focusedId: string
+  /** Fractional pane widths, one per pane, summing to 1. */
+  sizes: number[]
 }
 
 /** A single tab group: its own tab strip + active tab. */
@@ -411,6 +426,18 @@ export interface WorkspaceSlice {
   reorderCenterTabs: (projectId: WorkspaceContextID, fromIndex: number, toIndex: number) => void
   /** Move legacy center-type tabs out of the context's tab groups into the center strip. */
   normalizeWorkspaceTabs: (projectId: WorkspaceContextID) => void
+
+  // ---- Terminal panes (center terminal tabs only) ---------------------------
+  /** Open a new terminal (same project + cwd as the focused pane) to the right inside the tab. Returns its id, or null at the cap. */
+  splitTerminalTab: (projectId: WorkspaceContextID, tabId: string) => string | null
+  /** Close one pane and its terminal; closing the last pane closes the tab. */
+  closeTerminalPane: (projectId: WorkspaceContextID, tabId: string, paneId: string) => void
+  /** Make a pane the focused terminal of its tab. */
+  focusTerminalPane: (projectId: WorkspaceContextID, tabId: string, paneId: string) => void
+  /** Set fractional pane widths (normalized to sum to 1). */
+  resizeTerminalPanes: (projectId: WorkspaceContextID, tabId: string, sizes: number[]) => void
+  /** Close a terminal tab and every pane terminal inside it. */
+  closeTerminalTab: (projectId: WorkspaceContextID, tabId: string) => void
 }
 
 // ---------------------------------------------------------------------------

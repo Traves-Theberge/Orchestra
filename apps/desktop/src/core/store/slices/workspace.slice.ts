@@ -3,9 +3,9 @@
  */
 
 import type { StateCreator } from 'zustand'
-import { CENTER_TASKS_TAB, CENTER_WORKSPACE_TAB, GLOBAL_PROJECT_ID } from '../types'
-import type { AppState, CenterTabState, WorkspaceSlice, TreeNode, WorkspaceContextID, TabRef, TabGroup, TabGroupLayoutNode } from '../types'
-import { newGroupId, splitLeaf, removeLeaf, updateNodeAtPath, collectGroupIds, isCenterTab, isSideTab } from '../group-helpers'
+import { CENTER_TASKS_TAB, CENTER_WORKSPACE_TAB, GLOBAL_PROJECT_ID, MAX_TERMINAL_PANES } from '../types'
+import type { AppState, CenterTabState, WorkspaceSlice, TreeNode, WorkspaceContextID, TabRef, TabGroup, TabGroupLayoutNode, TerminalSplit } from '../types'
+import { newGroupId, splitLeaf, removeLeaf, updateNodeAtPath, collectGroupIds, isCenterTab, isSideTab, terminalSplitFor } from '../group-helpers'
 import { getActiveWorkspaceContextId, selectedProjectWorkspace, workspaceResourceContext, workspaceSelectionKey } from '../workspace-context'
 
 // ---------------------------------------------------------------------------
@@ -480,6 +480,69 @@ export const createWorkspaceSlice: StateCreator<AppState, [], [], WorkspaceSlice
     if (migrated === get()) return
     set({ projectGroups: migrated.projectGroups, projectCenterTabs: migrated.projectCenterTabs })
   },
+
+  // ---- Terminal panes -------------------------------------------------------
+  splitTerminalTab: (projectId, tabId) => {
+    const state = get()
+    const center = state.projectCenterTabs[projectId]
+    if (!center?.tabs.some(t => t.id === tabId && t.type === 'terminal')) return null
+    const split = terminalSplitFor(center, tabId)
+    if (split.panes.length >= MAX_TERMINAL_PANES) return null
+    const terminals = state.openTerminals ?? []
+    const source = terminals.find(t => t.id === split.focusedId) ?? terminals.find(t => split.panes.includes(t.id))
+    const projectName = source?.projectId ? state.projects?.find(p => p.id === source.projectId)?.name : undefined
+    const id = `shell-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+    const at = Math.max(0, split.panes.indexOf(split.focusedId)) + 1
+    const panes = [...split.panes.slice(0, at), id, ...split.panes.slice(at)]
+    set({
+      openTerminals: [...terminals, { id, title: projectName ? `${projectName} Shell` : 'Shell', projectId: source?.projectId, cwd: source?.cwd }],
+      projectCenterTabs: {
+        ...state.projectCenterTabs,
+        [projectId]: withTerminalSplit(center, tabId, { panes, focusedId: id, sizes: panes.map(() => 1 / panes.length) }),
+      },
+    })
+    return id
+  },
+
+  closeTerminalPane: (projectId, tabId, paneId) => {
+    const state = get()
+    const center = state.projectCenterTabs[projectId]
+    if (!center?.tabs.some(t => t.id === tabId)) return
+    const split = terminalSplitFor(center, tabId)
+    const index = split.panes.indexOf(paneId)
+    if (index < 0) return
+    if (split.panes.length === 1) { get().closeTerminalTab(projectId, tabId); return }
+    const panes = split.panes.filter(p => p !== paneId)
+    const sizes = normalizeSizes(split.sizes.filter((_, i) => i !== index))
+    const focusedId = split.focusedId === paneId ? panes[Math.max(0, index - 1)] : split.focusedId
+    set({
+      openTerminals: (state.openTerminals ?? []).filter(t => t.id !== paneId),
+      projectCenterTabs: { ...state.projectCenterTabs, [projectId]: withTerminalSplit(center, tabId, { panes, focusedId, sizes }) },
+    })
+  },
+
+  focusTerminalPane: (projectId, tabId, paneId) => {
+    const state = get()
+    const center = state.projectCenterTabs[projectId]
+    const split = center?.terminalSplits?.[tabId]
+    if (!center || !split || split.focusedId === paneId || !split.panes.includes(paneId)) return
+    set({ projectCenterTabs: { ...state.projectCenterTabs, [projectId]: withTerminalSplit(center, tabId, { ...split, focusedId: paneId }) } })
+  },
+
+  resizeTerminalPanes: (projectId, tabId, sizes) => {
+    const state = get()
+    const center = state.projectCenterTabs[projectId]
+    const split = center?.terminalSplits?.[tabId]
+    if (!center || !split || sizes.length !== split.panes.length || sizes.some(n => !Number.isFinite(n) || n < 0)) return
+    set({ projectCenterTabs: { ...state.projectCenterTabs, [projectId]: withTerminalSplit(center, tabId, { ...split, sizes: normalizeSizes(sizes) }) } })
+  },
+
+  closeTerminalTab: (projectId, tabId) => {
+    const center = get().projectCenterTabs[projectId]
+    const panes = new Set(terminalSplitFor(center, tabId).panes)
+    get().removeTabFromGroup(projectId, tabId)
+    set({ openTerminals: (get().openTerminals ?? []).filter(t => !panes.has(t.id)) })
+  },
 })
 
 // ---------------------------------------------------------------------------
@@ -506,9 +569,28 @@ function removeFromCenter(center: CenterTabState, tabId: string): CenterTabState
   const tabs = center.tabs.filter(t => t.id !== tabId)
   const valid = (id: string) => isFixedCenterId(id) || tabs.some(t => t.id === id)
   const history = center.history.filter(h => h !== tabId && valid(h))
-  if (center.selectedId !== tabId) return { ...center, tabs, history }
+  let base = center
+  if (center.terminalSplits?.[tabId]) {
+    const terminalSplits = { ...center.terminalSplits }
+    delete terminalSplits[tabId]
+    base = { ...center, terminalSplits }
+  }
+  if (center.selectedId !== tabId) return { ...base, tabs, history }
   const selectedId = history[history.length - 1] ?? CENTER_WORKSPACE_TAB
-  return { tabs, selectedId, history: history.slice(0, -1) }
+  return { ...base, tabs, selectedId, history: history.slice(0, -1) }
+}
+
+/** Store a tab's terminal split (dropping it when back to the tab's own single terminal). */
+function withTerminalSplit(center: CenterTabState, tabId: string, split: TerminalSplit): CenterTabState {
+  const terminalSplits = { ...center.terminalSplits }
+  if (split.panes.length === 1 && split.panes[0] === tabId) delete terminalSplits[tabId]
+  else terminalSplits[tabId] = split
+  return { ...center, terminalSplits }
+}
+
+function normalizeSizes(sizes: number[]): number[] {
+  const total = sizes.reduce((sum, n) => sum + n, 0)
+  return total > 0 ? sizes.map(n => n / total) : sizes.map(() => 1 / sizes.length)
 }
 
 function reorder<T>(items: T[], fromIndex: number, toIndex: number): T[] {

@@ -4,7 +4,7 @@ import { projectIdForWorkspaceContext, workspaceSelectionKey } from '@core/store
 import type { TabRef, WorkspaceContextID } from '@core/store/types'
 import { EditorContent } from '../editor/EditorContent'
 import { BrowserContent } from '../browser/BrowserContent'
-import { TerminalView } from '@features/terminal/TerminalView'
+import { TerminalPanes } from './TerminalPanes'
 import { GitTab } from '@features/git'
 import { FileExplorer } from '../file-explorer/FileExplorer'
 import { ConversationsPanel } from '../panels/ConversationsPanel'
@@ -13,24 +13,11 @@ import { ConversationsPanel } from '../panels/ConversationsPanel'
 export function TabContent({ projectId, tabRef, onInspectTask }: { projectId: WorkspaceContextID; tabRef: TabRef; onInspectTask?: (identifier: string) => void }) {
   const file = useAppStore(s => tabRef.type === 'editor' ? s.openFiles.find(f => f.id === tabRef.id) : undefined)
   const browserTab = useAppStore(s => tabRef.type === 'browser' ? s.browserTabs.find(t => t.id === tabRef.id) : undefined)
-  const terminal = useAppStore(s => tabRef.type === 'terminal' ? s.openTerminals.find(t => t.id === tabRef.id) : undefined)
   const config = useAppStore(s => s.config)
 
   if (tabRef.type === 'editor') return file ? <EditorContent file={file} /> : null
   if (tabRef.type === 'browser') return browserTab ? <BrowserContent tab={browserTab} /> : null
-  if (tabRef.type === 'terminal') {
-    if (!terminal || !config) return null
-    return (
-      <TerminalView
-        sessionId={terminal.id}
-        projectId={terminal.projectId}
-        cwd={terminal.cwd}
-        baseUrl={config.baseUrl}
-        apiToken={config.apiToken}
-        initialCommand={terminal.initialCommand}
-      />
-    )
-  }
+  if (tabRef.type === 'terminal') return <TerminalPanes projectId={projectId} tabId={tabRef.id} />
   if (tabRef.type === 'git') {
     const state = useAppStore.getState()
     const project = state.projects.find(p => p.id === projectIdForWorkspaceContext(state, projectId))
