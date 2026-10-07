@@ -108,7 +108,7 @@ describe('WorkspaceChat concurrent conversations', () => {
     pick('chat-a')
     const status = await screen.findByRole('status', { name: /turn in progress/ })
     expect(status).toHaveAttribute('data-activity', 'Thinking…')
-    expect(status).toHaveTextContent(/Thinking….*· 1[2-4]s/)
+    expect(status).toHaveTextContent(/Thinking….*1[2-4]s/)
     snapshots['chat-a'] = { ...snapshots['chat-a'], events: [{ sequence: 1, turn_id: 't1', item_id: 'c1', type: 'item/started', payload: { item: { type: 'commandExecution', command: 'npm test' } }, created_at: new Date().toISOString() } as api.WorkspaceChatEvent] }
     pick('chat-b')
     await screen.findByRole('button', { name: 'Rename conversation: Second thread' })

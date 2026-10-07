@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowDown, ArrowUp, CheckCircle2, ChevronRight, Loader2, Paperclip, ShieldCheck, Sparkles, Square, Terminal, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronRight, Paperclip, ShieldCheck, Square, X } from 'lucide-react'
 import { MarkdownRenderer } from '@ui/MarkdownRenderer'
 import { AppTooltip } from '@ui/tooltip-wrapper'
 import { HarnessIcon } from '@ui/HarnessIcon'
@@ -66,28 +66,50 @@ function reasoningText(item: Record<string, unknown>): string {
   const summary = parts(item.summary)
   return (summary.length ? summary : parts(item.content)).join('\n\n')
 }
+type ActivityStep = { label: string; summary: string; text: string; status: string }
+
+const firstLine = (value: string) => value.split('\n').find(line => line.trim())?.trim() ?? ''
+
+function activityDuration(events: WorkspaceChatEvent[]): string {
+  const times = events.map(e => Date.parse(e.created_at)).filter(Number.isFinite)
+  if (times.length < 2) return ''
+  const ms = Math.max(...times) - Math.min(...times)
+  return ms >= 1000 ? formatElapsed(ms) : ''
+}
+
 function AgentActivity({ events }: { events: WorkspaceChatEvent[] }) {
-  const items = new Map<string, { label: string; text: string; status: string }>()
+  const items = new Map<string, ActivityStep>()
   const reasoningParts = new Map<string, Record<string, string>>()
   for (const event of events) {
     const payload = record(event.payload)
     const item = record(payload.item)
     const kind = textValue(item.type)
     const key = `${event.turn_id ?? ''}:${event.item_id || textValue(item.id) || event.sequence}`
+    const status = event.type === 'item/completed' ? 'completed' : 'running'
     if (['commandExecution', 'fileChange', 'mcpToolCall', 'webSearch', 'reasoning'].includes(kind)) {
-      const label = ({ commandExecution: 'Command', fileChange: 'File changes', mcpToolCall: 'Tool', webSearch: 'Search', reasoning: 'Reasoning' })[kind] ?? kind
-      const detail = kind === 'commandExecution' ? [textValue(item.command), textValue(item.aggregatedOutput)].filter(Boolean).join('\n')
-        : kind === 'fileChange' && Array.isArray(item.changes) ? item.changes.map(change => { const c = record(change); return [textValue(c.path), textValue(record(c.kind).type), textValue(c.diff)].filter(Boolean).join('\n') }).join('\n\n')
-        : kind === 'reasoning' ? reasoningText(item)
-        : kind === 'mcpToolCall' ? JSON.stringify(item, null, 2) : textValue(item.query) || textValue(item.text)
       if (kind === 'reasoning') {
         // The completed item is authoritative; streamed deltas fill in until then. Never show raw JSON for reasoning.
-        const text = detail || items.get(key)?.text || ''
-        if (text || event.type !== 'item/completed') items.set(key, { label, text, status: event.type === 'item/completed' ? 'completed' : 'running' })
+        const text = reasoningText(item) || items.get(key)?.text || ''
+        if (text || event.type !== 'item/completed') items.set(key, { label: 'Reasoning', summary: '', text, status })
         else items.delete(key)
         continue
       }
-      items.set(key, { label, text: detail || JSON.stringify(item, null, 2), status: event.type === 'item/completed' ? 'completed' : 'running' })
+      if (kind === 'commandExecution') {
+        const command = textValue(item.command)
+        const output = textValue(item.aggregatedOutput)
+        items.set(key, { label: 'Command', summary: firstLine(command), text: [`$ ${command}`, output].filter(Boolean).join('\n'), status })
+      } else if (kind === 'fileChange') {
+        const changes = Array.isArray(item.changes) ? item.changes.map(change => record(change)) : []
+        const paths = changes.map(c => textValue(c.path)).filter(Boolean)
+        const text = changes.map(c => [textValue(c.path), textValue(record(c.kind).type), textValue(c.diff)].filter(Boolean).join('\n')).join('\n\n')
+        items.set(key, { label: paths.length > 1 ? `Edited ${paths.length} files` : 'Edited', summary: paths.join(', '), text: text || JSON.stringify(item, null, 2), status })
+      } else if (kind === 'mcpToolCall') {
+        const name = [textValue(item.server), textValue(item.tool) || textValue(item.name)].filter(Boolean).join(' · ')
+        items.set(key, { label: 'Tool', summary: name, text: JSON.stringify(item, null, 2), status })
+      } else {
+        const query = textValue(item.query) || textValue(item.text)
+        items.set(key, { label: 'Search', summary: firstLine(query), text: query || JSON.stringify(item, null, 2), status })
+      }
     } else if (event.type === 'item/reasoning/summaryTextDelta' || event.type === 'item/reasoning/textDelta') {
       if (items.get(key)?.status === 'completed') continue
       const part = event.type === 'item/reasoning/summaryTextDelta' ? `s${Number(payload.summaryIndex ?? 0)}` : `c${Number(payload.contentIndex ?? 0)}`
@@ -97,25 +119,87 @@ function AgentActivity({ events }: { events: WorkspaceChatEvent[] }) {
       // Prefer the summary stream; fall back to raw reasoning text when the model produced no summary.
       const ordered = (prefix: string) => Object.keys(parts).filter(k => k.startsWith(prefix)).sort((a, b) => Number(a.slice(1)) - Number(b.slice(1))).map(k => parts[k])
       const summaries = ordered('s')
-      items.set(key, { label: 'Reasoning', text: (summaries.length ? summaries : ordered('c')).filter(Boolean).join('\n\n'), status: 'running' })
+      items.set(key, { label: 'Reasoning', summary: '', text: (summaries.length ? summaries : ordered('c')).filter(Boolean).join('\n\n'), status: 'running' })
     } else if (event.type === 'item/commandExecution/outputDelta' && items.has(key)) {
       const previous = items.get(key)!
       items.set(key, { ...previous, text: previous.text + (event.delta || textValue(payload.delta)) })
     } else if (event.type === 'orchestra/tool/started') {
-      const operation = textValue(record(payload.arguments).operation)
-      items.set(key, { label: 'Orchestra control', text: operation || textValue(payload.tool), status: 'running' })
+      const operation = textValue(record(payload.arguments).operation) || textValue(payload.tool)
+      items.set(key, { label: 'Orchestra control', summary: operation, text: operation, status: 'running' })
     } else if (event.type === 'orchestra/tool/completed') {
-      items.set(key, { label: 'Orchestra control', text: JSON.stringify(payload, null, 2), status: payload.success === false ? 'failed' : 'completed' })
+      items.set(key, { label: 'Orchestra control', summary: items.get(key)?.summary || textValue(record(payload.arguments).operation), text: JSON.stringify(payload, null, 2), status: payload.success === false ? 'failed' : 'completed' })
     } else if (event.type === 'turn/plan/updated') {
-      items.set(`plan:${event.turn_id}`, { label: 'Plan', text: textValue(payload.explanation) + '\n' + (Array.isArray(payload.plan) ? payload.plan.map(step => { const s = record(step); return `${textValue(s.status)}: ${textValue(s.step)}` }).join('\n') : ''), status: 'updated' })
+      const steps = Array.isArray(payload.plan) ? payload.plan.map(step => record(step)) : []
+      const done = steps.filter(s => textValue(s.status) === 'completed').length
+      items.set(`plan:${event.turn_id}`, { label: 'Plan', summary: steps.length ? `${done} of ${steps.length} done` : firstLine(textValue(payload.explanation)), text: textValue(payload.explanation) + '\n' + steps.map(s => `${textValue(s.status)}: ${textValue(s.step)}`).join('\n'), status: 'updated' })
     } else if (event.type === 'error') {
-      items.set(key, { label: 'Provider error', text: textValue(record(payload.error).message) || textValue(payload.message) || JSON.stringify(payload), status: 'failed' })
+      const message = textValue(record(payload.error).message) || textValue(payload.message) || JSON.stringify(payload)
+      items.set(key, { label: 'Provider error', summary: firstLine(message), text: message, status: 'failed' })
     }
   }
   // Reasoning with no text yet is noise; show it once a summary arrives.
   for (const [key, item] of items) if (item.label === 'Reasoning' && !item.text.trim()) items.delete(key)
   if (!items.size) return null
-  return <div aria-label="Agent activity" className="space-y-2">{[...items].map(([key, item]) => <details key={key} className="group/tool overflow-hidden rounded-xl border border-border/40 bg-muted/10 text-xs"><summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 font-medium"><ChevronRight className="size-3 text-muted-foreground transition-transform group-open/tool:rotate-90" />{item.label === 'Command' ? <Terminal className="size-3.5 text-muted-foreground" /> : <Sparkles className="size-3.5 text-muted-foreground" />}<span className="flex-1">{item.label}</span><span className="flex items-center gap-1 text-[10px] font-normal text-muted-foreground">{item.status === 'completed' && <CheckCircle2 className="size-3" />}{item.status === 'running' && <Loader2 className="size-3 animate-spin" />}{item.status}</span></summary><pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words border-t border-border/30 bg-background/40 px-4 py-3 font-mono text-[11px] leading-5">{item.text}</pre></details>)}</div>
+  const steps = [...items]
+  const running = steps.some(([, step]) => step.status === 'running')
+  const failed = steps.filter(([, step]) => step.status === 'failed').length
+  const duration = activityDuration(events)
+  return (
+    <section aria-label="Agent activity" className="my-1.5">
+      {/* Open while the turn works; folds into one line once everything settles. */}
+      <details open={running} className="group/activity">
+        <summary className="flex cursor-pointer list-none items-center gap-2 py-1 text-[11.5px] text-muted-foreground transition-colors select-none hover:text-foreground [&::-webkit-details-marker]:hidden">
+          <span className={`font-medium ${running ? 'activity-shimmer' : 'text-foreground/70'}`}>{running ? 'Working' : duration ? `Worked for ${duration}` : 'Worked'}</span>
+          <span className="text-muted-foreground/50">{steps.length} {steps.length === 1 ? 'step' : 'steps'}{failed ? ` · ${failed} failed` : ''}</span>
+          <span aria-hidden="true" className="h-px flex-1 bg-gradient-to-r from-border/60 to-transparent" />
+          <span aria-hidden="true" className="text-[10px] text-muted-foreground/40 transition-transform duration-200 group-open/activity:rotate-90">›</span>
+        </summary>
+        <ol className="relative mb-1 ml-[3px] mt-1 border-l border-border/50 pl-4">
+          {steps.map(([key, step]) => <ActivityStepRow key={key} step={step} />)}
+        </ol>
+      </details>
+    </section>
+  )
+}
+
+function ActivityStepRow({ step }: { step: ActivityStep }) {
+  const [expanded, setExpanded] = useState(false)
+  const dot = step.status === 'running' ? 'bg-primary motion-safe:animate-pulse'
+    : step.status === 'failed' ? 'bg-destructive'
+    : step.status === 'updated' ? 'bg-primary/50'
+    : 'bg-muted-foreground/35'
+  const marker = <span aria-hidden="true" className={`absolute -left-[20.5px] top-[11px] size-[7px] rounded-full ring-[3px] ring-background ${dot}`} />
+  const statusText = step.status === 'running' ? <span className="activity-shimmer">running</span>
+    : step.status === 'failed' ? <span className="text-destructive">failed</span> : null
+  if (step.label === 'Reasoning') {
+    const long = step.text.length > 220 || step.text.split('\n').length > 3
+    return (
+      <li className="relative py-1">
+        {marker}
+        <div className="flex items-baseline gap-2 text-[12px]">
+          <span className="font-medium text-foreground/75">Reasoning</span>
+          {statusText && <span className="text-[10px]">{statusText}</span>}
+        </div>
+        <p
+          onClick={() => long && setExpanded(value => !value)}
+          className={`mt-0.5 whitespace-pre-wrap text-[12.5px] leading-relaxed text-muted-foreground ${long ? 'cursor-pointer' : ''} ${long && !expanded && step.status !== 'running' ? 'line-clamp-3' : ''}`}
+        >{step.text}</p>
+      </li>
+    )
+  }
+  return (
+    <li className="relative">
+      {marker}
+      <details className="group/step" open={expanded} onToggle={event => setExpanded((event.currentTarget as HTMLDetailsElement).open)}>
+        <summary className="flex cursor-pointer list-none items-baseline gap-2 rounded-md py-1 text-[12px] transition-colors select-none hover:text-foreground [&::-webkit-details-marker]:hidden">
+          <span className={`shrink-0 font-medium ${step.status === 'failed' ? 'text-destructive' : 'text-foreground/75'}`}>{step.label}</span>
+          {step.summary && <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground/70">{step.summary}</span>}
+          {statusText && <span className="ml-auto shrink-0 text-[10px] tabular-nums">{statusText}</span>}
+        </summary>
+        <pre className="mb-2 mt-1 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/30 px-3 py-2.5 font-mono text-[11px] leading-5 text-foreground/80">{step.text}</pre>
+      </details>
+    </li>
+  )
 }
 
 function HarnessDivider({ provider }: { provider: string }) {
@@ -194,17 +278,9 @@ function AgentWorkingStatus({
       data-activity={label}
       className="my-2.5 flex items-center justify-between py-1 text-xs text-muted-foreground animate-in fade-in-0 duration-150 select-none motion-reduce:animate-none"
     >
-      <div className="flex items-center gap-2">
-        <HarnessIcon id={provider || 'agent'} size={14} />
-        <span className="font-medium text-foreground/80 motion-safe:animate-pulse">{label}</span>
-        {!isStopping && (
-          <span aria-hidden="true" className="inline-flex items-center gap-1">
-            <span className="size-1.5 rounded-full bg-primary/70 motion-safe:animate-pulse" />
-            <span className="size-1.5 rounded-full bg-primary/70 motion-safe:animate-pulse [animation-delay:200ms]" />
-            <span className="size-1.5 rounded-full bg-primary/70 motion-safe:animate-pulse [animation-delay:400ms]" />
-          </span>
-        )}
-        <span className="tabular-nums text-muted-foreground/70" aria-label="Elapsed">· {formatElapsed(now - start)}</span>
+      <div className="flex items-baseline gap-2 text-[12px]">
+        <span className={`font-medium ${isStopping ? 'text-muted-foreground' : 'activity-shimmer'}`}>{label}</span>
+        <span className="tabular-nums text-[11px] text-muted-foreground/50" aria-label="Elapsed">{formatElapsed(now - start)}</span>
       </div>
 
       {!isStopping && onInterrupt && (

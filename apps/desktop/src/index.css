@@ -598,3 +598,20 @@ body {
   25% { transform: translateX(-4px); }
   75% { transform: translateX(4px); }
 }
+
+/* Agent activity: a soft light sweep across text that is still in progress */
+.activity-shimmer {
+  background: linear-gradient(90deg, var(--color-muted-foreground) 0%, var(--color-muted-foreground) 35%, var(--color-foreground) 50%, var(--color-muted-foreground) 65%, var(--color-muted-foreground) 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: activity-shimmer 2.2s ease-in-out infinite;
+}
+@keyframes activity-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -150% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .activity-shimmer { animation: none; background: none; color: var(--color-muted-foreground); }
+}
