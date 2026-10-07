@@ -67,6 +67,8 @@ func TestReadOnlyPlanCommandRequiresKnownDefaultAndVerifiedProviderMode(t *testi
 		{ProviderAntigravity, "agy -p {{prompt}} --output-format stream-json", ""},
 		{ProviderOpenCode, "opencode -p {{prompt}} -f json", ""},
 		{Provider8gent, "8gent run --yes --output-format stream-json {{prompt}}", ""},
+		{ProviderOMP, "omp -p --mode json --auto-approve --no-title {{prompt}}", "omp -p --mode json --auto-approve --no-title --no-extensions --tools read,grep,glob {{prompt}}"},
+		{ProviderOMP, "omp -p --mode json {{prompt}}", ""},
 		{ProviderCodex, "codex exec --dangerously-bypass-approvals-and-sandbox {{prompt}}", ""},
 	}
 	for _, tc := range cases {

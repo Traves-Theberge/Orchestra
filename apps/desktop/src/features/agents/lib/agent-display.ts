@@ -32,8 +32,10 @@ export function parseAgentObservation(value?: string): AgentObservation | undefi
 export const isPrimaryMode = (mode?: string) => !mode || mode === 'primary' || mode === 'all' || mode === 'agent'
 export const isSubagentMode = (mode?: string) => mode === 'subagent' || mode === 'all'
 
-const HARNESS_LABELS: Record<string, string> = { claude: 'Claude', codex: 'Codex', opencode: 'OpenCode', antigravity: 'Antigravity', '8gent': '8gent' }
+const HARNESS_LABELS: Record<string, string> = { claude: 'Claude', codex: 'Codex', opencode: 'OpenCode', antigravity: 'Antigravity', '8gent': '8gent', omp: 'OMP' }
 export const harnessLabel = (id: string) => HARNESS_LABELS[id.toLowerCase()] ?? id
+/** Like harnessLabel, but capitalizes unknown ids ("gemini" → "Gemini") instead of echoing them. */
+export const harnessDisplayName = (id: string) => HARNESS_LABELS[id.toLowerCase()] ?? id.charAt(0).toUpperCase() + id.slice(1).toLowerCase()
 
 export function findCapabilities(list: HarnessCapabilities[] | undefined, harness: string): HarnessCapabilities | undefined {
   return list?.find(item => item.harness?.toLowerCase() === harness.toLowerCase())

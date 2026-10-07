@@ -35,6 +35,7 @@ const DEFAULT_DATA: GraphData = {
         { id: 'antigravity', group: 'agent', label: 'Antigravity' },
         { id: 'codex', group: 'agent', label: 'Codex Server' },
         { id: 'opencode', group: 'agent', label: 'OpenCode' },
+        { id: 'omp', group: 'agent', label: 'OMP' },
     ],
     links: [
         { source: 'backend', target: 'orchestrator', value: 5 },
@@ -51,6 +52,7 @@ const DEFAULT_DATA: GraphData = {
         { source: 'orchestrator', target: 'antigravity', value: 1 },
         { source: 'orchestrator', target: 'codex', value: 1 },
         { source: 'orchestrator', target: 'opencode', value: 1 },
+        { source: 'orchestrator', target: 'omp', value: 1 },
     ]
 }
 

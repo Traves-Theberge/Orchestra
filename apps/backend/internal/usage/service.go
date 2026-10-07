@@ -99,6 +99,7 @@ func NewService(storageDir string, worktrees func() []WorktreeEntry) (*Service, 
 			ProviderCodex:    scanCodex,
 			ProviderGemini:   scanGemini,
 			ProviderOpenCode: scanOpenCode,
+			ProviderOMP:      scanOMP,
 		},
 	}, nil
 }
@@ -132,6 +133,8 @@ func (s *Service) SourcePath(p Provider) string {
 		return GeminiSourceDir()
 	case ProviderOpenCode:
 		return OpenCodeSourceDir()
+	case ProviderOMP:
+		return OMPSourceDir()
 	}
 	return ""
 }
@@ -338,8 +341,7 @@ func (s *Service) Summary(p Provider, scope Scope, r Range) (Summary, error) {
 		byModel[d.Model] += modelTokens
 		byProject[d.ProjectLabel] += modelTokens
 
-		cost, _ := estimateCost(p, d.Model, d.InputTokens, d.CachedInputTokens, d.OutputTokens, d.CacheReadTokens, d.CacheWriteTokens, d.ReasoningTokens)
-		if cost != nil {
+		if cost := dailyCost(p, d); cost != nil {
 			totalCost += *cost
 			costKnown = true
 		} else {
@@ -444,7 +446,7 @@ func (s *Service) Breakdown(p Provider, scope Scope, r Range, kind BreakdownKind
 		b.CacheReadTokens += d.CacheReadTokens
 		b.CacheWriteTokens += d.CacheWriteTokens
 		b.ReasoningTokens += d.ReasoningTokens
-		if cost, _ := estimateCost(p, d.Model, d.InputTokens, d.CachedInputTokens, d.OutputTokens, d.CacheReadTokens, d.CacheWriteTokens, d.ReasoningTokens); cost != nil {
+		if cost := dailyCost(p, d); cost != nil {
 			b.cost += *cost
 			b.costKnown = true
 		} else {
@@ -514,7 +516,9 @@ func (s *Service) Sessions(p Provider, scope Scope, r Range, limit int) ([]Sessi
 			ReasoningTokens:    sess.ReasoningTokens,
 			HasInferredPricing: sess.HasInferredPricing,
 		}
-		if cost, _ := estimateCost(p, sess.PrimaryModel, sess.InputTokens, sess.CachedInputTokens, sess.OutputTokens, sess.CacheReadTokens, sess.CacheWriteTokens, sess.ReasoningTokens); cost != nil && !sess.HasMixedModels {
+		if sess.RecordedCostUSD != nil {
+			row.EstimatedCostUSD = sess.RecordedCostUSD
+		} else if cost, _ := estimateCost(p, sess.PrimaryModel, sess.InputTokens, sess.CachedInputTokens, sess.OutputTokens, sess.CacheReadTokens, sess.CacheWriteTokens, sess.ReasoningTokens); cost != nil && !sess.HasMixedModels {
 			row.EstimatedCostUSD = cost
 		}
 		out = append(out, row)
@@ -522,8 +526,18 @@ func (s *Service) Sessions(p Provider, scope Scope, r Range, limit int) ([]Sessi
 	return out, nil
 }
 
+// dailyCost prefers the harness-recorded cost over a pricing-table estimate.
+func dailyCost(p Provider, d DailyAggregate) *float64 {
+	if d.RecordedCostUSD != nil {
+		return d.RecordedCostUSD
+	}
+	cost, _ := estimateCost(p, d.Model, d.InputTokens, d.CachedInputTokens, d.OutputTokens, d.CacheReadTokens, d.CacheWriteTokens, d.ReasoningTokens)
+	return cost
+}
+
 func usageTotal(p Provider, input, output, cacheRead, cacheWrite, reasoning int64) int64 {
-	if p == ProviderCodex {
+	// Codex and omp report reasoning tokens inside output.
+	if p == ProviderCodex || p == ProviderOMP {
 		reasoning = 0
 	}
 	return input + output + cacheRead + cacheWrite + reasoning
@@ -595,7 +609,11 @@ func (s *Service) RateLimits(ctx context.Context, force bool) RateLimitState {
 		Eightgent:   &ProviderRateLimits{Provider: Provider8gent, Status: RateLimitUnavailable, UpdatedAt: now, Error: "8gent has no unified subscription quota"},
 	}
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		state.OMP = fetchOMPRateLimits(ctx)
+	}()
 	go func() {
 		defer wg.Done()
 		state.Claude = fetchClaudeRateLimits(ctx)
@@ -636,6 +654,7 @@ func (s *Service) unavailableState(reason string) RateLimitState {
 		OpenCode:    mk(ProviderOpenCode),
 		Antigravity: mk(ProviderAntigravity),
 		Eightgent:   mk(Provider8gent),
+		OMP:         mk(ProviderOMP),
 	}
 }
 

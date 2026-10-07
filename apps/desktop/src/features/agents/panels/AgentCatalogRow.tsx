@@ -136,6 +136,7 @@ export function AgentCatalogRow({
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium leading-none text-foreground">{label}</span>
+              {setup?.version && <span className="font-mono text-[10px] text-muted-foreground">v{setup.version}</span>}
               {!isReg && (
                 <span className="rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                   Disabled
@@ -296,7 +297,7 @@ export function AgentCatalogRow({
                   )}
                 </div>
                 <p className="mt-1 text-[10px] text-muted-foreground">
-                  Installation: {instText}
+                  Installation: {instText}{setup?.version && ` · version ${setup.version}`}
                 </p>
               </div>
 
@@ -515,6 +516,13 @@ export function AgentCatalogRow({
               <p className="text-[11px] text-muted-foreground">
                 8gent can run offline. Its optional Clerk sign-in is separate from model-provider access; use{' '}
                 <code className="rounded bg-muted px-1">8gent auth status</code> on the backend host to inspect that identity.
+              </p>
+            )}
+            {id === 'OMP' && (
+              <p className="text-[11px] text-muted-foreground">
+                OMP has no read-only sign-in probe, so authentication stays unverified here. Run{' '}
+                <code className="rounded bg-muted px-1">omp login</code> on the backend host to add provider credentials; omp keeps its settings in{' '}
+                <code className="rounded bg-muted px-1">~/.omp/agent/config.yml</code>.
               </p>
             )}
             {!signInCmd && id !== 'ANTIGRAVITY' && id !== '8GENT' && (

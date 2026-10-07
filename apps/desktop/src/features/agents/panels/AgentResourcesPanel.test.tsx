@@ -32,3 +32,16 @@ it('sends exact native bytes/hash and retains unknown receipts across remount wi
   expect(screen.getByRole('button', { name: 'Create agent' })).toBeDisabled()
   expect(api.mutateAgentResource).toHaveBeenCalledTimes(1)
 })
+it('creates OMP agents as omp-markdown starting from a name/description frontmatter template', async () => {
+  vi.mocked(api.fetchAgentCatalog).mockResolvedValue({ project_id: '__orchestrator__', harness: 'OMP', scope: 'global', root: '/fixture/.omp/agent/agents', observation: 'observed', selection_capability: 'selectable_primary', capabilities: { list: true, create: true, update: true, delete: true, select_primary: true }, items: [] })
+  vi.mocked(api.mutateAgentResource).mockImplementation(async (...args) => ({ request_id: args[7].request_id, status: 'completed' }) as never)
+  render(<AppTooltipProvider><AgentResourcesPanel config={config} projectId="__orchestrator__" harness="omp" scope="global" kind="agent_definition" /></AppTooltipProvider>)
+  const create = await screen.findByRole('button', { name: 'Create agent' })
+  await waitFor(() => expect(create).toBeEnabled())
+  fireEvent.click(create)
+  const editor = screen.getByRole('textbox', { name: 'Native resource content' }) as HTMLTextAreaElement
+  expect(editor.value).toMatch(/^---\nname: my-agent\ndescription: .+\n---\n/)
+  fireEvent.change(screen.getByRole('textbox', { name: 'Native resource name' }), { target: { value: 'scout' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(api.mutateAgentResource).toHaveBeenCalledWith(config, '__orchestrator__', 'omp', 'global', 'agent_definition', 'scout', 'create', expect.objectContaining({ format: 'omp-markdown', content: editor.value })))
+})

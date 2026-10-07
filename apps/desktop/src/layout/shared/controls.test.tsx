@@ -62,4 +62,15 @@ describe('shared selector menu walkthroughs', () => {
     expect(img?.getAttribute('height')).toBe('20')
     expect(container.querySelector('svg')).toBeNull()
   })
+
+  it('renders the OMP icon for omp ids without matching words that merely contain "omp"', () => {
+    for (const name of ['omp', 'OMP']) {
+      const { container, unmount } = render(<>{getAgentIcon(name, 20)}</>)
+      expect(container.querySelector('img')?.getAttribute('src')).toBe('./omp.png')
+      expect(container.querySelector('img')?.getAttribute('alt')).toBe('OMP')
+      unmount()
+    }
+    const { container } = render(<>{getAgentIcon('composer', 20)}</>)
+    expect(container.querySelector('img')).toBeNull()
+  })
 })

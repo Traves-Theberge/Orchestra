@@ -501,7 +501,7 @@ func planGatePointer(gate tracker.PlanGate) *tracker.PlanGate { return &gate }
 
 func validAssignmentProvider(provider agents.Provider) bool {
 	switch provider {
-	case agents.ProviderCodex, agents.ProviderClaude, agents.ProviderOpenCode, agents.Provider8gent, agents.ProviderAntigravity:
+	case agents.ProviderCodex, agents.ProviderClaude, agents.ProviderOpenCode, agents.Provider8gent, agents.ProviderAntigravity, agents.ProviderOMP:
 		return true
 	default:
 		return false

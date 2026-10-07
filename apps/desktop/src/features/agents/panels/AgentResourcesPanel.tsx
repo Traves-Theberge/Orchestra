@@ -8,6 +8,16 @@ import type { BackendConfig } from '@core/api/types'
 import { fetchAgentCatalog, fetchAgentResource, mutateAgentResource, fetchAgentMutationReceipt, type AgentCatalog, type AgentResource, type AgentResourceKind, type AgentResourceScope } from '@core/api/agent-catalog'
 import { chatDraftStorageKey } from '@features/workspace/chat/chat-draft-storage'
 
+/** Native format (and a starter document that passes the backend's frontmatter checks) for new agent definitions. */
+const STARTER_BODY = '\n---\n\nYou are a focused agent.\n'
+const NEW_AGENT_DEFAULTS: Record<string, { format: string; template?: string }> = {
+  CLAUDE: { format: 'md' },
+  CODEX: { format: 'toml' },
+  OPENCODE: { format: 'opencode-markdown', template: `---\ndescription: Describe when to use this agent\nmode: subagent${STARTER_BODY}` },
+  ANTIGRAVITY: { format: 'antigravity-markdown', template: `---\nname: my-agent\ndescription: Describe when to use this agent${STARTER_BODY}` },
+  OMP: { format: 'omp-markdown', template: `---\nname: my-agent\ndescription: Describe when to use this agent${STARTER_BODY}` },
+}
+
 export function AgentResourcesPanel({ config, projectId, harness, scope, kind }: {
   config: BackendConfig; projectId: string; harness: string; scope: AgentResourceScope; kind: AgentResourceKind
 }) {
@@ -24,7 +34,8 @@ export function AgentResourcesPanel({ config, projectId, harness, scope, kind }:
   const receiptKey = useRef('')
   const [storageReady, setStorageReady] = useState(false)
   const setDirty = useAppStore(state => state.setAgentHubDirty)
-  const dirty = creating ? !!id || !!content : !!resource && content !== resource.content
+  const createDefaults = kind === 'agent_definition' ? NEW_AGENT_DEFAULTS[harness.toUpperCase()] : undefined
+  const dirty = creating ? !!id || content !== (createDefaults?.template ?? '') : !!resource && content !== resource.content
   useEffect(() => {
     let cancelled = false
     void chatDraftStorageKey(config, projectId).then(key => {
@@ -56,7 +67,7 @@ export function AgentResourcesPanel({ config, projectId, harness, scope, kind }:
     try { localStorage.setItem(receiptKey.current, requestId) } catch { setError('Cannot retain the mutation receipt. No request was sent.'); return }
     setBusy(true); setError(''); setUnresolved(requestId)
     try {
-      const receipt = await mutateAgentResource(config, projectId, harness, scope, kind, id, operation, { request_id: requestId, expected_hash: operation === 'create' ? '' : resource?.content_hash ?? '', content: operation === 'delete' ? undefined : content, format: resource?.format })
+      const receipt = await mutateAgentResource(config, projectId, harness, scope, kind, id, operation, { request_id: requestId, expected_hash: operation === 'create' ? '' : resource?.content_hash ?? '', content: operation === 'delete' ? undefined : content, format: resource?.format ?? (operation === 'create' ? createDefaults?.format : undefined) })
       if (receipt.request_id !== requestId) throw new Error('Mutation receipt identity mismatch')
       if (receipt.status === 'completed') complete()
       else { if (receipt.status === 'rejected') clearReceipt(); setError(receipt.message || receipt.error || `Operation ${receipt.status}; inspect its receipt before retrying.`) }
@@ -71,7 +82,7 @@ export function AgentResourcesPanel({ config, projectId, harness, scope, kind }:
   return <div className="flex h-full min-h-0 flex-col gap-4 p-5">
     <div className="flex items-center gap-2"><h2 className="flex-1 text-sm font-semibold">{kind === 'skill' ? 'Skills' : 'Agents'}</h2>
       <AppTooltip content="Refresh resources"><button aria-label="Refresh agent resources" disabled={busy || dirty || !!unresolved} onClick={() => setRevision(value => value + 1)} className="rounded p-2 text-muted-foreground hover:bg-muted disabled:opacity-40"><RefreshCcw size={14} /></button></AppTooltip>
-      <Button size="sm" disabled={!catalog?.capabilities?.create || busy || dirty || !!unresolved} onClick={() => { setResource(undefined); setCreating(true); setId(''); setContent('') }}><Plus size={14} />Create {kind === 'skill' ? 'skill' : 'agent'}</Button>
+      <Button size="sm" disabled={!catalog?.capabilities?.create || busy || dirty || !!unresolved} onClick={() => { setResource(undefined); setCreating(true); setId(''); setContent(createDefaults?.template ?? '') }}><Plus size={14} />Create {kind === 'skill' ? 'skill' : 'agent'}</Button>
     </div>
     <p className="text-xs text-muted-foreground">{harness} · {scope} · {catalog?.root || 'Native provider scope'}{catalog?.reason && ` · ${catalog.reason}`}</p>
     {error && <p role="alert" className="break-words text-xs text-destructive">{error}</p>}

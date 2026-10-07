@@ -5,7 +5,7 @@ import { AppTooltip } from '@ui/tooltip-wrapper'
 import { fetchAgentCatalog, type AgentCatalog, type AgentCatalogItem, type AgentSelection } from '@core/api/agent-catalog'
 import { fetchHarnessCapabilities, fetchUnifiedAgents, type HarnessCapabilities, type OrchestraAgent } from '@core/api/client'
 import type { BackendConfig } from '@core/api/types'
-import { agentColor, capabilityHint, findCapabilities, isPrimaryMode } from '@features/agents/lib/agent-display'
+import { agentColor, capabilityHint, findCapabilities, harnessDisplayName, isPrimaryMode } from '@features/agents/lib/agent-display'
 import { agentIdOf, isAgentSelectable, toAgentSelection as toSelection } from './agent-selection'
 import { useAgentsRevision } from '@features/agents/lib/agents-events'
 
@@ -151,7 +151,7 @@ export function AgentPicker({ config, projectId, harness, disabled, selection, o
     return () => document.removeEventListener('keydown', cycle)
   }, [data, definitions, selection, disabled, open, onChange, isMaestroScope])
   const selectedHint = selected ? capabilityHint(caps, harness, selected.source) : undefined
-  const harnessLabel = harness ? harness.charAt(0).toUpperCase() + harness.slice(1).toLowerCase() : 'Harness'
+  const harnessLabel = harness ? harnessDisplayName(harness) : 'Harness'
   const groups = { all: definitions, orchestra: definitions.filter(item => item.source === 'orchestra'), native: definitions.filter(item => item.source !== 'orchestra') }
   const tabs: Array<{ id: typeof tab; label: string }> = [{ id: 'all', label: 'All' }, { id: 'orchestra', label: 'Orchestra' }, { id: 'native', label: harnessLabel }]
   // The palette lists the default mode, then Orchestra agents, then the harness's own agents.

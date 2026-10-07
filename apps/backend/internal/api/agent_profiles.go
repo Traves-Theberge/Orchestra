@@ -180,6 +180,32 @@ func readAntigravityMCP(home string) []ProviderMCPServer {
 	return out
 }
 
+// readOMPMCP reads omp's user-level mcp.json (Claude-style mcpServers).
+func readOMPMCP(home string) []ProviderMCPServer {
+	raw, err := os.ReadFile(filepath.Join(home, ".omp", "agent", "mcp.json"))
+	if err != nil {
+		return nil
+	}
+	var doc struct {
+		MCPServers map[string]struct {
+			Type     string            `json:"type"`
+			Command  string            `json:"command"`
+			Args     []string          `json:"args"`
+			Env      map[string]string `json:"env"`
+			URL      string            `json:"url"`
+			Disabled bool              `json:"disabled"`
+		} `json:"mcpServers"`
+	}
+	if json.Unmarshal(raw, &doc) != nil {
+		return nil
+	}
+	out := []ProviderMCPServer{}
+	for name, srv := range doc.MCPServers {
+		out = append(out, ProviderMCPServer{Name: name, Type: srv.Type, Command: srv.Command, Args: srv.Args, Env: srv.Env, URL: srv.URL, Enabled: !srv.Disabled})
+	}
+	return out
+}
+
 func firstNonBlank(values ...string) string {
 	for _, v := range values {
 		if strings.TrimSpace(v) != "" {
@@ -199,7 +225,7 @@ func harnessMCPServers() []mcp.Server {
 		harness string
 		read    func(string) []ProviderMCPServer
 	}{
-		{"CLAUDE", readClaudeMCP}, {"CODEX", readCodexMCP}, {"OPENCODE", readOpenCodeMCP}, {"ANTIGRAVITY", readAntigravityMCP},
+		{"CLAUDE", readClaudeMCP}, {"CODEX", readCodexMCP}, {"OPENCODE", readOpenCodeMCP}, {"ANTIGRAVITY", readAntigravityMCP}, {"OMP", readOMPMCP},
 	}
 	out := []mcp.Server{}
 	for _, src := range sources {

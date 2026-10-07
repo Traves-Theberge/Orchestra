@@ -19,11 +19,12 @@ const (
 	ProviderOpenCode    Provider = "opencode"
 	ProviderAntigravity Provider = "antigravity"
 	Provider8gent       Provider = "8gent"
+	ProviderOMP         Provider = "omp"
 )
 
 func (p Provider) Valid() bool {
 	switch p {
-	case ProviderClaude, ProviderCodex, ProviderGemini, ProviderOpenCode:
+	case ProviderClaude, ProviderCodex, ProviderGemini, ProviderOpenCode, ProviderOMP:
 		return true
 	}
 	return false
@@ -118,6 +119,9 @@ type Session struct {
 	CacheWriteTokens   int64     `json:"cache_write_tokens"`
 	ReasoningTokens    int64     `json:"reasoning_tokens"`
 	HasInferredPricing bool      `json:"has_inferred_pricing"`
+	// RecordedCostUSD is the cost the harness itself recorded (omp); nil when
+	// the provider records none and cost is estimated from pricing tables.
+	RecordedCostUSD *float64 `json:"recorded_cost_usd,omitempty"`
 }
 
 // DailyAggregate is a per-(day,model,project) rollup used to drive both the
@@ -139,6 +143,7 @@ type DailyAggregate struct {
 	CacheWriteTokens   int64    `json:"cache_write_tokens"`
 	ReasoningTokens    int64    `json:"reasoning_tokens"`
 	HasInferredPricing bool     `json:"has_inferred_pricing"`
+	RecordedCostUSD    *float64 `json:"recorded_cost_usd,omitempty"`
 }
 
 // ProcessedFile tracks scanner incremental state — files we've already parsed.
@@ -277,4 +282,5 @@ type RateLimitState struct {
 	OpenCode    *ProviderRateLimits `json:"opencode,omitempty"`
 	Antigravity *ProviderRateLimits `json:"antigravity,omitempty"`
 	Eightgent   *ProviderRateLimits `json:"8gent,omitempty"`
+	OMP         *ProviderRateLimits `json:"omp,omitempty"`
 }

@@ -36,8 +36,8 @@ func TestHarnessSetupReportsIndependentHostObservations(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if len(payload.Harnesses) != 5 {
-		t.Fatalf("harnesses = %d, want 5", len(payload.Harnesses))
+	if len(payload.Harnesses) != 6 {
+		t.Fatalf("harnesses = %d, want 6", len(payload.Harnesses))
 	}
 	codex := payload.Harnesses[0]
 	if codex.ID != "CODEX" || !codex.Registered || !codex.CommandConfigured {

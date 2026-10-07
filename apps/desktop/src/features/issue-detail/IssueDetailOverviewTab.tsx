@@ -28,6 +28,7 @@ import { Button } from '@ui/button'
 import { AppTooltip } from '@ui/tooltip-wrapper'
 import { CustomDropdown } from '@layout/shared/controls'
 import type { TimelineItem } from '@layout/types'
+import { harnessDisplayName } from '@features/agents/lib/agent-display'
 import type { RunningEntry } from '@core/api/types'
 import { extractOperationalPlanItems, type IssueHook } from './IssueDetailUtils'
 import type { IssueHistoryEntry, ToolSummary } from './types'
@@ -216,7 +217,7 @@ export function OverviewTab({
                   options={[
                     { label: 'Unassigned', value: 'Unassigned', icon: <Users className="size-3 text-muted-foreground" /> },
                     ...availableAgents.map((agent) => ({
-                      label: `Agent: ${agent.charAt(0).toUpperCase() + agent.slice(1)}`,
+                      label: `Agent: ${harnessDisplayName(agent)}`,
                       value: `agent-${agent}`,
                       icon: <Bot className="size-3 text-primary/70" />,
                     })),

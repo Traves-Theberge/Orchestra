@@ -37,7 +37,7 @@ const Help = `usage: orchestra <command>
   control tasks --project <project-id> [--json]
   control worktrees --project <project-id> --json
   control status --json
-  agent|skill list --project <project-id> --harness <CODEX|CLAUDE|OPENCODE|ANTIGRAVITY|8GENT> --scope <effective|project|global> [--workspace <workspace-id>] --json
+  agent|skill list --project <project-id> --harness <CODEX|CLAUDE|OPENCODE|ANTIGRAVITY|OMP|8GENT> --scope <effective|project|global> [--workspace <workspace-id>] --json
   agent|skill show --project <project-id> --harness <harness> --scope <scope> [--workspace <workspace-id>] --id <exact-native-id> --json
   agent|skill create|update|delete --project <project-id> --harness <harness> --scope <project|global> [--workspace <workspace-id>] --id <exact-native-id> --request-id <uuid> [--expected-hash <sha256>] [--format <native-format>] [--content-file <path>]
   agent|skill receipt --project <project-id> --request-id <uuid> --json

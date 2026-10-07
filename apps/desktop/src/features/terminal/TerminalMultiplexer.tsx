@@ -23,6 +23,7 @@ const agentCommands = [
     { id: 'codex', label: 'Codex', cmd: 'codex', color: 'text-emerald-400' },
     { id: 'antigravity', label: 'Antigravity', cmd: 'agy', color: 'text-violet-400' },
     { id: 'opencode', label: 'OpenCode', cmd: 'opencode', color: 'text-purple-400' },
+    { id: 'omp', label: 'OMP', cmd: 'omp', color: 'text-sky-400' },
 ]
 
 interface TerminalMultiplexerProps {

@@ -3,7 +3,7 @@ import { AlertTriangle, Check, Copy } from 'lucide-react'
 import { HarnessIcon } from '@ui/HarnessIcon'
 import { MarkdownRenderer } from '@ui/MarkdownRenderer'
 import type { WorkspaceChatMessage } from '@core/api/client'
-import type { AgentObservation } from '@features/agents/lib/agent-display'
+import { harnessDisplayName, type AgentObservation } from '@features/agents/lib/agent-display'
 import {
   extractHtmlRendersFromContent,
   HtmlRenderVariants,
@@ -76,8 +76,8 @@ export function ChatMessage({
     >
       <div className="mb-2 flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
         {!user && message.role !== 'system' && <HarnessIcon id={provider} size={14} />}
-        <span className={!user ? 'capitalize text-foreground/80' : ''}>
-          {user ? 'You' : message.role === 'system' ? 'Session' : provider}
+        <span className={!user ? 'text-foreground/80' : ''}>
+          {user ? 'You' : message.role === 'system' ? 'Session' : harnessDisplayName(provider)}
         </span>
         {!user && agent && (
           <span data-chat-agent className="flex min-w-0 items-center gap-1.5 text-foreground/70">

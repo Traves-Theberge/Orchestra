@@ -126,7 +126,7 @@ The top 10% of installs send 65% of turns.
     const { container } = render(<ChatMessage message={message} provider="antigravity" projectId="proj-1" />)
     const img = container.querySelector('img[src="./antigravity.png"]')
     expect(img).not.toBeNull()
-    expect(screen.getByText('antigravity')).toBeDefined()
+    expect(screen.getByText('Antigravity')).toBeDefined()
     expect(container.querySelector('.lucide-sparkles')).toBeNull()
   })
 

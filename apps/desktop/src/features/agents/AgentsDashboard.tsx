@@ -37,7 +37,7 @@ import { useCodexConfig, useOpenCodeConfig } from './hooks/use-provider-domain-c
 import { OrchestraAgentsPanel } from './panels/OrchestraAgentsPanel'
 import { OrchestraSkillsPanel } from './panels/OrchestraSkillsPanel'
 import { McpStatusPanel } from './panels/McpStatusPanel'
-import { CLAUDE_CATEGORIES, CODEX_CATEGORIES, OPENCODE_CATEGORIES, EIGHTGENT_CATEGORIES, ORCHESTRA_CATEGORIES, PROVIDERS } from './constants'
+import { CLAUDE_CATEGORIES, CODEX_CATEGORIES, OPENCODE_CATEGORIES, EIGHTGENT_CATEGORIES, OMP_CATEGORIES, ORCHESTRA_CATEGORIES, PROVIDERS } from './constants'
 import type { ActiveAgentProvider, Provider, CategoryId } from './types'
 
 interface AgentsDashboardProps {
@@ -118,6 +118,8 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
         return EIGHTGENT_CATEGORIES
       case 'antigravity':
         return OPENCODE_CATEGORIES.filter(item => ['agents', 'skills'].includes(item.id))
+      case 'omp':
+        return OMP_CATEGORIES
       default:
         return CLAUDE_CATEGORIES
     }
@@ -258,10 +260,21 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                   : category === 'skills' ? <OrchestraSkillsPanel config={config} projectId={scope === 'PROJECT' ? projectId || undefined : undefined} />
                   : category === 'mcp' ? <McpStatusPanel config={config} />
                   : <OrchestraAgentsPanel key={JSON.stringify([config.baseUrl, scope, projectId])} config={config} projectId={scope === 'PROJECT' ? projectId : ''} />
-              ) : config && ['claude', 'codex', 'opencode', 'antigravity'].includes(provider) && (category === 'agents' || category === 'skills') ? (
+              ) : config && ['claude', 'codex', 'opencode', 'antigravity', 'omp'].includes(provider) && (category === 'agents' || category === 'skills') ? (
                 scope === 'PROJECT' && !projectId ? <p className="p-5 text-sm text-muted-foreground">Select a project to edit its agent resources.</p> : <AgentResourcesPanel key={JSON.stringify([config.baseUrl, config.apiToken, projectId, resourceWorkspace?.workspaceId, provider, scope, category])} config={scope === 'PROJECT' && resourceWorkspace && !resourceWorkspace.registered ? { ...config, workspaceId: resourceWorkspace.workspaceId } : { ...config, workspaceId: undefined }} projectId={scope === 'GLOBAL' ? '__orchestrator__' : projectId!} harness={provider} scope={scope === 'GLOBAL' ? 'global' : 'project'} kind={category === 'skills' ? 'skill' : 'agent_definition'} />
               ) : provider === 'antigravity' ? (
                 <div className="space-y-3 p-5"><h2 className="text-sm font-semibold">Antigravity</h2><p className="text-sm text-muted-foreground">Antigravity has its own harness and configuration. Its native agent and skill authoring capabilities are reported by the catalog; unsupported operations remain unavailable.</p><p className="text-xs text-muted-foreground">CLI presence alone does not confirm authentication, native sessions or agent selection.</p></div>
+              ) : provider === 'omp' ? (
+                <div className="space-y-3 p-5">
+                  <h2 className="text-sm font-semibold">OMP</h2>
+                  <p className="text-sm text-muted-foreground">
+                    OMP (oh-my-pi) keeps its own settings in <code className="rounded bg-muted px-1">~/.omp/agent/config.yml</code>. Orchestra does not edit that file; change it with omp itself.
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Orchestra applies the selected model and thinking level on every turn, so both can change mid-conversation. Selected agents are applied through <code className="rounded bg-muted px-1">--append-system-prompt</code> together with their tools list.
+                  </p>
+                  <p className="text-xs text-muted-foreground">Manage OMP agent definitions and skills from the Agents and Skills categories.</p>
+                </div>
               ) : readFailure ? (
                 <div role="alert" className="p-6 space-y-3">
                   <h2 className="text-sm font-semibold">Configuration unavailable</h2>

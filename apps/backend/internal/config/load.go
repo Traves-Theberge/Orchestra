@@ -29,14 +29,18 @@ func Load() (Config, error) {
 		"ANTIGRAVITY": "agy -p {{prompt}} --output-format stream-json",
 		"OPENCODE":    "opencode run {{prompt}} --format json",
 		"8GENT":       "8gent run --yes --output-format stream-json {{prompt}}",
+		"OMP":         "omp -p --mode json --auto-approve --no-title {{prompt}}",
 	}
-	nativeAgentCommands := map[string]string{"CODEX": "codex app-server", "ANTIGRAVITY": "agy"}
+	nativeAgentCommands := map[string]string{"CODEX": "codex app-server", "ANTIGRAVITY": "agy", "OMP": "omp"}
 	// An explicitly empty value disables native Codex chat. Batch flags are not inherited.
 	if nativeCodex, explicit := os.LookupEnv("ORCHESTRA_NATIVE_COMMAND_CODEX"); explicit {
 		nativeAgentCommands["CODEX"] = strings.TrimSpace(nativeCodex)
 	}
 	if nativeAntigravity, explicit := os.LookupEnv("ORCHESTRA_NATIVE_COMMAND_ANTIGRAVITY"); explicit {
 		nativeAgentCommands["ANTIGRAVITY"] = strings.TrimSpace(nativeAntigravity)
+	}
+	if nativeOMP, explicit := os.LookupEnv("ORCHESTRA_NATIVE_COMMAND_OMP"); explicit {
+		nativeAgentCommands["OMP"] = strings.TrimSpace(nativeOMP)
 	}
 
 	host := getenvOrEmpty("ORCHESTRA_SERVER_HOST")
@@ -53,6 +57,7 @@ func Load() (Config, error) {
 	agentCommandClaude := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_CLAUDE")
 	agentCommandOpenCode := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_OPENCODE")
 	agentCommand8gent := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_8GENT")
+	agentCommandOMP := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_OMP")
 	agentCommandUnsandbox := getenvOrEmpty("ORCHESTRA_AGENT_COMMAND_UNSANDBOX")
 	trackerType := getenvOrEmpty("ORCHESTRA_TRACKER_TYPE")
 	trackerEndpoint := getenvOrEmpty("ORCHESTRA_TRACKER_ENDPOINT")
@@ -182,6 +187,9 @@ func Load() (Config, error) {
 	if value := strings.TrimSpace(workflowOverrides.AgentCommand8gent); value != "" {
 		agentCommands["8GENT"] = value
 	}
+	if value := strings.TrimSpace(workflowOverrides.AgentCommandOMP); value != "" {
+		agentCommands["OMP"] = value
+	}
 
 	if value := strings.TrimSpace(agentCommandCodex); value != "" {
 		agentCommands["CODEX"] = value
@@ -194,6 +202,9 @@ func Load() (Config, error) {
 	}
 	if value := strings.TrimSpace(agentCommand8gent); value != "" {
 		agentCommands["8GENT"] = value
+	}
+	if value := strings.TrimSpace(agentCommandOMP); value != "" {
+		agentCommands["OMP"] = value
 	}
 	if value := strings.TrimSpace(agentCommandUnsandbox); value != "" {
 		agentCommands["UNSANDBOX"] = value
@@ -247,7 +258,7 @@ func Load() (Config, error) {
 	}
 	telemetryProviders := parseStateList(telemetryProvidersRaw)
 	if len(telemetryProviders) == 0 {
-		telemetryProviders = []string{"CLAUDE", "CODEX", "ANTIGRAVITY", "OPENCODE"}
+		telemetryProviders = []string{"CLAUDE", "CODEX", "ANTIGRAVITY", "OPENCODE", "OMP"}
 	}
 	telemetryRetentionDays := 7
 	if strings.TrimSpace(telemetryRetentionDaysRaw) != "" {
@@ -504,6 +515,7 @@ type workflowConfigOverrides struct {
 	AgentCommandOpenCode     string
 	AgentCommandGemini       string
 	AgentCommand8gent        string
+	AgentCommandOMP          string
 	AgentMaxTurns            string
 	TrackerType              string
 	TrackerEndpoint          string
@@ -562,6 +574,9 @@ func loadWorkflowOverrides(path string) workflowConfigOverrides {
 		AgentCommandGemini: firstStringValue(),
 		AgentCommand8gent: firstStringValue(
 			lookupNested(doc.Config, []string{"agent", "commands", "8gent"}),
+		),
+		AgentCommandOMP: firstStringValue(
+			lookupNested(doc.Config, []string{"agent", "commands", "omp"}),
 		),
 		AgentMaxTurns: firstStringValue(
 			lookupNested(doc.Config, []string{"agent", "max_turns"}),

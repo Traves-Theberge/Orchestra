@@ -588,6 +588,15 @@ func resourceSpecs(harness string, scope resolvedScope) []resourceSpec {
 		}
 		specs = append(specs, resourceSpec{base, filepath.Join(base, "agents"), KindAgentDefinition, ".md", true})
 		specs = append(specs, resourceSpec{base, filepath.Join(base, "skills"), KindSkill, "", true})
+	case "OMP":
+		// omp agents are task-subagent definitions; skills are SKILL.md dirs.
+		if scope.scope == ScopeGlobal {
+			base = filepath.Join(base, ".omp", "agent")
+		} else {
+			base = filepath.Join(base, ".omp")
+		}
+		specs = append(specs, resourceSpec{base, filepath.Join(base, "agents"), KindAgentDefinition, ".md", true})
+		specs = append(specs, resourceSpec{base, filepath.Join(base, "skills"), KindSkill, "", true})
 	case "CLAUDE":
 		specs = append(specs, resourceSpec{scope.root, filepath.Join(scope.root, ".claude", "agents"), KindAgentDefinition, ".md", true})
 		specs = append(specs, resourceSpec{scope.root, filepath.Join(scope.root, ".claude", "skills"), KindSkill, "", true})
@@ -650,7 +659,7 @@ func walkResources(root, dir string, kind Kind, harness string, scope Scope, cap
 		if kind == KindSkill && filepath.Base(path) != "SKILL.md" && format != ".md" {
 			return nil
 		}
-		if kind == KindSkill && filepath.Base(path) != "SKILL.md" && harness == "OPENCODE" {
+		if kind == KindSkill && filepath.Base(path) != "SKILL.md" && (harness == "OPENCODE" || harness == "OMP") {
 			return nil
 		}
 		data, err := os.ReadFile(path)
@@ -767,6 +776,9 @@ func (s *Service) targetPath(ctx context.Context, req Request, kind Kind, id, fo
 				}
 				ext = ".md"
 			}
+			if harness == "OMP" && format != "" && format != "omp-markdown" && format != "md" {
+				return "", ErrInvalid
+			}
 			if harness == "CODEX" && format != "toml" && format != "" {
 				return "", ErrInvalid
 			}
@@ -790,7 +802,7 @@ func (s *Service) targetPath(ctx context.Context, req Request, kind Kind, id, fo
 			}
 			return filepath.Join(spec.dir, filepath.FromSlash(id)+ext), nil
 		}
-		if harness == "OPENCODE" || harness == "CLAUDE" || harness == "ANTIGRAVITY" {
+		if harness == "OPENCODE" || harness == "CLAUDE" || harness == "ANTIGRAVITY" || harness == "OMP" {
 			return filepath.Join(spec.dir, filepath.FromSlash(id), "SKILL.md"), nil
 		}
 		if harness == "CODEX" {
@@ -870,6 +882,29 @@ func validateNativeContent(req MutationRequest, content string) error {
 			}
 			return nil
 		}
+		if req.Harness == "OMP" {
+			if req.Format != "omp-markdown" && req.Format != "md" {
+				return ErrInvalid
+			}
+			content = strings.ReplaceAll(content, "\r\n", "\n")
+			if !strings.HasPrefix(content, "---\n") {
+				return fmt.Errorf("omp agent definitions require Markdown frontmatter")
+			}
+			end := strings.Index(content[4:], "\n---")
+			if end < 0 {
+				return fmt.Errorf("omp agent frontmatter is incomplete")
+			}
+			var values map[string]any
+			if err := yaml.Unmarshal([]byte(content[4:4+end]), &values); err != nil {
+				return fmt.Errorf("invalid omp agent frontmatter: %w", err)
+			}
+			name, _ := values["name"].(string)
+			description, _ := values["description"].(string)
+			if strings.TrimSpace(name) == "" || strings.TrimSpace(description) == "" {
+				return fmt.Errorf("omp agent frontmatter requires name and description")
+			}
+			return nil
+		}
 		if req.Harness == "CODEX" && req.Format != "toml" {
 			return ErrInvalid
 		}
@@ -901,12 +936,15 @@ func formatName(harness, ext string) string {
 	if harness == "ANTIGRAVITY" && ext == ".md" {
 		return "antigravity-markdown"
 	}
+	if harness == "OMP" && ext == ".md" {
+		return "omp-markdown"
+	}
 	return strings.TrimPrefix(ext, ".")
 }
 func normalizeHarness(raw string) (string, error) {
 	v := strings.ToUpper(strings.TrimSpace(raw))
 	switch v {
-	case "OPENCODE", "CODEX", "CLAUDE", "8GENT", "ANTIGRAVITY":
+	case "OPENCODE", "CODEX", "CLAUDE", "8GENT", "ANTIGRAVITY", "OMP":
 		return v, nil
 	default:
 		return "", ErrUnsupported

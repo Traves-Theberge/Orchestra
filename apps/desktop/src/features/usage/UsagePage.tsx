@@ -25,7 +25,7 @@ import {
 } from './format'
 import type { UsageScope, UsageRange } from '@core/api/client'
 
-const QUOTA_PROVIDERS: QuotaProvider[] = ['claude', 'codex', 'antigravity', 'opencode', '8gent', 'gemini']
+const QUOTA_PROVIDERS: QuotaProvider[] = ['claude', 'codex', 'antigravity', 'opencode', 'omp', '8gent', 'gemini']
 
 export function UsagePage({ config, embedded = false }: { config: BackendConfig | null; embedded?: boolean }) {
   const usage = useUsage(config)

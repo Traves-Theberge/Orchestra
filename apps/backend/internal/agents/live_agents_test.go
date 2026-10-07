@@ -113,3 +113,56 @@ func tail(s string, n int) string {
 	}
 	return s[len(s)-n:]
 }
+
+func TestLiveOMPOrchestraAgent(t *testing.T) {
+	liveEnabled(t, "omp")
+	root := t.TempDir()
+	agent := liveAgent("")
+	agent.Skills = []ResolvedSkill{liveSkill(t)}
+	r := NewOMPRunner("omp -p --mode json --auto-approve --no-title {{prompt}}")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	result, err := r.RunTurn(ctx, TurnRequest{Workspace: root, WorkspaceRoot: root, ProjectRootWorkspace: true, Prompt: "Reply with exactly: agent ok", RequestedEffort: "low", Agent: agent, MCPServers: liveMCP}, nil)
+	t.Logf("receipt=%s usage=%+v output tail=%s", result.AgentObservation, result.Usage, tail(result.Output, 600))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result.Output, "agent ok PROBE7") {
+		t.Fatal("orchestra agent prompt was not applied via --append-system-prompt")
+	}
+	if result.Usage.TotalTokens == 0 {
+		t.Fatal("omp message usage was not parsed")
+	}
+	if _, err = os.Stat(filepath.Join(root, ".omp", "mcp.json")); !os.IsNotExist(err) {
+		t.Fatal("the .omp/mcp.json overlay was not restored")
+	}
+}
+
+func TestLiveOMPNativeSessionResumes(t *testing.T) {
+	liveEnabled(t, "omp")
+	root := t.TempDir()
+	request := TurnRequest{Workspace: root, WorkspaceRoot: root, ProjectRootWorkspace: true, Agent: liveAgent("")}
+	session, err := NewOMPNativeSession(context.Background(), "omp", request, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	first, err := session.SendTurnWithOptions(ctx, "Remember the word KUMQUAT. Reply with exactly: noted", NativeTurnOptions{ReasoningEffort: "low"})
+	thread := session.ThreadID()
+	_ = session.Close()
+	t.Logf("first=%+v thread=%s", first, thread)
+	if err != nil || !strings.Contains(first.Text, "noted PROBE7") {
+		t.Fatalf("first native turn %+v, %v", first, err)
+	}
+	resumed, err := NewOMPNativeSession(context.Background(), "omp", request, thread, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resumed.Close()
+	second, err := resumed.SendTurn(ctx, "Which word did I ask you to remember? Reply with just the word.", "")
+	t.Logf("second=%+v", second)
+	if err != nil || !strings.Contains(strings.ToUpper(second.Text), "KUMQUAT") {
+		t.Fatalf("resumed turn lost context: %+v, %v", second, err)
+	}
+}

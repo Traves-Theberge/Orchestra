@@ -726,6 +726,9 @@ func parseLineToEvent(provider Provider, source string, line string) Event {
 
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(trimmed), &payload); err == nil {
+		if provider == ProviderOMP {
+			return ompEvent(payload, rawLineForEvent, now)
+		}
 		usage := extractUsage(payload)
 		kind := extractKind(provider, source, payload)
 		msg := ExtractMessage(payload)

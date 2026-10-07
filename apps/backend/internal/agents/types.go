@@ -27,6 +27,8 @@ const (
 	// ProviderAntigravity identifies Google's Antigravity CLI independently
 	// from the legacy Gemini CLI and its account configuration.
 	ProviderAntigravity Provider = "ANTIGRAVITY"
+	// ProviderOMP identifies oh-my-pi (omp), driven through its JSON-RPC mode.
+	ProviderOMP Provider = "OMP"
 )
 
 // RuntimeTarget identifies where an agent turn executes.

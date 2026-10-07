@@ -112,7 +112,7 @@ const unverifiedNote = "unverified with installed CLI"
 // SelectableHarnesses lists the harnesses whose adapters can apply agents.
 // Gemini is retired and intentionally absent.
 func SelectableHarnesses() []Provider {
-	return []Provider{ProviderClaude, ProviderCodex, ProviderOpenCode, ProviderAntigravity, Provider8gent}
+	return []Provider{ProviderClaude, ProviderCodex, ProviderOpenCode, ProviderAntigravity, ProviderOMP, Provider8gent}
 }
 
 // CapabilitiesFor returns the adapter capability matrix for a harness. The
@@ -156,6 +156,15 @@ func CapabilitiesFor(provider Provider) (HarnessCapabilities, bool) {
 		c.Model = Capability{true, "--model", ""}
 		c.Effort = Capability{true, "--effort", ""}
 		c.Permissions = Capability{false, "", "agy permissions come from its own policy"}
+	case ProviderOMP:
+		c.AgentSelect = Capability{true, ".omp/agents/<name>.md prompt via --append-system-prompt + tools via --tools", "omp agents are task subagents; selecting one runs its prompt and tool list as the primary session"}
+		c.AgentInline = Capability{true, "--append-system-prompt <tmpfile>", "verified live (omp 18.7.0)"}
+		c.Skills = Capability{true, "skills.customDirectories in a --config <tmpfile> overlay", "verified live (omp 18.7.0)"}
+		c.MCP = Capability{true, ".omp/mcp.json in run cwd (merged, restored after run)", "verified live (omp 18.7.0); user servers still load"}
+		c.Instructions = Capability{true, "--append-system-prompt <tmpfile>", ""}
+		c.Model = Capability{true, "--model (batch) / rpc set_model per turn (native)", ""}
+		c.Effort = Capability{true, "--thinking (batch) / rpc set_thinking_level per turn (native)", ""}
+		c.Permissions = Capability{true, "ask: --approval-mode always-ask|write in native chat", "deny is not enforced; batch turns auto-approve"}
 	case Provider8gent:
 		// 8gent agent support is deferred; the prompt-prefix adapter code is
 		// kept but not offered.

@@ -44,6 +44,9 @@ func (r *Registry) NativeModels(ctx context.Context, provider Provider, request 
 	if provider == ProviderAntigravity {
 		return probeAntigravityModels(ctx, command)
 	}
+	if provider == ProviderOMP {
+		return ompModels(ctx, command)
+	}
 	catalogCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	session, err := startCodexNativeProcess(catalogCtx, command, request, nil)

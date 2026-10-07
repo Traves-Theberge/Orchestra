@@ -293,12 +293,17 @@ func StartWatcher(ctx context.Context, database *db.DB, manualRoots []string, op
 			if providerSet["opencode"] {
 				scanOpenCodeSQLite(ctx, database, manualRoots, filepath.Join(homeDir, ".local", "share", "opencode", "opencode.db"), opts, logger)
 			}
+
+			// 6. omp (oh-my-pi)
+			if providerSet["omp"] {
+				scanOMPSessions(ctx, database, manualRoots, filepath.Join(homeDir, ".omp", "agent", "sessions"), opts, logger)
+			}
 		}
 	}
 }
 
 func normalizeProviderSet(providers []string) map[string]bool {
-	defaultSet := map[string]bool{"claude": true, "codex": true, "gemini": true, "opencode": true}
+	defaultSet := map[string]bool{"claude": true, "codex": true, "gemini": true, "opencode": true, "omp": true}
 	if len(providers) == 0 {
 		return defaultSet
 	}

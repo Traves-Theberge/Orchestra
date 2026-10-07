@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { UsagePage } from './UsagePage'
 import { useUsage, USAGE_PROVIDERS, type UsageState } from './use-usage'
 
-vi.mock('./use-usage', () => ({ useUsage: vi.fn(), USAGE_PROVIDERS: ['claude', 'codex', 'gemini', 'opencode'] }))
+vi.mock('./use-usage', () => ({ useUsage: vi.fn(), USAGE_PROVIDERS: ['claude', 'codex', 'gemini', 'opencode', 'omp'] }))
 const state = (): UsageState => ({
   scope: 'all', range: '30d', setScope: vi.fn(), setRange: vi.fn(), rateLimits: null, rateLimitError: null,
   refreshAll: vi.fn(), refreshProvider: vi.fn(), toggleProvider: vi.fn(),
@@ -34,5 +34,11 @@ describe('UsagePage evidence labels', () => {
     expect(screen.getByText(/not subscription charges or invoices/)).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Est. API-equivalent cost' })).toBeInTheDocument()
     expect(screen.getByText('$0.0000')).toBeInTheDocument()
+  })
+  it('tracks OMP as a real usage provider rather than an unsupported history harness', () => {
+    vi.mocked(useUsage).mockReturnValue(state())
+    render(<UsagePage config={null} />)
+    expect(screen.getByText('OMP Usage Tracking')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'OMP local history' })).not.toBeInTheDocument()
   })
 })

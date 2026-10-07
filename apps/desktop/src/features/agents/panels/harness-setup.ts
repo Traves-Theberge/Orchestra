@@ -9,6 +9,7 @@ export const KNOWN_HARNESSES: readonly HarnessDefinition[] = [
   { id: 'CLAUDE', label: 'Claude Code', helpUrl: 'https://code.claude.com/docs' },
   { id: 'OPENCODE', label: 'OpenCode', helpUrl: 'https://opencode.ai/docs/cli/' },
   { id: '8GENT', label: '8gent', helpUrl: 'https://github.com/8gi-foundation/8gent-code' },
+  { id: 'OMP', label: 'OMP', helpUrl: 'https://omp.sh' },
 ]
 
 // Commands are presented for the user to run on the backend host. Orchestra
@@ -17,6 +18,7 @@ export const HARNESS_SIGN_IN_COMMANDS: Readonly<Record<string, string>> = {
   CODEX: 'codex login',
   CLAUDE: 'claude auth login',
   OPENCODE: 'opencode auth login',
+  OMP: 'omp login',
 }
 
 export function normalizeHarnessId(value: string): string {

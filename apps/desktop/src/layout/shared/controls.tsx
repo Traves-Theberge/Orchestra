@@ -11,6 +11,8 @@ export function getAgentIcon(name: string, size = 12): ReactNode {
   if (lower.includes('opencode')) return <img src="./opencode.png" width={size} height={size} alt="OpenCode" className={imgClass} />
   if (lower.includes('antigravity')) return <img src="./antigravity.png" width={size} height={size} alt="Antigravity" className={imgClass} />
   if (lower.includes('8gent')) return <img src="./8gent.png" width={size} height={size} alt="8gent" className={imgClass} />
+  // "omp" is a short token, so match it as a word rather than a substring (e.g. not "compose").
+  if (/(^|[^a-z])omp([^a-z]|$)/.test(lower)) return <img src="./omp.png" width={size} height={size} alt="OMP" className={imgClass} />
   return <Bot size={size} className="text-primary/60" />
 }
 

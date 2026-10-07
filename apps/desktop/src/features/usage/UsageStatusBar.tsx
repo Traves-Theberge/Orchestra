@@ -31,7 +31,7 @@ import { formatTokens } from './format'
 // Gemini and OpenCode have no comparable rate-limit concept, so they don't
 // belong in the bar — they're still tracked on the Usage page for token data.
 const BAR_PROVIDERS: UsageProvider[] = ['claude', 'codex']
-const ROSTER_PROVIDERS: QuotaProvider[] = ['claude', 'codex', 'antigravity', 'opencode', '8gent', 'gemini']
+const ROSTER_PROVIDERS: QuotaProvider[] = ['claude', 'codex', 'antigravity', 'opencode', 'omp', '8gent', 'gemini']
 const POLL_MS = 5 * 60 * 1000     // 5 min — quota windows are slow-moving
 const FOCUS_MIN_MS = 30 * 1000    // refetch on focus if older than 30s
 

@@ -13,6 +13,10 @@ describe('harness setup helpers', () => {
     expect(KNOWN_HARNESSES.map(harness => harness.id)).not.toContain('GEMINI')
   })
 
+  it('offers OMP with its guide link', () => {
+    expect(KNOWN_HARNESSES).toContainEqual({ id: 'OMP', label: 'OMP', helpUrl: 'https://omp.sh' })
+  })
+
   it('patches only the selected command and preserves the fetched default', () => {
     const patch = buildCommandRegistrationPatch(
       { CODEX: 'codex exec {{prompt}}', CLAUDE: 'claude -p {{prompt}}' },

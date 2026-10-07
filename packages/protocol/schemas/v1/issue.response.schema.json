@@ -19,7 +19,7 @@
     "blocked_by": { "type": "array" },
     "provider": {
       "type": "string",
-      "enum": ["CODEX", "CLAUDE", "OPENCODE", "GEMINI", "UNSANDBOX"]
+      "enum": ["CODEX", "CLAUDE", "OPENCODE", "OMP", "GEMINI", "UNSANDBOX"]
     },
     "disabled_tools": { "type": "array" },
     "created_at": { "type": "string" },

@@ -10,6 +10,7 @@ export const AGENT_LAUNCHERS = [
   { id: 'antigravity', label: 'Antigravity', command: 'agy' },
   { id: 'opencode', label: 'OpenCode', command: 'opencode' },
   { id: '8gent', label: '8gent', command: '8gent' },
+  { id: 'omp', label: 'OMP', command: 'omp' },
 ] as const
 
 /** The project and working directory backing a workspace context. */

@@ -145,6 +145,14 @@ describe('HarnessSetupPanel', () => {
     expect(api.updateAgentConfig).not.toHaveBeenCalled()
   })
 
+  it('lists OMP with its reported CLI version and leaves sign-in unverified', async () => {
+    vi.mocked(api.fetchHarnessSetup).mockResolvedValue([{ id: 'OMP', registered: true, command_configured: true, installation: 'detected', authentication: 'unknown', terminal_supported: false, version: '18.7.0' }])
+    render(<HarnessSetupPanel config={config} provider="omp" projectId={null} />)
+    expect(await screen.findByText('v18.7.0')).toBeInTheDocument()
+    expect(screen.getAllByText('OMP').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Authentication: Not verified').length).toBeGreaterThan(0)
+  })
+
   it('lists Antigravity separately and does not claim runtime or account setup is available', async () => {
     render(<HarnessSetupPanel config={config} provider="antigravity" projectId={null} />)
     expect((await screen.findAllByText('Runtime capability: unavailable until registered')).length).toBeGreaterThan(0)

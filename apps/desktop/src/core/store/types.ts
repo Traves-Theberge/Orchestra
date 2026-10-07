@@ -160,7 +160,7 @@ export interface UISlice {
   sidePanelOpen: boolean
   activeSettingsSection: string
   scrollToSettingsSection: ((id: string) => void) | null
-  activeAgentProvider: 'orchestra' | 'claude' | 'codex' | 'antigravity' | 'opencode' | '8gent'
+  activeAgentProvider: 'orchestra' | 'claude' | 'codex' | 'antigravity' | 'opencode' | '8gent' | 'omp'
   activeAgentScope: 'GLOBAL' | 'PROJECT'
   activeAgentProjectId: string
   activeAgentCategory: string
@@ -196,7 +196,7 @@ export interface UISlice {
   toggleSidePanel: () => void
   setActiveSettingsSection: (id: string) => void
   setScrollToSettingsSection: (fn: ((id: string) => void) | null) => void
-  setActiveAgentProvider: (provider: 'orchestra' | 'claude' | 'codex' | 'antigravity' | 'opencode' | '8gent') => void
+  setActiveAgentProvider: (provider: 'orchestra' | 'claude' | 'codex' | 'antigravity' | 'opencode' | '8gent' | 'omp') => void
   setActiveAgentScope: (scope: 'GLOBAL' | 'PROJECT', projectId?: string) => void
   setActiveAgentCategory: (cat: string) => void
   setAgentCategories: (cats: Array<{ id: string; label: string; icon: unknown }>) => void

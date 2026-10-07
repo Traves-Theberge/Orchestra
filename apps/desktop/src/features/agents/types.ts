@@ -1,6 +1,6 @@
 import type { LucideIcon } from 'lucide-react'
 
-export type Provider = 'claude' | 'codex' | 'antigravity' | 'opencode' | '8gent'
+export type Provider = 'claude' | 'codex' | 'antigravity' | 'opencode' | '8gent' | 'omp'
 /** Sidebar tab: a harness, or the cross-harness Orchestra view. */
 export type ActiveAgentProvider = Provider | 'orchestra'
 export type CategoryId =

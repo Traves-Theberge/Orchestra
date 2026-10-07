@@ -70,7 +70,7 @@ func (r *Registry) SupportsNativeSession(provider Provider) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	p := NormalizeProvider(string(provider))
-	return (p == ProviderCodex || p == ProviderAntigravity) && !r.disabled[p] && strings.TrimSpace(r.nativeCommands[p]) != ""
+	return (p == ProviderCodex || p == ProviderAntigravity || p == ProviderOMP) && !r.disabled[p] && strings.TrimSpace(r.nativeCommands[p]) != ""
 }
 
 // Native control requires the interactive adapter's actual dynamic-tool protocol.
@@ -112,6 +112,9 @@ func (r *Registry) StartNativeSession(ctx context.Context, provider Provider, re
 	command, _ := r.NativeCommandFor(provider)
 	if NormalizeProvider(string(provider)) == ProviderAntigravity {
 		return NewAntigravityNativeSession(ctx, command, request, threadID, onEvent)
+	}
+	if NormalizeProvider(string(provider)) == ProviderOMP {
+		return NewOMPNativeSession(ctx, command, request, threadID, onEvent)
 	}
 	return NewCodexNativeSession(ctx, command, request, threadID, onEvent)
 }

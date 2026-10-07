@@ -21,7 +21,7 @@ import {
   refreshRateLimits,
 } from '@core/api/client'
 
-export const USAGE_PROVIDERS: UsageProvider[] = ['claude', 'codex', 'gemini', 'opencode']
+export const USAGE_PROVIDERS: UsageProvider[] = ['claude', 'codex', 'gemini', 'opencode', 'omp']
 
 export type ProviderUsageBundle = {
   provider: UsageProvider
@@ -76,12 +76,13 @@ export function useUsage(config: BackendConfig | null): UsageState {
     codex: emptyBundle('codex'),
     gemini: emptyBundle('gemini'),
     opencode: emptyBundle('opencode'),
+    omp: emptyBundle('omp'),
   }))
 
   // Per-provider request token. Each call increments the token; stale resolutions
   // (from a prior scope/range) compare against the current token and bail.
   const requestToken = useRef<Record<UsageProvider, number>>({
-    claude: 0, codex: 0, gemini: 0, opencode: 0,
+    claude: 0, codex: 0, gemini: 0, opencode: 0, omp: 0,
   })
 
   const loadProvider = useCallback(

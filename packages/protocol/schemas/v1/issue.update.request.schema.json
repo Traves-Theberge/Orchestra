@@ -10,7 +10,7 @@
     "project_id": { "type": "string" },
     "provider": {
       "type": "string",
-      "enum": ["CODEX", "CLAUDE", "OPENCODE", "GEMINI", "UNSANDBOX"]
+      "enum": ["CODEX", "CLAUDE", "OPENCODE", "OMP", "GEMINI", "UNSANDBOX"]
     },
     "disabled_tools": { "type": "array", "items": { "type": "string" } }
   }

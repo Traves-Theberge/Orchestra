@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // agentRunPlan is what an adapter adds to one CommandRunner invocation.
@@ -148,6 +150,8 @@ func planCommandAgent(provider Provider, commandLine string, request TurnRequest
 		err = planAntigravityBatch(plan, request)
 	case Provider8gent:
 		err = planEightgent(plan, request)
+	case ProviderOMP:
+		err = planOMP(plan, request)
 	default:
 		if request.Agent != nil {
 			err = fmt.Errorf("provider %s has no agent adapter", provider)
@@ -572,4 +576,164 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// ompApplied is the per-run OMP configuration shared by the batch command and
+// the native rpc session. Every temp path and workspace overlay is undone by
+// cleanup.
+type ompApplied struct {
+	// args are argv flags (unquoted); batch plans quote them for the shell.
+	args     []string
+	receipt  *agentReceipt
+	cleanups []func()
+}
+
+func (a *ompApplied) cleanup() {
+	for i := len(a.cleanups) - 1; i >= 0; i-- {
+		a.cleanups[i]()
+	}
+	a.cleanups = nil
+}
+
+// applyOMP maps an agent profile onto omp's per-run mechanisms:
+//   - thread instructions + agent prompt: --append-system-prompt <tmpfile>
+//     (omp reads the file's contents when the value is a path)
+//   - model / effort: --model / --thinking
+//   - selected skills: skills.customDirectories in a --config overlay file
+//   - Orchestra MCP servers: merged into the run cwd's .omp/mcp.json
+//   - "ask" permissions: --approval-mode (honoured where approvals can be answered)
+//
+// skip lists flags a user-configured command already sets.
+func applyOMP(request TurnRequest, interactive bool, skip func(...string) bool) (out *ompApplied, err error) {
+	out = &ompApplied{}
+	agent := request.Agent
+	if agent != nil {
+		out.receipt = &agentReceipt{agent: agent}
+	}
+	defer func() {
+		if err != nil {
+			out.cleanup()
+			out = nil
+		}
+	}()
+	addTemp := func(path string) { out.cleanups = append(out.cleanups, func() { _ = os.RemoveAll(path) }) }
+	if instructions := strings.TrimSpace(combineInstructions(request.DeveloperInstructions, agent)); instructions != "" && !skip("--append-system-prompt", "--system-prompt") {
+		file, writeErr := writeTempFile("orchestra-omp-instructions-*.md", []byte(instructions+"\n"))
+		if writeErr != nil {
+			return out, writeErr
+		}
+		addTemp(file)
+		out.args = append(out.args, "--append-system-prompt", filepath.ToSlash(file))
+	}
+	if agent != nil && agent.Source == AgentSourceHarness && NormalizeProvider(agent.Harness) == ProviderOMP && agent.Path != "" && !skip("--tools", "--no-tools") {
+		// An omp agent file is a task-subagent definition; running it as the
+		// primary session keeps its tool allowlist.
+		if tools := ompAgentTools(agent.Path); len(tools) > 0 {
+			out.args = append(out.args, "--tools", strings.Join(tools, ","))
+		}
+	}
+	if model := effectiveModel(request); model != "" && !skip("--model") {
+		if strings.HasPrefix(model, "@") {
+			// Role references ("@slow") resolve inside omp's task tool, not on the CLI.
+			out.receipt.skip("model")
+		} else {
+			out.args = append(out.args, "--model", model)
+		}
+	}
+	if effort := effectiveEffort(request); effort != "" && !skip("--thinking") {
+		out.args = append(out.args, "--thinking", effort)
+	}
+	if skills := nonNativeSkills(agent); len(skills) > 0 {
+		dir, mkErr := os.MkdirTemp("", "orchestra-omp-skills-*")
+		if mkErr != nil {
+			return out, mkErr
+		}
+		addTemp(dir)
+		if err = stageSkills(dir, skills); err != nil {
+			return out, err
+		}
+		overlay := "skills:\n  customDirectories:\n    - " + tomlString(filepath.ToSlash(dir)) + "\n"
+		file, writeErr := writeTempFile("orchestra-omp-config-*.yml", []byte(overlay))
+		if writeErr != nil {
+			return out, writeErr
+		}
+		addTemp(file)
+		out.args = append(out.args, "--config", filepath.ToSlash(file))
+	}
+	if servers := mcpForRun(request); len(servers) > 0 {
+		overlay, overlayErr := newWorkspaceOverlay(request.Workspace)
+		if overlayErr != nil {
+			return out, overlayErr
+		}
+		out.cleanups = append(out.cleanups, overlay.release)
+		entries, _ := claudeMCPConfig(servers)["mcpServers"].(map[string]any)
+		added, mergeErr := overlay.mergeJSONObject(filepath.Join(".omp", "mcp.json"), "mcpServers", entries)
+		if mergeErr != nil {
+			return out, mergeErr
+		}
+		if len(added) < len(servers) {
+			out.receipt.skip("mcp")
+		}
+	}
+	if agent != nil && agent.Permissions.Restrictive() {
+		p := agent.Permissions
+		mode := ""
+		if p.Bash == "ask" || p.WebFetch == "ask" {
+			mode = "always-ask"
+		} else if p.Edit == "ask" {
+			mode = "write"
+		}
+		if mode != "" && interactive && !skip("--approval-mode", "--auto-approve") {
+			out.args = append(out.args, "--approval-mode", mode)
+		}
+		// deny has no tool-name contract in omp, and batch turns cannot answer.
+		if p.Edit == "deny" || p.Bash == "deny" || p.WebFetch == "deny" || mode != "" && !interactive {
+			out.receipt.skip("permissions")
+		}
+	}
+	return out, nil
+}
+
+func planOMP(plan *agentRunPlan, request TurnRequest) error {
+	applied, err := applyOMP(request, false, func(flags ...string) bool { return hasFlag(plan.commandLine, flags...) })
+	if err != nil {
+		return err
+	}
+	plan.cleanups = append(plan.cleanups, applied.cleanup)
+	if applied.receipt != nil {
+		plan.receipt = applied.receipt
+	}
+	for i := 0; i+1 < len(applied.args); i += 2 {
+		plan.arg(applied.args[i], applied.args[i+1])
+	}
+	return nil
+}
+
+// ompAgentTools reads the `tools:` allowlist from an omp agent file.
+func ompAgentTools(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	content := strings.ReplaceAll(string(data), "\r\n", "\n")
+	if !strings.HasPrefix(content, "---\n") {
+		return nil
+	}
+	end := strings.Index(content[4:], "\n---")
+	if end < 0 {
+		return nil
+	}
+	var front struct {
+		Tools []string `yaml:"tools"`
+	}
+	if yaml.Unmarshal([]byte(content[4:4+end]), &front) != nil {
+		return nil
+	}
+	out := []string{}
+	for _, tool := range front.Tools {
+		if tool = strings.TrimSpace(tool); tool != "" && !strings.ContainsAny(tool, ", \t") {
+			out = append(out, tool)
+		}
+	}
+	return out
 }

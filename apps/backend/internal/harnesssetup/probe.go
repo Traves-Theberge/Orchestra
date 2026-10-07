@@ -32,6 +32,8 @@ type Harness struct {
 	Executable          string      `json:"executable,omitempty"`
 	TerminalSupported   bool        `json:"terminal_supported"`
 	CredentialEntries   *int        `json:"credential_entries,omitempty"`
+	// Version is the CLI's self-reported version where probing is cheap and safe.
+	Version string `json:"version,omitempty"`
 }
 
 type definition struct {
@@ -41,7 +43,7 @@ type definition struct {
 var known = []definition{
 	{"CODEX", "codex"}, {"CLAUDE", "claude"},
 	{"OPENCODE", "opencode"},
-	{"ANTIGRAVITY", "agy"}, {"8GENT", "8gent"},
+	{"ANTIGRAVITY", "agy"}, {"OMP", "omp"}, {"8GENT", "8gent"},
 }
 
 type Lookup func(string) (string, error)
@@ -87,6 +89,9 @@ func Observe(ctx context.Context, registered []string, commands map[string]strin
 				if probeErr == nil {
 					row.Authentication = state
 				}
+			}
+			if item.id == "OMP" && knownBinary {
+				row.Version = ProbeOMPVersion(ctx, path)
 			}
 			if item.id == "OPENCODE" && knownBinary {
 				if count, probeErr := ProbeOpenCodeCredentialCatalog(ctx, path); probeErr == nil {
@@ -234,4 +239,23 @@ func (output *limitedOutput) Write(p []byte) (int, error) {
 		output.data = append(output.data, p[:min(len(p), remaining)]...)
 	}
 	return len(p), nil
+}
+
+// ProbeOMPVersion reads `omp --version` ("omp/18.7.0"). It reads no
+// credentials; an empty result means the version was not observed.
+func ProbeOMPVersion(ctx context.Context, path string) string {
+	bounded, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	command := exec.CommandContext(bounded, path, "--version")
+	var output limitedOutput
+	command.Stdout, command.Stderr = &output, io.Discard
+	if err := command.Run(); err != nil {
+		return ""
+	}
+	version := strings.TrimSpace(string(output.data))
+	version = strings.TrimPrefix(version, "omp/")
+	if version == "" || len(version) > 64 || strings.ContainsAny(version, " \n") {
+		return ""
+	}
+	return version
 }

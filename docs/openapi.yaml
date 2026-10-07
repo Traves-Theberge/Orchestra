@@ -96,7 +96,7 @@ components:
             $ref: '#/components/schemas/Blocker'
         provider:
           type: string
-          description: Agent harness override (claude/codex/antigravity/opencode/8gent). Historical Gemini identities remain readable but cannot be selected for new work.
+          description: Agent harness override (claude/codex/antigravity/opencode/omp/8gent). Historical Gemini identities remain readable but cannot be selected for new work.
         runtime_target:
           type: string
           description: Remote execution target (tailscale/kubernetes node name).
@@ -789,6 +789,7 @@ components:
         codex: { $ref: '#/components/schemas/ProviderRateLimits' }
         opencode: { $ref: '#/components/schemas/ProviderRateLimits' }
         antigravity: { $ref: '#/components/schemas/ProviderRateLimits' }
+        omp: { $ref: '#/components/schemas/ProviderRateLimits' }
         '8gent': { $ref: '#/components/schemas/ProviderRateLimits' }
         gemini: { $ref: '#/components/schemas/ProviderRateLimits' }
     ProviderRateLimits:
@@ -820,7 +821,7 @@ components:
         project_id: { type: string }
         workspace_id: { type: string, description: Exact selected child checkout ID when applicable. }
         root: { type: string, description: Observed project root for project scope. }
-        harness: { type: string, enum: [CLAUDE, CODEX, GEMINI, OPENCODE, 8GENT, ANTIGRAVITY] }
+        harness: { type: string, enum: [CLAUDE, CODEX, GEMINI, OPENCODE, 8GENT, ANTIGRAVITY, OMP] }
         scope: { type: string, enum: [project, global, effective] }
         observation: { type: string, enum: [observed, unavailable, unsupported] }
         selection_capability: { type: string }
@@ -848,7 +849,7 @@ components:
         id: { type: string, description: Resource ID relative to the provider-native resource directory. }
         agent_id: { type: string }
         kind: { type: string, enum: [agent_definition, skill, orchestra_config] }
-        harness: { type: string, enum: [CLAUDE, CODEX, GEMINI, OPENCODE, 8GENT, ANTIGRAVITY] }
+        harness: { type: string, enum: [CLAUDE, CODEX, GEMINI, OPENCODE, 8GENT, ANTIGRAVITY, OMP] }
         scope: { type: string, enum: [project, global] }
         path: { type: string, description: Observed absolute resource path. }
         content_hash: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
@@ -879,7 +880,7 @@ components:
         status: { type: string, enum: [pending, completed, unknown] }
         project_id: { type: string }
         workspace_id: { type: string }
-        harness: { type: string, enum: [CLAUDE, CODEX, GEMINI, OPENCODE, 8GENT, ANTIGRAVITY] }
+        harness: { type: string, enum: [CLAUDE, CODEX, GEMINI, OPENCODE, 8GENT, ANTIGRAVITY, OMP] }
         scope: { type: string, enum: [project, global] }
         kind: { type: string, enum: [agent_definition, skill, orchestra_config] }
         resource_id: { type: string }
@@ -1090,7 +1091,7 @@ paths:
       description: Lists harness-owned agent definitions, skills, and supported workspace configuration. Scope defaults to effective (global plus project); project scope resolves the exact workspace_id checkout. Discovery does not establish primary-agent selection capability.
       parameters:
         - { name: project_id, in: path, required: true, schema: { type: string } }
-        - { name: harness, in: query, required: true, schema: { type: string, enum: [CLAUDE, CODEX, GEMINI, OPENCODE, 8GENT, ANTIGRAVITY] } }
+        - { name: harness, in: query, required: true, schema: { type: string, enum: [CLAUDE, CODEX, GEMINI, OPENCODE, 8GENT, ANTIGRAVITY, OMP] } }
         - { name: scope, in: query, schema: { type: string, enum: [project, global, effective], default: effective } }
         - { name: workspace_id, in: query, description: Exact checkout identity for project scope., schema: { type: string } }
       responses:
@@ -1112,7 +1113,7 @@ paths:
       description: Returns the native resource content and current SHA-256 content hash. Scope, harness, kind, resource ID, and workspace identity (for project scope) must match the observed item.
       parameters:
         - { name: project_id, in: path, required: true, schema: { type: string } }
-        - { name: harness, in: query, required: true, schema: { type: string, enum: [CLAUDE, CODEX, GEMINI, OPENCODE, 8GENT, ANTIGRAVITY] } }
+        - { name: harness, in: query, required: true, schema: { type: string, enum: [CLAUDE, CODEX, GEMINI, OPENCODE, 8GENT, ANTIGRAVITY, OMP] } }
         - { name: scope, in: query, schema: { type: string, enum: [project, global, effective], default: effective } }
         - { name: workspace_id, in: query, description: Exact checkout identity for project scope., schema: { type: string } }
         - { name: kind, in: query, required: true, schema: { type: string, enum: [agent_definition, skill, orchestra_config] } }
@@ -1134,7 +1135,7 @@ paths:
       description: Creates a provider-native definition/skill or supported workspace configuration. Mutations require project or global scope, a stable non-nil UUID request_id, and harness-native content. This route does not select a primary agent.
       parameters:
         - { name: project_id, in: path, required: true, schema: { type: string } }
-        - { name: harness, in: query, required: true, schema: { type: string, enum: [CLAUDE, CODEX, GEMINI, OPENCODE, 8GENT, ANTIGRAVITY] } }
+        - { name: harness, in: query, required: true, schema: { type: string, enum: [CLAUDE, CODEX, GEMINI, OPENCODE, 8GENT, ANTIGRAVITY, OMP] } }
         - { name: scope, in: query, required: true, schema: { type: string, enum: [project, global] } }
         - { name: workspace_id, in: query, description: Exact checkout identity for project scope., schema: { type: string } }
         - { name: kind, in: query, required: true, schema: { type: string, enum: [agent_definition, skill, orchestra_config] } }
@@ -1170,7 +1171,7 @@ paths:
       description: Replaces content only when expected_hash equals the current resource hash. Use a stable non-nil UUID request_id; replay returns its durable receipt and never repeats the write.
       parameters:
         - { name: project_id, in: path, required: true, schema: { type: string } }
-        - { name: harness, in: query, required: true, schema: { type: string, enum: [CLAUDE, CODEX, GEMINI, OPENCODE, 8GENT, ANTIGRAVITY] } }
+        - { name: harness, in: query, required: true, schema: { type: string, enum: [CLAUDE, CODEX, GEMINI, OPENCODE, 8GENT, ANTIGRAVITY, OMP] } }
         - { name: scope, in: query, required: true, schema: { type: string, enum: [project, global] } }
         - { name: workspace_id, in: query, description: Exact checkout identity for project scope., schema: { type: string } }
         - { name: kind, in: query, required: true, schema: { type: string, enum: [agent_definition, skill, orchestra_config] } }
@@ -1207,7 +1208,7 @@ paths:
       description: Deletes only if expected_hash matches the current content. It removes one native file only, never a directory tree. Stable request_id allows receipt reconciliation without repeating the filesystem effect.
       parameters:
         - { name: project_id, in: path, required: true, schema: { type: string } }
-        - { name: harness, in: query, required: true, schema: { type: string, enum: [CLAUDE, CODEX, GEMINI, OPENCODE, 8GENT, ANTIGRAVITY] } }
+        - { name: harness, in: query, required: true, schema: { type: string, enum: [CLAUDE, CODEX, GEMINI, OPENCODE, 8GENT, ANTIGRAVITY, OMP] } }
         - { name: scope, in: query, required: true, schema: { type: string, enum: [project, global] } }
         - { name: workspace_id, in: query, description: Exact checkout identity for project scope., schema: { type: string } }
         - { name: kind, in: query, required: true, schema: { type: string, enum: [agent_definition, skill, orchestra_config] } }

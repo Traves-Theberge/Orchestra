@@ -381,6 +381,12 @@ func safeStageCommand(provider Provider, raw string) (string, bool) {
 		if raw == "claude -p {{prompt}} --output-format stream-json --verbose --dangerously-skip-permissions" {
 			return "claude -p {{prompt}} --output-format stream-json --verbose --permission-mode plan --tools Read,Grep,Glob --disallowedTools mcp__*", true
 		}
+	case ProviderOMP:
+		if raw == "omp -p --mode json --auto-approve --no-title {{prompt}}" {
+			// --tools is an allowlist; a live omp 18.7.0 session listed only these
+			// three tools. Extensions are disabled so none can add write tools.
+			return "omp -p --mode json --auto-approve --no-title --no-extensions --tools read,grep,glob {{prompt}}", true
+		}
 	}
 	return "", false
 }
@@ -434,6 +440,8 @@ func (r *Registry) SetCommand(provider Provider, command string) {
 		r.runners[p] = NewEightgentRunner(command)
 	case ProviderOpenCode:
 		r.runners[p] = NewOpenCodeRunner(command)
+	case ProviderOMP:
+		r.runners[p] = NewOMPRunner(command)
 	case ProviderAntigravity:
 		r.runners[p] = NewCommandRunner(p, command)
 	case ProviderUnsandbox:

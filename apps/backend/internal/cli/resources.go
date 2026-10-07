@@ -101,8 +101,8 @@ func parseResource(args []string) (resourceCommand, error) {
 		}
 		return c, nil
 	}
-	if c.harness == "" || (c.harness != "CODEX" && c.harness != "CLAUDE" && c.harness != "OPENCODE" && c.harness != "ANTIGRAVITY" && c.harness != "8GENT") {
-		return c, errors.New("resource commands require --harness CODEX, CLAUDE, OPENCODE, ANTIGRAVITY or 8GENT; Gemini is no longer selectable")
+	if c.harness == "" || (c.harness != "CODEX" && c.harness != "CLAUDE" && c.harness != "OPENCODE" && c.harness != "ANTIGRAVITY" && c.harness != "OMP" && c.harness != "8GENT") {
+		return c, errors.New("resource commands require --harness CODEX, CLAUDE, OPENCODE, ANTIGRAVITY, OMP or 8GENT; Gemini is no longer selectable")
 	}
 	if c.scope != "project" && c.scope != "global" && c.scope != "effective" {
 		return c, errors.New("resource commands require --scope effective, project, or global")

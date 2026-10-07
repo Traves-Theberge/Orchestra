@@ -183,6 +183,8 @@ func agentsProviderFor(runner string) (agents.Provider, error) {
 		return agents.ProviderCodex, nil
 	case "opencode":
 		return agents.ProviderOpenCode, nil
+	case "omp":
+		return agents.ProviderOMP, nil
 	case "gemini":
 		return "", fmt.Errorf("studio: Gemini is a retired harness; select Antigravity for new sessions")
 	default:

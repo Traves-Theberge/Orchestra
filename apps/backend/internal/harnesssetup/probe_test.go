@@ -35,7 +35,7 @@ func TestObserveSeparatesRegistrationInstallationAndAuthentication(t *testing.T)
 		}
 		return SignedIn, nil
 	})
-	if len(rows) != 5 || called != 1 {
+	if len(rows) != 6 || called != 1 {
 		t.Fatalf("rows=%d auth probes=%d", len(rows), called)
 	}
 	if got := rows[0]; !got.Registered || !got.CommandConfigured || got.Installation != Detected || got.Authentication != SignedIn {
@@ -44,12 +44,13 @@ func TestObserveSeparatesRegistrationInstallationAndAuthentication(t *testing.T)
 	if got := rows[1]; !got.Registered || got.CommandConfigured || got.Installation != Missing || got.Authentication != Unknown {
 		t.Fatalf("unexpected Claude observation: %+v", got)
 	}
-	seenAntigravity, seenGemini := false, false
+	seenAntigravity, seenOMP, seenGemini := false, false, false
 	for _, row := range rows {
 		seenAntigravity = seenAntigravity || row.ID == "ANTIGRAVITY"
+		seenOMP = seenOMP || row.ID == "OMP"
 		seenGemini = seenGemini || row.ID == "GEMINI"
 	}
-	if !seenAntigravity || seenGemini {
+	if !seenAntigravity || !seenOMP || seenGemini {
 		t.Fatalf("active harness inventory should include Antigravity and retire Gemini: %+v", rows)
 	}
 }

@@ -14,6 +14,8 @@ export function providerLabel(provider: QuotaProvider): string {
       return 'Antigravity'
     case '8gent':
       return '8gent'
+    case 'omp':
+      return 'OMP'
   }
 }
 
@@ -33,6 +35,8 @@ function providerIconMeta(provider: QuotaProvider): ProviderIconMeta {
       return { src: './antigravity.png', invert: false }
     case '8gent':
       return { src: './8gent.png', invert: false }
+    case 'omp':
+      return { src: './omp.png', invert: false }
   }
 }
 

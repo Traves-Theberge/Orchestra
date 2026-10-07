@@ -39,7 +39,7 @@ func (s *Server) GetHarnessSetup(w http.ResponseWriter, r *http.Request) {
 func (s *Server) SetHarnessRegistration(w http.ResponseWriter, r *http.Request) {
 	provider := string(agents.NormalizeProvider(chi.URLParam(r, "provider")))
 	switch provider {
-	case "CODEX", "CLAUDE", "OPENCODE", "ANTIGRAVITY", "8GENT":
+	case "CODEX", "CLAUDE", "OPENCODE", "ANTIGRAVITY", "OMP", "8GENT":
 	default:
 		writeJSONError(w, http.StatusBadRequest, "unknown_harness", "unknown harness")
 		return

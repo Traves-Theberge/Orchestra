@@ -268,6 +268,7 @@ func (s *Service) Providers(ctx context.Context, pid string) ([]Provider, error)
 		{agents.ProviderClaude, "Claude Code"},
 		{agents.ProviderOpenCode, "OpenCode"},
 		{agents.ProviderAntigravity, "Antigravity"},
+		{agents.ProviderOMP, "OMP"},
 		{agents.Provider8gent, "8gent"},
 	}
 	known := map[agents.Provider]bool{
@@ -275,6 +276,7 @@ func (s *Service) Providers(ctx context.Context, pid string) ([]Provider, error)
 		agents.ProviderClaude:      true,
 		agents.ProviderOpenCode:    true,
 		agents.ProviderAntigravity: true,
+		agents.ProviderOMP:         true,
 		agents.Provider8gent:       true,
 	}
 	if catalog, ok := s.registry.(interface{ Providers() []agents.Provider }); ok {

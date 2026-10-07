@@ -203,14 +203,20 @@ func newAntigravityNativeSessionWithArgs(ctx context.Context, command string, pr
 }
 
 func resolveAntigravityExecutable(command string) (string, error) {
+	return resolveNativeExecutable("Antigravity", command)
+}
+
+// resolveNativeExecutable accepts exactly one executable (quoted when its path
+// has spaces); native sessions never run a shell command line.
+func resolveNativeExecutable(label, command string) (string, error) {
 	value := strings.TrimSpace(command)
 	if len(value) >= 2 && (value[0] == '\'' && value[len(value)-1] == '\'' || value[0] == '"' && value[len(value)-1] == '"') {
 		value = value[1 : len(value)-1]
 	} else if strings.ContainsAny(value, " \t\r\n") {
-		return "", errors.New("native Antigravity command must be one executable path; quote paths containing spaces")
+		return "", fmt.Errorf("native %s command must be one executable path; quote paths containing spaces", label)
 	}
 	if value == "" || strings.ContainsAny(value, ";&|<>$`()") {
-		return "", errors.New("native Antigravity command is not a valid executable path")
+		return "", fmt.Errorf("native %s command is not a valid executable path", label)
 	}
 	if filepath.IsAbs(value) {
 		resolved, err := filepath.Abs(value)
@@ -219,13 +225,13 @@ func resolveAntigravityExecutable(command string) (string, error) {
 		}
 		info, err := os.Stat(resolved)
 		if err != nil || info.IsDir() {
-			return "", fmt.Errorf("native Antigravity executable is unavailable: %s", resolved)
+			return "", fmt.Errorf("native %s executable is unavailable: %s", label, resolved)
 		}
 		return resolved, nil
 	}
 	resolved, err := exec.LookPath(value)
 	if err != nil {
-		return "", fmt.Errorf("native Antigravity executable is unavailable: %w", err)
+		return "", fmt.Errorf("native %s executable is unavailable: %w", label, err)
 	}
 	return resolved, nil
 }

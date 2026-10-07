@@ -31,7 +31,7 @@ import { AgentPicker } from './AgentPicker'
 import { AgentMentionMenu } from './AgentMentions'
 import { insertMention, mentionCandidates, mentionQuery, useAgentDirectory } from './agent-mentions'
 import { readAgentModelChoice, writeAgentModelChoice } from './agent-model-memory'
-import { agentColor, agentDisplayName, parseAgentObservation } from '@features/agents/lib/agent-display'
+import { agentColor, agentDisplayName, harnessDisplayName, parseAgentObservation } from '@features/agents/lib/agent-display'
 import { type AgentSelection } from '@core/api/agent-catalog'
 import { useAppStore } from '@core/store'
 import { chatDraftStorageKey, readChatDraftReceipt, writeChatDraftReceipt } from './chat-draft-storage'
@@ -119,7 +119,7 @@ function AgentActivity({ events }: { events: WorkspaceChatEvent[] }) {
 }
 
 function HarnessDivider({ provider }: { provider: string }) {
-  return <div role="separator" aria-label={`Switched to ${provider.toLowerCase()}`} className="mb-5 flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground/60"><span className="h-px flex-1 bg-border/60" /><HarnessIcon id={provider.toLowerCase()} size={12} /><span>Continued on {provider.charAt(0) + provider.slice(1).toLowerCase()}</span><span className="h-px flex-1 bg-border/60" /></div>
+  return <div role="separator" aria-label={`Switched to ${provider.toLowerCase()}`} className="mb-5 flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground/60"><span className="h-px flex-1 bg-border/60" /><HarnessIcon id={provider.toLowerCase()} size={12} /><span>Continued on {harnessDisplayName(provider)}</span><span className="h-px flex-1 bg-border/60" /></div>
 }
 
 function AgentDivider({ name, color }: { name: string; color?: string }) {
@@ -134,7 +134,7 @@ function StreamingAssistant({ events, projectId, provider }: { events: Workspace
     const key = `${event.turn_id}:${event.item_id}`
     items.set(key, (items.get(key) ?? '') + (event.delta ?? ''))
   }
-  return <>{[...items].map(([id, text]) => <article key={id} className="py-2"><div className="mb-2 flex items-center gap-2 text-[11px] text-muted-foreground"><HarnessIcon id={provider || 'agent'} size={14} /><span className="capitalize">{provider || 'Agent'}</span> · streaming</div><MarkdownRenderer content={text} enableMermaid={false} isStreaming={true} linkProjectId={projectId} className="break-words text-[13px] leading-7 [&_pre]:overflow-auto [&_pre]:rounded-xl [&_pre]:bg-muted/30" /></article>)}</>
+  return <>{[...items].map(([id, text]) => <article key={id} className="py-2"><div className="mb-2 flex items-center gap-2 text-[11px] text-muted-foreground"><HarnessIcon id={provider || 'agent'} size={14} /><span>{provider ? harnessDisplayName(provider) : 'Agent'}</span> · streaming</div><MarkdownRenderer content={text} enableMermaid={false} isStreaming={true} linkProjectId={projectId} className="break-words text-[13px] leading-7 [&_pre]:overflow-auto [&_pre]:rounded-xl [&_pre]:bg-muted/30" /></article>)}</>
 }
 
 /** Live label for the running turn, from the latest provider event; "Thinking…" before any event arrives. */
@@ -177,7 +177,7 @@ function AgentWorkingStatus({
   onInterrupt?: () => void
 }) {
   const isStopping = status === 'stopping'
-  const displayName = provider ? provider.charAt(0).toUpperCase() + provider.slice(1) : 'Agent'
+  const displayName = provider ? harnessDisplayName(provider) : 'Agent'
   const [mountedAt] = useState(() => Date.now())
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {

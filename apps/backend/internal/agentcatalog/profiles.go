@@ -131,7 +131,7 @@ func ParseAgentID(id string) (source string, scope Scope, harness, name string, 
 // harnessAgentName is the name a harness CLI selects: Claude and agy use the
 // frontmatter name; OpenCode and Codex use the file id.
 func harnessAgentName(harness, id, metaName string) string {
-	if (harness == "CLAUDE" || harness == "ANTIGRAVITY") && strings.TrimSpace(metaName) != "" {
+	if (harness == "CLAUDE" || harness == "ANTIGRAVITY" || harness == "OMP") && strings.TrimSpace(metaName) != "" {
 		return strings.TrimSpace(metaName)
 	}
 	return id
@@ -265,7 +265,7 @@ func selectionStatus(harness string, kind Kind, mode, capability string) (string
 }
 
 func supportsAuthoring(harness string) bool {
-	return harness == "OPENCODE" || harness == "CLAUDE" || harness == "CODEX" || harness == "ANTIGRAVITY"
+	return harness == "OPENCODE" || harness == "CLAUDE" || harness == "CODEX" || harness == "ANTIGRAVITY" || harness == "OMP"
 }
 
 // selectionProbe reports whether the harness can run at all; what an agent

@@ -20,7 +20,7 @@ func TestAgentSelectionRequiresResolvedProfile(t *testing.T) {
 func TestAgentSelectionAcceptsApplicableProfiles(t *testing.T) {
 	registry := NewRegistry(map[string]string{
 		"OPENCODE": "opencode run {{prompt}}", "CLAUDE": "claude -p {{prompt}}", "CODEX": "codex exec {{prompt}}",
-		"ANTIGRAVITY": "agy -p {{prompt}}", "8GENT": "8gent run {{prompt}}",
+		"ANTIGRAVITY": "agy -p {{prompt}}", "OMP": "omp -p --mode json {{prompt}}", "8GENT": "8gent run {{prompt}}",
 	})
 	for _, p := range SelectableHarnesses() {
 		req := TurnRequest{RuntimeTarget: RuntimeLocal, RequestedAgentID: "orchestra:global:orchestra:rev", Agent: orchestraAgent("rev")}

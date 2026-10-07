@@ -647,6 +647,8 @@ export type HarnessSetupObservation = {
   executable?: string
   terminal_supported: boolean
   credential_entries?: number
+  /** CLI version reported by the backend probe, e.g. "18.7.0". */
+  version?: string
 }
 
 export async function fetchHarnessSetup(config: BackendConfig): Promise<HarnessSetupObservation[]> {
@@ -2557,7 +2559,7 @@ export async function saveAgentProviderKey(
 // Mirrors Orca's claude-usage / codex-usage IPC surface as REST.
 // ===========================================================================
 
-export type UsageProvider = 'claude' | 'codex' | 'gemini' | 'opencode'
+export type UsageProvider = 'claude' | 'codex' | 'gemini' | 'opencode' | 'omp'
 export type QuotaProvider = UsageProvider | 'antigravity' | '8gent'
 export type UsageScope = 'orchestra' | 'all'
 export type UsageRange = '7d' | '30d' | '90d' | 'all'
@@ -2668,6 +2670,7 @@ export type RateLimitState = {
   opencode?: ProviderRateLimits
   antigravity?: ProviderRateLimits
   '8gent'?: ProviderRateLimits
+  omp?: ProviderRateLimits
 }
 
 function usageQS(scope: UsageScope, range: UsageRange, extra: Record<string, string> = {}): string {

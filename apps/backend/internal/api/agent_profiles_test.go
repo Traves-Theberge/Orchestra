@@ -87,7 +87,7 @@ func TestHarnessCapabilitiesRetireGemini(t *testing.T) {
 			} `json:"agent_inline"`
 		}
 	}
-	if status != 200 || json.Unmarshal(body, &out) != nil || len(out.Harnesses) != 5 {
+	if status != 200 || json.Unmarshal(body, &out) != nil || len(out.Harnesses) != 6 {
 		t.Fatalf("%d %s", status, body)
 	}
 	for _, h := range out.Harnesses {

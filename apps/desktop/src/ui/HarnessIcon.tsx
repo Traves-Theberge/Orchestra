@@ -7,6 +7,7 @@ const icons: Record<string, { src: string; invert?: boolean }> = {
   opencode: { src: './opencode.png' },
   antigravity: { src: './antigravity.png' },
   '8gent': { src: './8gent.png' },
+  omp: { src: './omp.png' },
 }
 
 export function HarnessIcon({ id, size = 16 }: { id: string; size?: number }) {

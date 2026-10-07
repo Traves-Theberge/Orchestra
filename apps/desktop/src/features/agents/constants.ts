@@ -7,6 +7,7 @@ export const PROVIDERS: { id: Provider; label: string; description: string }[] =
   { id: 'antigravity', label: 'Antigravity', description: 'Google Antigravity harness — independent configuration and capabilities' },
   { id: 'opencode', label: 'OpenCode', description: 'Community-driven — flexible and extensible' },
   { id: '8gent', label: '8gent', description: 'Open-source autonomous coding agent — local-first, self-evolving' },
+  { id: 'omp', label: 'OMP', description: 'oh-my-pi coding agent — multi-provider models with per-turn thinking levels' },
 ]
 
 /** Orchestra (all harnesses) view. */
@@ -61,6 +62,12 @@ export const EIGHTGENT_CATEGORIES: CategoryDef[] = [
   { id: 'mcp', label: 'MCP Servers', icon: Plug },
 ]
 
+export const OMP_CATEGORIES: CategoryDef[] = [
+  { id: 'settings', label: 'Settings', icon: Settings2, pinned: true },
+  { id: 'agents', label: 'Agents', icon: Bot },
+  { id: 'skills', label: 'Skills', icon: Sparkles },
+]
+
 export const MODELS_BY_PROVIDER: Record<Provider, { value: string; label: string }[]> = {
   antigravity: [],
   claude: [
@@ -107,6 +114,8 @@ export const MODELS_BY_PROVIDER: Record<Provider, { value: string; label: string
     { value: 'mistralai/mistral-small-3.1-24b-instruct:free', label: 'Mistral Small 3.1 (free, cloud)' },
     { value: 'google/gemini-2.0-flash-exp:free', label: 'Gemini 2.0 Flash (free, cloud)' },
   ],
+  // omp model selectors come from the installed omp catalog at runtime.
+  omp: [],
 }
 
 export const HOOK_EVENTS_BY_PROVIDER: Record<Provider, string[]> = {
@@ -115,6 +124,7 @@ export const HOOK_EVENTS_BY_PROVIDER: Record<Provider, string[]> = {
   codex: [],
   opencode: [],
   '8gent': ['SessionStart', 'SessionEnd', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop'],
+  omp: [],
 }
 
 export const EFFORT_LEVELS: Record<Provider, string[]> = {
@@ -123,6 +133,7 @@ export const EFFORT_LEVELS: Record<Provider, string[]> = {
   codex: ['low', 'medium', 'high', 'very-high', 'max', 'reasoning'],
   opencode: ['low', 'medium', 'high'],
   '8gent': ['low', 'medium', 'high'],
+  omp: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
 }
 
 export const APPROVAL_MODES: Record<Provider, { label: string; value: string }[]> = {
@@ -151,5 +162,10 @@ export const APPROVAL_MODES: Record<Provider, { label: string; value: string }[]
     { label: 'Accept Edits', value: 'acceptEdits' },
     { label: 'Infinite (no approval)', value: 'infinite' },
     { label: 'Plan only', value: 'plan' },
+  ],
+  omp: [
+    { label: 'Always ask', value: 'always-ask' },
+    { label: 'Ask for writes', value: 'write' },
+    { label: 'YOLO (auto-approve)', value: 'yolo' },
   ],
 }
