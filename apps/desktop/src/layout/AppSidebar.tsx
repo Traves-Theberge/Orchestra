@@ -31,15 +31,16 @@ import type { Project, DocItem } from '@core/api/types'
 import { useAppStore } from '@core/store'
 import { ProjectControls } from '@features/projects/ProjectControls'
 import { ProjectWorkspaceTree } from '@features/projects/ProjectWorkspaceTree'
+import { MaestroConversations } from '@features/workspace/chat/MaestroConversations'
 import type { LucideIcon } from 'lucide-react'
 import { getAgentIcon, CustomDropdown } from '@layout/shared/controls'
 import { AppTooltip } from '@ui/tooltip-wrapper'
 import { ORCHESTRA_PROVIDER, PROVIDERS } from '@features/agents/constants'
 import { Network as OrchestraGlyph } from 'lucide-react'
 
-type SidebarView = 'primary' | 'settings' | 'projects' | 'console' | 'agents' | 'docs'
+type SidebarView = 'primary' | 'maestro' | 'settings' | 'projects' | 'console' | 'agents' | 'docs'
 
-const DRILLDOWN_SECTIONS: ReadonlySet<string> = new Set(['SETTINGS', 'PROJECTS', 'CONSOLE', 'AGENTS', 'DOCS', 'API_DOCS'])
+const DRILLDOWN_SECTIONS: ReadonlySet<string> = new Set(['ORCHESTRATOR', 'SETTINGS', 'PROJECTS', 'CONSOLE', 'AGENTS', 'DOCS', 'API_DOCS'])
 
 const SETTINGS_SECTIONS = [
   { id: 'connections', label: 'Connections', icon: Database },
@@ -97,6 +98,7 @@ const DEFAULT_WIDTH = 224
 
 function sectionToView(section: string): SidebarView {
   switch (section) {
+    case 'ORCHESTRATOR': return 'maestro'
     case 'SETTINGS': return 'settings'
     case 'PROJECTS': return 'console'
     case 'CONSOLE': return 'console'
@@ -255,6 +257,12 @@ export function AppSidebar({
       <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
         {view === 'primary' && (
           <PrimaryNav items={items} activeSection={activeSection} onItemClick={handleItemClick} onOpenApiDocs={openSwagger} showApiDocs={Boolean(config)} />
+        )}
+        {view === 'maestro' && (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <SubNavHeader label="Maestro" onBack={handleBack} />
+            <MaestroConversations />
+          </div>
         )}
         {view === 'settings' && (
           <SettingsSubNav onBack={handleBack} />

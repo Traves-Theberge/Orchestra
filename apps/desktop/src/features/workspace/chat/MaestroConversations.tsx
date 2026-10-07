@@ -1,0 +1,77 @@
+import { useCallback, useEffect, useState } from 'react'
+import { SquarePen } from 'lucide-react'
+import { useAppStore } from '@core/store'
+import { listWorkspaceChatSessions, type WorkspaceChatSession } from '@core/api/client'
+import { HarnessIcon } from '@ui/HarnessIcon'
+
+export const MAESTRO_SCOPE = '__orchestrator__'
+/** Fired by a chat when its selected conversation changes: detail = { projectId, sessionId }. */
+export const CHAT_SESSION_EVENT = 'orchestra:chat-session'
+
+function ago(iso: string): string {
+  const seconds = Math.max(0, (Date.now() - Date.parse(iso)) / 1000)
+  if (!Number.isFinite(seconds)) return ''
+  if (seconds < 60) return 'now'
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`
+  return `${Math.floor(seconds / 86400)}d`
+}
+
+/** Sidebar list of Maestro conversations: pick one or start a new one in the Maestro chat. */
+export function MaestroConversations() {
+  const config = useAppStore(s => s.config)
+  const [sessions, setSessions] = useState<WorkspaceChatSession[]>([])
+  const [currentId, setCurrentId] = useState('')
+  const [error, setError] = useState('')
+
+  const load = useCallback(() => {
+    if (!config) return
+    void listWorkspaceChatSessions(config, MAESTRO_SCOPE)
+      .then(result => { setSessions(Array.isArray(result.sessions) ? result.sessions : []); setError('') })
+      .catch(() => setError('Conversations unavailable'))
+  }, [config])
+
+  useEffect(() => {
+    load()
+    const timer = window.setInterval(load, 5000)
+    const onSession = (event: Event) => {
+      const detail = (event as CustomEvent<{ projectId: string; sessionId: string }>).detail
+      if (detail?.projectId !== MAESTRO_SCOPE) return
+      setCurrentId(detail.sessionId)
+      load()
+    }
+    window.addEventListener(CHAT_SESSION_EVENT, onSession)
+    return () => { window.clearInterval(timer); window.removeEventListener(CHAT_SESSION_EVENT, onSession) }
+  }, [load])
+
+  const open = (sessionId: string) => {
+    const state = useAppStore.getState()
+    if (!state.config) return
+    state.setActiveSection('ORCHESTRATOR')
+    // The Maestro chat consumes this request; an empty id starts a new conversation.
+    useAppStore.setState({ requestedWorkspaceConversation: { baseUrl: state.config.baseUrl, apiToken: state.config.apiToken, projectId: MAESTRO_SCOPE, sessionId, requestId: Date.now() } })
+  }
+
+  const sorted = [...sessions].sort((a, b) => Date.parse(b.updated_at || b.created_at) - Date.parse(a.updated_at || a.created_at))
+  return <div className="flex min-h-0 flex-1 flex-col">
+    <div className="shrink-0 px-2 pb-1">
+      <button type="button" onClick={() => open('')} className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-[12.5px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground">
+        <SquarePen size={14} className="shrink-0" />New conversation
+      </button>
+    </div>
+    <p className="shrink-0 px-4 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/60">Conversations</p>
+    <nav aria-label="Maestro conversations" className="min-h-0 flex-1 overflow-auto px-2 pb-2">
+      {sorted.map(session => {
+        const active = session.id === currentId
+        return <button key={session.id} type="button" aria-current={active ? 'page' : undefined} onClick={() => open(session.id)} title={session.title}
+          className={`flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[12.5px] transition-colors ${active ? 'bg-foreground/[0.08] text-foreground' : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground'}`}>
+          <HarnessIcon id={session.provider.toLowerCase()} size={13} />
+          <span className="min-w-0 flex-1 truncate">{session.title || 'Untitled conversation'}</span>
+          {session.status === 'running' && <span aria-label="Working" className="size-1.5 shrink-0 rounded-full bg-primary" />}
+          <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/70">{ago(session.updated_at || session.created_at)}</span>
+        </button>
+      })}
+      {!sorted.length && <p className="px-2 py-2 text-[12px] text-muted-foreground">{error || 'No conversations yet.'}</p>}
+    </nav>
+  </div>
+}

@@ -1,12 +1,12 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowDown, ArrowUp, CheckCircle2, ChevronRight, Loader2, Paperclip, ShieldCheck, Sparkles, Square, Terminal, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, CheckCircle2, ChevronRight, Loader2, Paperclip, ShieldCheck, Sparkles, Square, SquarePen, Terminal, X } from 'lucide-react'
 import { MarkdownRenderer } from '@ui/MarkdownRenderer'
 import { AppTooltip } from '@ui/tooltip-wrapper'
 import { HarnessIcon } from '@ui/HarnessIcon'
 import { ChatMessage } from './ChatMessage'
 import { useChatZoom } from './chat-zoom'
-import { ConversationMenu } from './ConversationMenu'
+import { CHAT_SESSION_EVENT } from './MaestroConversations'
 import { extractHtmlRendersFromEvents, type HtmlRenderReference } from './html-render'
 
 const IMPLEMENT_REFERENCE_HTML_LIMIT = 24_000
@@ -265,6 +265,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
   const [showJump, setShowJump] = useState(false)
   const working = isWorking(snapshot?.session)
   const chatZoom = useChatZoom()
+  useEffect(() => { window.dispatchEvent(new CustomEvent(CHAT_SESSION_EVENT, { detail: { projectId, sessionId } })) }, [projectId, sessionId])
   const selectedProvider = providers.find(p => p.id.toLowerCase() === (snapshot?.session.provider || creating.current?.provider || provider).toLowerCase())
   const legacyGeminiSession = snapshot?.session.id === sessionId && snapshot.session.provider.toLowerCase() === 'gemini'
   const agentHarness = snapshot?.session.provider || creating.current?.provider || provider
@@ -757,9 +758,9 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
   }
 
   const breadcrumb = <>
+    <AppTooltip content="New conversation" side="bottom"><button type="button" aria-label="New conversation" disabled={pending} onClick={newConversation} className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"><SquarePen size={13} /></button></AppTooltip>
     <span className="max-w-36 shrink-0 truncate text-[11px] text-muted-foreground">{projectName}</span><ChevronRight className="size-3 shrink-0 text-muted-foreground/50" />
     <h2 className={`min-w-8 truncate text-[13px] font-medium ${breadcrumbSlot === undefined ? 'flex-1' : 'max-w-[50ch]'}`}>{titleEditor ? <input autoFocus aria-label="Conversation name" value={titleEditor.value} disabled={pending} onFocus={e => e.currentTarget.select()} onChange={e => setTitleEditor({ ...titleEditor, value: e.target.value })} onBlur={() => { void saveTitle() }} onKeyDown={e => { if (e.nativeEvent.isComposing) return; if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); void saveTitle() } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setTitleEditor(null) } }} className="w-full min-w-[20ch] rounded border border-border bg-background px-1 outline-none focus:border-primary" /> : <button type="button" aria-label={`Rename conversation: ${conversationTitle}`} title={conversationTitle} disabled={pending || !!creating.current || (sessionId !== '' && snapshot?.session.id !== sessionId)} onClick={() => setTitleEditor({ id: sessionId, original: conversationTitle, value: conversationTitle })} className="block w-full max-w-[50ch] truncate rounded px-1 text-left hover:bg-accent disabled:opacity-50">{conversationTitle}</button>}</h2>
-    <ConversationMenu sessions={sessions} currentId={sessionId} disabled={pending || !!creating.current} onNew={newConversation} onChoose={chooseConversation} />
     {(working || observationError) && <span className="shrink-0 text-[10px] text-muted-foreground">{observationError ? 'Disconnected' : 'Working'}</span>}
   </>
 
