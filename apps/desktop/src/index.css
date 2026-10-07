@@ -592,3 +592,9 @@ body {
 .prose-wiki a:hover {
   border-color: var(--color-primary);
 }
+
+/* Agent palette: nudge an unavailable agent's reason when the user tries to pick it */
+@keyframes agent-shake {
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
