@@ -1,7 +1,8 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowDown, ArrowUp, CheckCircle2, ChevronRight, Loader2, Paperclip, Plus, ShieldCheck, Sparkles, Square, Terminal, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, CheckCircle2, ChevronRight, Loader2, Paperclip, ShieldCheck, Sparkles, Square, Terminal, X } from 'lucide-react'
 import { MarkdownRenderer } from '@ui/MarkdownRenderer'
 import { AppTooltip } from '@ui/tooltip-wrapper'
+import { HarnessIcon } from '@ui/HarnessIcon'
 import { ChatMessage } from './ChatMessage'
 import { extractHtmlRenderFromEvents } from './html-render'
 import { MessageRail } from './MessageRail'
@@ -67,7 +68,7 @@ function AgentActivity({ events }: { events: WorkspaceChatEvent[] }) {
   return <div aria-label="Agent activity" className="space-y-2">{[...items].map(([key, item]) => <details key={key} className="group/tool overflow-hidden rounded-xl border border-border/40 bg-muted/10 text-xs"><summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 font-medium"><ChevronRight className="size-3 text-muted-foreground transition-transform group-open/tool:rotate-90" />{item.label === 'Command' ? <Terminal className="size-3.5 text-muted-foreground" /> : <Sparkles className="size-3.5 text-muted-foreground" />}<span className="flex-1">{item.label}</span><span className="flex items-center gap-1 text-[10px] font-normal text-muted-foreground">{item.status === 'completed' && <CheckCircle2 className="size-3" />}{item.status === 'running' && <Loader2 className="size-3 animate-spin" />}{item.status}</span></summary><pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words border-t border-border/30 bg-background/40 px-4 py-3 font-mono text-[11px] leading-5">{item.text}</pre></details>)}</div>
 }
 
-function StreamingAssistant({ events, projectId }: { events: WorkspaceChatEvent[]; projectId: string }) {
+function StreamingAssistant({ events, projectId, provider }: { events: WorkspaceChatEvent[]; projectId: string; provider?: string }) {
   const completed = new Set(events.filter(e => e.type === 'turn/completed').map(e => e.turn_id))
   const items = new Map<string, string>()
   for (const event of events) {
@@ -75,7 +76,7 @@ function StreamingAssistant({ events, projectId }: { events: WorkspaceChatEvent[
     const key = `${event.turn_id}:${event.item_id}`
     items.set(key, (items.get(key) ?? '') + (event.delta ?? ''))
   }
-  return <>{[...items].map(([id, text]) => <article key={id} className="py-2"><div className="mb-2 flex items-center gap-2 text-[11px] text-muted-foreground"><Sparkles className="size-3.5 text-primary/80" />Agent · streaming</div><MarkdownRenderer content={text} enableMermaid={false} isStreaming={true} linkProjectId={projectId} className="break-words text-[13px] leading-7 [&_pre]:overflow-auto [&_pre]:rounded-xl [&_pre]:bg-muted/30" /></article>)}</>
+  return <>{[...items].map(([id, text]) => <article key={id} className="py-2"><div className="mb-2 flex items-center gap-2 text-[11px] text-muted-foreground"><HarnessIcon id={provider || 'agent'} size={14} /><span className="capitalize">{provider || 'Agent'}</span> · streaming</div><MarkdownRenderer content={text} enableMermaid={false} isStreaming={true} linkProjectId={projectId} className="break-words text-[13px] leading-7 [&_pre]:overflow-auto [&_pre]:rounded-xl [&_pre]:bg-muted/30" /></article>)}</>
 }
 
 function AgentWorkingStatus({
@@ -97,6 +98,7 @@ function AgentWorkingStatus({
       className="my-2.5 flex items-center justify-between py-1 text-xs text-muted-foreground animate-in fade-in-0 duration-150 select-none"
     >
       <div className="flex items-center gap-2">
+        <HarnessIcon id={provider || 'agent'} size={14} />
         <span className="font-medium text-foreground/80">
           {isStopping ? 'Stopping current turn…' : `${displayName} is thinking…`}
         </span>
@@ -642,7 +644,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
             )
           })}
           <AgentActivity events={datedTimeline ? events.filter(e => !Number.isFinite(Date.parse(e.created_at)) || Date.parse(e.created_at) > Date.parse(messages[messages.length - 1].created_at)) : events} />
-          <StreamingAssistant events={working ? events : []} projectId={projectId} />
+          <StreamingAssistant events={working ? events : []} projectId={projectId} provider={snapshot?.session.provider || provider} />
           {snapshot?.requests?.filter(request => request.status !== 'pending').map(request => <p key={request.id} role="status" className="text-[11px] text-muted-foreground">Agent request {request.status}</p>)}
           {working && (
             <AgentWorkingStatus
@@ -654,8 +656,22 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
           <div ref={endRef} />
         </div>
       </div>
+      {showJump && (
+        <button
+          type="button"
+          aria-label="Scroll to latest message"
+          onClick={() => {
+            followRef.current = true
+            setShowJump(false)
+            timelineRef.current?.scrollTo?.({ top: timelineRef.current.scrollHeight, behavior: 'smooth' })
+          }}
+          className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border/80 bg-background/95 backdrop-blur px-3 py-1.5 text-xs font-medium text-foreground shadow-md hover:bg-accent transition-all"
+        >
+          <ArrowDown className="size-3.5" />
+          Latest
+        </button>
+      )}
       </div>
-      {showJump && <button aria-label="Scroll to latest message" onClick={() => { followRef.current = true; setShowJump(false); timelineRef.current?.scrollTo?.({ top: timelineRef.current.scrollHeight, behavior: 'smooth' }) }} className="absolute bottom-48 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-card px-3 py-1.5 text-xs shadow-sm"><ArrowDown className="size-3" />Latest</button>}
       <footer data-chat-composer-placement={draftHero ? 'centered' : 'docked'} className={`${draftHero ? 'absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2' : 'mx-auto shrink-0'} w-full max-w-[808px] px-4 pb-3 pt-1 sm:px-6`}>
         {draftHero && <div className="relative mb-7 px-1"><div className="pointer-events-none absolute -left-20 -top-20 size-64 rounded-full bg-primary/[0.055] blur-3xl" aria-hidden="true" /><h3 className="relative max-w-[680px] text-[clamp(27px,3vw,38px)] font-semibold leading-[1.16] tracking-[-0.035em] text-foreground">What would you like to build?</h3><p className="relative mt-3 max-w-[550px] text-[14px] leading-6 text-muted-foreground">Describe a goal, ask a question, or make a change. Start wherever you are.</p></div>}
         <div aria-label="Agent decisions" className="mb-2 max-h-[40vh] space-y-2 overflow-auto">{snapshot?.requests?.filter(request => request.status === 'pending').map(request => <RuntimeRequestCard key={`${sessionId}:${request.id}`} request={request} disabled={pending || !working || !!observationError || !!blockedRequests[request.id]} onReply={answer => reply(request, answer)} />)}</div>

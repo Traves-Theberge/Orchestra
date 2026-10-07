@@ -77,6 +77,23 @@ The top 10% of installs send 65% of turns.
     expect(screen.queryByText(/```t3-html/i)).toBeNull()
   })
 
+  it('renders matching harness icon for the assistant provider instead of generic sparkles', () => {
+    const message: WorkspaceChatMessage = {
+      id: 'msg-harness',
+      session_id: 'session-1',
+      role: 'assistant',
+      text: 'Antigravity response',
+      status: 'completed',
+      created_at: new Date().toISOString(),
+    }
+
+    const { container } = render(<ChatMessage message={message} provider="antigravity" projectId="proj-1" />)
+    const img = container.querySelector('img[src="./antigravity.png"]')
+    expect(img).not.toBeNull()
+    expect(screen.getByText('antigravity')).toBeDefined()
+    expect(container.querySelector('.lucide-sparkles')).toBeNull()
+  })
+
   it('renders user message with attached image preview and text', () => {
     const message: WorkspaceChatMessage = {
       id: 'msg-4',

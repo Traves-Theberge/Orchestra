@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Check, Copy, Sparkles } from 'lucide-react'
+import { Check, Copy } from 'lucide-react'
+import { HarnessIcon } from '@ui/HarnessIcon'
 import { MarkdownRenderer } from '@ui/MarkdownRenderer'
 import type { WorkspaceChatMessage } from '@core/api/client'
 import {
@@ -53,7 +54,7 @@ export function ChatMessage({
       }`}
     >
       <div className="mb-2 flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
-        {!user && message.role !== 'system' && <Sparkles className="size-3.5 text-primary/80" />}
+        {!user && message.role !== 'system' && <HarnessIcon id={provider} size={14} />}
         <span className={!user ? 'capitalize text-foreground/80' : ''}>
           {user ? 'You' : message.role === 'system' ? 'Session' : provider}
         </span>
@@ -104,7 +105,7 @@ export function ChatMessage({
           content={message.text}
           linkProjectId={projectId}
           enableMermaid={false}
-          className="break-words text-[15px] leading-7 [&_p]:my-3 [&_pre]:max-w-full [&_pre]:overflow-auto [&_pre]:rounded-xl [&_pre]:border [&_pre]:border-border/50 [&_pre]:bg-muted/30 [&_pre]:px-4 [&_pre]:py-5 [&_table]:block [&_table]:overflow-auto"
+          className="break-words text-[15px] leading-7 [&_p]:my-3 [&_pre]:max-w-full [&_pre]:overflow-auto [&_pre]:rounded-xl [&_pre]:border-none [&_pre]:bg-muted/30 [&_pre]:px-4 [&_pre]:py-5 [&_table]:block [&_table]:overflow-auto"
         />
       ) : null}
 

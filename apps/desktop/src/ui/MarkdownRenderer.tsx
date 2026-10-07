@@ -107,8 +107,8 @@ export function MarkdownRenderer({
   // every render is what makes MermaidBlock unmount/remount on each keystroke.
   const mergedComponents = useMemo<Components>(() => {
     const defaults: Components = {
-      pre({ children, ...props }) {
-        return <pre className="relative" {...props}>{children}</pre>
+      pre({ children, className: cls, ...props }: any) {
+        return <pre className={`relative border-0 ${cls ?? ''}`.trim()} {...props}>{children}</pre>
       },
       code({ children, className: cls, node, ...props }: any) {
         const match = /language-([a-zA-Z0-9_-]+)/.exec(cls ?? '')
