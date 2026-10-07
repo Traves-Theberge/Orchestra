@@ -519,6 +519,59 @@ export function AgentContextMenu({
 // Subcomponents
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// ConversationContextMenu — Maestro conversations, styled like AgentContextMenu
+// ---------------------------------------------------------------------------
+
+export interface ConversationContextMenuProps {
+  x: number
+  y: number
+  title: string
+  provider: string
+  status: string
+  mode?: string
+  sessionId: string
+  onClose: () => void
+  onOpen: () => void
+  onStopTurn?: () => void
+  onRequestDelete: () => void
+}
+
+export function ConversationContextMenu({ x, y, title, provider, status, mode, sessionId, onClose, onOpen, onStopTurn, onRequestDelete }: ConversationContextMenuProps) {
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [copied, setCopied] = useState(false)
+  const left = Math.min(Math.max(8, x), window.innerWidth - MENU_W - 12)
+  const top = Math.min(Math.max(8, y), window.innerHeight - 220 - 12)
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => { if (menuRef.current && !menuRef.current.contains(e.target as Node)) onClose() }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+  }, [onClose])
+  const isActive = status === 'running' || status === 'stopping'
+  return createPortal(
+    <div ref={menuRef} role="menu" data-portal-menu="open" aria-label={`${title} conversation actions`}
+      className="fixed z-[9999] min-w-[210px] rounded-xl border border-border/80 bg-popover/95 p-1.5 text-foreground shadow-2xl backdrop-blur-md animate-in fade-in zoom-in-95 duration-100"
+      style={{ left, top }} onMouseDown={(e) => e.stopPropagation()}>
+      <div className="px-2.5 py-1.5 border-b border-border/40 mb-1">
+        <div className="flex items-center gap-1.5">
+          <span className="shrink-0">{getAgentIcon(provider, 14)}</span>
+          <span className="font-semibold text-xs truncate max-w-[140px]">{title}</span>
+          <span className={`ml-auto size-2 rounded-full shrink-0 ${isActive ? 'bg-emerald-500 animate-pulse' : status === 'failed' ? 'bg-destructive' : status === 'interrupted' ? 'bg-amber-500' : 'bg-muted-foreground/40'}`} />
+        </div>
+        {mode && <div className="mt-0.5 text-[10px] font-mono text-muted-foreground/60">{mode}</div>}
+      </div>
+      <MenuItem icon={<MessageSquare size={13} />} label="Open Conversation" onClick={() => { onOpen(); onClose() }} />
+      {isActive && onStopTurn && <MenuItem icon={<Square size={13} className="text-amber-500" />} label="Stop Agent Turn" onClick={() => { onStopTurn(); onClose() }} />}
+      <MenuItem icon={<Copy size={13} />} label={copied ? 'Copied ID!' : 'Copy Session ID'} onClick={async () => { await safeCopyText(sessionId); setCopied(true); setTimeout(() => onClose(), 350) }} />
+      <div className="my-1 h-px bg-border/40" />
+      <MenuItem icon={<Trash2 size={13} />} label="Delete Conversation…" destructive disabled={isActive} onClick={() => { onRequestDelete(); onClose() }} />
+    </div>,
+    document.body,
+  )
+}
+
 function MenuItem({
   icon,
   label,
