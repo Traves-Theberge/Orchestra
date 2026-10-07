@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Circle, SquarePen, Trash2 } from 'lucide-react'
+import { SquarePen, Trash2 } from 'lucide-react'
 import { useAppStore } from '@core/store'
 import { deleteWorkspaceChatSession, listWorkspaceChatSessions, stopWorkspaceChatTurn, type WorkspaceChatSession } from '@core/api/client'
 import { getAgentIcon } from '@layout/shared/controls'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@ui/dialog'
 import { ConversationContextMenu } from '@features/projects/WorkspaceContextMenu'
 import { shortObservedAge } from '@features/projects/workspace-agent-projection'
+import { conversationState, markConversationSeen, useConversationSeen } from './conversation-status'
+import { ConversationStatusDot } from './ConversationStatusDot'
 
 export const MAESTRO_SCOPE = '__orchestrator__'
 /** Fired by a chat when its selected conversation changes: detail = { projectId, sessionId }. */
 export const CHAT_SESSION_EVENT = 'orchestra:chat-session'
 
 const modeLabel = (mode: string) => mode === 'native_session' ? 'Native chat' : mode === 'transcript_replay' ? 'Transcript' : 'Mode unreported'
-const statusColor = (status: string) => status === 'running' || status === 'stopping' ? 'text-emerald-500' : status === 'failed' ? 'text-destructive' : status === 'interrupted' ? 'text-amber-500' : 'text-muted-foreground'
 
 /** Sidebar list of Maestro conversations, styled like the conversations under project worktrees. */
 export function MaestroConversations() {
@@ -34,9 +35,15 @@ export function MaestroConversations() {
       .catch(() => setError('Conversations unavailable'))
   }, [config])
 
+  const seen = useConversationSeen(config?.baseUrl)
+  // Poll faster while any conversation runs so every row's state stays live.
+  const anyRunning = sessions.some(session => session.status === 'running' || session.status === 'stopping')
+  useEffect(() => {
+    const timer = window.setInterval(load, anyRunning ? 2000 : 5000)
+    return () => window.clearInterval(timer)
+  }, [load, anyRunning])
   useEffect(() => {
     load()
-    const timer = window.setInterval(load, 5000)
     const onSession = (event: Event) => {
       const detail = (event as CustomEvent<{ projectId: string; sessionId: string }>).detail
       if (detail?.projectId !== MAESTRO_SCOPE) return
@@ -44,12 +51,14 @@ export function MaestroConversations() {
       load()
     }
     window.addEventListener(CHAT_SESSION_EVENT, onSession)
-    return () => { window.clearInterval(timer); window.removeEventListener(CHAT_SESSION_EVENT, onSession) }
+    return () => window.removeEventListener(CHAT_SESSION_EVENT, onSession)
   }, [load])
 
   const open = (sessionId: string) => {
     const state = useAppStore.getState()
     if (!state.config) return
+    const opened = sessions.find(session => session.id === sessionId)
+    if (opened) markConversationSeen(state.config.baseUrl, opened.id, opened.updated_at)
     state.setActiveSection('ORCHESTRATOR')
     // The Maestro chat consumes this request; an empty id starts a new conversation.
     useAppStore.setState({ requestedWorkspaceConversation: { baseUrl: state.config.baseUrl, apiToken: state.config.apiToken, projectId: MAESTRO_SCOPE, sessionId, requestId: Date.now() } })
@@ -96,7 +105,7 @@ export function MaestroConversations() {
           className={`group/session flex min-w-0 items-center gap-0.5 rounded pl-1.5 ${active ? 'bg-foreground/[0.08]' : 'hover:bg-foreground/[0.04]'}`}>
           <button type="button" aria-label={`Open conversation ${title}`} aria-current={active ? 'page' : undefined} onClick={() => open(session.id)} title={title}
             className="flex h-6 min-w-0 flex-1 items-center gap-1.5 text-left text-[11px] text-muted-foreground">
-            <Circle size={10} className={`shrink-0 ${statusColor(session.status)}`} />
+            <ConversationStatusDot state={conversationState(session, seen)} />
             <span className="shrink-0">{getAgentIcon(session.provider.toLowerCase(), 13)}</span>
             <span className="min-w-0 flex-1 truncate"><span className={active ? 'text-foreground' : 'text-foreground/80'}>{title}</span><span> · {modeLabel(session.conversation_mode)}</span></span>
             <span className="shrink-0 text-[10px]" title={session.updated_at || session.created_at}>{shortObservedAge(session.updated_at || session.created_at, now)}</span>

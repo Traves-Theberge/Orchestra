@@ -7,6 +7,7 @@ import { HarnessIcon } from '@ui/HarnessIcon'
 import { ChatMessage } from './ChatMessage'
 import { useChatZoom } from './chat-zoom'
 import { CHAT_SESSION_EVENT } from './MaestroConversations'
+import { markConversationSeen } from './conversation-status'
 import { extractHtmlRendersFromEvents, type HtmlRenderReference } from './html-render'
 
 const IMPLEMENT_REFERENCE_HTML_LIMIT = 24_000
@@ -136,36 +137,74 @@ function StreamingAssistant({ events, projectId, provider }: { events: Workspace
   return <>{[...items].map(([id, text]) => <article key={id} className="py-2"><div className="mb-2 flex items-center gap-2 text-[11px] text-muted-foreground"><HarnessIcon id={provider || 'agent'} size={14} /><span className="capitalize">{provider || 'Agent'}</span> · streaming</div><MarkdownRenderer content={text} enableMermaid={false} isStreaming={true} linkProjectId={projectId} className="break-words text-[13px] leading-7 [&_pre]:overflow-auto [&_pre]:rounded-xl [&_pre]:bg-muted/30" /></article>)}</>
 }
 
+/** Live label for the running turn, from the latest provider event; "Thinking…" before any event arrives. */
+function workingActivityLabel(events: WorkspaceChatEvent[]): string {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i]
+    const item = record(record(event.payload).item)
+    const kind = textValue(item.type)
+    if (event.type === 'turn/completed') break
+    if (event.type === 'item/agentMessage/delta' || kind === 'agentMessage' || kind === 'agent_message') return event.type === 'item/completed' ? 'Working…' : 'Writing…'
+    if (event.type === 'item/commandExecution/outputDelta' || kind === 'commandExecution') return event.type === 'item/completed' ? 'Working…' : 'Running command…'
+    if (kind === 'fileChange') return event.type === 'item/completed' ? 'Working…' : 'Editing files…'
+    if (event.type.startsWith('item/reasoning/') || kind === 'reasoning') return event.type === 'item/completed' ? 'Working…' : 'Reasoning…'
+    if (kind === 'webSearch') return event.type === 'item/completed' ? 'Working…' : 'Searching…'
+    if (kind === 'mcpToolCall' || event.type === 'orchestra/tool/started') return event.type === 'item/completed' ? 'Working…' : 'Using tools…'
+    if (event.type === 'orchestra/tool/completed' || event.type === 'turn/plan/updated') return 'Working…'
+  }
+  return 'Thinking…'
+}
+
+function formatElapsed(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000))
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  return minutes < 60 ? `${minutes}m ${String(seconds % 60).padStart(2, '0')}s` : `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`
+}
+
 function AgentWorkingStatus({
   status,
   provider,
+  activity,
+  startedAt,
   onInterrupt,
 }: {
   status?: string
   provider?: string
+  activity: string
+  /** Turn start (epoch ms) when known; otherwise elapsed counts from when this indicator mounted. */
+  startedAt?: number
   onInterrupt?: () => void
 }) {
   const isStopping = status === 'stopping'
   const displayName = provider ? provider.charAt(0).toUpperCase() + provider.slice(1) : 'Agent'
+  const [mountedAt] = useState(() => Date.now())
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+  const start = startedAt !== undefined && startedAt <= now ? startedAt : mountedAt
+  const label = isStopping ? 'Stopping current turn…' : activity
 
   return (
     <div
       role="status"
       aria-label={isStopping ? 'Stopping current turn…' : `${displayName} turn in progress…`}
-      className="my-2.5 flex items-center justify-between py-1 text-xs text-muted-foreground animate-in fade-in-0 duration-150 select-none"
+      data-activity={label}
+      className="my-2.5 flex items-center justify-between py-1 text-xs text-muted-foreground animate-in fade-in-0 duration-150 select-none motion-reduce:animate-none"
     >
       <div className="flex items-center gap-2">
         <HarnessIcon id={provider || 'agent'} size={14} />
-        <span className="font-medium text-foreground/80">
-          {isStopping ? 'Stopping current turn…' : `${displayName} is thinking…`}
-        </span>
+        <span className="font-medium text-foreground/80 motion-safe:animate-pulse">{label}</span>
         {!isStopping && (
-          <span className="inline-flex items-center gap-1">
-            <span className="size-1.5 rounded-full bg-primary/70 animate-pulse" />
-            <span className="size-1.5 rounded-full bg-primary/70 animate-pulse [animation-delay:200ms]" />
-            <span className="size-1.5 rounded-full bg-primary/70 animate-pulse [animation-delay:400ms]" />
+          <span aria-hidden="true" className="inline-flex items-center gap-1">
+            <span className="size-1.5 rounded-full bg-primary/70 motion-safe:animate-pulse" />
+            <span className="size-1.5 rounded-full bg-primary/70 motion-safe:animate-pulse [animation-delay:200ms]" />
+            <span className="size-1.5 rounded-full bg-primary/70 motion-safe:animate-pulse [animation-delay:400ms]" />
           </span>
         )}
+        <span className="tabular-nums text-muted-foreground/70" aria-label="Elapsed">· {formatElapsed(now - start)}</span>
       </div>
 
       {!isStopping && onInterrupt && (
@@ -231,6 +270,10 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
   const [modelCatalog, setModelCatalog] = useState<{ key: string; data?: WorkspaceChatModelCatalog; error?: string }>({ key: '' })
   const [sessionId, setSessionId] = useState('')
   const [snapshot, setSnapshot] = useState<WorkspaceChatSnapshot | null>(null)
+  /** Applies a mutation's session update only to the conversation it targeted. */
+  const patchSnapshot = useCallback((targetId: string, update: (previous: WorkspaceChatSnapshot) => WorkspaceChatSnapshot) => {
+    setSnapshot(previous => previous && previous.session.id === targetId ? update(previous) : previous)
+  }, [])
   const [draft, setDraft] = useState('')
   const [draftTitle, setDraftTitle] = useState('')
   const [titleEditor, setTitleEditor] = useState<{ id: string; original: string; value: string } | null>(null)
@@ -248,7 +291,19 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
     window.addEventListener('orchestra:harness-registration-changed', onHarnessChange)
     return () => window.removeEventListener('orchestra:harness-registration-changed', onHarnessChange)
   }, [])
+  /** Epoch of the provider/session catalog load only; re-runs when the chat is hidden and shown. */
   const generation = useRef(0)
+  /**
+   * Mutations must not be tied to `generation`: hiding and showing the chat re-runs
+   * the catalog load mid-request, and a discarded completion used to leave
+   * `pending`, `creating`, and `submitted` stuck, freezing the composer and every
+   * conversation switch. Mutations settle while mounted (the component is keyed per
+   * backend/project/workspace) and only write the snapshot of the conversation
+   * they target if it is still the selected one.
+   */
+  const mounted = useRef(true)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+  const selectedSession = useRef('')
   const mutationPending = useRef(false)
   const submitted = useRef<{ sessionId: string; messageId: string; text: string } | null>(null)
   const submittedReply = useRef<{ sessionId: string; requestId: string } | null>(null)
@@ -264,8 +319,12 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
   const followRef = useRef(true)
   const [showJump, setShowJump] = useState(false)
   const working = isWorking(snapshot?.session)
+  selectedSession.current = sessionId
   const chatZoom = useChatZoom()
   useEffect(() => { window.dispatchEvent(new CustomEvent(CHAT_SESSION_EVENT, { detail: { projectId, sessionId } })) }, [projectId, sessionId])
+  // An open, visible conversation is seen: its finish never shows as unseen "done".
+  const seenUpdate = snapshot?.session.id === sessionId ? snapshot.session.updated_at : undefined
+  useEffect(() => { if (active && sessionId && seenUpdate !== undefined) markConversationSeen(config.baseUrl, sessionId, seenUpdate) }, [active, config.baseUrl, sessionId, seenUpdate])
   const selectedProvider = providers.find(p => p.id.toLowerCase() === (snapshot?.session.provider || creating.current?.provider || provider).toLowerCase())
   const legacyGeminiSession = snapshot?.session.id === sessionId && snapshot.session.provider.toLowerCase() === 'gemini'
   const agentHarness = snapshot?.session.provider || creating.current?.provider || provider
@@ -335,6 +394,10 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
   const messages = snapshot?.messages ?? []
   const draftHero = !messages.length && !working
   const events = snapshot?.events ?? []
+  const turnStartedAt = (() => {
+    for (let i = messages.length - 1; i >= 0; i--) if (messages[i].role === 'user') { const at = Date.parse(messages[i].created_at); return Number.isFinite(at) ? at : undefined }
+    return undefined
+  })()
   const datedTimeline = messages.length > 0 && messages.every((m, index) => Number.isFinite(Date.parse(m.created_at)) && (index === 0 || Date.parse(m.created_at) >= Date.parse(messages[index - 1].created_at)))
   const eventsBetween = (start: number, end: number) => events.filter(e => { const timestamp = Date.parse(e.created_at); return Number.isFinite(timestamp) && timestamp > start && timestamp <= end })
   /** Agent and applied receipt for an assistant message: its own fields, then its prompt's, then the session's for the latest turn. */
@@ -536,11 +599,10 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
   const mutate = useCallback(async (action: () => Promise<void>, allowPreacceptRejection = false) => {
     if (mutationPending.current) return
     mutationPending.current = true
-    const epoch = generation.current
     setPending(true)
     setError(null)
     try { await action() } catch (err) {
-      if (generation.current === epoch) {
+      if (mounted.current) {
         const rejected = allowPreacceptRejection && ['chat_not_found', 'unauthorized_project_path', 'chat_busy', 'invalid_chat_request', 'chat_provider_unavailable', 'unauthorized'].includes(textValue(record(err).code))
         if (rejected) {
           const rejectedSubmission = submitted.current
@@ -557,7 +619,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
       }
     } finally {
       mutationPending.current = false
-      if (generation.current === epoch) setPending(false)
+      if (mounted.current) setPending(false)
     }
   }, [sessionId])
 
@@ -598,12 +660,11 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
     if (!creation || !creation.uncertain || pending || mutationPending.current) return
     creation.uncertain = false
     void mutate(async () => {
-      const epoch = generation.current
       const session = creation.title || creation.agent ? await createWorkspaceChatSession(config, projectId, creation.provider, creation.sessionId, { ...(creation.title ? { title: creation.title } : {}), ...creation.agent }) : await createWorkspaceChatSession(config, projectId, creation.provider, creation.sessionId)
-      if (generation.current !== epoch) return
+      if (!mounted.current) return
       if (session.project_id !== projectId || session.provider !== creation.provider || session.id !== creation.sessionId) throw new Error('Created conversation belongs to another workspace or provider.')
       const result = await fetchWorkspaceChat(config, projectId, creation.sessionId)
-      if (generation.current !== epoch) return
+      if (!mounted.current) return
       if (result.session.project_id !== projectId || result.session.provider !== creation.provider || result.session.id !== creation.sessionId) throw new Error('Recovered conversation belongs to another workspace or provider.')
       creating.current = null; submitted.current = null
       setSnapshot(result); setSessionId(result.session.id)
@@ -634,7 +695,6 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
     submitted.current = { sessionId: targetId, messageId, text }
     followRef.current = true
     void mutate(async () => {
-      const epoch = generation.current
       if (!sessionId) {
         creating.current = { sessionId: targetId, provider, title: draftTitle || undefined, agent: selectedAgent, uncertain: false }
         if (selectedAgent) setAgentSelections(previous => ({ ...previous, [JSON.stringify([targetId, provider])]: selectedAgent }))
@@ -642,11 +702,11 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
         drafts.current[targetId] = overriding ? draft : text
         persist(targetId)
         const session = draftTitle || selectedAgent ? await createWorkspaceChatSession(config, projectId, provider, targetId, { ...(draftTitle ? { title: draftTitle } : {}), ...selectedAgent }) : await createWorkspaceChatSession(config, projectId, provider, targetId)
-        if (generation.current !== epoch) return
+        if (!mounted.current) return
         if (session.project_id !== projectId || session.provider !== provider || session.id !== targetId) throw new Error('Created conversation belongs to another workspace or provider.')
         creating.current = null
         setSessions(previous => [session, ...previous.filter(s => s.id !== session.id)])
-        setSnapshot({ session, messages: [], events: [], requests: [] })
+        if (selectedSession.current === targetId) setSnapshot(previous => previous?.session.id === targetId ? previous : { session, messages: [], events: [], requests: [] })
       }
       // Save the client message identity before crossing the dispatch boundary.
       persist(targetId)
@@ -654,13 +714,14 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
         ? await sendWorkspaceChatMessage(config, projectId, targetId, messageId, text, selectedModel || undefined, selectedEffort)
         : selectedModel ? await sendWorkspaceChatMessage(config, projectId, targetId, messageId, text, selectedModel)
         : await sendWorkspaceChatMessage(config, projectId, targetId, messageId, text)
-      if (generation.current !== epoch) return
+      if (!mounted.current) return
       if (result.session.project_id !== projectId || result.session.id !== targetId) throw new Error('Message response belongs to another workspace.')
-      setSnapshot(previous => previous ? {
+      patchSnapshot(targetId, previous => ({
         ...previous,
         session: result.session,
         messages: [...previous.messages.filter(m => m.id !== result.message.id), result.message],
-      } : null)
+      }))
+      setSessions(previous => previous.map(s => s.id === targetId ? result.session : s))
       if (!overriding) {
         setDraft('')
         drafts.current[targetId] = ''
@@ -676,12 +737,12 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
 
   const interrupt = () => {
     if (!working || pending || snapshot?.session.status === 'stopping') return
+    const targetId = sessionId
     void mutate(async () => {
-      const epoch = generation.current
-      const result = await stopWorkspaceChatTurn(config, projectId, sessionId)
-      if (generation.current !== epoch) return
-      if (result.session.project_id !== projectId || result.session.id !== sessionId) throw new Error('Stop response belongs to another workspace.')
-      setSnapshot(previous => previous ? { ...previous, session: result.session } : null)
+      const result = await stopWorkspaceChatTurn(config, projectId, targetId)
+      if (!mounted.current) return
+      if (result.session.project_id !== projectId || result.session.id !== targetId) throw new Error('Stop response belongs to another workspace.')
+      patchSnapshot(targetId, previous => ({ ...previous, session: result.session }))
     })
   }
 
@@ -696,7 +757,6 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
     titleSaving.current = true
     mutationPending.current = true
     setPending(true)
-    const epoch = generation.current
     try {
       let renamed: WorkspaceChatSession
       try { renamed = await renameWorkspaceChatSession(config, projectId, edit.id, title, edit.original) }
@@ -705,18 +765,18 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
         const observed = await fetchWorkspaceChat(config, projectId, edit.id)
         if (observed.session.id !== edit.id || observed.session.project_id !== projectId || (config.workspaceId && observed.session.workspace_id !== config.workspaceId)) throw new Error('Rename observation belongs to another workspace.')
         if (observed.session.title !== title) {
-          if (generation.current === epoch) { setSnapshot(observed); setSessions(previous => previous.map(s => s.id === edit.id ? observed.session : s)) }
+          if (mounted.current) { patchSnapshot(edit.id, () => observed); setSessions(previous => previous.map(s => s.id === edit.id ? observed.session : s)) }
           throw failure
         }
         renamed = observed.session
       }
-      if (generation.current !== epoch) return
+      if (!mounted.current) return
       if (renamed.id !== edit.id || renamed.project_id !== projectId || (config.workspaceId && renamed.workspace_id !== config.workspaceId)) throw new Error('Rename response belongs to another workspace.')
       setSnapshot(previous => previous?.session.id === edit.id ? { ...previous, session: renamed } : previous)
       setSessions(previous => previous.map(s => s.id === edit.id ? renamed : s))
       setTitleEditor(null); setError(null)
-    } catch (failure) { if (generation.current === epoch) setError(errorText(failure)) }
-    finally { titleSaving.current = false; mutationPending.current = false; if (generation.current === epoch) setPending(false) }
+    } catch (failure) { if (mounted.current) setError(errorText(failure)) }
+    finally { titleSaving.current = false; mutationPending.current = false; if (mounted.current) setPending(false) }
   }
 
   const switchHarness = async (id: string) => {
@@ -724,7 +784,6 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
     if (!current || current.id !== sessionId || mutationPending.current) return
     mutationPending.current = true
     setPending(true)
-    const epoch = generation.current
     try {
       try { await switchWorkspaceChatProvider(config, projectId, current.id, id, current.provider) }
       catch (failure) {
@@ -733,14 +792,14 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
         if (observed.session.provider.toLowerCase() !== id.toLowerCase()) throw failure
       }
       const observed = await fetchWorkspaceChat(config, projectId, current.id)
-      if (generation.current !== epoch) return
+      if (!mounted.current) return
       if (observed.session.id !== current.id || observed.session.project_id !== projectId || (config.workspaceId && observed.session.workspace_id !== config.workspaceId)) throw new Error('Harness switch response belongs to another workspace.')
-      setSnapshot(observed)
+      patchSnapshot(current.id, () => observed)
       setSessions(previous => previous.map(s => s.id === current.id ? observed.session : s))
-      setProvider(observed.session.provider)
+      if (selectedSession.current === current.id) setProvider(observed.session.provider)
       setError(null)
-    } catch (failure) { if (generation.current === epoch) setError(errorText(failure)) }
-    finally { mutationPending.current = false; if (generation.current === epoch) setPending(false) }
+    } catch (failure) { if (mounted.current) setError(errorText(failure)) }
+    finally { mutationPending.current = false; if (mounted.current) setPending(false) }
   }
 
   const reply = (request: WorkspaceChatRequest, answer: Record<string, unknown>) => {
@@ -748,12 +807,12 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
     setBlockedRequests(previous => ({ ...previous, [request.id]: true }))
     submittedReply.current = { sessionId, requestId: request.id }
     persist()
+    const targetId = sessionId
     void mutate(async () => {
-      const epoch = generation.current
-      const result = await replyWorkspaceChatRequest(config, projectId, sessionId, request.id, crypto.randomUUID(), answer)
-      if (generation.current !== epoch) return
+      const result = await replyWorkspaceChatRequest(config, projectId, targetId, request.id, crypto.randomUUID(), answer)
+      if (!mounted.current) return
       if (result.id !== request.id || result.turn_id !== request.turn_id) throw new Error('Reply response belongs to another agent request.')
-      setSnapshot(previous => previous ? { ...previous, requests: previous.requests?.map(r => r.id === result.id ? result : r) } : null)
+      patchSnapshot(targetId, previous => ({ ...previous, requests: previous.requests?.map(r => r.id === result.id ? result : r) }))
     })
   }
 
@@ -807,8 +866,11 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
           {snapshot?.requests?.filter(request => request.status !== 'pending').map(request => <p key={request.id} role="status" className="text-[11px] text-muted-foreground">Agent request {request.status}</p>)}
           {working && (
             <AgentWorkingStatus
+              key={sessionId}
               status={snapshot?.session.status}
               provider={snapshot?.session.provider || provider}
+              activity={workingActivityLabel(turnStartedAt === undefined ? events : events.filter(e => { const at = Date.parse(e.created_at); return !Number.isFinite(at) || at >= turnStartedAt }))}
+              startedAt={turnStartedAt}
               onInterrupt={interrupt}
             />
           )}

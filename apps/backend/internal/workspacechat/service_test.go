@@ -348,6 +348,74 @@ func TestWorkspaceChatProjectOwnership(t *testing.T) {
 	}
 }
 
+// Maestro conversations share one checkout but run concurrently per session,
+// while each session still rejects a second turn of its own.
+func TestMaestroSessionsRunConcurrently(t *testing.T) {
+	r := &recordingRunner{block: make(chan struct{}), started: make(chan struct{}, 2), output: `{"result":"done"}`}
+	s, database, _, root := fixture(t, r)
+	orchestratorDir := filepath.Join(root, ".orchestra", "orchestrator")
+	if err := s.ConfigureOrchestrator(orchestratorDir, []map[string]any{{"type": "function"}}, func(ctx context.Context, tool string, args map[string]any) map[string]any {
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	pid := OrchestratorScope
+	ctx := context.Background()
+	first, err := s.Create(ctx, pid, "CODEX", "First")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.Create(ctx, pid, "CODEX", "Second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	original, err := s.Send(ctx, pid, first.ID, SendRequest{ClientMessageID: "one", Text: "go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-r.started
+	if _, err = s.Send(ctx, pid, second.ID, SendRequest{ClientMessageID: "two", Text: "concurrent"}); err != nil {
+		t.Fatalf("second conversation in the same checkout blocked: %v", err)
+	}
+	<-r.started
+	for _, id := range []string{first.ID, second.ID} {
+		d, e := s.Detail(ctx, pid, id)
+		if e != nil || d.Session.Status != "running" {
+			t.Fatalf("both turns should run at once: %+v %v", d.Session, e)
+		}
+	}
+	if _, err = s.Send(ctx, pid, first.ID, SendRequest{ClientMessageID: "again", Text: "own turn"}); !errors.Is(err, ErrBusy) {
+		t.Fatalf("session started a second turn of its own: %v", err)
+	}
+	duplicate, err := s.Send(ctx, pid, first.ID, SendRequest{ClientMessageID: "one", Text: "go"})
+	if err != nil || duplicate.Message.ID != original.Message.ID {
+		t.Fatalf("duplicate receipt blocked: %#v %v", duplicate, err)
+	}
+	close(r.block)
+	for _, id := range []string{first.ID, second.ID} {
+		d := awaitIdle(t, s, pid, id)
+		if d.Session.Status != "idle" || len(d.Messages) != 2 || d.Messages[1].Text != "done" {
+			t.Fatalf("concurrent turn did not finish: %+v", d)
+		}
+	}
+	// A stale durable owner blocks only its own conversation.
+	if _, err = database.Exec(`UPDATE workspace_chat_sessions SET status='running' WHERE id=?`, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Send(ctx, pid, first.ID, SendRequest{ClientMessageID: "three", Text: "stale owner"}); !errors.Is(err, ErrBusy) {
+		t.Fatalf("persisted session ownership ignored: %v", err)
+	}
+	if _, err = s.Send(ctx, pid, second.ID, SendRequest{ClientMessageID: "four", Text: "unaffected"}); err != nil {
+		t.Fatalf("stale owner blocked another conversation: %v", err)
+	}
+	awaitIdle(t, s, pid, second.ID)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.calls) != 3 {
+		t.Fatalf("unexpected dispatch count: %d", len(r.calls))
+	}
+}
+
 func TestOrchestratorScopeRegisteredHarnessAvailability(t *testing.T) {
 	svc, _, _, root := fixture(t, &recordingRunner{})
 	orchestratorDir := filepath.Join(root, ".orchestra", "orchestrator")
@@ -376,5 +444,35 @@ func TestOrchestratorScopeRegisteredHarnessAvailability(t *testing.T) {
 	}
 	if !claudeFound {
 		t.Fatal("Claude provider not found in catalog")
+	}
+}
+
+// Session lists expose pending runtime requests of a running turn as a cheap
+// "needs input" signal; settled sessions never report stale requests.
+func TestWorkspaceChatListReportsPendingRequests(t *testing.T) {
+	s, database, pid, _ := fixture(t, &recordingRunner{})
+	ctx := context.Background()
+	sess, err := s.Create(ctx, pid, "CODEX", "Needs input")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = database.Exec(`UPDATE workspace_chat_sessions SET status='running' WHERE id=?`, sess.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range [][2]string{{"p:1", "pending"}, {"p:2", "pending"}, {"p:3", "answered"}} {
+		if _, err = database.Exec(`INSERT INTO workspace_chat_requests(session_id,id,turn_id,method,params,status,created_at) VALUES(?,?,'turn','item/commandExecution/requestApproval','{}',?,?)`, sess.ID, row[0], row[1], stamp()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	list, err := s.List(ctx, pid)
+	if err != nil || len(list) != 1 || list[0].PendingRequests != 2 {
+		t.Fatalf("pending requests not reported: %+v %v", list, err)
+	}
+	if _, err = database.Exec(`UPDATE workspace_chat_sessions SET status='idle' WHERE id=?`, sess.ID); err != nil {
+		t.Fatal(err)
+	}
+	list, err = s.List(ctx, pid)
+	if err != nil || len(list) != 1 || list[0].PendingRequests != 0 {
+		t.Fatalf("settled session reported pending requests: %+v %v", list, err)
 	}
 }

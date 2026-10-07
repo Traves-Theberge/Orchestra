@@ -65,3 +65,39 @@ it('cannot delete a conversation while it is running', async () => {
   render(<MaestroConversations />)
   expect(await screen.findByRole('button', { name: 'Delete conversation Busy run' })).toBeDisabled()
 })
+
+const seenKey = `orchestra:chat-last-seen:v1:${config.baseUrl}`
+const stateOf = (title: string) => screen.getByRole('button', { name: `Open conversation ${title}` }).querySelector('[data-conversation-state]')?.getAttribute('data-conversation-state')
+
+it('shows working, needs input, done, failed and interrupted states per conversation', async () => {
+  const row = (id: string, title: string, status: string, extra: Record<string, unknown> = {}) => ({ ...session(id, title, '2026-10-06T00:00:00Z', status), created_at: '2026-10-05T00:00:00Z', ...extra })
+  vi.mocked(api.listWorkspaceChatSessions).mockResolvedValue({ sessions: [
+    row('w', 'Working one', 'running'), row('w2', 'Working two', 'stopping'), row('q', 'Asks first', 'running', { pending_requests: 1 }),
+    row('d', 'Finished', 'idle'), row('f', 'Broke', 'failed'), row('i', 'Halted', 'interrupted'),
+    row('s', 'Already seen', 'idle'), { ...row('n', 'Never ran', 'idle'), created_at: '2026-10-06T00:00:00Z' },
+  ] } as never)
+  localStorage.setItem(seenKey, JSON.stringify({ __baseline__: '2026-10-01T00:00:00Z', s: '2026-10-06T00:00:00Z' }))
+  render(<MaestroConversations />)
+  await screen.findByRole('button', { name: 'Open conversation Working one' })
+  expect(stateOf('Working one')).toBe('working')
+  expect(stateOf('Working two')).toBe('working')
+  expect(stateOf('Asks first')).toBe('needs-input')
+  expect(screen.getByRole('img', { name: 'Needs input' })).toBeInTheDocument()
+  expect(stateOf('Finished')).toBe('done')
+  expect(stateOf('Broke')).toBe('failed')
+  expect(stateOf('Halted')).toBe('interrupted')
+  expect(stateOf('Already seen')).toBe('idle')
+  expect(stateOf('Never ran')).toBe('idle')
+  expect(screen.getAllByRole('img', { name: 'Working' })).toHaveLength(2)
+})
+
+it('clears the done indicator once the conversation is opened', async () => {
+  localStorage.setItem(seenKey, JSON.stringify({ __baseline__: '2026-10-01T00:00:00Z' }))
+  vi.mocked(api.listWorkspaceChatSessions).mockResolvedValue({ sessions: [{ ...session('d', 'Finished', '2026-10-06T00:00:00Z'), created_at: '2026-10-05T00:00:00Z' }] } as never)
+  render(<MaestroConversations />)
+  await screen.findByRole('button', { name: 'Open conversation Finished' })
+  expect(stateOf('Finished')).toBe('done')
+  fireEvent.click(screen.getByRole('button', { name: 'Open conversation Finished' }))
+  await waitFor(() => expect(stateOf('Finished')).toBe('idle'))
+  expect(JSON.parse(localStorage.getItem(seenKey)!).d).toBe('2026-10-06T00:00:00Z')
+})

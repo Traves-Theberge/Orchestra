@@ -346,6 +346,8 @@ export type WorkspaceChatSession = {
   requested_agent_id?: string; requested_agent_scope?: 'project' | 'global'
   requested_agent_content_hash?: string; requested_agent_format?: string
   effective_agent_id?: string; agent_observation?: string
+  /** Runtime requests (approvals, questions) waiting on the user during a running turn. */
+  pending_requests?: number
 }
 export type WorkspaceChatMessage = {
   id: string; session_id: string; role: 'user' | 'assistant' | 'system'; text: string
@@ -378,6 +380,10 @@ export function fetchWorkspaceChatProviders(config: BackendConfig, projectId: st
 export function fetchWorkspaceChatModels(config: BackendConfig, projectId: string, provider: string) {
   return requestJSON<WorkspaceChatModelCatalog>(config,
     `${workspaceChatPath(projectId)}/providers/${encodeURIComponent(provider)}/models`)
+}
+/** Silently connects a project using the GitHub CLI login; never opens a browser. */
+export function autoConnectProjectGitHub(config: BackendConfig, projectId: string) {
+  return requestJSON<{ connected: boolean; source?: string; reason?: string }>(config, `/api/v1/projects/${encodeURIComponent(projectId)}/github/auto-connect`, { method: 'POST' })
 }
 /** Permanently deletes an idle conversation and its history (409 while a turn is running). */
 export async function deleteWorkspaceChatSession(config: BackendConfig, projectId: string, sessionId: string): Promise<void> {

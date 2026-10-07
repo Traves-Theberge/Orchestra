@@ -63,6 +63,21 @@ describe('workspace cards', () => {
     expect(removeProjectWorktree).not.toHaveBeenCalled()
     expect(setWorkspaceChatArchived).not.toHaveBeenCalled()
   })
+  it('shows working, needs input and unseen done states on conversation rows, clearing done when opened', async () => {
+    const seenKey = 'orchestra:chat-last-seen:v1:http://localhost:4010'
+    localStorage.setItem(seenKey, JSON.stringify({ __baseline__: '2026-10-01T00:00:00Z' }))
+    const chat = (id: string, title: string, status: string, extra: Record<string, unknown> = {}) => ({ id, project_id: 'p1', workspace_id: 'child', workspace_path: '/child', provider: 'codex', title, status, conversation_mode: 'native_session', created_at: '2026-10-05T00:00:00Z', updated_at: '2026-10-06T00:00:00Z', ...extra })
+    vi.mocked(listWorkspaceChatSessions).mockImplementation(async config => ({ sessions: config.workspaceId === 'child' ? [chat('w', 'Busy', 'running'), chat('q', 'Waiting', 'running', { pending_requests: 2 }), chat('d', 'Finished', 'idle')] : [] } as Awaited<ReturnType<typeof listWorkspaceChatSessions>>))
+    render(<ProjectWorkspaceTree query="" onSelect={vi.fn()} />)
+    const stateOf = (title: string) => screen.getByRole('button', { name: `Open codex native chat ${title}` }).querySelector('[data-conversation-state]')?.getAttribute('data-conversation-state')
+    await screen.findByRole('button', { name: 'Open codex native chat Finished' })
+    expect(stateOf('Busy')).toBe('working')
+    expect(stateOf('Waiting')).toBe('needs-input')
+    expect(stateOf('Finished')).toBe('done')
+    fireEvent.click(screen.getByRole('button', { name: 'Open codex native chat Finished' }))
+    await waitFor(() => expect(stateOf('Finished')).toBe('idle'))
+    localStorage.removeItem(seenKey)
+  })
   it('selects child workspace and its exact owned conversation', async () => {
     render(<ProjectWorkspaceTree query="" onSelect={vi.fn()} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Open codex native chat Child chat' }))

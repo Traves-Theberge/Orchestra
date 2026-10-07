@@ -120,6 +120,13 @@ func (s *Service) decorate(ctx context.Context, v *Session) error {
 	if err != nil {
 		return err
 	}
+	v.PendingRequests = 0
+	if v.Status == "running" {
+		// Only a running turn can still be answered; settled turns mark requests stale.
+		if err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM workspace_chat_requests WHERE session_id=? AND status='pending'`, v.ID).Scan(&v.PendingRequests); err != nil {
+			return err
+		}
+	}
 	err = s.db.QueryRowContext(ctx, `SELECT requested_agent_id,scope,content_hash,format,effective_agent_id,observation FROM workspace_chat_agent_selection WHERE session_id=?`, v.ID).Scan(&v.RequestedAgentID, &v.RequestedAgentScope, &v.RequestedAgentContentHash, &v.RequestedAgentFormat, &v.EffectiveAgentID, &v.AgentObservation)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil

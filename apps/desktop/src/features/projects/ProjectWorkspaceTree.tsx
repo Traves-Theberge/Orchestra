@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ChevronDown, Circle, Folder, GitBranch, Plus, RefreshCw, Terminal } from 'lucide-react'
+import { ChevronDown, Folder, GitBranch, Plus, RefreshCw, Terminal } from 'lucide-react'
 import { useAppStore } from '@core/store'
 import { fetchProjectWorktrees, fetchState, listWorkspaceChatArchives, listWorkspaceChatSessions, stopWorkspaceChatTurn, type BackendConfig, type ProjectWorktree, type WorkspaceChatSession, type IssueListItem } from '@core/api/client'
 import type { Project, RunningEntry } from '@core/api/types'
@@ -11,6 +11,8 @@ import { projectWorkspaceAgentRows, shortObservedAge, type WorkspaceAgentRow } f
 import { WorktreeRemovalControls } from './WorktreeRemovalControls'
 import { WorkspaceArchiveHistory, WorkspaceChatArchiveControl } from './WorkspaceChatLifecycleControls'
 import { WorktreeContextMenu, AgentContextMenu } from './WorkspaceContextMenu'
+import { conversationState, markConversationSeen, useConversationSeen } from '@features/workspace/chat/conversation-status'
+import { ConversationStatusDot } from '@features/workspace/chat/ConversationStatusDot'
 type TreeProps = { query: string; onSelect: (id: string) => void; onInspectTask?: (issue: IssueListItem, owner: IssueInspectionOwner) => void; refreshKey?: number }
 type Observation = { scope: string; worktrees: ProjectWorktree[]; sessions: WorkspaceChatSession[]; archives: WorkspaceChatSession[]; running: RunningEntry[]; warnings: Record<string, string>; loading: boolean; error?: string }
 
@@ -219,6 +221,7 @@ function ProjectNode({ project, onSelect, onInspectTask, refreshKey }: Omit<Tree
 function WorkspaceAgents({ config, workspace, rows, onInspectTask, onArchived, onAgentContextMenu }: { config: BackendConfig; workspace: SelectedProjectWorkspace; rows: WorkspaceAgentRow[]; onInspectTask: (row: WorkspaceAgentRow) => void; onArchived: () => void; onAgentContextMenu?: (event: React.MouseEvent, row: WorkspaceAgentRow) => void }) {
   const [expanded, setExpanded] = useState(true)
   const [now, setNow] = useState(() => Date.now())
+  const seen = useConversationSeen(config.baseUrl)
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 60000); return () => clearInterval(timer) }, [])
   if (!rows.length) return null
   return <div className="mt-1 min-w-0 pl-5">
@@ -226,8 +229,8 @@ function WorkspaceAgents({ config, workspace, rows, onInspectTask, onArchived, o
     {(rows.length === 1 || expanded) && rows.map(row => <div key={row.key} onContextMenu={event => { if (onAgentContextMenu) { event.preventDefault(); event.stopPropagation(); onAgentContextMenu(event, row) } }} className="group/session flex min-w-0 items-center">
       {row.source === 'terminal' ? <div role="status" aria-label={'Terminal tab ' + row.title + '; runtime state unverified'} className="flex h-6 min-w-0 flex-1 items-center gap-1.5 rounded text-[11px] text-muted-foreground" title={row.preview}>
         <Terminal size={12} className="shrink-0" /><span className="min-w-0 flex-1 truncate"><span className="text-foreground/80">{row.title}</span><span aria-hidden="true"> · </span><span>runtime unverified</span></span>
-      </div> : <button type="button" onClick={event => { event.stopPropagation(); useAppStore.getState().selectProjectWorkspace(workspace.projectId, workspace); if (row.source === 'runtime') onInspectTask(row); else useAppStore.getState().requestWorkspaceConversation(workspace.projectId, row.sessionId, workspace) }} aria-label={row.source === 'runtime' ? 'Inspect running task ' + row.taskIdentifier : 'Open ' + row.provider + (row.source === 'native' ? ' native chat ' : row.source === 'transcript' ? ' transcript ' : ' conversation; mode unreported ') + row.title} className="flex h-6 min-w-0 flex-1 items-center gap-1.5 rounded text-left text-[11px] text-muted-foreground hover:bg-muted/40 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring" title={`${row.provider || 'Provider unreported'} · ${row.status} · ${row.preview}`}>
-        <Circle size={10} className={'shrink-0 ' + (['running', 'starting'].includes(row.status) ? 'text-emerald-500' : row.status === 'failed' ? 'text-destructive' : row.status === 'interrupted' ? 'text-amber-500' : 'text-muted-foreground')} />
+      </div> : <button type="button" onClick={event => { event.stopPropagation(); useAppStore.getState().selectProjectWorkspace(workspace.projectId, workspace); if (row.source === 'runtime') onInspectTask(row); else { if (row.session) markConversationSeen(config.baseUrl, row.session.id, row.session.updated_at); useAppStore.getState().requestWorkspaceConversation(workspace.projectId, row.sessionId, workspace) } }} aria-label={row.source === 'runtime' ? 'Inspect running task ' + row.taskIdentifier : 'Open ' + row.provider + (row.source === 'native' ? ' native chat ' : row.source === 'transcript' ? ' transcript ' : ' conversation; mode unreported ') + row.title} className="flex h-6 min-w-0 flex-1 items-center gap-1.5 rounded text-left text-[11px] text-muted-foreground hover:bg-muted/40 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring" title={`${row.provider || 'Provider unreported'} · ${row.status} · ${row.preview}`}>
+        <ConversationStatusDot state={row.session ? conversationState(row.session, seen) : ['running', 'starting'].includes(row.status) ? 'working' : row.status === 'failed' ? 'failed' : row.status === 'interrupted' ? 'interrupted' : 'idle'} />
         <span className="shrink-0">{getAgentIcon(row.provider, 13)}</span><span className="min-w-0 flex-1 truncate"><span className="text-foreground/80">{row.title}</span>{row.source !== 'runtime' && <span> · {row.source === 'native' ? 'Native chat' : row.source === 'transcript' ? 'Transcript' : 'Mode unreported'}</span>}{row.preview && <span> – {row.preview}</span>}</span>
         {row.model && <span className="max-w-20 shrink-0 truncate font-mono text-[10px]" title={(row.modelObserved ? 'Observed' : 'Requested') + ' model: ' + row.model}>{row.model}</span>}<span className="shrink-0 text-[10px]" title={row.timestamp}>{shortObservedAge(row.timestamp, now)}</span>
       </button>}

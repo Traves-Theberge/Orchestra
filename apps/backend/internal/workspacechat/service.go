@@ -96,6 +96,9 @@ type Session struct {
 	RequestedAgentFormat      string `json:"requested_agent_format,omitempty"`
 	EffectiveAgentID          string `json:"effective_agent_id,omitempty"`
 	AgentObservation          string `json:"agent_observation,omitempty"`
+	// PendingRequests counts runtime requests (approvals, questions) waiting on
+	// the user during a running turn, so session lists can show "needs input".
+	PendingRequests int `json:"pending_requests,omitempty"`
 }
 type Message struct {
 	ID                        string `json:"id"`
@@ -623,19 +626,25 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 	if d.Session.Status == "running" || d.Session.Status == "stopping" {
 		return Accepted{}, ErrBusy
 	}
-	// Serialize turns in this exact checkout, including persisted ownership
-	// whose process is unknown, while allowing independent worktree chats.
+	// Project and worktree chats serialize turns per checkout, including
+	// persisted ownership whose process is unknown, so two agents never edit
+	// the same checkout at once; independent worktree chats still run in
+	// parallel. Maestro conversations all share one checkout but are meant to
+	// work anywhere, so Maestro is concurrent per session (one turn per
+	// session). Trade-off: concurrent Maestro agents can edit the same files.
 	// The service mutex covers this check through durable acceptance.
-	var occupied int
-	_, _, primary, scopeErr := s.scope(ctx, pid)
-	if scopeErr != nil {
-		return Accepted{}, scopeErr
-	}
-	if err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM workspace_chat_sessions WHERE project_id=? AND status IN ('running','stopping') AND (id IN (SELECT session_id FROM workspace_chat_workspaces WHERE workspace_id=?) OR (? AND id NOT IN (SELECT session_id FROM workspace_chat_workspaces)))`, pid, d.Session.WorkspaceID, primary).Scan(&occupied); err != nil {
-		return Accepted{}, err
-	}
-	if occupied > 0 {
-		return Accepted{}, ErrBusy
+	if pid != OrchestratorScope {
+		var occupied int
+		_, _, primary, scopeErr := s.scope(ctx, pid)
+		if scopeErr != nil {
+			return Accepted{}, scopeErr
+		}
+		if err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM workspace_chat_sessions WHERE project_id=? AND status IN ('running','stopping') AND (id IN (SELECT session_id FROM workspace_chat_workspaces WHERE workspace_id=?) OR (? AND id NOT IN (SELECT session_id FROM workspace_chat_workspaces)))`, pid, d.Session.WorkspaceID, primary).Scan(&occupied); err != nil {
+			return Accepted{}, err
+		}
+		if occupied > 0 {
+			return Accepted{}, ErrBusy
+		}
 	}
 	root, err := s.root(ctx, pid)
 	if err != nil {
