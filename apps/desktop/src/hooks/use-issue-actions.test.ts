@@ -383,3 +383,14 @@ describe('PR review gate controls', () => {
     expect(opts.setStatusMessage).toHaveBeenCalledWith(expect.stringContaining('confirmed merged'))
   })
 })
+
+describe('GitHub backlog inspection', () => {
+  it('never asks the backend for a GitHub issue that left the backlog', async () => {
+    useAppStore.setState({ allBoardIssues: [] })
+    const { result, opts } = setup()
+    await act(() => result.current.handleInspectIssueFromList('GH-188'))
+    expect(fetchIssueDetail).not.toHaveBeenCalled()
+    expect(opts.executeIssueLookup).not.toHaveBeenCalled()
+    expect(opts.setIssueLookupError).toHaveBeenCalledWith(expect.stringContaining('no longer in the backlog'))
+  })
+})

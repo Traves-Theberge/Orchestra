@@ -74,7 +74,9 @@ export function useAppSync(
             lastIssueFetchRef.current = now
             fetchIssues(config).then(issues => useAppStore.getState().setBoardIssues(issues)).catch(() => {})
             const currentId = issueLookupIdRef.current
-            if (currentId) {
+            // GitHub backlog issues (GH-*) live only on the client, so the backend
+            // would 404; and nothing needs refreshing while the inspector is closed.
+            if (currentId && !currentId.startsWith('GH-') && useAppStore.getState().inspectDialogOpen) {
               void executeIssueLookupRef.current(currentId)
             }
           }

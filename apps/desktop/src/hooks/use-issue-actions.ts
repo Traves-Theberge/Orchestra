@@ -625,6 +625,9 @@ export function useIssueActions(
         } as IssueDetailResult)
         return
       }
+      // The backend never stores GitHub backlog issues, so asking it would only 404.
+      opts.setIssueLookupError('This GitHub issue is no longer in the backlog. Refresh the project, or open it on GitHub.')
+      return
     }
 
     if (owner && config) {
