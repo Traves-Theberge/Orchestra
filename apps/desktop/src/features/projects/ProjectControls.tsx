@@ -4,7 +4,7 @@ import { FolderPlus, RefreshCw, Search, SquarePen } from 'lucide-react'
 import type { Project } from '@core/api/types'
 import { AppTooltip } from '@ui/tooltip-wrapper'
 
-export function ProjectControls({ projects, query, onQueryChange, onAddProject, onNewTask, onRefresh }: {
+export function ProjectControls({ projects, query, onQueryChange, onAddProject, onNewTask, onRefresh, showSearch = true }: {
   projects: Project[]
   query: string
   onQueryChange: (query: string) => void
@@ -12,12 +12,14 @@ export function ProjectControls({ projects, query, onQueryChange, onAddProject, 
   onAddProject: () => void
   onNewTask: () => void
   onRefresh?: () => void
+  /** False when the search lives in the sidebar's main search slot. */
+  showSearch?: boolean
 }) {
   const iconButton = 'flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground/60 hover:bg-muted/50 hover:text-foreground disabled:opacity-30 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary'
-  return <div className="relative flex items-center gap-1">
-    <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-muted-foreground/60 hover:bg-muted/30">
+  return <div className={`relative flex items-center gap-1 ${showSearch ? '' : 'justify-end'}`}>
+    {showSearch && <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-muted-foreground/60 hover:bg-muted/30">
       <Search className="size-4 shrink-0" /><input type="search" aria-label="Search projects" placeholder="Project Search" value={query} onChange={event => onQueryChange(event.target.value)} className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60" />
-    </div>
+    </div>}
     <AppTooltip content="Refresh workspaces"><button type="button" aria-label="Refresh workspaces" className={iconButton} onClick={onRefresh}><RefreshCw className="size-4" /></button></AppTooltip>
     <AppTooltip content="Add project"><button type="button" aria-label="Add project" className={iconButton} onClick={onAddProject}><FolderPlus className="size-4" /></button></AppTooltip>
     <AppTooltip content="New task"><button type="button" aria-label="New task" className={iconButton} disabled={projects.length === 0} onClick={onNewTask}><SquarePen className="size-4" /></button></AppTooltip>

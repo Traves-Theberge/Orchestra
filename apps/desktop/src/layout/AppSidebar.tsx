@@ -136,6 +136,7 @@ export function AppSidebar({
   const startWidth = useRef(DEFAULT_WIDTH)
   const sidebarRef = useRef<HTMLElement>(null)
   const config = useAppStore(s => s.config)
+  const [projectQuery, setProjectQuery] = useState('')
 
   const openSwagger = () => {
     if (!config) return
@@ -250,7 +251,9 @@ export function AppSidebar({
             <ChevronLeft size={13} strokeWidth={2} />
           </button>
         </div>
-        {view !== 'console' && <SidebarSearch onSearch={onSearch} onResultClick={onResultClick} />}
+        {view === 'console'
+          ? <ProjectSearchField value={projectQuery} onChange={setProjectQuery} />
+          : <SidebarSearch onSearch={onSearch} onResultClick={onResultClick} />}
       </div>
 
       {/* Content */}
@@ -268,7 +271,7 @@ export function AppSidebar({
           <SettingsSubNav onBack={handleBack} />
         )}
         {view === 'console' && (
-          <ConsoleSubNav onBack={handleBack} onInspectTask={(issue, owner) => { const identifier = issue.id || issue.issue_id || issue.identifier || issue.issue_identifier; if (identifier) onResultClick?.(identifier, owner) }} />
+          <ConsoleSubNav query={projectQuery} onQueryChange={setProjectQuery} onBack={handleBack} onInspectTask={(issue, owner) => { const identifier = issue.id || issue.issue_id || issue.identifier || issue.issue_identifier; if (identifier) onResultClick?.(identifier, owner) }} />
         )}
         {view === 'agents' && (
           <AgentsSubNav onBack={handleBack} />
@@ -291,6 +294,44 @@ export function AppSidebar({
         className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/30 transition-colors z-10"
       />
     </aside>
+  )
+}
+
+/** Project filter shown in the main search slot while the Projects view is open; styled like SidebarSearch. */
+function ProjectSearchField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  return (
+    <div className="px-2 pb-2.5">
+      <div
+        className="group relative flex h-8.5 items-center gap-2 rounded-lg bg-muted/30 hover:bg-muted/50 focus-within:bg-background border border-border/50 hover:border-border/70 focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15 px-2.5 transition-all shadow-[0_1px_2px_rgba(0,0,0,0.02)] cursor-text"
+        onClick={() => inputRef.current?.focus()}
+      >
+        <Search size={13.5} className="shrink-0 text-muted-foreground/50 group-hover:text-muted-foreground/75 group-focus-within:text-primary transition-colors" />
+        <input
+          ref={inputRef}
+          type="search"
+          value={value}
+          onChange={event => onChange(event.target.value)}
+          onKeyDown={event => { if (event.key === 'Escape' && value) { event.preventDefault(); onChange('') } }}
+          placeholder="Search projects…"
+          aria-label="Search projects"
+          autoComplete="off"
+          spellCheck={false}
+          className="flex-1 min-w-0 bg-transparent text-xs text-foreground placeholder:text-muted-foreground/45 focus:outline-none [&::-webkit-search-cancel-button]:hidden"
+        />
+        {value && (
+          <button
+            type="button"
+            onClick={event => { event.stopPropagation(); onChange(''); inputRef.current?.focus() }}
+            className="size-5 rounded flex items-center justify-center text-muted-foreground/50 hover:text-foreground hover:bg-muted transition-colors shrink-0"
+            aria-label="Clear project search"
+            title="Clear search (Esc)"
+          >
+            <X size={12} strokeWidth={2.2} />
+          </button>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -719,8 +760,7 @@ function SettingsSubNav({ onBack }: { onBack: () => void }) {
   )
 }
 
-function ConsoleSubNav({ onBack, onInspectTask }: { onBack: () => void; onInspectTask?: (issue: IssueListItem, owner: IssueInspectionOwner) => void }) {
-  const [projectQuery, setProjectQuery] = useState('')
+function ConsoleSubNav({ query: projectQuery, onQueryChange: setProjectQuery, onBack, onInspectTask }: { query: string; onQueryChange: (query: string) => void; onBack: () => void; onInspectTask?: (issue: IssueListItem, owner: IssueInspectionOwner) => void }) {
   const [refreshKey, setRefreshKey] = useState(0)
   const projects = useAppStore(s => s.projects)
   const selectProject = (id: string) => {
@@ -739,7 +779,7 @@ function ConsoleSubNav({ onBack, onInspectTask }: { onBack: () => void; onInspec
 
       {/* Project switcher */}
       <div className="px-2 py-1.5 shrink-0">
-        <ProjectControls projects={projects} query={projectQuery} onQueryChange={setProjectQuery} onSelect={selectProject} onAddProject={() => useAppStore.getState().setCreateProjectDialogOpen(true)} onNewTask={() => useAppStore.getState().openCreateTaskDialog()} onRefresh={() => setRefreshKey(k => k + 1)} />
+        <ProjectControls showSearch={false} projects={projects} query={projectQuery} onQueryChange={setProjectQuery} onSelect={selectProject} onAddProject={() => useAppStore.getState().setCreateProjectDialogOpen(true)} onNewTask={() => useAppStore.getState().openCreateTaskDialog()} onRefresh={() => setRefreshKey(k => k + 1)} />
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto"><ProjectWorkspaceTree query={projectQuery} onSelect={selectProject} onInspectTask={onInspectTask} refreshKey={refreshKey} /></div>
