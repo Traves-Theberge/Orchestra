@@ -1,6 +1,4 @@
-import { useContext } from 'react'
-import { Folder, FolderTree, GitBranch } from 'lucide-react'
-import { OpenFileSidebarContext } from './tabs/toolbar-tab-slot'
+import { Folder, GitBranch } from 'lucide-react'
 import { useAppStore } from '@core/store'
 
 interface WorkspaceEmptyToolsProps {
@@ -9,11 +7,9 @@ interface WorkspaceEmptyToolsProps {
 
 /** Empty state of the right tools panel: only Files and Git live here. */
 export function WorkspaceEmptyTools({ projectId }: WorkspaceEmptyToolsProps) {
-  const openFileSidebar = useContext(OpenFileSidebarContext)
 
   const tools = [
     { id: 'files', label: 'Files', icon: Folder, onClick: () => useAppStore.getState().addTabToGroup(projectId, { type: 'files', id: 'files' }) },
-    ...(openFileSidebar ? [{ id: 'file-sidebar', label: 'File sidebar', icon: FolderTree, onClick: openFileSidebar }] : []),
     { id: 'git', label: 'Git', icon: GitBranch, onClick: () => useAppStore.getState().addTabToGroup(projectId, { type: 'git', id: 'git' }) },
   ]
 

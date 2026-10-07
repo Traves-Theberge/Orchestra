@@ -9,7 +9,6 @@ import { agentColor, capabilityHint, findCapabilities, isPrimaryMode } from '@fe
 import { agentIdOf, isAgentSelectable, toAgentSelection as toSelection } from './agent-selection'
 import { useAgentsRevision } from '@features/agents/lib/agents-events'
 
-const MAX_PILLS = 3
 const EMPTY: AgentCatalogItem[] = []
 
 /** Shapes an Orchestra agent from /agent-profiles like a catalog item so it lists and selects the same way. */
@@ -34,6 +33,7 @@ export function AgentPicker({ config, projectId, harness, disabled, selection, o
   const defaultLabel = isMaestroScope ? 'Maestro' : 'Provider default'
   const defaultAvailableLabel = isMaestroScope ? 'Maestro is available.' : 'Provider default is available.'
   const [open, setOpen] = useState(false)
+  const [tab, setTab] = useState<'all' | 'orchestra' | 'native'>('all')
   const [rect, setRect] = useState<{ left: number; top: number }>()
   const [cycleNotice, setCycleNotice] = useState('')
   const [catalog, setCatalog] = useState<{ key: string; data?: AgentCatalog; error?: string }>({ key: '' })
@@ -117,31 +117,22 @@ export function AgentPicker({ config, projectId, harness, disabled, selection, o
     return () => document.removeEventListener('keydown', cycle)
   }, [data, definitions, selection, disabled, open, onChange, isMaestroScope])
   const selectedHint = selected ? capabilityHint(caps, harness, selected.source) : undefined
-  // Segmented pills for the first few applicable primary agents; the rest (and anything unavailable, with its reason) live in the overflow menu.
-  const selectable = definitions.filter(item => isAgentSelectable(item, data))
-  const pinned = selectable.slice(0, MAX_PILLS)
-  if (selected && !pinned.includes(selected)) pinned.push(selected)
-  const overflowCount = definitions.length - pinned.length
-  const pill = (active: boolean) => `flex min-w-0 max-w-32 items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium transition-colors disabled:opacity-40 ${active ? 'bg-background text-foreground shadow-sm ring-1 ring-border/60' : 'text-muted-foreground hover:bg-background/60 hover:text-foreground'}`
+  // One dropdown: the trigger shows the current agent; tabs inside group agents by where they're defined.
+  const harnessLabel = harness ? harness.charAt(0).toUpperCase() + harness.slice(1).toLowerCase() : 'Harness'
+  const groups = { all: definitions, orchestra: definitions.filter(item => item.source === 'orchestra'), native: definitions.filter(item => item.source !== 'orchestra') }
+  const visible = groups[tab]
+  const tabs: Array<{ id: typeof tab; label: string }> = [{ id: 'all', label: 'All' }, { id: 'orchestra', label: 'Orchestra' }, { id: 'native', label: harnessLabel }]
   return <>
-    <div role="group" aria-label="Agent" className="flex min-w-0 items-center gap-0.5 rounded-lg bg-muted/45 p-0.5">
-      <button type="button" aria-label={`Agent: ${defaultLabel}`} aria-pressed={!selection} disabled={disabled || !harness} title={`${defaultLabel} · Tab cycles agents when the message is empty`} onClick={() => onChange(undefined)} className={pill(!selection)}>
-        <Bot size={12} className="shrink-0" /><span className="truncate">{defaultLabel}</span>
-      </button>
-      {pinned.map(item => <button key={item.item_id || `${item.scope}:${agentIdOf(item)}`} type="button" aria-label={`Agent: ${item.display_name || item.name}`} aria-pressed={selected === item} disabled={disabled}
-        title={capabilityHint(caps, harness, item.source) || item.description || undefined} onClick={() => onChange(toSelection(item))} className={pill(selected === item)}>
-        <ColorDot item={item} /><span className="truncate">{item.display_name || item.name}</span>
-      </button>)}
-      <AppTooltip content={selectedHint ? `Agent · ${selectedHint}` : 'All agents · Tab to cycle'} side="top"><button ref={button} type="button" aria-label="Choose agent mode" aria-haspopup="listbox" aria-expanded={open} disabled={disabled || !harness}
-        onClick={event => { const bounds = event.currentTarget.getBoundingClientRect(); setRect({ left: bounds.left, top: bounds.top }); setOpen(current => !current) }} className={`flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground disabled:opacity-40 ${open ? 'bg-background/70 text-foreground' : ''}`}>
-        {!pinned.length && selection && <span className="max-w-28 truncate">{selection.agent_id}</span>}
-        {overflowCount > 0 && <span className="tabular-nums">+{overflowCount}</span>}
-        <ChevronDown size={12} className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button></AppTooltip>
-    </div>
+    <AppTooltip content={selectedHint ? `Agent · ${selectedHint}` : `${defaultLabel} · Tab cycles agents when the message is empty`} side="top"><button ref={button} type="button" aria-label="Choose agent mode" aria-haspopup="listbox" aria-expanded={open} disabled={disabled || !harness}
+      onClick={event => { const bounds = event.currentTarget.getBoundingClientRect(); setRect({ left: bounds.left, top: bounds.top }); setOpen(current => !current) }}
+      className={`flex min-w-0 max-w-44 items-center gap-1.5 rounded-lg bg-muted/45 px-2 py-1.5 text-[11px] font-medium transition-colors hover:bg-muted disabled:opacity-40 ${open ? 'bg-muted text-foreground' : selected ? 'text-foreground' : 'text-muted-foreground'}`}>
+      {selected ? <ColorDot item={selected} /> : <Bot size={12} className="shrink-0" />}
+      <span className="truncate">{selected ? selected.display_name || selected.name : selection ? selection.agent_id : defaultLabel}</span>
+      <ChevronDown size={12} className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+    </button></AppTooltip>
     {cycleNotice && <span role="status" className="max-w-48 text-[10px] text-muted-foreground">{cycleNotice}</span>}
-    {open && !disabled && rect && createPortal(<div ref={popup} role="listbox" aria-label="Agent modes" className="fixed z-[150] max-h-80 w-72 max-w-[calc(100vw-16px)] overflow-auto rounded-lg border border-border bg-popover p-1 shadow-xl"
-      style={{ left: Math.max(8, Math.min(rect.left, window.innerWidth - 296)), bottom: Math.max(8, Math.min(window.innerHeight - rect.top + 8, window.innerHeight - 100)) }}
+    {open && !disabled && rect && createPortal(<div ref={popup} className="fixed z-[150] flex max-h-96 w-80 max-w-[calc(100vw-16px)] flex-col rounded-lg border border-border bg-popover shadow-xl"
+      style={{ left: Math.max(8, Math.min(rect.left, window.innerWidth - 328)), bottom: Math.max(8, Math.min(window.innerHeight - rect.top + 8, window.innerHeight - 100)) }}
       onKeyDown={event => {
         if (event.key === 'Escape') { event.preventDefault(); setOpen(false); button.current?.focus(); return }
         if (event.key === 'Tab') { setOpen(false); return }
@@ -152,8 +143,15 @@ export function AgentPicker({ config, projectId, harness, disabled, selection, o
         const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1 : (current + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length
         options[next]?.focus()
       }}>
-      <button type="button" role="option" aria-selected={!selection} onClick={() => choose()} className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs hover:bg-accent focus:bg-accent"><span className="flex-1">{defaultLabel}</span>{!selection && <Check size={13} />}</button>
-      {definitions.map(item => {
+      <div role="tablist" aria-label="Agent sources" className="flex shrink-0 items-center gap-0.5 p-1">
+        {tabs.map(item => <button key={item.id} type="button" role="tab" aria-selected={tab === item.id} onClick={() => setTab(item.id)}
+          className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[12px] transition-colors ${tab === item.id ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}`}>
+          {item.label}<span className="tabular-nums text-[10px] text-muted-foreground">{groups[item.id].length}</span>
+        </button>)}
+      </div>
+      <div role="listbox" aria-label="Agent modes" className="min-h-0 flex-1 overflow-auto p-1 pt-0">
+      {tab !== 'native' && <button type="button" role="option" aria-selected={!selection} onClick={() => choose()} className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs hover:bg-accent focus:bg-accent"><Bot size={12} className="shrink-0 text-muted-foreground" /><span className="flex-1">{defaultLabel}</span>{!selection && <Check size={13} />}</button>}
+      {visible.map(item => {
         const enabled = isAgentSelectable(item, data)
         const reason = item.unavailable_reason || item.reason || data?.reason || 'Selection not supported by this harness'
         const hint = enabled ? capabilityHint(caps, harness, item.source) : undefined
@@ -166,12 +164,14 @@ export function AgentPicker({ config, projectId, harness, disabled, selection, o
           {hint && <span className="block pl-4 text-[10px] text-muted-foreground/80">{hint}</span>}
         </button>
       })}
+      {definitions.length > 0 && !visible.length && <p className="px-2 py-2 text-xs text-muted-foreground">{tab === 'orchestra' ? 'No Orchestra agents yet. Create one on the Agents page.' : `No ${harnessLabel} agents in this scope.`}</p>}
       {!definitions.length && <p className="px-2 py-2 text-xs text-muted-foreground">{catalog.key === key && catalog.error
         ? `Agent catalog unavailable. ${defaultAvailableLabel}`
         : data
           ? `No custom agents in this scope. ${isMaestroScope ? 'Maestro remains available as the default.' : ''}`
           : `Loading agents… ${isMaestroScope ? 'Maestro is available.' : ''}`}</p>}
       {data?.selection_capability !== 'selectable_primary' && definitions.length > 0 && !definitions.some(item => typeof item.selectable === 'boolean') && <p className="px-2 py-2 text-[10px] text-muted-foreground">{data?.reason || 'Custom agent selection is not verified for this harness.'}</p>}
+      </div>
     </div>, document.body)}
   </>
 }

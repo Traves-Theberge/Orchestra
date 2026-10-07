@@ -328,6 +328,28 @@ export const createWorkspaceSlice: StateCreator<AppState, [], [], WorkspaceSlice
     })
   },
 
+  // The right panel no longer splits; collapse any persisted split into one group, keeping every tab.
+  mergeSideGroups: (projectId) => {
+    const state = get()
+    const layout = state.projectLayouts[projectId]
+    const groups = state.projectGroups[projectId]
+    if (!layout || layout.kind === 'leaf' || !groups) return
+    const ids = collectGroupIds(layout).filter(id => groups[id])
+    if (!ids.length) return
+    const focused = state.projectFocusedGroupId[projectId]
+    const tabs: TabRef[] = []
+    for (const id of ids) for (const tab of groups[id].tabs) if (!tabs.some(t => t.type === tab.type && t.id === tab.id)) tabs.push(tab)
+    const activeTabId = (focused && groups[focused]?.activeTabId) || ids.map(id => groups[id].activeTabId).find(Boolean) || tabs[0]?.id || null
+    const keep = ids[0]
+    const others = new Set(ids.slice(1))
+    const remaining = Object.fromEntries(Object.entries(groups).filter(([id]) => !others.has(id)))
+    set({
+      projectLayouts: { ...state.projectLayouts, [projectId]: { kind: 'leaf', groupId: keep } },
+      projectGroups: { ...state.projectGroups, [projectId]: { ...remaining, [keep]: { ...groups[keep], tabs, activeTabId } } },
+      projectFocusedGroupId: { ...state.projectFocusedGroupId, [projectId]: keep },
+    })
+  },
+
   closeGroup: (projectId, groupId) => {
     const state = get()
     const layout = state.projectLayouts[projectId]

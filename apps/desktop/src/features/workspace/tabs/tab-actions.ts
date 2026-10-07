@@ -67,7 +67,7 @@ export function tabTitle(ref: TabRef, state: Pick<AppState, 'openFiles' | 'brows
   }
   if (ref.type === 'browser') return { title: state.browserTabs.find(t => t.id === ref.id)?.title || 'New Tab' }
   if (ref.type === 'terminal') return { title: state.openTerminals.find(t => t.id === ref.id)?.title || 'Shell' }
-  if (ref.type === 'git') return { title: 'Git & pull requests' }
+  if (ref.type === 'git') return { title: 'Git' }
   if (ref.type === 'files') return { title: 'Files' }
   if (ref.type === 'conversations') return { title: 'Conversations' }
   return { title: '' }

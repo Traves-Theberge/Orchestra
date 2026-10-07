@@ -278,3 +278,19 @@ describe('WorkspaceSlice — center tabs', () => {
     expect(get().projectGroups.p[groupId]).toEqual({ id: groupId, tabs: [{ type: 'git', id: 'git' }], activeTabId: 'git' })
   })
 })
+
+describe('mergeSideGroups', () => {
+  it('collapses a split right panel into one group, keeping every tab and the focused active tab', () => {
+    const { get } = createTestSlice()
+    Object.assign(get(), {
+      projectLayouts: { p: { kind: 'split', direction: 'horizontal', ratio: 0.5, first: { kind: 'leaf', groupId: 'a' }, second: { kind: 'leaf', groupId: 'b' } } },
+      projectGroups: { p: { a: { id: 'a', tabs: [{ type: 'files', id: 'files' }], activeTabId: 'files' }, b: { id: 'b', tabs: [{ type: 'git', id: 'git' }, { type: 'files', id: 'files' }], activeTabId: 'git' } } },
+      projectFocusedGroupId: { p: 'b' },
+    })
+    get().mergeSideGroups('p')
+    const state = get()
+    expect(state.projectLayouts.p).toEqual({ kind: 'leaf', groupId: 'a' })
+    expect(Object.keys(state.projectGroups.p)).toEqual(['a'])
+    expect(state.projectGroups.p.a).toEqual({ id: 'a', tabs: [{ type: 'files', id: 'files' }, { type: 'git', id: 'git' }], activeTabId: 'git' })
+  })
+})

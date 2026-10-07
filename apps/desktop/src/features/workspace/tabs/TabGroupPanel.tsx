@@ -7,7 +7,6 @@ import {
   SplitSquareVertical,
   GitBranch,
   Folder,
-  FolderTree,
   PanelRight,
 } from 'lucide-react'
 import { useAppStore } from '@core/store'
@@ -16,7 +15,7 @@ import type { TabGroup, TabRef, WorkspaceContextID } from '@core/store/types'
 import { WorkspaceToolsControls } from '../WorkspaceToolsControls'
 import { WorkspaceEmptyTools } from '../WorkspaceEmptyTools'
 import { TabContextMenu } from './TabContextMenu'
-import { OpenFileSidebarContext, ToolbarTabSlotContext } from './toolbar-tab-slot'
+import { ToolbarTabSlotContext } from './toolbar-tab-slot'
 import { ORCHESTRA_FILE_MIME } from '../file-explorer/FileTreeRow'
 import { TabContent, TabIcon } from './TabContent'
 import { closeWorkspaceTab, tabTitle } from './tab-actions'
@@ -61,7 +60,7 @@ export function TabGroupPanel({ projectId, group: rawGroup, isFocused, siblingGr
   const plusRef = useRef<HTMLButtonElement>(null)
   const splitRef = useRef<HTMLButtonElement>(null)
   const [plusAnchor, setPlusAnchor] = useState<{ left: number; top: number } | null>(null)
-  const [splitAnchor, setSplitAnchor] = useState<{ right: number; top: number } | null>(null)
+  const [splitAnchor] = useState<{ right: number; top: number } | null>(null)
 
   // Close popovers on outside click / Esc
   useEffect(() => {
@@ -111,10 +110,9 @@ export function TabGroupPanel({ projectId, group: rawGroup, isFocused, siblingGr
     : <WorkspaceEmptyTools projectId={projectId} />
 
   const titleFor = (ref: TabRef) => tabTitle(ref, { openFiles, browserTabs, openTerminals })
-  const iconFor = (ref: TabRef, isActive: boolean) => <TabIcon tabRef={ref} active={isActive} />
+  const iconFor = (ref: TabRef, isActive: boolean) => <TabIcon tabRef={ref} active={isActive} size={inToolbar ? 13 : 11} />
 
   const toolbarSlot = useContext(ToolbarTabSlotContext)
-  const openFileSidebar = useContext(OpenFileSidebarContext)
   const inToolbar = Boolean(toolbarSlot) && siblingGroupIds.length <= 1
   const placeStrip = (strip: ReactNode) => (inToolbar && toolbarSlot ? createPortal(strip, toolbarSlot) : strip)
 
@@ -213,7 +211,7 @@ export function TabGroupPanel({ projectId, group: rawGroup, isFocused, siblingGr
                     isDragging ? 'cursor-grabbing opacity-40' : 'cursor-grab'
                   } ${
                     inToolbar
-                      ? `h-7 rounded-md px-2.5 ${isActive ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}`
+                      ? `h-7 rounded-md pl-2.5 pr-1.5 text-[13px] ${isActive ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}`
                       : `px-3 h-9 ${isActive
                         ? 'bg-background text-foreground font-medium shadow-xs border-t-2 border-t-primary -mt-px'
                         : 'bg-transparent text-muted-foreground/75 hover:text-foreground hover:bg-muted/30'}`
@@ -222,7 +220,7 @@ export function TabGroupPanel({ projectId, group: rawGroup, isFocused, siblingGr
                 >
                   {iconFor(ref, isActive)}
                   {isDirty && <span className="size-1.5 rounded-full bg-primary shrink-0" />}
-                  <span className="text-[12px] font-medium tracking-tight truncate max-w-[160px]">{title}</span>
+                  <span className={inToolbar ? 'max-w-[160px] truncate' : 'text-[12px] font-medium tracking-tight truncate max-w-[160px]'}>{title}</span>
                   <span
                     role="button"
                     tabIndex={0}
@@ -240,7 +238,10 @@ export function TabGroupPanel({ projectId, group: rawGroup, isFocused, siblingGr
                     }}
                     onMouseDown={(e) => e.stopPropagation()}
                     onDragStart={(e) => e.preventDefault()}
-                    className={`inline-flex items-center justify-center size-4 -mr-1 rounded hover:bg-muted transition-all ${
+                    className={inToolbar
+                      // Same close affordance as the center tabs, so both read as one strip.
+                      ? `inline-flex size-4 shrink-0 items-center justify-center rounded-sm ${isActive ? 'text-muted-foreground hover:bg-background/60 hover:text-foreground' : 'text-transparent group-hover:text-muted-foreground hover:!bg-muted hover:!text-foreground focus-visible:text-foreground'}`
+                      : `inline-flex items-center justify-center size-4 -mr-1 rounded hover:bg-muted transition-all ${
                       isActive
                         ? 'text-muted-foreground/70 opacity-70 group-hover:opacity-100 hover:text-foreground'
                         : 'text-muted-foreground/50 opacity-0 group-hover:opacity-70 hover:!opacity-100 hover:text-foreground'
@@ -253,8 +254,8 @@ export function TabGroupPanel({ projectId, group: rawGroup, isFocused, siblingGr
             )
           })}
 
-          {/* + button — pinned right after the last tab */}
-          <button
+          {/* + button — pinned right after the last tab. In the shared strip the single center "+" covers it. */}
+          {!inToolbar && <button
             ref={plusRef}
             aria-label="Add tab"
             aria-haspopup="menu"
@@ -274,33 +275,12 @@ export function TabGroupPanel({ projectId, group: rawGroup, isFocused, siblingGr
             title="New tab…"
           >
             <Plus size={13} strokeWidth={2.25} />
-          </button>
+          </button>}
         </div>
 
         {/* Split + close-group menu + controls — far right */}
         <div className="flex items-center shrink-0 pr-1 gap-0.5">
           {!inToolbar && <WorkspaceToolsControls inToolbar={false} />}
-          <button
-            ref={splitRef}
-            aria-label="Split group"
-            aria-haspopup="menu"
-            aria-expanded={splitOpen}
-            onClick={() => {
-              if (!splitOpen && splitRef.current) {
-                const r = splitRef.current.getBoundingClientRect()
-                setSplitAnchor({ right: window.innerWidth - r.right, top: r.bottom + 4 })
-              }
-              setSplitOpen((v) => !v)
-            }}
-            className={`flex items-center justify-center size-7 my-1 mx-0.5 rounded-md transition-colors ${
-              splitOpen
-                ? 'bg-accent/60 text-foreground'
-                : 'text-muted-foreground/50 hover:text-foreground hover:bg-muted/40'
-            }`}
-            title="Split"
-          >
-            <SplitSquareHorizontal size={13} />
-          </button>
           {siblingGroupIds.length > 1 && (
             <button
               onClick={() => closeGroup(projectId, group.id)}
@@ -383,16 +363,6 @@ export function TabGroupPanel({ projectId, group: rawGroup, isFocused, siblingGr
               addTabToGroup(projectId, { type: 'files', id: 'files' }, group.id)
             }}
           />
-          {openFileSidebar && (
-            <PlusMenuItem
-              icon={<FolderTree size={13} />}
-              label="File sidebar"
-              onClick={() => {
-                closePlusMenu()
-                openFileSidebar()
-              }}
-            />
-          )}
           <PlusMenuItem
             icon={<GitBranch size={13} />}
             label="Git & pull requests"

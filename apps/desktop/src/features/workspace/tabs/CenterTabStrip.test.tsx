@@ -37,7 +37,9 @@ describe('center new-tab menu', () => {
     const { openBrowserTab } = mountMenu()
     const trigger = screen.getByRole('button', { name: 'New tab' })
     fireEvent.click(trigger)
-    expect(screen.queryByRole('menuitem', { name: /Files|Git/ })).not.toBeInTheDocument()
+    // The single "+" also covers the right panel's Files and Git.
+    expect(screen.getByRole('menuitem', { name: 'Files' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Git' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('menuitem', { name: 'New Browser Tab' }))
     expect(openBrowserTab).toHaveBeenCalledExactlyOnceWith(undefined, 'project-a')
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()

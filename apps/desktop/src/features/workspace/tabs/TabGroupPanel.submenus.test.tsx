@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resetAppStore, useAppStore } from '@core/store'
 import { TabGroupPanel } from './TabGroupPanel'
@@ -73,29 +73,8 @@ describe('workspace tab group menus', () => {
       siblingGroupIds={['legacy']}
     />)
     expect(screen.queryByRole('tab', { name: /Old shell/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /Git & pull requests/ })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /^Git/ })).toBeInTheDocument()
   })
 
-  it('splits downward by group ID and closes without closing the group on Escape', () => {
-    const { splitGroup, closeGroup } = mount()
-    const trigger = screen.getByRole('button', { name: 'Split group' })
-    fireEvent.click(trigger)
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Split down' }))
-    expect(splitGroup).toHaveBeenCalledExactlyOnceWith('project-a', 'group-a', 'vertical')
-    expect(closeGroup).not.toHaveBeenCalled()
-    expect(trigger).toHaveFocus()
 
-    fireEvent.click(trigger)
-    fireEvent.keyDown(document, { key: 'Escape' })
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
-    expect(trigger).toHaveFocus()
-    expect(closeGroup).not.toHaveBeenCalled()
-  })
-
-  it('closes the group only after choosing Close group', () => {
-    const { closeGroup } = mount()
-    fireEvent.click(screen.getByRole('button', { name: 'Split group' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Close group' }))
-    expect(closeGroup).toHaveBeenCalledExactlyOnceWith('project-a', 'group-a')
-  })
 })

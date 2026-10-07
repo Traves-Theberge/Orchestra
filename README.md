@@ -197,58 +197,61 @@ go run .
 
 ```mermaid
 graph TB
-    subgraph Frontends
-        DESKTOP["Desktop App"]
+    subgraph Clients
+        DESKTOP["Desktop App<br/>(Electron + React)"]
         TUI["TUI Dashboard"]
-        AGENT["Embedded Agent"]
     end
 
     subgraph Backend["orchestrad (Go)"]
-        API["REST API"]
-        ORCH["Orchestrator"]
-        AUTO["Automations Scheduler"]
-        CHAT["Workspace Chat"]
-        PUB["PubSub / SSE"]
-        REG["Agent Registry"]
+        API["REST API + SSE"]
+        CHAT["Workspace Chat<br/>Maestro + project chats<br/>harness switch · agent switch"]
+        ORCH["Orchestrator<br/>task dispatch + retries"]
+        AUTO["Automations<br/>scheduler · precheck · runs"]
+        CATALOG["Agent Catalog<br/>harness agents + Orchestra agents"]
+        ADAPT["Per-harness Adapters<br/>agent · instructions · skills<br/>MCP · model · effort → receipt"]
+        MCP["MCP Registry<br/>status + probe"]
+        TERM["Terminals<br/>PTY / Windows ConPTY"]
+        WS["Workspaces + Git worktrees"]
         TRACKER["Tracker"]
-        DB["SQLite / Analytics"]
-        WS["Workspace + Git"]
-        TERM["Terminal WS"]
-        MCP["MCP Client"]
+        DB["SQLite warehouse"]
     end
 
-    subgraph Providers
-        CODEX["Codex"]
-        CLAUDE["Claude"]
-        ANTIGRAVITY["Antigravity"]
+    subgraph Harnesses
+        CLAUDE["Claude Code"]
+        CODEX["Codex<br/>(app-server)"]
         OPENCODE["OpenCode"]
+        AGY["Antigravity<br/>(agy)"]
+    end
+
+    subgraph External
         GH["GitHub"]
-        LLM["LLM APIs"]
         MCP_SRV["MCP Servers"]
     end
 
     DESKTOP --> API
     TUI --> API
-    AGENT --> API
-    API --> ORCH
-    API --> PUB
-    API --> TERM
-    API --> AUTO
     API --> CHAT
-    AUTO --> REG
-    CHAT --> REG
-    ORCH --> REG
-    ORCH --> TRACKER
-    ORCH --> DB
+    API --> ORCH
+    API --> AUTO
+    API --> CATALOG
+    API --> TERM
+    AUTO --> CHAT
+    CHAT --> ADAPT
+    ORCH --> ADAPT
+    CATALOG --> ADAPT
+    MCP --> ADAPT
+    ADAPT --> CLAUDE
+    ADAPT --> CODEX
+    ADAPT --> OPENCODE
+    ADAPT --> AGY
     ORCH --> WS
-    REG --> CODEX
-    REG --> CLAUDE
-    REG --> ANTIGRAVITY
-    REG --> OPENCODE
+    AUTO --> WS
+    ORCH --> TRACKER
     TRACKER --> GH
-    AGENT --> LLM
-    ORCH --> MCP
     MCP --> MCP_SRV
+    CHAT --> DB
+    ORCH --> DB
+    AUTO --> DB
 ```
 
 ## Applications

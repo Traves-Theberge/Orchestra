@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { FileText, Globe, MessageSquare, Plus, Settings, Terminal, X } from 'lucide-react'
+import { FileText, Folder, GitBranch, Globe, MessageSquare, Plus, Settings, Terminal, X } from 'lucide-react'
 import { useAppStore } from '@core/store'
 import { getAgentIcon } from '@layout/shared/controls'
 import type { CenterTabState, TabRef, WorkspaceContextID } from '@core/store/types'
@@ -101,7 +101,7 @@ export function CenterTabs({ projectId }: { projectId: WorkspaceContextID }) {
   </>
 }
 
-/** "+" new-tab menu for the center strip: terminal, browser, markdown, conversations, agents. */
+/** The single "+" menu for the strip: center tabs (terminal, browser, markdown, conversations, agents) and the right panel's Files/Git. */
 export function CenterNewTabMenu({ projectId }: { projectId: WorkspaceContextID }) {
   const [open, setOpen] = useState(false)
   const [anchor, setAnchor] = useState<{ left: number; top: number } | null>(null)
@@ -159,6 +159,9 @@ export function CenterNewTabMenu({ projectId }: { projectId: WorkspaceContextID 
         <MenuItem icon={<Globe size={14} />} label="New Browser Tab" shortcut="Ctrl+Shift+B" onClick={run(() => state().openBrowserTab(undefined, projectId))} />
         <MenuItem icon={<FileText size={14} />} label="New Markdown" shortcut="Ctrl+Shift+M" onClick={run(() => { createMarkdownDocument(projectId).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Failed to create document')) })} />
         <MenuItem icon={<MessageSquare size={14} />} label="Conversations" onClick={run(() => state().addTabToGroup(projectId, { type: 'conversations', id: 'conversations' }))} />
+        <div className="my-1 h-px bg-border/60" />
+        <MenuItem icon={<Folder size={14} />} label="Files" onClick={run(() => state().addTabToGroup(projectId, { type: 'files', id: 'files' }))} />
+        <MenuItem icon={<GitBranch size={14} />} label="Git" onClick={run(() => state().addTabToGroup(projectId, { type: 'git', id: 'git' }))} />
         <div className="my-1 h-px bg-border/60" />
         {AGENT_LAUNCHERS.map(agent => <MenuItem key={agent.id} icon={getAgentIcon(agent.id, 14)} label={agent.label} onClick={run(() => openTerminalTab(projectId, agent))} />)}
         <div className="my-1 h-px bg-border/60" />

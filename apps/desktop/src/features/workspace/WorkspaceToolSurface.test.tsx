@@ -53,13 +53,11 @@ it('shows the files view full width when no tool is active', () => {
   expect(screen.getByLabelText('Workspace files view')).toHaveTextContent('Checkout files')
 })
 
-it('offers only Files, File sidebar and Git in the empty tools panel', () => {
+it('offers only Files and Git in the empty tools panel', () => {
   render(<WorkspaceToolSurface toolsOpen onToggleTools={vi.fn()}><WorkspaceEmptyTools projectId="a" /></WorkspaceToolSurface>)
-  for (const label of ['Terminal', 'Browser', 'Markdown document', 'Conversations']) expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument()
+  for (const label of ['Terminal', 'Browser', 'Markdown document', 'Conversations', 'File sidebar']) expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: 'Git' }))
   expect(Object.values(useAppStore.getState().projectGroups.a)[0].tabs).toEqual([{ type: 'git', id: 'git' }])
-  fireEvent.click(screen.getByRole('button', { name: 'File sidebar' }))
-  expect(screen.getByLabelText('Workspace file sidebar')).toHaveTextContent('Checkout files')
 })
 
 const render = (ui: ReactElement) => renderBase(ui, { wrapper: AppTooltipProvider })

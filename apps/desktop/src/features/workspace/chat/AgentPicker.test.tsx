@@ -125,8 +125,14 @@ it('lists Orchestra agents from agent-profiles even when the harness catalog has
   const change = vi.fn()
   render(<AppTooltipProvider><AgentPicker config={config} projectId="project-a" harness="CLAUDE" disabled={false} onChange={change} /></AppTooltipProvider>)
   await waitFor(() => expect(fetchUnifiedAgents).toHaveBeenCalledWith(config, { projectId: 'project-a', harness: 'CLAUDE' }))
-  fireEvent.click(await screen.findByRole('button', { name: 'Agent: planner' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Choose agent mode' }))
+  // Tabs group agents by source; the harness tab is empty here.
+  fireEvent.click(screen.getByRole('tab', { name: /Claude/ }))
+  expect(screen.queryByRole('option', { name: /planner/ })).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('tab', { name: /Orchestra/ }))
+  fireEvent.click(await screen.findByRole('option', { name: /planner/ }))
   expect(change).toHaveBeenCalledWith({ agent_id: 'orchestra:global:orchestra:planner', agent_scope: 'global', agent_content_hash: 'sha256:p', agent_format: 'orchestra-markdown' })
   // Harness agents still come from the harness catalog, not agent-profiles.
-  expect(screen.queryByRole('button', { name: 'Agent: reviewer' })).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Choose agent mode' }))
+  expect(screen.queryByRole('option', { name: /reviewer/ })).not.toBeInTheDocument()
 })

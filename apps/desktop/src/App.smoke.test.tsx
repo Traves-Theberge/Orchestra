@@ -843,7 +843,7 @@ describe('App smoke render', () => {
           expect.objectContaining({ baseUrl: 'http://127.0.0.1:9999' }),
         )
       })
-    })
+    }, 20000) // full-app render plus per-key typing
 
     it('shows backend config validation error for invalid URL', async () => {
       const user = userEvent.setup()

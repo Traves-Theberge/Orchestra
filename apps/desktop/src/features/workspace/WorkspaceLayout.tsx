@@ -36,6 +36,9 @@ export function WorkspaceLayout({ onAddTerminal, projectDetails, onInspectTask }
   const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null)
   const [breadcrumbSlot, setBreadcrumbSlot] = useState<HTMLDivElement | null>(null)
   const layout = useAppStore(s => s.projectLayouts[contextId])
+  const mergeSideGroups = useAppStore(s => s.mergeSideGroups)
+  // Files/Git live in the shared strip; an older split right panel is collapsed into one group.
+  useEffect(() => { if (layout?.kind === 'split') mergeSideGroups(contextId) }, [layout, contextId, mergeSideGroups])
   const projects = useAppStore(s => s.projects)
   const openProjectIds = useAppStore(s => s.openProjectIds)
   const config = useAppStore(s => s.config)
@@ -75,18 +78,12 @@ export function WorkspaceLayout({ onAddTerminal, projectDetails, onInspectTask }
     setSeenSideRequests(previous => ({ ...previous, [contextId]: sideToolRequest }))
     if (sideToolRequest > 0) setToolPreferences(previous => ({ ...previous, [contextId]: -1 }))
   }
-  useEffect(() => {
-    if (sideToolRequest > 0 && useAppStore.getState().projectCenterTabs[contextId]?.selectedId === CENTER_TASKS_TAB) selectCenterTab(contextId, CENTER_WORKSPACE_TAB)
-  }, [sideToolRequest, contextId, selectCenterTab])
-
+  // The right panel (Files/Git) is shared by every center tab, including Tasks.
   const preference = toolPreferences[contextId]
-  const toolsOpen = view === 'workspace' && (preference === undefined ? tabCount > 0 : preference === -1 || tabCount > preference)
-  const toggleTools = () => {
-    if (view === 'project') {
-      selectCenterTab(contextId, CENTER_WORKSPACE_TAB)
-      setToolPreferences(previous => ({ ...previous, [contextId]: -1 }))
-    } else setToolPreferences(previous => ({ ...previous, [contextId]: toolsOpen ? tabCount : -1 }))
-  }
+  const toolsOpen = preference === undefined ? tabCount > 0 : preference === -1 || tabCount > preference
+  const toggleTools = () => setToolPreferences(previous => ({ ...previous, [contextId]: toolsOpen ? tabCount : -1 }))
+  // The single "+" sits after the last tab: after Files/Git when the tool panel is open.
+  const newTabMenu = <CenterNewTabMenu projectId={contextId} />
   const project = projects.find(p => p.id === activeProjectId)
   const showWelcome = activeProjectId === GLOBAL_PROJECT_ID || !project || !config
   const chatOwners = useMemo(() => {
@@ -112,8 +109,7 @@ export function WorkspaceLayout({ onAddTerminal, projectDetails, onInspectTask }
         {FIXED_TABS.map(item => <button key={item.id} type="button" role="tab" aria-selected={selectedId === item.id} onClick={() => selectCenterTab(contextId, item.id)} className={`inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-[13px] transition-colors ${selectedId === item.id ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}`}><item.icon className="size-3.5" strokeWidth={1.8} />{item.label}</button>)}
         <CenterTabs projectId={contextId} />
       </div>
-      <CenterNewTabMenu projectId={contextId} />
-      {toolsOpen && <span aria-hidden="true" className="mx-1.5 h-4 w-px shrink-0 bg-border" />}
+      {!toolsOpen && newTabMenu}
       <div ref={setToolbarSlot} className="flex h-full min-w-0 flex-1 items-center" />
       {!toolsOpen && <AppTooltip content="Show workspace tools" side="bottom"><button type="button" aria-label="Show workspace tools" onClick={toggleTools} className="ml-auto shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-accent"><PanelRight className="size-4" /></button></AppTooltip>}
     </div>
@@ -132,7 +128,7 @@ export function WorkspaceLayout({ onAddTerminal, projectDetails, onInspectTask }
           })}
           <CenterTabPanels contextId={contextId} onInspectTask={onInspectTask} />
           </div>
-        </div>} tools={<WorkspaceToolSurface toolbarSlot={toolbarSlot} toolsOpen={toolsOpen} onToggleTools={toggleTools} hasActiveTools={hasActiveWorkspaceTool}>
+        </div>} tools={<WorkspaceToolSurface toolbarSlot={toolbarSlot} trailing={newTabMenu} toolsOpen={toolsOpen} onToggleTools={toggleTools} hasActiveTools={hasActiveWorkspaceTool}>
           <div className="flex min-h-0 min-w-0 flex-1">
             {layout && tabCount > 0 ? <SplitLayout projectId={contextId} layout={layout} onInspectTask={onInspectTask} onToggleTools={toggleTools} /> : <WorkspaceEmptyTools projectId={contextId} />}
           </div>

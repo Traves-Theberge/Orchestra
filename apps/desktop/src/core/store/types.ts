@@ -392,6 +392,7 @@ export interface WorkspaceSlice {
   splitGroup: (projectId: WorkspaceContextID, groupId: string, direction: 'horizontal' | 'vertical') => void
   /** Close a group: removes it from the layout tree and disposes its tabs (caller decides closing the underlying resource). */
   closeGroup: (projectId: WorkspaceContextID, groupId: string) => void
+  mergeSideGroups: (projectId: WorkspaceContextID) => void
   /** Move a tab from one group to another. */
   moveTabBetweenGroups: (projectId: WorkspaceContextID, tabId: string, dstGroupId: string) => void
   /** Reorder tabs inside a single group by index. */
