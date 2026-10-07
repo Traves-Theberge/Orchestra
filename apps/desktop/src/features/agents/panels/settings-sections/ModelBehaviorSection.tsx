@@ -6,10 +6,9 @@ const MODEL_OPTIONS = [
   { value: 'sonnet', label: 'Sonnet (latest)' },
   { value: 'opus', label: 'Opus (latest)' },
   { value: 'haiku', label: 'Haiku (latest)' },
-  { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-  { value: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
-  { value: 'claude-opus-4-6[1m]', label: 'Claude Opus 4.6 (1M context)' },
-  { value: 'claude-sonnet-4-5-20250514', label: 'Claude Sonnet 4.5' },
+  { value: 'claude-fable-5-1', label: 'Claude Fable 5.1' },
+  { value: 'claude-opus-5-5', label: 'Claude Opus 5.5' },
+  { value: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5' },
   { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
 ]
 

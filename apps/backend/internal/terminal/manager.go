@@ -13,15 +13,20 @@ import (
 	"sync"
 
 	"github.com/acarl005/stripansi"
-	"github.com/creack/pty"
 )
 
 // Session represents an active pseudo-terminal session with an underlying process,
 // output buffering, and handler-based output broadcasting.
 type Session struct {
-	ID            string
-	PTY           *os.File
-	Cmd           *exec.Cmd
+	ID string
+	// PTY is the PTY master on Unix. It is nil on Windows (ConPTY uses pipes).
+	PTY *os.File
+	// Cmd describes the process. On Unix it is the started command; on Windows
+	// it is unstarted metadata (Path/Args/Dir/Env) and Cmd.Process is nil.
+	Cmd *exec.Cmd
+	// Dir is the session's working directory.
+	Dir           string
+	proc          ptyProcess
 	Handlers      map[int]func([]byte)
 	nextHandlerID int
 	LogBuffer     []byte
@@ -64,9 +69,6 @@ func (m *Manager) CreateSessionWithEnv(id string, dir string, env []string, comm
 }
 
 func (m *Manager) createSession(id string, dir string, env []string, command string, args ...string) (*Session, error) {
-	if runtime.GOOS == "windows" {
-		return nil, fmt.Errorf("interactive PTY terminals are unavailable on Windows: a ConPTY adapter is required; agent subprocess execution remains supported")
-	}
 	scoped := env != nil
 	signature := terminalEnvSignature(env)
 	m.mu.Lock()
@@ -87,15 +89,14 @@ func (m *Manager) createSession(id string, dir string, env []string, command str
 		}
 	}
 
-	c := exec.Command(command, args...)
-	c.Dir = dir
+	spec := ptyStartSpec{Command: command, Args: args, Dir: dir}
 	if scoped {
-		c.Env = append([]string(nil), env...)
+		spec.Env = append([]string(nil), env...)
 	} else {
-		c.Env = os.Environ()
+		spec.Env = os.Environ()
 	}
 
-	f, err := pty.Start(c)
+	proc, f, c, err := startPTY(spec)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start pty: %v", err)
 	}
@@ -104,6 +105,8 @@ func (m *Manager) createSession(id string, dir string, env []string, command str
 		ID:           id,
 		PTY:          f,
 		Cmd:          c,
+		Dir:          dir,
+		proc:         proc,
 		Handlers:     make(map[int]func([]byte)),
 		OutputChan:   make(chan []byte, 100),
 		envScoped:    scoped,
@@ -115,7 +118,7 @@ func (m *Manager) createSession(id string, dir string, env []string, command str
 	go func() {
 		buf := make([]byte, 4096)
 		for {
-			n, err := f.Read(buf)
+			n, err := proc.Read(buf)
 			if err != nil {
 				session.Close()
 				break
@@ -151,10 +154,7 @@ func (m *Manager) ActiveDirectories() []string {
 	for _, session := range m.sessions {
 		session.mu.Lock()
 		closed := session.Closed
-		dir := ""
-		if session.Cmd != nil {
-			dir = session.Cmd.Dir
-		}
+		dir := session.workingDirectory()
 		session.mu.Unlock()
 		if !closed && dir != "" {
 			result = append(result, dir)
@@ -175,10 +175,7 @@ func (m *Manager) BeginDirectoryRemoval(dir string) (func(), error) {
 	for _, session := range m.sessions {
 		session.mu.Lock()
 		closed := session.Closed
-		cwd := ""
-		if session.Cmd != nil {
-			cwd = session.Cmd.Dir
-		}
+		cwd := session.workingDirectory()
 		session.mu.Unlock()
 		if !closed && cwd != "" && canonicalDirectory(cwd) == key {
 			return nil, fmt.Errorf("an active terminal is using this workspace")
@@ -206,14 +203,34 @@ func canonicalDirectory(dir string) string {
 	return path
 }
 
-// GetOrCreateSession returns an existing session by ID or creates a new bash session
-// in the given directory.
+// workingDirectory returns the session cwd. Caller must hold s.mu.
+func (s *Session) workingDirectory() string {
+	if s.Dir != "" {
+		return s.Dir
+	}
+	if s.Cmd != nil {
+		return s.Cmd.Dir
+	}
+	return ""
+}
+
+// DefaultShell returns the platform's interactive shell command and arguments:
+// /bin/bash on Unix; on Windows ORCHESTRA_TERMINAL_SHELL, pwsh.exe,
+// powershell.exe, then %COMSPEC%.
+func DefaultShell() (string, []string) {
+	return defaultShell()
+}
+
+// GetOrCreateSession returns an existing session by ID or creates a new
+// default-shell session in the given directory.
 func (m *Manager) GetOrCreateSession(id string, dir string) (*Session, error) {
-	return m.CreateSession(id, dir, "/bin/bash")
+	shell, args := defaultShell()
+	return m.CreateSession(id, dir, shell, args...)
 }
 
 func (m *Manager) GetOrCreateSessionWithEnv(id string, dir string, env []string) (*Session, error) {
-	return m.CreateSessionWithEnv(id, dir, env, "/bin/bash")
+	shell, args := defaultShell()
+	return m.CreateSessionWithEnv(id, dir, env, shell, args...)
 }
 
 // GetSession returns the session with the given ID, or nil if not found.
@@ -226,6 +243,10 @@ func (m *Manager) GetSession(id string) *Session {
 func (s *Session) broadcast(data []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.Closed {
+		// OutputChan is closed; late output drained after Close is dropped.
+		return
+	}
 
 	s.LogBuffer = append(s.LogBuffer, data...)
 	if len(s.LogBuffer) > 1024*100 { // 100KB buffer
@@ -276,7 +297,10 @@ func (m *Manager) CloseSession(id string) {
 
 // Write sends input data to the terminal's pseudo-terminal.
 func (s *Session) Write(data []byte) (int, error) {
-	return s.PTY.Write(data)
+	if s.proc == nil {
+		return 0, os.ErrClosed
+	}
+	return s.proc.Write(data)
 }
 
 // GetCleanOutput returns the buffered terminal output with ANSI escape sequences stripped.
@@ -288,10 +312,10 @@ func (s *Session) GetCleanOutput() string {
 
 // Resize changes the terminal window size to the given dimensions.
 func (s *Session) Resize(rows, cols uint16) error {
-	return pty.Setsize(s.PTY, &pty.Winsize{
-		Rows: rows,
-		Cols: cols,
-	})
+	if s.proc == nil {
+		return os.ErrClosed
+	}
+	return s.proc.Resize(rows, cols)
 }
 
 // Close terminates the session by closing the PTY, killing the process, and closing the output channel.
@@ -302,9 +326,11 @@ func (s *Session) Close() {
 		return
 	}
 	s.Closed = true
-	s.PTY.Close()
-	if s.Cmd.Process != nil {
-		s.Cmd.Process.Kill()
+	if s.proc != nil {
+		s.proc.Close()
+		s.proc.Kill()
 	}
-	close(s.OutputChan)
+	if s.OutputChan != nil {
+		close(s.OutputChan)
+	}
 }

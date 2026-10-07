@@ -3,7 +3,19 @@
  * The tree leaves carry a `groupId`; branches are splits.
  */
 
-import type { TabGroupLayoutNode } from './types'
+import type { CenterTabType, SideTabType, TabGroupLayoutNode, TabRef } from './types'
+
+const CENTER_TAB_TYPES: ReadonlySet<TabRef['type']> = new Set<CenterTabType>(['editor', 'browser', 'terminal', 'conversations'])
+
+/** Terminal, browser, editor and conversations tabs live in the center pane. */
+export function isCenterTab(ref: TabRef): ref is Extract<TabRef, { type: CenterTabType }> {
+  return CENTER_TAB_TYPES.has(ref.type)
+}
+
+/** Files and Git tabs live in the right tools panel. */
+export function isSideTab(ref: TabRef): ref is Extract<TabRef, { type: SideTabType }> {
+  return !CENTER_TAB_TYPES.has(ref.type)
+}
 
 /** Generate a short, unique-enough group id. */
 export function newGroupId(): string {

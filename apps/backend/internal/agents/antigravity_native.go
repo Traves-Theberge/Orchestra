@@ -39,6 +39,8 @@ type AntigravityNativeSession struct {
 	closeOnce sync.Once
 	onEvent   NativeEventHandler
 	failure   error
+	// release restores workspace files written for the agent profile.
+	release func()
 }
 
 type antigravityInitResult struct {
@@ -83,18 +85,40 @@ func newAntigravityNativeSessionWithArgs(ctx context.Context, command string, pr
 		return nil, errors.New("invalid Antigravity cumulative turn baseline")
 	}
 	args := []string{"--input-format", "stream-json", "--output-format", "stream-json"}
-	if request.RequestedModel != "" {
-		args = append(args, "--model", request.RequestedModel)
+	model := effectiveModel(request)
+	if model != "" {
+		args = append(args, "--model", model)
 	}
-	if request.RequestedAgentID != "" {
-		args = append(args, "--agent", request.RequestedAgentID)
-	}
-	if conversationID != "" {
-		args = append(args, "--conversation", conversationID)
+	if request.Agent != nil && request.Agent.Effort != "" {
+		args = append(args, "--effort", request.Agent.Effort)
 	}
 	binary, err := resolveAntigravityExecutable(command)
 	if err != nil {
 		return nil, err
+	}
+	// agy has no per-run config mechanism: agent, rules, skills and MCP files
+	// are merged into the run cwd and restored when this session closes.
+	applied, err := applyAntigravityWorkspace(request.Workspace, request)
+	if err != nil {
+		return nil, fmt.Errorf("apply Antigravity agent profile: %w", err)
+	}
+	expectedAgent := applied.agentName
+	if expectedAgent == "" && request.Agent == nil {
+		expectedAgent = request.RequestedAgentID
+	}
+	if expectedAgent != "" {
+		args = append(args, "--agent", expectedAgent)
+	}
+	if conversationID != "" {
+		args = append(args, "--conversation", conversationID)
+	}
+	release := func() {
+		if applied.overlay != nil {
+			applied.overlay.release()
+		}
+	}
+	if request.Agent != nil && request.Agent.Permissions.Restrictive() {
+		applied.receipt.skip("permissions")
 	}
 	childCtx, cancel := context.WithCancel(ctx)
 	processArgs := append(append([]string(nil), prefixArgs...), args...)
@@ -106,16 +130,19 @@ func newAntigravityNativeSessionWithArgs(ctx context.Context, command string, pr
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		cancel()
+		release()
 		return nil, fmt.Errorf("native Antigravity stdout: %w", err)
 	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		cancel()
+		release()
 		return nil, fmt.Errorf("native Antigravity stdin: %w", err)
 	}
-	s := &AntigravityNativeSession{ctx: childCtx, cancel: cancel, cmd: cmd, stdin: stdin, threadID: conversationID, turnCount: request.ProviderTurnCounter, readyCh: make(chan antigravityInitResult, 1), done: make(chan struct{}), onEvent: onEvent}
+	s := &AntigravityNativeSession{ctx: childCtx, cancel: cancel, cmd: cmd, stdin: stdin, threadID: conversationID, turnCount: request.ProviderTurnCounter, readyCh: make(chan antigravityInitResult, 1), done: make(chan struct{}), onEvent: onEvent, release: release}
 	if err = cmd.Start(); err != nil {
 		cancel()
+		release()
 		return nil, fmt.Errorf("start native Antigravity: %w", err)
 	}
 	go s.read(stdout)
@@ -150,13 +177,17 @@ func newAntigravityNativeSessionWithArgs(ctx context.Context, command string, pr
 			_ = s.Close()
 			return nil, errors.New("Antigravity returned a missing or different conversation identity")
 		}
-		if request.RequestedAgentID != "" && ready.info.AgentID != request.RequestedAgentID {
+		if expectedAgent != "" && ready.info.AgentID != expectedAgent {
 			_ = s.Close()
-			return nil, fmt.Errorf("Antigravity did not confirm requested agent %q (reported %q)", request.RequestedAgentID, ready.info.AgentID)
+			return nil, fmt.Errorf("Antigravity did not confirm requested agent %q (reported %q)", expectedAgent, ready.info.AgentID)
 		}
 		if request.RequestedModel != "" && ready.info.Model != request.RequestedModel {
 			_ = s.Close()
 			return nil, fmt.Errorf("Antigravity did not confirm requested model %q (reported %q)", request.RequestedModel, ready.info.Model)
+		}
+		if request.Agent != nil {
+			ready.info.AgentID = request.Agent.ID
+			ready.info.AgentObservation = applied.receipt.observation()
 		}
 		s.mu.Lock()
 		s.threadID, s.info = ready.id, ready.info
@@ -318,6 +349,9 @@ func (s *AntigravityNativeSession) Close() error {
 			closeErr = errors.New("Antigravity process termination remains unconfirmed")
 		}
 	}
+	if s.release != nil {
+		s.release()
+	}
 	return closeErr
 }
 
@@ -398,13 +432,18 @@ func (s *AntigravityNativeSession) read(r io.Reader) {
 			stepType := rawString(step["step_type"])
 			delta := rawString(step["text_delta"])
 			eventType := "step_update"
+			itemID := ""
 			if stepType == "agent_response" && delta != "" {
 				eventType = "item/agentMessage/delta"
+			} else if delta != "" && (strings.Contains(stepType, "think") || strings.Contains(stepType, "reason")) {
+				// Thinking steps share the reasoning stream shape used by every harness.
+				eventType = "item/reasoning/summaryTextDelta"
+				itemID = "step-" + string(step["step_index"])
 			}
 			s.mu.Lock()
 			turnID := s.turnID
 			s.mu.Unlock()
-			s.emit(NativeEvent{Type: eventType, ThreadID: threadID, TurnID: turnID, Delta: delta, Payload: line})
+			s.emit(NativeEvent{Type: eventType, ThreadID: threadID, TurnID: turnID, ItemID: itemID, Delta: delta, Payload: line})
 		case "result":
 			result := wire.Result
 			conversationID := rawString(result["conversation_id"])

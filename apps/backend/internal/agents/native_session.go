@@ -13,6 +13,8 @@ type NativeModelInfo struct {
 	ApprovalPolicy  string `json:"approval_policy,omitempty"`
 	SandboxMode     string `json:"sandbox_mode,omitempty"`
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	// AgentObservation is the applied receipt for a selected agent.
+	AgentObservation string `json:"agent_observation,omitempty"`
 }
 
 type NativeEvent struct {

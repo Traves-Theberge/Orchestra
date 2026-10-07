@@ -23,6 +23,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/orchestra/orchestra/apps/backend/internal/agents"
 	"github.com/orchestra/orchestra/apps/backend/internal/api"
+	"github.com/orchestra/orchestra/apps/backend/internal/automations"
 	"github.com/orchestra/orchestra/apps/backend/internal/config"
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
 	"github.com/orchestra/orchestra/apps/backend/internal/harnessaccounts"
@@ -46,6 +47,7 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker/memory"
 	trackerregistry "github.com/orchestra/orchestra/apps/backend/internal/tracker/registry"
 	trackersqlite "github.com/orchestra/orchestra/apps/backend/internal/tracker/sqlite"
+	"github.com/orchestra/orchestra/apps/backend/internal/types"
 	"github.com/orchestra/orchestra/apps/backend/internal/usage"
 	gitutil "github.com/orchestra/orchestra/apps/backend/internal/utils/git"
 	ghutil "github.com/orchestra/orchestra/apps/backend/internal/utils/github"
@@ -196,9 +198,22 @@ func Run(logger zerolog.Logger) error {
 		}
 	}
 
-	// Skip MCP server startup to prevent hanging - servers are managed externally
-	mcpRegistry := mcp.NewRegistry(make(map[string]string), logger)
+	// The registry holds every enabled Orchestra-managed local server. Clients
+	// are not spawned at boot (a hanging server must not block startup); the
+	// status API probes them and harness runs receive them through adapters.
+	orchestraServers, mcpErr := mcp.LoadOrchestraServers(context.Background(), warehouseDB, cfg.OrchestraMCPServers)
+	if mcpErr != nil {
+		logger.Warn().Err(mcpErr).Msg("load orchestra MCP servers")
+	}
+	mcpRegistry := mcp.NewRegistry(mcp.RegistryCommands(orchestraServers), logger)
 	orchestratorService.SetMCPRegistry(mcpRegistry, allMCPServers)
+	taskMCPServers = func(ctx context.Context) []agents.MCPServerSpec {
+		servers, err := mcp.LoadOrchestraServers(ctx, warehouseDB, cfg.OrchestraMCPServers)
+		if err != nil {
+			return nil
+		}
+		return mcp.RunSpecs(servers, nil)
+	}
 
 	logger.Info().Str("agent_provider", restoredDefault).Str("service_id", runtime.ServiceOrchestrator).Msg("agent provider configured")
 
@@ -237,7 +252,27 @@ func Run(logger zerolog.Logger) error {
 		return fmt.Errorf("workspace chat: %w", chatErr)
 	}
 	defer chatService.Close()
-	router := api.NewRouterWithPubSub(logger, orchestratorService, &cfg, pubsub, warehouseDB, termManager, usageService, trackerRegistry, studioMgr, studioTpls, chatService, accounts)
+	automationService, autoErr := automations.New(warehouseDB, automations.Options{
+		Chat:        chatService,
+		MaestroRoot: filepath.Join(cfg.WorkspaceRoot, ".orchestra", "orchestrator"),
+		Publish: func(run automations.Run) {
+			pubsub.Publish(observability.Event{Type: string(types.SSEAutomationRunUpdated), Data: run})
+		},
+		ProviderCheck: func(provider string) error {
+			if !agentRegistry.HasProvider(agents.Provider(provider)) {
+				return fmt.Errorf("harness is not registered")
+			}
+			return nil
+		},
+	})
+	if autoErr != nil {
+		return fmt.Errorf("automations: %w", autoErr)
+	}
+	// Deferred after chatService.Close so it runs first: the scheduler stops
+	// and in-flight runs are abandoned before chat turns are closed.
+	defer automationService.Close()
+	router := api.NewRouterWithPubSub(logger, orchestratorService, &cfg, pubsub, warehouseDB, termManager, usageService, trackerRegistry, studioMgr, studioTpls, chatService, accounts, automationService)
+	automationService.Start()
 
 	observeRetainedTerminalWorkspaces(orchestratorService, trackerClient, logger)
 
@@ -964,7 +999,12 @@ func processExecutionTick(
 		return
 	}
 
+	var runMCPServers []agents.MCPServerSpec
+	if !planOnly && agents.NormalizeRuntimeTarget(entry.RuntimeTarget) == agents.RuntimeLocal && taskMCPServers != nil {
+		runMCPServers = taskMCPServers(runCtx)
+	}
 	result, runErr := registry.RunTurn(runCtx, activeProvider, agents.TurnRequest{
+		MCPServers:        runMCPServers,
 		AccountID:         entry.AccountID,
 		RequestedModel:    requestedOptions.RequestedModel,
 		RequestedMaxTurns: requestedOptions.RequestedMaxTurns,
@@ -2278,3 +2318,7 @@ func rollupDailyMetrics(ctx context.Context, warehouseDB *db.DB, logger zerolog.
 		logger.Warn().Err(err).Msg("daily_metrics rollup failed")
 	}
 }
+
+// taskMCPServers supplies the enabled Orchestra MCP servers for local task
+// runs. It is set by Run; tests leave it nil.
+var taskMCPServers func(context.Context) []agents.MCPServerSpec

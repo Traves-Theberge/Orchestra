@@ -90,6 +90,9 @@ type TurnRequest struct {
 	Attempt              int
 	Timeout              time.Duration
 	CommandOverride      string
+	// StreamReasoning asks harnesses that support it to stream summarized
+	// thinking. Interactive chat sets it; batch dispatch keeps its event volume.
+	StreamReasoning bool
 	// PlanOnly requests a read-only planning turn. Runners do not infer safety
 	// from prompt text; the application must select a verified read-only command.
 	PlanOnly      bool
@@ -100,6 +103,15 @@ type TurnRequest struct {
 	// DeveloperInstructions are scoped to this provider thread, never account settings.
 	DeveloperInstructions string
 	RuntimeTarget         RuntimeTarget
+	// Agent is the resolved profile for RequestedAgentID. Adapters apply it
+	// per run (temp files, flags, config overrides) and never touch global
+	// harness configuration.
+	Agent *ResolvedAgent
+	// RequestedEffort is an explicit reasoning effort; it overrides Agent.Effort.
+	RequestedEffort string
+	// MCPServers are Orchestra-managed servers for this run (already narrowed
+	// by the agent's mcp_servers list). Harness-native servers keep loading.
+	MCPServers []MCPServerSpec
 }
 
 // AgentSelectionValidator is an opt-in capability. A catalog row or a native
@@ -150,6 +162,10 @@ type TurnResult struct {
 	ExitCode  int        `json:"exit_code"`
 	Output    string     `json:"output"`
 	Usage     TokenUsage `json:"usage"`
+	// EffectiveAgentID and AgentObservation are the applied receipt for a
+	// selected agent: applied | applied_partial:<what> | not_applied:<why>.
+	EffectiveAgentID string `json:"effective_agent_id,omitempty"`
+	AgentObservation string `json:"agent_observation,omitempty"`
 }
 
 // EventHandler is a callback invoked for each streaming Event during a turn.

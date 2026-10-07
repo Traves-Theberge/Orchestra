@@ -71,6 +71,7 @@
     "monaco-editor": "^0.55.1",
     "overlayscrollbars": "^2.14.0",
     "overlayscrollbars-react": "^0.5.6",
+    "radix-ui": "^1.6.7",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-is": "^19.2.4",
@@ -85,8 +86,10 @@
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
+    "sonner": "^2.0.7",
     "tailwind-merge": "^2.6.0",
     "yaml": "2.9.1",
+    "zod": "^4.6.5",
     "zustand": "^5.0.12"
   },
   "devDependencies": {
@@ -149,7 +152,8 @@
         "dmg",
         "zip"
       ],
-      "artifactName": "orchestra-desktop-${version}-${arch}.${ext}"
+      "artifactName": "orchestra-desktop-${version}-${arch}.${ext}",
+      "icon": "electron/assets/icon.png"
     },
     "win": {
       "target": [
@@ -160,7 +164,8 @@
           ]
         }
       ],
-      "artifactName": "orchestra-desktop-${version}-${arch}.${ext}"
+      "artifactName": "orchestra-desktop-${version}-${arch}.${ext}",
+      "icon": "electron/assets/icon.png"
     },
     "linux": {
       "target": [
@@ -169,7 +174,8 @@
       ],
       "maintainer": "Traves Theberge <Traves.theberge@gmail.com>",
       "category": "Utility",
-      "artifactName": "orchestra-desktop-${version}-${arch}.${ext}"
+      "artifactName": "orchestra-desktop-${version}-${arch}.${ext}",
+      "icon": "electron/assets/icon.png"
     }
   }
 }

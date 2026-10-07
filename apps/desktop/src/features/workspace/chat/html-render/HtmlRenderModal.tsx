@@ -8,7 +8,6 @@ import {
   Monitor,
   RotateCcw,
   Smartphone,
-  Sparkles,
   Tablet,
   X,
 } from 'lucide-react'
@@ -174,15 +173,6 @@ export function HtmlRenderModal({ htmlRender, isOpen, onClose }: HtmlRenderModal
                   <span className="text-[11px]">Fluid</span>
                 </button>
               </div>
-
-              {/* Viewport Dimension Pill */}
-              <div className="hidden xl:inline-flex items-center rounded-md border border-border/40 bg-muted/20 px-2 py-1 font-mono text-[10px] text-muted-foreground/70">
-                {viewport === 'mobile'
-                  ? '390 × 844 px'
-                  : viewport === 'tablet'
-                    ? '768 × 1024 px'
-                    : '100% Fluid'}
-              </div>
             </div>
           )}
         </div>
@@ -291,30 +281,9 @@ export function HtmlRenderModal({ htmlRender, isOpen, onClose }: HtmlRenderModal
               </div>
             </div>
           ) : (
-            /* Fluid / Desktop Studio Sheet */
-            <div className="w-full max-w-7xl h-[84vh] rounded-xl border border-border/60 bg-card shadow-2xl shadow-black/40 overflow-hidden flex flex-col transition-all duration-200">
-              {/* Studio Window Chrome */}
-              <div className="shrink-0 h-8 bg-muted/40 border-b border-border/40 px-3.5 flex items-center justify-between text-xs text-muted-foreground select-none">
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <div className="size-2.5 rounded-full bg-rose-500/70" />
-                    <div className="size-2.5 rounded-full bg-amber-500/70" />
-                    <div className="size-2.5 rounded-full bg-emerald-500/70" />
-                  </div>
-                  <div className="h-3 w-px bg-border/60 mx-1" />
-                  <span className="text-[11px] font-mono text-muted-foreground/80 flex items-center gap-1.5">
-                    <Sparkles className="size-3 text-primary/70" />
-                    {htmlRender.title}
-                  </span>
-                </div>
-                <div className="flex items-center gap-3 text-[10px] font-mono text-muted-foreground/70">
-                  <span className="hidden sm:inline">Sandbox: allow-scripts allow-forms</span>
-                  <span className="rounded bg-muted/60 px-1.5 py-0.5 border border-border/40">
-                    Fluid 100%
-                  </span>
-                </div>
-              </div>
-              <div className="flex-1 overflow-hidden bg-background">
+            /* Fluid: a borderless sheet floating over the canvas */
+            <div className="w-full max-w-7xl h-[84vh] rounded-2xl bg-background shadow-[0_30px_90px_-20px_rgba(0,0,0,0.55),0_8px_24px_-12px_rgba(0,0,0,0.35)] overflow-hidden flex flex-col transition-all duration-200">
+              <div className="flex-1 overflow-hidden">
                 <HtmlRenderDocument
                   key={refreshKey}
                   html={rawHtml}

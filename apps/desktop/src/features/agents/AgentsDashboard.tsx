@@ -12,15 +12,12 @@ import { Button } from '@ui/button'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@ui/dialog'
-import { OverviewPanel, type ProviderSummary } from './panels/OverviewPanel'
-import { computeClaudeSummary, computeClaudeProjectSummary } from './hooks/use-overview-summary'
 import { SettingsPanel } from './panels/SettingsPanel'
 import { InstructionsPanel } from './panels/InstructionsPanel'
 import { SkillsPanel } from './panels/SkillsPanel'
 import { HooksPanel } from './panels/HooksPanel'
 import { MCPPanel } from './panels/MCPPanel'
 import { RulesPanel } from './panels/RulesPanel'
-import { SubAgentsPanel } from './panels/SubAgentsPanel'
 import type { FileResourceItem } from './panels/FileResourcePanel'
 import { PermissionsPanel } from './panels/PermissionsPanel'
 import { CodexInstructionsPanel } from './panels/CodexInstructionsPanel'
@@ -29,32 +26,29 @@ import { CodexApprovalsPanel } from './panels/CodexApprovalsPanel'
 import { CodexModelPanel } from './panels/CodexModelPanel'
 import { CodexEnvironmentPanel } from './panels/CodexEnvironmentPanel'
 import { CodexProfilesPanel } from './panels/CodexProfilesPanel'
-import { CodexSubAgentsPanel } from './panels/CodexSubAgentsPanel'
-import { CodexSkillsPanel } from './panels/CodexSkillsPanel'
 import { CodexRulesPanel } from './panels/CodexRulesPanel'
-import { GeminiContextPanel } from './panels/GeminiContextPanel'
-import { GeminiSettingsPanel } from './panels/GeminiSettingsPanel'
-import { GeminiCommandsPanel } from './panels/GeminiCommandsPanel'
-import { GeminiModelPanel } from './panels/GeminiModelPanel'
-import { GeminiPermissionsPanel } from './panels/GeminiPermissionsPanel'
 import { OpenCodeConfigPanel } from './panels/OpenCodeConfigPanel'
 import { OpenCodeInstructionsPanel } from './panels/OpenCodeInstructionsPanel'
-import { OpenCodeAgentsPanel } from './panels/OpenCodeAgentsPanel'
 import { OpenCodeCommandsPanel } from './panels/OpenCodeCommandsPanel'
-import { OpenCodeSkillsPanel } from './panels/OpenCodeSkillsPanel'
 import { OpenCodeModelPanel } from './panels/OpenCodeModelPanel'
 import { OpenCodePermissionsPanel } from './panels/OpenCodePermissionsPanel'
 import { useClaudeConfig } from './hooks/use-claude-config'
-import { useCodexConfig, useGeminiConfig, useOpenCodeConfig } from './hooks/use-provider-domain-config'
-import { CLAUDE_CATEGORIES, CODEX_CATEGORIES, GEMINI_CATEGORIES, OPENCODE_CATEGORIES, EIGHTGENT_CATEGORIES } from './constants'
-import type { Provider, CategoryId, Scope } from './types'
+import { useCodexConfig, useOpenCodeConfig } from './hooks/use-provider-domain-config'
+import { OrchestraAgentsPanel } from './panels/OrchestraAgentsPanel'
+import { OrchestraSkillsPanel } from './panels/OrchestraSkillsPanel'
+import { McpStatusPanel } from './panels/McpStatusPanel'
+import { CLAUDE_CATEGORIES, CODEX_CATEGORIES, OPENCODE_CATEGORIES, EIGHTGENT_CATEGORIES, ORCHESTRA_CATEGORIES, PROVIDERS } from './constants'
+import type { ActiveAgentProvider, Provider, CategoryId } from './types'
 
 interface AgentsDashboardProps {
   config: BackendConfig | null
 }
 
 export function AgentsDashboard({ config }: AgentsDashboardProps) {
-  const provider = useAppStore(s => s.activeAgentProvider) as Provider
+  const activeProvider = useAppStore(s => s.activeAgentProvider) as ActiveAgentProvider
+  const isOrchestra = activeProvider === 'orchestra'
+  // Harness-specific hooks below receive a harness id; the Orchestra view uses none of them.
+  const provider = (isOrchestra ? 'claude' : activeProvider) as Provider
   const setProvider = useAppStore(s => s.setActiveAgentProvider)
   const category = useAppStore(s => s.activeAgentCategory) as CategoryId
   const setCategory = useAppStore(s => s.setActiveAgentCategory)
@@ -77,8 +71,8 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
     ? projects.find(p => p.id === agentHubProjectId) ?? null
     : null
 
-  const isClaude = provider === 'claude'
-  const is8gent = provider === '8gent'
+  const isClaude = !isOrchestra && provider === 'claude'
+  const is8gent = !isOrchestra && provider === '8gent'
   const isClaudeOrEightgent = isClaude || is8gent
 
   // Claude and 8gent share the same config structure (CLAUDE.md, .claude/settings.json, hooks)
@@ -89,89 +83,70 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
   )
 
   // For the Overview panel we need both global and project snapshots.
-  // We always fetch the global snapshot, and additionally fetch the project
-  // snapshot when a project is selected in the hub.
   const claudeGlobal = useClaudeConfig(
     isClaudeOrEightgent ? config : null,
     'GLOBAL',
     undefined,
   )
-  const claudeProject = useClaudeConfig(
-    isClaudeOrEightgent && agentHubProjectId ? config : null,
-    'PROJECT',
-    agentHubProjectId || undefined,
-  )
 
   const codex = useCodexConfig(
-    provider === 'codex' ? config : null,
-    scope,
-    projectId || undefined,
-  )
-  const gemini = useGeminiConfig(
-    provider === 'gemini' ? config : null,
+    !isOrchestra && provider === 'codex' ? config : null,
     scope,
     projectId || undefined,
   )
   const opencode = useOpenCodeConfig(
-    provider === 'opencode' ? config : null,
+    !isOrchestra && provider === 'opencode' ? config : null,
     scope,
     projectId || undefined,
   )
 
-  const domainState = provider === 'codex'
-    ? codex
-    : provider === 'gemini'
-      ? gemini
-      : opencode
+  const domainState = provider === 'codex' ? codex : opencode
   const state = isClaudeOrEightgent ? claude : domainState
-  const overviewProjectRead = isClaudeOrEightgent && category === 'overview' && agentHubProjectId
-  const readFailure = state.readError || (isClaudeOrEightgent && claudeGlobal.readError) || (overviewProjectRead && claudeProject.readError)
-  const readLoading = state.loading || (isClaudeOrEightgent && claudeGlobal.loading) || (overviewProjectRead && claudeProject.loading)
+  const readFailure = state.readError || (isClaudeOrEightgent && claudeGlobal.readError)
+  const readLoading = state.loading || (isClaudeOrEightgent && claudeGlobal.loading)
 
   const categories = useMemo(() => {
+    if (isOrchestra) return ORCHESTRA_CATEGORIES
     switch (provider) {
       case 'claude':
         return CLAUDE_CATEGORIES
       case 'codex':
         return CODEX_CATEGORIES
-      case 'gemini':
-        return GEMINI_CATEGORIES
       case 'opencode':
         return OPENCODE_CATEGORIES
       case '8gent':
         return EIGHTGENT_CATEGORIES
       case 'antigravity':
-        return OPENCODE_CATEGORIES.filter(item => ['overview', 'agents', 'skills'].includes(item.id))
+        return OPENCODE_CATEGORIES.filter(item => ['agents', 'skills'].includes(item.id))
       default:
         return CLAUDE_CATEGORIES
     }
-  }, [provider])
+  }, [provider, isOrchestra])
   useEffect(() => {
-    // Old UI state can still carry Gemini from an earlier release. Move only
-    // the active tab to Antigravity; provider files and stored configuration
-    // remain untouched and Gemini transcript history remains readable.
-    if (provider === 'gemini') {
-      setProvider('antigravity')
+    if (isOrchestra) return
+    // Unknown tab state (e.g. a retired harness) falls back to the Orchestra view.
+    if (!PROVIDERS.some(item => item.id === activeProvider)) {
+      setProvider('orchestra')
       return
     }
     const registered = availableAgents.map(id => id.toLowerCase())
     if (registered.length && !registered.includes(provider)) {
-      const next = registered.find(id => ['antigravity', 'codex', 'claude', 'opencode', '8gent'].includes(id))
-      if (next) setProvider(next as Exclude<Provider, 'gemini'>)
+      const next = PROVIDERS.find(item => registered.includes(item.id))?.id
+      setProvider(next ?? 'orchestra')
     }
-  }, [availableAgents, provider, setProvider])
+  }, [availableAgents, activeProvider, isOrchestra, provider, setProvider])
 
   useEffect(() => {
     if (!categories.some(item => item.id === category)) {
-      setCategory('overview')
+      setCategory(categories[0]?.id ?? 'settings')
     }
   }, [categories, category])
 
-  // Reset to Overview whenever the provider changes
+  // Reset to first category whenever the provider changes
   useEffect(() => {
-    setCategory('overview')
+    setCategory(categories[0]?.id ?? 'settings')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [provider])
+  }, [activeProvider])
 
   useEffect(() => {
     setAgentCategories(categories.map(c => ({ id: c.id, label: c.label, icon: c.icon })))
@@ -193,7 +168,7 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
 
   // Legacy category counts
   const legacyCounts = useMemo((): Record<string, number> => {
-    if (isClaudeOrEightgent) return {}
+    if (isClaudeOrEightgent || isOrchestra) return {}
 
     if (provider === 'codex') {
       return {
@@ -211,17 +186,6 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
       }
     }
 
-    if (provider === 'gemini') {
-      return {
-        settings: gemini.settings.length,
-        models: 1,
-        permissions: 1,
-        context: gemini.context.length,
-        commands: gemini.commands.length,
-        mcp: gemini.providerMcpServers.length + gemini.orchestraMcpServers.length,
-      }
-    }
-
     return {
       config: opencode.config.length,
       models: 1,
@@ -232,7 +196,7 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
       mcp: opencode.providerMcpServers.length + opencode.orchestraMcpServers.length,
       permissions: 1,
     }
-  }, [isClaudeOrEightgent, provider, codex, gemini, opencode])
+  }, [isClaudeOrEightgent, isOrchestra, provider, codex, opencode])
 
   const categoryCounts = isClaudeOrEightgent ? claudeCounts : legacyCounts
 
@@ -245,9 +209,6 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
       return {
         config: [] as FileResourceItem[],
         instructions: [] as FileResourceItem[],
-        context: [] as FileResourceItem[],
-        agents: [] as FileResourceItem[],
-        skills: [] as FileResourceItem[],
         commands: [] as FileResourceItem[],
         rules: [] as FileResourceItem[],
       }
@@ -256,85 +217,22 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
     return {
       config: provider === 'codex'
         ? toResourceItems(provider, codex.config)
-        : provider === 'gemini'
-          ? toResourceItems(provider, gemini.settings)
-          : toResourceItems(provider, opencode.config),
+        : toResourceItems(provider, opencode.config),
       instructions: provider === 'codex'
         ? toResourceItems(provider, codex.instructions).sort(compareStackItems)
         : toResourceItems(provider, opencode.config),
-      context: toResourceItems(provider, gemini.context).sort(compareStackItems),
-      agents: provider === 'codex'
-        ? toResourceItems(provider, codex.subagents)
-        : toResourceItems(provider, opencode.agents),
-      skills: provider === 'codex'
-        ? toResourceItems(provider, codex.skills)
-        : toResourceItems(provider, opencode.skills),
-      commands: provider === 'gemini'
-        ? toResourceItems(provider, gemini.commands)
-        : toResourceItems(provider, opencode.commands),
+      commands: toResourceItems(provider, opencode.commands),
       rules: provider === 'codex'
         ? toResourceItems(provider, codex.rules)
         : [] as FileResourceItem[],
     }
-  }, [isClaudeOrEightgent, provider, codex, gemini, opencode])
+  }, [isClaudeOrEightgent, provider, codex, opencode])
 
   const handleSelectCategory = (id: CategoryId) => {
     setCategory(id)
   }
 
-  // Build provider summaries for the Overview panel.
-  // For Claude/8gent we compose from useClaudeConfig data; for other providers
-  // we render an honest null-stub until provider-specific builders land.
-  const emptySummary: ProviderSummary = {
-    model: null,
-    instructionsLines: null,
-    skillsCount: null,
-    mcpCount: null,
-    hooksCount: null,
-    subAgentsCount: null,
-  }
 
-  const claudeGlobalBundle = useMemo(() => ({
-    settings: { model: (claudeGlobal.settings as { model?: string | null })?.model ?? null },
-    claudeMd: claudeGlobal.instructionsExists ? claudeGlobal.instructions : null,
-    skills: claudeGlobal.skills.map(s => ({ name: s.name })),
-    hooks: claudeGlobal.hooks,
-    mcpServers: Object.fromEntries(
-      [
-        ...claudeGlobal.providerMcpServers.map((s, i) => [s.name ?? `provider-${i}`, s]),
-        ...claudeGlobal.orchestraMcpServers.map((s, i) => [s.name ?? `orchestra-${i}`, s]),
-      ] as Array<[string, unknown]>,
-    ),
-    subAgents: claudeGlobal.subagents.map(a => ({ name: a.name })),
-  }), [claudeGlobal])
-
-  const overviewSummaryGlobal: ProviderSummary = useMemo(() => {
-    if (isClaudeOrEightgent) {
-      return computeClaudeSummary(claudeGlobalBundle)
-    }
-    return emptySummary
-  }, [isClaudeOrEightgent, claudeGlobalBundle])
-
-  const overviewSummaryProject: ProviderSummary | null = useMemo(() => {
-    if (!isClaudeOrEightgent) return null
-    if (!agentHubProjectId) return null
-    return computeClaudeProjectSummary(
-      claudeGlobalBundle,
-      {
-        settings: { model: (claudeProject.settings as { model?: string | null })?.model ?? null },
-        claudeMd: claudeProject.instructionsExists ? claudeProject.instructions : null,
-        skills: claudeProject.skills.map(s => ({ name: s.name })),
-        hooks: claudeProject.hooks,
-        mcpServers: Object.fromEntries(
-          [
-            ...claudeProject.providerMcpServers.map((s, i) => [s.name ?? `provider-${i}`, s]),
-            ...claudeProject.orchestraMcpServers.map((s, i) => [s.name ?? `orchestra-${i}`, s]),
-          ] as Array<[string, unknown]>,
-        ),
-        subAgents: claudeProject.subagents.map(a => ({ name: a.name })),
-      },
-    )
-  }, [isClaudeOrEightgent, agentHubProjectId, claudeGlobalBundle, claudeProject])
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -347,7 +245,7 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
       )}
 
       <div className="flex flex-col flex-1 min-h-0">
-        {category === 'mcp' && agentHubScope === 'PROJECT' && (
+        {!isOrchestra && category === 'mcp' && agentHubScope === 'PROJECT' && (
           <p className="px-4 py-2 text-xs text-muted-foreground border-b border-border/20">
             Project MCP configuration is read-only here. Switch to Global to edit account MCP settings.
           </p>
@@ -355,7 +253,12 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
         {/* Detail panel */}
         <div className="flex flex-1 min-h-0">
             <div className="flex-1 min-w-0 min-h-0">
-              {config && category === 'overview' && !readFailure && !readLoading ? <HarnessSetupPanel key={JSON.stringify([config.baseUrl, config.apiToken, provider, agentHubProjectId, resourceWorkspace?.workspaceId])} config={agentHubScope === 'PROJECT' && resourceWorkspace && !resourceWorkspace.registered ? { ...config, workspaceId: resourceWorkspace.workspaceId } : { ...config, workspaceId: undefined }} provider={provider} projectId={agentHubProjectId ?? '__orchestrator__'} /> : config && ['claude', 'codex', 'opencode', 'antigravity'].includes(provider) && (category === 'agents' || category === 'skills') ? (
+              {isOrchestra ? (
+                !config ? <p className="p-5 text-sm text-muted-foreground">Connect to a backend to manage Orchestra agents.</p>
+                  : category === 'skills' ? <OrchestraSkillsPanel config={config} projectId={scope === 'PROJECT' ? projectId || undefined : undefined} />
+                  : category === 'mcp' ? <McpStatusPanel config={config} />
+                  : <OrchestraAgentsPanel key={JSON.stringify([config.baseUrl, scope, projectId])} config={config} projectId={scope === 'PROJECT' ? projectId : ''} />
+              ) : config && ['claude', 'codex', 'opencode', 'antigravity'].includes(provider) && (category === 'agents' || category === 'skills') ? (
                 scope === 'PROJECT' && !projectId ? <p className="p-5 text-sm text-muted-foreground">Select a project to edit its agent resources.</p> : <AgentResourcesPanel key={JSON.stringify([config.baseUrl, config.apiToken, projectId, resourceWorkspace?.workspaceId, provider, scope, category])} config={scope === 'PROJECT' && resourceWorkspace && !resourceWorkspace.registered ? { ...config, workspaceId: resourceWorkspace.workspaceId } : { ...config, workspaceId: undefined }} projectId={scope === 'GLOBAL' ? '__orchestrator__' : projectId!} harness={provider} scope={scope === 'GLOBAL' ? 'global' : 'project'} kind={category === 'skills' ? 'skill' : 'agent_definition'} />
               ) : provider === 'antigravity' ? (
                 <div className="space-y-3 p-5"><h2 className="text-sm font-semibold">Antigravity</h2><p className="text-sm text-muted-foreground">Antigravity has its own harness and configuration. Its native agent and skill authoring capabilities are reported by the catalog; unsupported operations remain unavailable.</p><p className="text-xs text-muted-foreground">CLI presence alone does not confirm authentication, native sessions or agent selection.</p></div>
@@ -369,22 +272,10 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                   <Button variant="outline" onClick={() => {
                     void state.reload()
                     if (isClaudeOrEightgent) void claudeGlobal.reload()
-                    if (overviewProjectRead) void claudeProject.reload()
                   }}>Retry configuration</Button>
                 </div>
               ) : readLoading ? (
                 <div className="p-6 space-y-3"><Skeleton className="h-6 w-48" /><Skeleton className="h-[300px] w-full" /></div>
-              ) : category === 'overview' ? (
-                <OverviewPanel
-                  provider={provider}
-                  projectName={selectedProject?.name ?? null}
-                  globalSummary={overviewSummaryGlobal}
-                  projectSummary={overviewSummaryProject}
-                  onNavigate={(nextCategory, nextScope) => requestAgentHubNav(() => {
-                    setScope(nextScope, projectId)
-                    setCategory(nextCategory)
-                  })}
-                />
               ) : isClaudeOrEightgent ? (
                 <>
                   {category === 'settings' && (
@@ -424,21 +315,26 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                     />
                   )}
                   {category === 'mcp' && (
-                    <MCPPanel
-                      providerServers={claude.providerMcpServers}
-                      orchestraServers={claude.orchestraMcpServers}
-                      globalProviderServers={claudeGlobal.providerMcpServers}
-                      scope={agentHubScope}
-                      projectName={selectedProject?.name ?? null}
-                      onAddProvider={claude.addMCPServer}
-                      onUpdateProvider={claude.updateMCPServer}
-                      onToggleProvider={claude.toggleMCPServer}
-                      onDeleteProvider={claude.deleteMCPServer}
-                      onDeleteOrchestra={claude.deleteOrchestraMCPServer}
-                      loading={claude.loading}
-                      saving={claude.saving}
-                      provider="claude"
-                    />
+                    <div className="flex h-full min-h-0 flex-col">
+                      {config && <McpStatusPanel config={config} harness={provider} compact />}
+                      <div className="min-h-0 flex-1">
+                        <MCPPanel
+                          providerServers={claude.providerMcpServers}
+                          orchestraServers={claude.orchestraMcpServers}
+                          globalProviderServers={claudeGlobal.providerMcpServers}
+                          scope={agentHubScope}
+                          projectName={selectedProject?.name ?? null}
+                          onAddProvider={claude.addMCPServer}
+                          onUpdateProvider={claude.updateMCPServer}
+                          onToggleProvider={claude.toggleMCPServer}
+                          onDeleteProvider={claude.deleteMCPServer}
+                          onDeleteOrchestra={claude.deleteOrchestraMCPServer}
+                          loading={claude.loading}
+                          saving={claude.saving}
+                          provider="claude"
+                        />
+                      </div>
+                    </div>
                   )}
                   {category === 'rules' && (
                     <RulesPanel
@@ -460,17 +356,6 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                       saving={claude.saving}
                       onSave={claude.saveSkill}
                       onDelete={claude.removeSkill}
-                    />
-                  )}
-                  {category === 'agents' && (
-                    <SubAgentsPanel
-                      items={claude.subagents}
-                      globalItems={claudeGlobal.subagents}
-                      scope={agentHubScope}
-                      projectName={selectedProject?.name ?? null}
-                      saving={claude.saving}
-                      onSave={claude.saveSubAgent}
-                      onDelete={claude.removeSubAgent}
                     />
                   )}
                 </>
@@ -534,28 +419,6 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                       onSave={codex.saveConfigFile}
                     />
                   )}
-                  {category === 'settings' && (
-                    provider === 'gemini' ? (
-                      <GeminiSettingsPanel
-                        items={providerItems.config}
-                        scope={agentHubScope}
-                        projectName={selectedProject?.name ?? null}
-                        saving={domainState.saving}
-                        onSave={gemini.saveSettingsFile}
-                        onCreate={gemini.createSettingsResource}
-                      />
-                    ) : null
-                  )}
-                  {category === 'models' && provider === 'gemini' && (
-                    <GeminiModelPanel
-                      modelConfig={gemini.modelConfig}
-                      settingsContent={gemini.settings[0]?.content ?? ''}
-                      scope={agentHubScope}
-                      projectName={selectedProject?.name ?? null}
-                      saving={gemini.saving}
-                      onSave={gemini.saveModel}
-                    />
-                  )}
                   {category === 'models' && provider === 'opencode' && (
                     <OpenCodeModelPanel
                       modelConfig={opencode.modelConfig}
@@ -587,41 +450,6 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                       />
                     )
                   )}
-                  {category === 'context' && (
-                    <GeminiContextPanel
-                      items={providerItems.context}
-                      scope={agentHubScope}
-                      projectName={selectedProject?.name ?? null}
-                      saving={domainState.saving}
-                      onSave={gemini.saveContextFile}
-                      onCreate={gemini.createContextResource}
-                    />
-                  )}
-                  {category === 'skills' && provider === 'opencode' && (
-                    <OpenCodeSkillsPanel
-                      items={providerItems.skills}
-                      scope={agentHubScope}
-                      projectName={selectedProject?.name ?? null}
-                      saving={domainState.saving}
-                      onSave={opencode.saveSkillFile}
-                      onDelete={opencode.deleteSkillResource}
-                      onCreate={opencode.createSkillResourceFile}
-                    />
-                  )}
-                  {category === 'skills' && provider === 'codex' && (
-                    <CodexSkillsPanel
-                      items={codex.skills}
-                      configContent={codex.config[0]?.content ?? ''}
-                      configPath={codex.config[0]?.path ?? ''}
-                      scope={agentHubScope}
-                      projectName={selectedProject?.name ?? null}
-                      saving={domainState.saving}
-                      onSave={codex.saveSkillFile}
-                      onDelete={codex.deleteSkillFile}
-                      onCreate={codex.createSkillResource}
-                      onSaveConfig={codex.saveConfigFile}
-                    />
-                  )}
                   {category === 'commands' && provider === 'opencode' && (
                     <OpenCodeCommandsPanel
                       items={providerItems.commands}
@@ -631,42 +459,6 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                       onSave={opencode.saveCommandFile}
                       onDelete={opencode.deleteCommandResource}
                       onCreate={opencode.createCommandResource}
-                    />
-                  )}
-                  {category === 'commands' && provider === 'gemini' && (
-                    <GeminiCommandsPanel
-                      items={providerItems.commands}
-                      scope={agentHubScope}
-                      projectName={selectedProject?.name ?? null}
-                      saving={domainState.saving}
-                      onSave={gemini.saveCommandFile}
-                      onDelete={gemini.deleteCommandFile}
-                      onCreate={gemini.createCommandResource}
-                    />
-                  )}
-                  {category === 'agents' && provider === 'opencode' && (
-                    <OpenCodeAgentsPanel
-                      items={providerItems.agents}
-                      scope={agentHubScope}
-                      projectName={selectedProject?.name ?? null}
-                      saving={domainState.saving}
-                      onSave={opencode.saveAgentFile}
-                      onDelete={opencode.deleteAgentFile}
-                      onCreate={opencode.createAgentResourceFile}
-                    />
-                  )}
-                  {category === 'agents' && provider === 'codex' && (
-                    <CodexSubAgentsPanel
-                      items={codex.subagents}
-                      configContent={codex.config[0]?.content ?? ''}
-                      configPath={codex.config[0]?.path ?? ''}
-                      scope={agentHubScope}
-                      projectName={selectedProject?.name ?? null}
-                      saving={domainState.saving}
-                      onSave={codex.saveSubagentFile}
-                      onDelete={codex.deleteSubagentFile}
-                      onCreate={codex.createSubagentFile}
-                      onSaveConfig={codex.saveConfigFile}
                     />
                   )}
                   {category === 'hooks' && <HooksPanel hooks={domainState.hooks} onSave={domainState.saveHooks} loading={domainState.loading} saving={domainState.saving} provider={provider} />}
@@ -681,30 +473,25 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                     />
                   )}
                   {category === 'mcp' && (
-                    <MCPPanel
-                      providerServers={domainState.providerMcpServers}
-                      orchestraServers={domainState.orchestraMcpServers}
-                      scope={agentHubScope}
-                      projectName={selectedProject?.name ?? null}
-                      onAddProvider={domainState.addMCPServer}
-                      onUpdateProvider={domainState.updateMCPServer}
-                      onToggleProvider={domainState.toggleMCPServer}
-                      onDeleteProvider={domainState.deleteMCPServer}
-                      onDeleteOrchestra={domainState.deleteOrchestraMCPServer}
-                      loading={domainState.loading}
-                      saving={domainState.saving}
-                      provider={provider}
-                    />
-                  )}
-                  {category === 'permissions' && provider === 'gemini' && (
-                    <GeminiPermissionsPanel
-                      settingsPath={gemini.settings[0]?.path ?? ''}
-                      settingsContent={gemini.settings[0]?.content ?? ''}
-                      scope={agentHubScope}
-                      projectName={selectedProject?.name ?? null}
-                      saving={gemini.saving}
-                      onSave={gemini.saveSettingsFile}
-                    />
+                    <div className="flex h-full min-h-0 flex-col">
+                      {config && <McpStatusPanel config={config} harness={provider} compact />}
+                      <div className="min-h-0 flex-1">
+                        <MCPPanel
+                          providerServers={domainState.providerMcpServers}
+                          orchestraServers={domainState.orchestraMcpServers}
+                          scope={agentHubScope}
+                          projectName={selectedProject?.name ?? null}
+                          onAddProvider={domainState.addMCPServer}
+                          onUpdateProvider={domainState.updateMCPServer}
+                          onToggleProvider={domainState.toggleMCPServer}
+                          onDeleteProvider={domainState.deleteMCPServer}
+                          onDeleteOrchestra={domainState.deleteOrchestraMCPServer}
+                          loading={domainState.loading}
+                          saving={domainState.saving}
+                          provider={provider}
+                        />
+                      </div>
+                    </div>
                   )}
                   {category === 'permissions' && provider === 'opencode' && (
                     <OpenCodePermissionsPanel
@@ -716,7 +503,7 @@ export function AgentsDashboard({ config }: AgentsDashboardProps) {
                       onSave={opencode.saveConfigResource}
                     />
                   )}
-                  {category === 'permissions' && provider !== 'gemini' && provider !== 'opencode' && (
+                  {category === 'permissions' && provider !== 'opencode' && (
                     <PermissionsPanel
                       permissions={domainState.permissions}
                       scope={agentHubScope}
@@ -790,9 +577,6 @@ function buildResourceName(provider: Provider, entry: ProviderFileEntry): string
     return base
   }
 
-  if (provider === 'gemini') {
-    return base
-  }
 
   if (provider === 'opencode') {
     if (base === 'SKILL.md') return parent || base

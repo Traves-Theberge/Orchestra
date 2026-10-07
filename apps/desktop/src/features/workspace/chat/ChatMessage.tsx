@@ -1,12 +1,16 @@
 import { useMemo, useState } from 'react'
-import { Check, Copy } from 'lucide-react'
+import { AlertTriangle, Check, Copy } from 'lucide-react'
 import { HarnessIcon } from '@ui/HarnessIcon'
 import { MarkdownRenderer } from '@ui/MarkdownRenderer'
 import type { WorkspaceChatMessage } from '@core/api/client'
+import type { AgentObservation } from '@features/agents/lib/agent-display'
 import {
-  HtmlRenderFrame,
+  extractHtmlRendersFromContent,
+  HtmlRenderVariants,
   type HtmlRenderReference,
 } from './html-render'
+
+const NO_RENDERS: HtmlRenderReference[] = []
 
 function extractUserImages(text: string): { images: { name: string; url: string }[]; cleanedText: string } {
   const images: { name: string; url: string }[] = []
@@ -21,12 +25,24 @@ export function ChatMessage({
   message,
   provider,
   projectId,
-  htmlRender,
+  htmlRenders = NO_RENDERS,
+  onRegenerateVariant,
+  onImplementVariant,
+  variantActionsDisabled = false,
+  agent,
+  agentObservation,
 }: {
   message: WorkspaceChatMessage
   provider: string
   projectId: string
-  htmlRender?: HtmlRenderReference
+  /** Pages this turn's html_render tool calls published; inline fences in the text are added after them. */
+  htmlRenders?: readonly HtmlRenderReference[]
+  onRegenerateVariant?: (index: number, render: HtmlRenderReference) => void
+  onImplementVariant?: (index: number, render: HtmlRenderReference) => void
+  variantActionsDisabled?: boolean
+  /** Agent the turn ran under (assistant messages only). */
+  agent?: { name: string; color: string }
+  agentObservation?: AgentObservation
 }) {
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const user = message.role === 'user'
@@ -34,6 +50,11 @@ export function ChatMessage({
     if (!user) return null
     return extractUserImages(message.text)
   }, [user, message.text])
+  const assistantPayload = useMemo(() => {
+    if (user) return null
+    const inline = extractHtmlRendersFromContent(message.text)
+    return { renders: [...htmlRenders, ...inline.renders], text: inline.cleanedText }
+  }, [user, message.text, htmlRenders])
 
   const copy = async () => {
     try {
@@ -58,15 +79,33 @@ export function ChatMessage({
         <span className={!user ? 'capitalize text-foreground/80' : ''}>
           {user ? 'You' : message.role === 'system' ? 'Session' : provider}
         </span>
+        {!user && agent && (
+          <span data-chat-agent className="flex min-w-0 items-center gap-1.5 text-foreground/70">
+            <span aria-hidden="true" className="text-muted-foreground/50">·</span>
+            <span aria-hidden="true" className="size-2 shrink-0 rounded-full" style={{ backgroundColor: agent.color }} />
+            <span className="truncate">{agent.name}</span>
+          </span>
+        )}
+        {!user && agentObservation && (agentObservation.kind === 'not_applied' || agentObservation.kind === 'applied_partial') && (
+          <span role="note" title={agentObservation.detail || undefined} className="flex items-center gap-1 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-normal text-amber-600 dark:text-amber-400">
+            <AlertTriangle className="size-3" />
+            {agentObservation.kind === 'not_applied' ? 'Agent not applied' : 'Agent partially applied'}{agentObservation.detail ? `: ${agentObservation.detail}` : ''}
+          </span>
+        )}
         {message.status !== 'completed' && (
           <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">{message.status}</span>
         )}
       </div>
 
-      {/* Render in-app visualization from tool execution event if present */}
-      {!user && htmlRender && (
+      {/* The turn's visualizations (tool results and inline fences) as selectable variants */}
+      {assistantPayload && assistantPayload.renders.length > 0 && (
         <div className="mb-3">
-          <HtmlRenderFrame htmlRender={htmlRender} />
+          <HtmlRenderVariants
+            renders={assistantPayload.renders}
+            onRegenerate={onRegenerateVariant}
+            onImplement={onImplementVariant}
+            actionsDisabled={variantActionsDisabled}
+          />
         </div>
       )}
 
@@ -100,9 +139,9 @@ export function ChatMessage({
             <p className="whitespace-pre-wrap break-words text-[15px] leading-6">{message.text}</p>
           ) : null}
         </div>
-      ) : message.text ? (
+      ) : assistantPayload?.text ? (
         <MarkdownRenderer
-          content={message.text}
+          content={assistantPayload.text}
           linkProjectId={projectId}
           enableMermaid={false}
           className="break-words text-[15px] leading-7 [&_p]:my-3 [&_pre]:max-w-full [&_pre]:overflow-auto [&_pre]:rounded-xl [&_pre]:border-none [&_pre]:bg-muted/30 [&_pre]:px-4 [&_pre]:py-5 [&_table]:block [&_table]:overflow-auto"
@@ -110,7 +149,12 @@ export function ChatMessage({
       ) : null}
 
       {!user && (
-        <div className="mt-2 flex items-center gap-2">
+        <div className="mt-2 flex items-center justify-end gap-2">
+          {copyState === 'failed' && (
+            <span role="status" className="text-[10px] text-muted-foreground">
+              Could not copy response.
+            </span>
+          )}
           <button
             aria-label="Copy response"
             onClick={() => void copy()}
@@ -119,11 +163,6 @@ export function ChatMessage({
           >
             {copyState === 'copied' ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
           </button>
-          {copyState === 'failed' && (
-            <span role="status" className="text-[10px] text-muted-foreground">
-              Could not copy response.
-            </span>
-          )}
         </div>
       )}
     </article>

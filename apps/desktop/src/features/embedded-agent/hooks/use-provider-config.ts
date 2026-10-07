@@ -10,7 +10,7 @@ const PREFS_KEY = 'orchestra-agent-provider-prefs'
 const PREFERRED_DEFAULTS: Record<string, string[]> = {
   openrouter: ['anthropic/claude-sonnet-4', 'openai/gpt-4o', 'google/gemini-2.5-flash'],
   openai: ['gpt-4o'],
-  claude: ['claude-sonnet-4-6'],
+  claude: ['claude-sonnet-5-5'],
   gemini: ['gemini-2.5-flash'],
 }
 

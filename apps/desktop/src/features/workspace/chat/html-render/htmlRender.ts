@@ -1,6 +1,6 @@
 /**
  * Agent-authored HTML pages ("HTML renders") are self-contained documents an
- * agent publishes into a thread with the `html_render` tool (or inline ```t3-html
+ * agent publishes into a thread with the `html_render` tool (or inline ```orchestra-html
  * code block). Clients show it in a sandboxed iframe with an opaque origin and
  * supply the active theme as CSS custom properties via the MCP Apps protocol.
  */
@@ -270,7 +270,7 @@ export function htmlRenderResult(id: string | number) {
   return { jsonrpc: '2.0', id, result: {} } as const
 }
 
-export const THEME_FRAGMENT_KEY = 't3-theme'
+export const THEME_FRAGMENT_KEY = 'orchestra-theme'
 
 /** URL fragment that hands a render its theme before first paint. */
 export function htmlRenderThemeFragment(theme: HtmlRenderTheme): string {
@@ -297,7 +297,7 @@ function rootRule(theme: HtmlRenderTheme): string {
   return `:root{color-scheme:${theme.appearance};${declarations}}`
 }
 
-export const BOOTSTRAP_SCRIPT = `(function(){var s=document.getElementById("t3-theme"),n=0;if(!s)return;var b=${JSON.stringify(BASE_CSS)};function a(t){if(!t||typeof t!=="object"||!t.variables||typeof t.variables!=="object")return;var c=":root{color-scheme:"+(t.appearance==="light"?"light":"dark")+";";for(var k in t.variables){if(/^--[a-z0-9-]+$/.test(k))c+=k+":"+String(t.variables[k]).replace(/[;{}<>]/g,"")+";";}s.textContent=c+"}"+b;}try{var m=/[#&]${THEME_FRAGMENT_KEY}=([^&]*)/.exec(location.hash);if(m){a(JSON.parse(decodeURIComponent(m[1])));history.replaceState(history.state,"",location.pathname+location.search);}}catch(e){}window.addEventListener("message",function(e){var d=e.data,p=d&&d.params;if(d&&d.jsonrpc==="2.0"&&d.method===${JSON.stringify(HOST_CONTEXT_CHANGED_METHOD)}&&p&&p.styles)a({appearance:p.theme,variables:p.styles.variables});});document.addEventListener("click",function(e){var l=e.isTrusted?e.composedPath().find(function(t){return t&&t.matches&&t.matches("a[href]");}):null,u;if(!l)return;try{u=new URL(l.getAttribute("href"),document.baseURI);}catch(x){return;}if(!/^https?:$/.test(u.protocol)||u.href.split("#")[0]===location.href.split("#")[0])return;if(window.parent!==window){e.preventDefault();window.parent.postMessage({jsonrpc:"2.0",id:"t3-link-"+(++n),method:${JSON.stringify(OPEN_LINK_METHOD)},params:{url:u.href}},"*");}else{l.setAttribute("target","_blank");l.setAttribute("rel","noopener");}},true);if(window.parent!==window){var h,o,z=function(){var r=document.documentElement,v=Math.ceil(r.scrollHeight>r.clientHeight?r.scrollHeight:r.getBoundingClientRect().height);if(v===h)return;h=v;window.parent.postMessage({jsonrpc:"2.0",method:${JSON.stringify(SIZE_CHANGED_METHOD)},params:{height:v}},"*");};if(window.ResizeObserver){o=new ResizeObserver(z);o.observe(document.documentElement);}document.addEventListener("DOMContentLoaded",function(){if(o&&document.body)o.observe(document.body);z();});window.addEventListener("load",z);}})();`
+export const BOOTSTRAP_SCRIPT = `(function(){var s=document.getElementById("orchestra-theme"),n=0;if(!s)return;var b=${JSON.stringify(BASE_CSS)};function a(t){if(!t||typeof t!=="object"||!t.variables||typeof t.variables!=="object")return;var c=":root{color-scheme:"+(t.appearance==="light"?"light":"dark")+";";for(var k in t.variables){if(/^--[a-z0-9-]+$/.test(k))c+=k+":"+String(t.variables[k]).replace(/[;{}<>]/g,"")+";";}s.textContent=c+"}"+b;}try{var m=/[#&]${THEME_FRAGMENT_KEY}=([^&]*)/.exec(location.hash);if(m){a(JSON.parse(decodeURIComponent(m[1])));history.replaceState(history.state,"",location.pathname+location.search);}}catch(e){}window.addEventListener("message",function(e){var d=e.data,p=d&&d.params;if(d&&d.jsonrpc==="2.0"&&d.method===${JSON.stringify(HOST_CONTEXT_CHANGED_METHOD)}&&p&&p.styles)a({appearance:p.theme,variables:p.styles.variables});});document.addEventListener("click",function(e){var l=e.isTrusted?e.composedPath().find(function(t){return t&&t.matches&&t.matches("a[href]");}):null,u;if(!l)return;try{u=new URL(l.getAttribute("href"),document.baseURI);}catch(x){return;}if(!/^https?:$/.test(u.protocol)||u.href.split("#")[0]===location.href.split("#")[0])return;if(window.parent!==window){e.preventDefault();window.parent.postMessage({jsonrpc:"2.0",id:"orchestra-link-"+(++n),method:${JSON.stringify(OPEN_LINK_METHOD)},params:{url:u.href}},"*");}else{l.setAttribute("target","_blank");l.setAttribute("rel","noopener");}},true);if(window.parent!==window){var h,o,z=function(){var r=document.documentElement,v=Math.ceil(r.scrollHeight>r.clientHeight?r.scrollHeight:r.getBoundingClientRect().height);if(v===h)return;h=v;window.parent.postMessage({jsonrpc:"2.0",method:${JSON.stringify(SIZE_CHANGED_METHOD)},params:{height:v}},"*");};if(window.ResizeObserver){o=new ResizeObserver(z);o.observe(document.documentElement);}document.addEventListener("DOMContentLoaded",function(){if(o&&document.body)o.observe(document.body);z();});window.addEventListener("load",z);}})();`
 
 function bootstrapMarkup(markup: string, theme?: HtmlRenderTheme): string {
   const dark = htmlRenderTheme({}, 'dark')
@@ -309,7 +309,7 @@ function bootstrapMarkup(markup: string, theme?: HtmlRenderTheme): string {
     /<meta\s[^>]*name\s*=\s*["']?viewport/i.test(markup)
       ? ''
       : '<meta name="viewport" content="width=device-width, initial-scale=1">',
-    `<style id="t3-theme">${defaultCss}</style>`,
+    `<style id="orchestra-theme">${defaultCss}</style>`,
     `<script>${BOOTSTRAP_SCRIPT}</script>`,
   ].join('')
 }
@@ -392,27 +392,60 @@ export function htmlRenderFromToolItem(item: {
   return undefined
 }
 
+/** Every page a turn's html_render tool calls published, in order; each is one variant. */
+export function extractHtmlRendersFromEvents(events: ReadonlyArray<{
+  readonly type?: string
+  readonly payload?: unknown
+}>): HtmlRenderReference[] {
+  const renders: HtmlRenderReference[] = []
+  for (const event of events) {
+    if (event.type === 'item/toolCall/completed' && typeof event.payload === 'object' && event.payload !== null) {
+      const render = htmlRenderFromToolItem(event.payload as { toolName?: string; output?: unknown })
+      if (render) renders.push(render)
+    }
+  }
+  return renders
+}
+
 /** Extracts an HtmlRenderReference from a turn's events if an html_render tool call was executed */
 export function extractHtmlRenderFromEvents(events: ReadonlyArray<{
   readonly type?: string
   readonly payload?: unknown
 }>): HtmlRenderReference | undefined {
-  for (const event of events) {
-    if (event.type === 'item/toolCall/completed' && typeof event.payload === 'object' && event.payload !== null) {
-      const render = htmlRenderFromToolItem(event.payload as { toolName?: string; output?: unknown })
-      if (render) return render
-    }
-  }
-  return undefined
+  return extractHtmlRendersFromEvents(events)[0]
 }
 
-/** Extracts an inline ```t3-html, ```orchestra-html, or ```html-visualization code block from message text */
+const HTML_FENCE_SOURCE = '```(?:orchestra-html|html-render|html-preview|html-visualization)[^\\n]*\\n([\\s\\S]*?)```'
+
+function inlineRender(rawHtml: string): HtmlRenderReference {
+  const titleMatch = /<!--\s*title:\s*(.+?)\s*-->/i.exec(rawHtml) || /<h[12][^>]*>(.+?)<\/h[12]>/i.exec(rawHtml)
+  const title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, '').trim() : 'Visualization'
+  return { title: title.slice(0, HTML_RENDER_MAX_TITLE_LENGTH) || 'Visualization', height: 500, html: rawHtml }
+}
+
+/** Every closed inline HTML fence in a reply, as variants, plus the reply text without them. */
+export function extractHtmlRendersFromContent(content: string): {
+  readonly renders: HtmlRenderReference[]
+  readonly cleanedText: string
+} {
+  const renders: HtmlRenderReference[] = []
+  if (!content) return { renders, cleanedText: content }
+  const cleanedText = content.replace(new RegExp(HTML_FENCE_SOURCE, 'gi'), (whole, body: string) => {
+    const rawHtml = body.trim()
+    if (!rawHtml) return whole
+    renders.push(inlineRender(rawHtml))
+    return ''
+  }).replace(/\n{3,}/g, '\n\n').trim()
+  return { renders, cleanedText }
+}
+
+/** Extracts an inline ```orchestra-html, ```html-preview, or ```html-visualization code block from message text */
 export function extractHtmlRenderFromContent(content: string): {
   readonly htmlRender: HtmlRenderReference
   readonly cleanedText: string
 } | undefined {
   if (!content) return undefined
-  const fenceRegex = /```(?:t3-html|orchestra-html|html-preview|html-visualization)(?:[^\n]*\n)([\s\S]*?)```/i
+  const fenceRegex = /```(?:orchestra-html|html-preview|html-visualization)(?:[^\n]*\n)([\s\S]*?)```/i
   const match = fenceRegex.exec(content)
   if (!match) return undefined
   const rawHtml = match[1].trim()

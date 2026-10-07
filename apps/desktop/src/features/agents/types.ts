@@ -1,7 +1,8 @@
 import type { LucideIcon } from 'lucide-react'
 
-export type Provider = 'claude' | 'codex' | 'antigravity' | 'gemini' | 'opencode' | '8gent'
-export type ActiveAgentProvider = Exclude<Provider, 'gemini'>
+export type Provider = 'claude' | 'codex' | 'antigravity' | 'opencode' | '8gent'
+/** Sidebar tab: a harness, or the cross-harness Orchestra view. */
+export type ActiveAgentProvider = Provider | 'orchestra'
 export type CategoryId =
   | 'overview'
   | 'settings'

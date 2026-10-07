@@ -220,3 +220,61 @@ describe('WorkspaceSlice — clearExplorerCache', () => {
     expect(get().gitStatusMap).toEqual({})
   })
 })
+
+describe('WorkspaceSlice — center tabs', () => {
+  it('routes terminal, browser, editor and conversations refs to the center strip and selects them', () => {
+    const { get } = createTestSlice()
+    get().addTabToGroup('p', { type: 'terminal', id: 't1' })
+    get().addTabToGroup('p', { type: 'browser', id: 'b1' })
+    get().addTabToGroup('p', { type: 'editor', id: '/p/a.ts' })
+    get().addTabToGroup('p', { type: 'conversations', id: 'conversations' })
+    expect(get().projectCenterTabs.p.tabs.map(t => t.id)).toEqual(['t1', 'b1', '/p/a.ts', 'conversations'])
+    expect(get().projectCenterTabs.p.selectedId).toBe('conversations')
+    expect(get().projectGroups.p).toBeUndefined()
+    get().addTabToGroup('p', { type: 'terminal', id: 't1' })
+    expect(get().projectCenterTabs.p.tabs).toHaveLength(4)
+    expect(get().projectCenterTabs.p.selectedId).toBe('t1')
+  })
+
+  it('routes files and git refs to tab groups and bumps the side tool request', () => {
+    const { get } = createTestSlice()
+    get().addTabToGroup('p', { type: 'git', id: 'git' })
+    get().addTabToGroup('p', { type: 'files', id: 'files' })
+    expect(Object.values(get().projectGroups.p)[0].tabs.map(t => t.type)).toEqual(['git', 'files'])
+    expect(get().sideToolRequests.p).toBe(2)
+    expect(get().projectCenterTabs.p).toBeUndefined()
+  })
+
+  it('falls back to the previous selection, skipping closed tabs, then Workspace', () => {
+    const { get } = createTestSlice()
+    get().selectCenterTab('p', '@tasks')
+    get().addTabToGroup('p', { type: 'terminal', id: 't1' })
+    get().addTabToGroup('p', { type: 'browser', id: 'b1' })
+    get().activateTabInGroup('p', 't1')
+    get().removeTabFromGroup('p', 'b1')
+    expect(get().projectCenterTabs.p.selectedId).toBe('t1')
+    get().removeTabFromGroup('p', 't1')
+    expect(get().projectCenterTabs.p.selectedId).toBe('@tasks')
+    get().selectCenterTab('p', '@workspace')
+    get().selectCenterTab('p', 'missing')
+    expect(get().projectCenterTabs.p.selectedId).toBe('@workspace')
+  })
+
+  it('reorders center tabs', () => {
+    const { get } = createTestSlice()
+    for (const id of ['a', 'b', 'c']) get().addTabToGroup('p', { type: 'terminal', id })
+    get().reorderCenterTabs('p', 0, 3)
+    expect(get().projectCenterTabs.p.tabs.map(t => t.id)).toEqual(['b', 'c', 'a'])
+  })
+
+  it('migrates legacy groups without losing tabs or leaving ghosts', () => {
+    const { get } = createTestSlice()
+    get().addTabToGroup('p', { type: 'git', id: 'git' })
+    const groupId = Object.keys(get().projectGroups.p)[0]
+    const legacy = { ...get(), projectGroups: { p: { [groupId]: { id: groupId, tabs: [{ type: 'terminal' as const, id: 't1' }, { type: 'git' as const, id: 'git' }, { type: 'editor' as const, id: '/x' }], activeTabId: '/x' } } } }
+    Object.assign(get(), legacy)
+    get().normalizeWorkspaceTabs('p')
+    expect(get().projectCenterTabs.p.tabs.map(t => t.id)).toEqual(['t1', '/x'])
+    expect(get().projectGroups.p[groupId]).toEqual({ id: groupId, tabs: [{ type: 'git', id: 'git' }], activeTabId: 'git' })
+  })
+})

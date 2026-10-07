@@ -80,7 +80,7 @@ func TestAgentCatalogHTTPRoundTripAndGlobalOnlyOrchestrator(t *testing.T) {
 		} `json:"items"`
 	}
 	_ = json.Unmarshal(raw, &catalog)
-	if status != http.StatusOK || catalog.ProjectID != "__orchestrator__" || catalog.Scope != "global" || len(catalog.Items) != 1 || catalog.Items[0].ID != "team/planner" || catalog.Items[0].AgentID != "team/planner" || catalog.Items[0].Content != "" || catalog.Items[0].ContentHash == "" || catalog.Items[0].SelectionStatus == "primary_selectable" {
+	if status != http.StatusOK || catalog.ProjectID != "__orchestrator__" || catalog.Scope != "global" || len(catalog.Items) != 1 || catalog.Items[0].ID != "team/planner" || catalog.Items[0].AgentID != "harness:global:opencode:team/planner" || catalog.Items[0].Content != "" || catalog.Items[0].ContentHash == "" || catalog.Items[0].SelectionStatus == "primary_selectable" {
 		t.Fatalf("catalog response %d %s", status, raw)
 	}
 	detailURL := base + "/resource?harness=OPENCODE&scope=global&kind=agent_definition&resource_id=team%2Fplanner"

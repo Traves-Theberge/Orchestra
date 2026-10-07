@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AgentSelector, CustomDropdown, ProjectSelector, RuntimeSelector } from './controls'
+import { AgentSelector, CustomDropdown, ProjectSelector, RuntimeSelector, getAgentIcon } from './controls'
 
 afterEach(cleanup)
 
@@ -50,5 +50,16 @@ describe('shared selector menu walkthroughs', () => {
     fireEvent.click(trigger)
     expect(screen.queryByRole('button', { name: 'Two' })).not.toBeInTheDocument()
     expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('renders native antigravity icon for antigravity provider', () => {
+    const { container } = render(<>{getAgentIcon('antigravity', 20)}</>)
+    const img = container.querySelector('img')
+    expect(img).not.toBeNull()
+    expect(img?.getAttribute('src')).toBe('./antigravity.png')
+    expect(img?.getAttribute('alt')).toBe('Antigravity')
+    expect(img?.getAttribute('width')).toBe('20')
+    expect(img?.getAttribute('height')).toBe('20')
+    expect(container.querySelector('svg')).toBeNull()
   })
 })

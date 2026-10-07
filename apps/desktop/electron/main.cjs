@@ -339,6 +339,8 @@ function applyManagedBackendProfile() {
   })
 }
 
+const APP_ICON = path.join(__dirname, 'assets', 'icon.png')
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1360,
@@ -346,6 +348,7 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 720,
     title: 'Orchestra Desktop',
+    icon: APP_ICON, // Windows/Linux title bar and taskbar; packaged macOS uses the bundle .icns
     backgroundColor: '#0d1117',
     autoHideMenuBar: true, // Hide the File/Edit/View menu bar
     webPreferences: {
@@ -658,6 +661,8 @@ ipcMain.handle('orchestra:oauth-window', async (_event, provider) => {
 })
 
 app.whenReady().then(async () => {
+  // Unpackaged macOS runs show the Electron dock icon unless replaced.
+  if (process.platform === 'darwin' && !app.isPackaged) app.dock?.setIcon(APP_ICON)
   try {
     managedBackendState = await startManagedBackend()
     await loadProfilesState()

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/orchestra/orchestra/apps/backend/internal/shellcommand"
 	"github.com/rs/zerolog"
 )
 
@@ -45,19 +46,25 @@ func NewClient(name, command string, logger zerolog.Logger) *Client {
 // and begins listening for responses.
 func (c *Client) Start(ctx context.Context) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.isStarted {
+		c.mu.Unlock()
 		return nil
 	}
-
-	c.cmd = exec.CommandContext(ctx, "sh", "-c", c.command)
+	cmd, err := shellcommand.CommandContext(ctx, c.command)
+	if err != nil {
+		c.mu.Unlock()
+		return err
+	}
+	c.cmd = cmd
 
 	stdin, err := c.cmd.StdinPipe()
 	if err != nil {
+		c.mu.Unlock()
 		return err
 	}
 	stdout, err := c.cmd.StdoutPipe()
 	if err != nil {
+		c.mu.Unlock()
 		return err
 	}
 
@@ -65,11 +72,14 @@ func (c *Client) Start(ctx context.Context) error {
 	c.stdout = stdout
 
 	if err := c.cmd.Start(); err != nil {
+		c.mu.Unlock()
 		return err
 	}
 
 	c.isStarted = true
 	go c.listen()
+	// Call takes the mutex; the handshake must run without holding it.
+	c.mu.Unlock()
 
 	// Initialize
 	var result json.RawMessage
@@ -99,6 +109,10 @@ func (c *Client) Call(ctx context.Context, method string, params any, result any
 	ch := make(chan json.RawMessage, 1)
 
 	c.mu.Lock()
+	if !c.isStarted || c.stdin == nil {
+		c.mu.Unlock()
+		return fmt.Errorf("mcp server %s is not started", c.name)
+	}
 	c.pending[id] = ch
 	c.mu.Unlock()
 
@@ -135,6 +149,9 @@ func (c *Client) Call(ctx context.Context, method string, params any, result any
 
 // Notify sends a one-way JSON-RPC notification to the MCP server without expecting a response.
 func (c *Client) Notify(method string, params any) error {
+	if c.stdin == nil {
+		return fmt.Errorf("mcp server %s is not started", c.name)
+	}
 	req := map[string]any{
 		"jsonrpc": "2.0",
 		"method":  method,

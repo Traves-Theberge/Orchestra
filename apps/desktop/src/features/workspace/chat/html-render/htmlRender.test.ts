@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   clampHtmlRenderHeight,
   extractHtmlRenderFromContent,
+  extractHtmlRenderFromEvents,
+  extractHtmlRendersFromContent,
+  extractHtmlRendersFromEvents,
   HTML_RENDER_COLUMN_WIDTH,
   HTML_RENDER_MAX_HEIGHT,
   HTML_RENDER_MIN_HEIGHT,
@@ -117,7 +120,7 @@ describe('htmlRender protocol and helpers', () => {
   it('encodes and decodes theme messages and fragments', () => {
     const theme = htmlRenderTheme({}, 'dark')
     const fragment = htmlRenderThemeFragment(theme)
-    expect(fragment).toContain('#t3-theme=')
+    expect(fragment).toContain('#orchestra-theme=')
 
     const message = htmlRenderThemeMessage(theme)
     expect(message.jsonrpc).toBe('2.0')
@@ -175,7 +178,9 @@ describe('htmlRender protocol and helpers', () => {
   it('injects bootstrap script into HTML head', () => {
     const docWithHead = '<!DOCTYPE html><html><head><title>Test</title></head><body><h1>Hello</h1></body></html>'
     const result = injectHtmlRenderBootstrap(docWithHead)
-    expect(result).toContain('<style id="t3-theme">')
+    expect(result).toContain('<style id="orchestra-theme">')
+    expect(result).toContain('getElementById("orchestra-theme")')
+    expect(result).toContain('"orchestra-link-"')
     expect(result).toContain('ResizeObserver')
     expect(result).toContain('host-context-changed')
 
@@ -183,7 +188,7 @@ describe('htmlRender protocol and helpers', () => {
     const simple = '<div>Just a card</div>'
     const bootstrappedSimple = injectHtmlRenderBootstrap(simple)
     expect(bootstrappedSimple).toContain('<head>')
-    expect(bootstrappedSimple).toContain('<style id="t3-theme">')
+    expect(bootstrappedSimple).toContain('<style id="orchestra-theme">')
     expect(bootstrappedSimple).toContain('<div>Just a card</div>')
   })
 
@@ -210,7 +215,7 @@ describe('htmlRender protocol and helpers', () => {
     const markdown = `
 Here are the user statistics:
 
-\`\`\`t3-html
+\`\`\`orchestra-html
 <!-- title: Slophouse Insights -->
 <div class="metrics">
   <h3>85.0k</h3>
@@ -225,6 +230,66 @@ The top 10% of users sent 65% of turns.
     expect(extracted?.htmlRender.html).toContain('85.0k')
     expect(extracted?.cleanedText).toContain('Here are the user statistics:')
     expect(extracted?.cleanedText).toContain('The top 10% of users sent 65% of turns.')
-    expect(extracted?.cleanedText).not.toContain('```t3-html')
+    expect(extracted?.cleanedText).not.toContain('```orchestra-html')
+  })
+
+  it('extracts every html_render tool result in a turn as variants, in order', () => {
+    const events = [
+      { type: 'item/toolCall/completed', payload: { toolName: 'html_render', output: { htmlRender: { title: 'First', height: 300, html: '<p>1</p>' } } } },
+      { type: 'item/toolCall/completed', payload: { toolName: 'bash', output: 'ok' } },
+      { type: 'item/toolCall/started', payload: { toolName: 'html_render', output: { title: 'Ignored', height: 300, html: '<p>x</p>' } } },
+      { type: 'item/toolCall/completed', payload: { toolName: 'mcp:html_render', output: JSON.stringify({ title: 'Second', height: 400, html: '<p>2</p>' }) } },
+      { type: 'item/toolCall/completed', payload: null },
+    ]
+    const renders = extractHtmlRendersFromEvents(events)
+    expect(renders.map(render => render.title)).toEqual(['First', 'Second'])
+    expect(extractHtmlRenderFromEvents(events)?.title).toBe('First')
+    expect(extractHtmlRendersFromEvents([])).toEqual([])
+  })
+
+  it('extracts every closed inline html fence as variants and removes them from the text', () => {
+    const markdown = [
+      'Two directions:',
+      '',
+      '```orchestra-html',
+      '<!-- title: Calm -->',
+      '<div>calm</div>',
+      '```',
+      '',
+      '',
+      '',
+      '```html-visualization',
+      '<h1>Bold <em>take</em></h1>',
+      '```',
+      '',
+      '```html-preview',
+      '<div>untitled</div>',
+      '```',
+      '',
+      '```typescript',
+      'const kept = true',
+      '```',
+      '',
+      'Pick one.',
+    ].join('\n')
+    const { renders, cleanedText } = extractHtmlRendersFromContent(markdown)
+    expect(renders.map(render => render.title)).toEqual(['Calm', 'Bold take', 'Visualization'])
+    expect(renders[0]?.html).toContain('<div>calm</div>')
+    expect(renders[0]?.height).toBe(500)
+    expect(cleanedText).not.toContain('orchestra-html')
+    expect(cleanedText).not.toContain('html-visualization')
+    expect(cleanedText).toContain('```typescript')
+    expect(cleanedText.startsWith('Two directions:')).toBe(true)
+    expect(cleanedText.endsWith('Pick one.')).toBe(true)
+    expect(cleanedText).not.toMatch(/\n{3,}/)
+  })
+
+  it('leaves unclosed or empty inline fences and plain text untouched', () => {
+    expect(extractHtmlRendersFromContent('')).toEqual({ renders: [], cleanedText: '' })
+    const unclosed = 'Working on it\n```orchestra-html\n<div>partial'
+    expect(extractHtmlRendersFromContent(unclosed)).toEqual({ renders: [], cleanedText: unclosed })
+    const empty = 'Empty:\n```orchestra-html\n\n```'
+    expect(extractHtmlRendersFromContent(empty).renders).toEqual([])
+    expect(extractHtmlRendersFromContent(empty).cleanedText).toContain('```orchestra-html')
   })
 })

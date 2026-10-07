@@ -20,12 +20,18 @@ type recordingRunner struct {
 	block   chan struct{}
 	started chan struct{}
 	output  string
+	events  []agents.Event
 }
 
-func (r *recordingRunner) RunTurn(ctx context.Context, req agents.TurnRequest, _ agents.EventHandler) (agents.TurnResult, error) {
+func (r *recordingRunner) RunTurn(ctx context.Context, req agents.TurnRequest, onEvent agents.EventHandler) (agents.TurnResult, error) {
 	r.mu.Lock()
 	r.calls = append(r.calls, req)
 	r.mu.Unlock()
+	for _, e := range r.events {
+		if onEvent != nil {
+			onEvent(e)
+		}
+	}
 	if r.started != nil {
 		select {
 		case r.started <- struct{}{}:

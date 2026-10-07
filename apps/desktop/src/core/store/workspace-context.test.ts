@@ -11,7 +11,7 @@ beforeEach(() => {
   useAppStore.setState({ config, projects: [{ id: 'p', name: 'Project', root_path: '/root', remote_url: '' }], loadFileContent: vi.fn() })
 })
 describe('checkout resource ownership', () => {
-  it('keeps files and browser tabs in separate groups without changing the tracker project', () => {
+  it('keeps files and browser tabs in separate center strips without changing the tracker project', () => {
     const store = useAppStore.getState()
     store.selectProjectWorkspace('p', child)
     store.openFile('/child/file.md', 'file.md')
@@ -20,11 +20,12 @@ describe('checkout resource ownership', () => {
     expect(useAppStore.getState().activeProjectId).toBe('p')
     expect(useAppStore.getState().openFiles[0].projectId).toBe(context)
     expect(useAppStore.getState().browserTabs[0].projectId).toBe(context)
-    expect(Object.values(useAppStore.getState().projectGroups[context])[0].tabs).toHaveLength(2)
+    expect(useAppStore.getState().projectCenterTabs[context].tabs).toHaveLength(2)
+    expect(useAppStore.getState().projectGroups[context]).toBeUndefined()
     store.selectProjectWorkspace('p', root)
     store.openFile('/root/file.md', 'file.md')
     expect(getActiveWorkspaceContextId(useAppStore.getState())).toBe('p')
-    expect(Object.values(useAppStore.getState().projectGroups.p)[0].tabs).toHaveLength(1)
+    expect(useAppStore.getState().projectCenterTabs.p.tabs).toHaveLength(1)
     store.openFile('/child/file.md', 'file.md')
     expect(useAppStore.getState().activeProjectId).toBe('p')
     expect(useAppStore.getState().explorerRoot).toBe('/child')

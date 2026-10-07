@@ -34,7 +34,8 @@ import { ProjectWorkspaceTree } from '@features/projects/ProjectWorkspaceTree'
 import type { LucideIcon } from 'lucide-react'
 import { getAgentIcon, CustomDropdown } from '@layout/shared/controls'
 import { AppTooltip } from '@ui/tooltip-wrapper'
-import { PROVIDERS } from '@features/agents/constants'
+import { ORCHESTRA_PROVIDER, PROVIDERS } from '@features/agents/constants'
+import { Network as OrchestraGlyph } from 'lucide-react'
 
 type SidebarView = 'primary' | 'settings' | 'projects' | 'console' | 'agents' | 'docs'
 
@@ -742,7 +743,7 @@ function ConsoleSubNav({ onBack, onInspectTask }: { onBack: () => void; onInspec
 function AgentsSubNav({ onBack }: { onBack: () => void }) {
   const activeProvider = useAppStore(s => s.activeAgentProvider)
   const availableAgents = useAppStore(s => s.availableAgents)
-  const providerTabs = PROVIDERS.filter(provider => availableAgents.some(id => id.toLowerCase() === provider.id))
+  const providerTabs = [ORCHESTRA_PROVIDER, ...PROVIDERS.filter(provider => availableAgents.some(id => id.toLowerCase() === provider.id))]
   const setActiveProvider = useAppStore(s => s.setActiveAgentProvider)
   const activeCategory = useAppStore(s => s.activeAgentCategory)
   const setActiveCategory = useAppStore(s => s.setActiveAgentCategory)
@@ -776,7 +777,12 @@ function AgentsSubNav({ onBack }: { onBack: () => void }) {
             >
               <button
                 type="button"
-                onClick={() => setActiveProvider(id)}
+                onClick={() => {
+                  setActiveProvider(id)
+                  if (activeCategory === 'overview') {
+                    setActiveCategory(id === 'codex' || id === 'opencode' ? 'config' : id === 'antigravity' || id === 'orchestra' ? 'agents' : 'settings')
+                  }
+                }}
                 className={`flex items-center justify-center size-9 rounded-lg transition-all ${
                   active
                     ? 'bg-primary/15 border border-primary/30'
@@ -785,7 +791,7 @@ function AgentsSubNav({ onBack }: { onBack: () => void }) {
                 aria-label={label}
                 aria-pressed={active}
               >
-                {getAgentIcon(id, 20)}
+                {id === 'orchestra' ? <OrchestraGlyph size={18} className={active ? 'text-primary' : 'text-muted-foreground'} /> : getAgentIcon(id, 20)}
               </button>
             </AppTooltip>
           )
@@ -809,7 +815,7 @@ function AgentsSubNav({ onBack }: { onBack: () => void }) {
 
       {/* Category list */}
       <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-0.5">
-        {agentCategories.map((cat) => {
+        {agentCategories.filter(cat => cat.id !== 'overview').map((cat) => {
           const Icon = cat.icon as LucideIcon | undefined
           const active = activeCategory === cat.id
           const count = agentCategoryCounts[cat.id] ?? 0

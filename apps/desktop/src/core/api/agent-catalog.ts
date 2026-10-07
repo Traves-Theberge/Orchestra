@@ -8,6 +8,12 @@ export type AgentCatalogItem = {
   id: string; item_id?: string; agent_id?: string; kind: AgentResourceKind; harness: string; scope: AgentResourceScope | 'builtin'
   path: string; content_hash: string; format: string; display_name: string; description: string; mode: string
   selectable_as_primary: boolean; selection_status: string; reason?: string
+  // Normalized Agent fields (agents-profiles spec); optional while backends roll out.
+  name?: string; source?: 'harness' | 'orchestra'; compatible_harnesses?: string[]
+  model?: string; effort?: string; color?: string; skills?: string[]; mcp_servers?: string[]
+  permissions?: Partial<Record<'edit' | 'bash' | 'webfetch', 'allow' | 'ask' | 'deny'>>
+  /** Computed for the requested ?harness; takes precedence over selectable_as_primary when present. */
+  selectable?: boolean; unavailable_reason?: string
 }
 export type AgentCatalog = {
   project_id: string; workspace_id?: string; root: string; harness: string; scope: string; observation: string

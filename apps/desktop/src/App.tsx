@@ -21,6 +21,7 @@ import {
 } from '@layout/sections'
 import { KanbanBoard } from '@features/kanban'
 import { AppTooltipProvider } from '@ui/tooltip-wrapper'
+import { Toaster } from '@ui/sonner'
 import { SectionErrorBoundary } from '@ui/section-error-boundary'
 import { AppCommandPalette } from '@layout/AppCommandPalette'
 import { AppDialogs } from '@layout/AppDialogs'
@@ -42,7 +43,7 @@ const DocsDashboard = lazy(() => import('@features/docs/DocsDashboard').then(m =
 const ApiDocsDashboard = lazy(() => import('@features/docs/ApiDocsDashboard').then(m => ({ default: m.ApiDocsDashboard })))
 const SettingsPage = lazy(() => import('@layout/panels').then(m => ({ default: m.SettingsPage })))
 const WorkspaceLayout = lazy(() => import('@features/workspace/WorkspaceLayout').then(m => ({ default: m.WorkspaceLayout })))
-const SandboxDashboard = lazy(() => import('@features/sandbox/SandboxDashboard').then(m => ({ default: m.SandboxDashboard })))
+const AutomationsPage = lazy(() => import('@features/automations').then(m => ({ default: m.AutomationsPage })))
 const TrackerViewer = lazy(() => import('@features/tracker').then(m => ({ default: m.TrackerViewer })))
 
 const SectionLoader = () => (
@@ -137,6 +138,7 @@ export default function App() {
     notifMuted, setNotifMuted,
     notifVolume, setNotifVolume,
     playNotification,
+    notify,
   } = useNotifications()
 
   const setOperatorError = (prefix: string, err: unknown) => {
@@ -171,6 +173,7 @@ export default function App() {
     issueLookupId,
     executeIssueLookup,
     playNotification,
+    notify,
     setErrorMessage,
   })
 
@@ -296,17 +299,15 @@ export default function App() {
         e.preventDefault()
         const s = useAppStore.getState()
         s.setActiveSection('CONSOLE')
+        // Terminals open as center tabs beside Workspace / Tasks.
         const pid = getActiveWorkspaceContextId(s)
-        const focusedGroupId = s.projectFocusedGroupId[pid]
-        if (focusedGroupId) {
-          const id = `shell-${Date.now()}`
-          const proj = s.projects.find((p) => p.id === s.activeProjectId)
-          const cwd = selectedProjectWorkspace(s)?.path || proj?.root_path
-          const initialCommand = undefined
-          const title = proj ? `${proj.name} Shell` : 'Shell'
-          s.setOpenTerminals([...s.openTerminals, { id, title, projectId: proj?.id, cwd, initialCommand }])
-          s.addTabToGroup(pid, { type: 'terminal', id }, focusedGroupId)
-        }
+        const id = `shell-${Date.now()}`
+        const proj = s.projects.find((p) => p.id === s.activeProjectId)
+        const cwd = selectedProjectWorkspace(s)?.path || proj?.root_path
+        const initialCommand = undefined
+        const title = proj ? `${proj.name} Shell` : 'Shell'
+        s.setOpenTerminals([...s.openTerminals, { id, title, projectId: proj?.id, cwd, initialCommand }])
+        s.addTabToGroup(pid, { type: 'terminal', id })
         return
       }
       if (e.ctrlKey && !e.altKey && !e.shiftKey) {
@@ -346,10 +347,18 @@ export default function App() {
     if (!current.some(p => p.id === termId)) {
       setOpenTerminals([...current, { id: termId, title: `Agent: ${identifier}` }])
     }
+    // Land on the terminal as a selected center tab in the active workspace.
+    const state = useAppStore.getState()
+    state.addTabToGroup(getActiveWorkspaceContextId(state), { type: 'terminal', id: termId })
     setActiveSection('CONSOLE')
   }
 
   const handleSectionChange = (section: string) => {
+    if (section === 'SANDBOX') {
+      setSettingsInitialTab('remote')
+      setActiveSection('SETTINGS')
+      return
+    }
     if (!isSectionID(section)) return
     setActiveSection(section)
   }
@@ -434,6 +443,16 @@ export default function App() {
                   onStopSession={handleStopSession}
                   onCreateIssue={handleCreateIssue}
                 />
+              </section>
+            </SectionErrorBoundary>
+          ) : null}
+
+          {config && sectionVisibility.showAutomations ? (
+            <SectionErrorBoundary name="Automations">
+              <section className="flex-1 flex flex-col min-h-0">
+                <Suspense fallback={<SectionLoader />}>
+                  <AutomationsPage config={config} onOpenTask={identifier => void handleInspectIssueFromList(identifier)} />
+                </Suspense>
               </section>
             </SectionErrorBoundary>
           ) : null}
@@ -532,16 +551,6 @@ export default function App() {
               </section>
             </SectionErrorBoundary>
           )}
-          {sectionVisibility.showSandbox ? (
-            <SectionErrorBoundary name="Sandbox">
-              <section className="col-span-12 flex flex-col">
-                <Suspense fallback={<SectionLoader />}>
-                  <SandboxDashboard config={config} onOpenSettings={() => { setSettingsInitialTab('integrations'); setActiveSection('SETTINGS') }} />
-                </Suspense>
-              </section>
-            </SectionErrorBoundary>
-          ) : null}
-
           {sectionVisibility.showSettings ? (
             <SectionErrorBoundary name="Settings">
               <section className="flex-1 flex flex-col min-h-0">
@@ -608,6 +617,7 @@ export default function App() {
 
 
       <AppCommandPalette onCreateIssue={handleCreateIssue} onTogglePolling={handleTogglePolling} />
+      <Toaster />
     </AppTooltipProvider>
   )
 }

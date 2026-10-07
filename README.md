@@ -12,7 +12,16 @@ Orchestra is a desktop development workspace that integrates AI coding agents wi
 
 ## What It Does
 
-Orchestra connects your local projects and GitHub to AI coding agents (Claude Code, Codex CLI, Antigravity, Opencode, and [8gent Code](https://github.com/8gi-foundation/8gent-code)) to automate development workflows.
+Orchestra connects your local projects and GitHub to AI coding agent harnesses to automate development workflows:
+
+| Harness | Integration |
+| --- | --- |
+| Claude Code | `claude` CLI (models: Fable 5.1, Opus 5.5, Sonnet 5.5, Haiku 4.5) |
+| Codex | Native `codex app-server` |
+| OpenCode | `opencode run --format json` |
+| Antigravity | Native `agy` |
+
+[8gent Code](https://github.com/8gi-foundation/8gent-code) support is deferred (see issue #188). Gemini is retired, and older Gemini chats are read-only.
 
 **Project Integration**
 - Connect local Git repositories and remote GitHub projects
@@ -40,10 +49,36 @@ Orchestra connects your local projects and GitHub to AI coding agents (Claude Co
 
 
 **Multi-Agent Orchestration**
-- Register Claude, Codex, OpenCode, Antigravity, and 8gent harnesses; available task stages depend on each harness's verified capabilities
+- Register Claude, Codex, OpenCode, and Antigravity harnesses; available task stages depend on each harness's verified capabilities
 - Load balance work across available agents
 - Configure agent-specific skills, tools, and permissions
 - Monitor agent performance and resource usage
+
+
+**Agents**
+- Orchestra-native agents are markdown files with YAML frontmatter (`name`, `description`, `mode`, `color`, `model`, `effort`, `skills`, `mcp_servers`, `permissions`). They can be global (`~/.orchestra/agents/*.md`) or per project (`<project>/.orchestra/agents/*.md`)
+- Harness-native agents are discovered too: `.claude/agents`, `.codex/agents/*.toml`, `.opencode/agents`, `.agents/agents` and `~/.gemini/config/agents`
+- Per-harness adapters apply the agent's instructions, skills, MCP servers, model and effort for each run without touching global config. Each run records whether the agent was applied, partially applied or not applied
+- Switch agents mid-conversation: agent pills in the composer, Tab to cycle, `@` to mention subagents
+- The Agents page has an Orchestra view with an agent editor, skills, and MCP server status and probing
+
+
+**Automations**
+- Scheduled agent runs: hourly, daily, weekdays, weekly or cron, with a timezone
+- Grace window for missed runs and an optional precheck command
+- Run in the project root or a fresh worktree per run, optionally linked to a task or agent
+- Run history, a runs dashboard, and run now / pause / cancel controls
+- REST API under `/api/v1/automations`
+
+
+**Workspace**
+- One tab strip: fixed Workspace and Tasks tabs, then terminals, browser tabs, editors and conversations as center tabs. The right panel holds Files and Git
+- Switching harness keeps the conversation; history is replayed into the new harness
+- Reasoning is shown for Codex, Claude and OpenCode
+- Inline HTML visualizations from `orchestra-html` code fences, with variants plus Regenerate and Implement actions
+- Long transcripts are trimmed to fit, and images are summarized when replayed
+- Windows: interactive terminals use ConPTY (default shell pwsh, then powershell, then cmd; override with `ORCHESTRA_TERMINAL_SHELL`). Long prompts are passed to agents via temp files
+- Remote execution (Unsandbox, Tailscale, Kubernetes) is configured under Settings > Remote
 
 
 **GitHub Integration**
@@ -68,17 +103,17 @@ Orchestra connects your local projects and GitHub to AI coding agents (Claude Co
 - Node.js 22+
 - npm
 - Git
-- At least one installed agent CLI on `PATH`: `codex`, `claude`, `opencode`, `agy`, or `8gent` (open-source, install with `npm i -g @8gi-foundation/8gent-code`)
+- At least one installed agent CLI on `PATH`: `claude`, `codex`, `opencode`, or `agy`
 
 ### 1. Start the Backend
 
 ```bash
 cd apps/backend
-go build -o orchestrd ./cmd/orchestrd/
-./orchestrd --workspace-root /path/to/your/project
+go build -o orchestrad ./cmd/orchestrad/
+ORCHESTRA_WORKSPACE_ROOT=/path/to/workspaces ./orchestrad
 ```
 
-Default bind address is `127.0.0.1:4010`.
+Default bind address is `127.0.0.1:4010` (set with `ORCHESTRA_SERVER_HOST` / `ORCHESTRA_SERVER_PORT`).
 
 ### 2. Start the Desktop App
 
@@ -88,7 +123,7 @@ npm install
 npm run dev
 ```
 
-This launches Vite and Electron together for local development.
+This launches Vite and Electron together for local development (use `npm run dev:linux` on Linux). The window and installers use the Orchestra icon from `electron/assets/icon.png`.
 
 ### 3. Start the TUI
 
@@ -117,6 +152,7 @@ Runtime configuration is loaded from environment variables, with optional overri
 | `ORCHESTRA_TRACKER_TYPE` | Tracker backend: `github` or `sqlite` | unset |
 | `ORCHESTRA_TRACKER_ENDPOINT` | GitHub repo (owner/repo) | unset |
 | `ORCHESTRA_TRACKER_TOKEN` | GitHub token | unset |
+| `ORCHESTRA_TERMINAL_SHELL` | Windows interactive terminal shell | `pwsh` → `powershell` → `cmd` |
 
 Example local setup:
 ```bash
@@ -139,7 +175,7 @@ export ORCHESTRA_TRACKER_TOKEN=ghp_xxx
 ```bash
 cd apps/backend
 go test ./...
-go build -o orchestrd ./cmd/orchestrd/
+go build -o orchestrad ./cmd/orchestrad/
 ```
 
 ### Desktop
@@ -167,9 +203,11 @@ graph TB
         AGENT["Embedded Agent"]
     end
 
-    subgraph Backend["orchestrd (Go)"]
+    subgraph Backend["orchestrad (Go)"]
         API["REST API"]
         ORCH["Orchestrator"]
+        AUTO["Automations Scheduler"]
+        CHAT["Workspace Chat"]
         PUB["PubSub / SSE"]
         REG["Agent Registry"]
         TRACKER["Tracker"]
@@ -184,7 +222,6 @@ graph TB
         CLAUDE["Claude"]
         ANTIGRAVITY["Antigravity"]
         OPENCODE["OpenCode"]
-        EIGHT["8gent"]
         GH["GitHub"]
         LLM["LLM APIs"]
         MCP_SRV["MCP Servers"]
@@ -196,6 +233,10 @@ graph TB
     API --> ORCH
     API --> PUB
     API --> TERM
+    API --> AUTO
+    API --> CHAT
+    AUTO --> REG
+    CHAT --> REG
     ORCH --> REG
     ORCH --> TRACKER
     ORCH --> DB
@@ -204,7 +245,6 @@ graph TB
     REG --> CLAUDE
     REG --> ANTIGRAVITY
     REG --> OPENCODE
-    REG --> EIGHT
     TRACKER --> GH
     AGENT --> LLM
     ORCH --> MCP
@@ -215,8 +255,8 @@ graph TB
 
 | App | Path | Purpose |
 | --- | --- | --- |
-| Backend | `apps/backend/` | API server, orchestrator, tracker, agent runners |
-| Desktop | `apps/desktop/` | Electron app for issue management, monitoring, analytics |
+| Backend | `apps/backend/` | API server, orchestrator, tracker, agent runners, automations, workspace chat |
+| Desktop | `apps/desktop/` | Electron app for workspaces, issue management, agents, automations, monitoring |
 | TUI | `apps/tui/` | Terminal dashboard for local workflows |
 | Protocol | `packages/protocol/` | Shared JSON schemas and API contracts |
 

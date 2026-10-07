@@ -47,7 +47,7 @@ type AgentConfig = {
   max_turns: number
 }
 
-type SettingsTab = 'backend' | 'integrations' | 'shortcuts' | 'notifications'
+type SettingsTab = 'backend' | 'integrations' | 'remote' | 'shortcuts' | 'notifications'
 
 /** Initial column/state for the create-task dialog. The dialog reads `state`
  * to preselect the column the new task lands in. Add fields here only when
@@ -71,6 +71,24 @@ export type TabRef =
   | { type: 'git'; id: string }
   | { type: 'files'; id: string }
   | { type: 'conversations'; id: string }
+
+/** Tabs that live in the main (center) pane beside Workspace and Tasks. */
+export type CenterTabType = 'editor' | 'browser' | 'terminal' | 'conversations'
+/** Tabs that live in the right tools panel. */
+export type SideTabType = 'files' | 'git'
+
+/** Fixed, non-closeable center selections. */
+export const CENTER_WORKSPACE_TAB = '@workspace'
+export const CENTER_TASKS_TAB = '@tasks'
+
+/** Per-context center tab strip: dynamic tabs, current selection and selection history. */
+export interface CenterTabState {
+  tabs: TabRef[]
+  /** CENTER_WORKSPACE_TAB, CENTER_TASKS_TAB, or the id of a tab in `tabs`. */
+  selectedId: string
+  /** Previously selected ids, most recent last (used to fall back when closing). */
+  history: string[]
+}
 
 /** A single tab group: its own tab strip + active tab. */
 export interface TabGroup {
@@ -127,7 +145,7 @@ export interface UISlice {
   sidePanelOpen: boolean
   activeSettingsSection: string
   scrollToSettingsSection: ((id: string) => void) | null
-  activeAgentProvider: 'claude' | 'codex' | 'antigravity' | 'opencode' | '8gent'
+  activeAgentProvider: 'orchestra' | 'claude' | 'codex' | 'antigravity' | 'opencode' | '8gent'
   activeAgentScope: 'GLOBAL' | 'PROJECT'
   activeAgentProjectId: string
   activeAgentCategory: string
@@ -163,7 +181,7 @@ export interface UISlice {
   toggleSidePanel: () => void
   setActiveSettingsSection: (id: string) => void
   setScrollToSettingsSection: (fn: ((id: string) => void) | null) => void
-  setActiveAgentProvider: (provider: 'claude' | 'codex' | 'antigravity' | 'opencode' | '8gent') => void
+  setActiveAgentProvider: (provider: 'orchestra' | 'claude' | 'codex' | 'antigravity' | 'opencode' | '8gent') => void
   setActiveAgentScope: (scope: 'GLOBAL' | 'PROJECT', projectId?: string) => void
   setActiveAgentCategory: (cat: string) => void
   setAgentCategories: (cats: Array<{ id: string; label: string; icon: unknown }>) => void
@@ -323,6 +341,10 @@ export interface WorkspaceSlice {
   projectGroups: Record<WorkspaceContextID, Record<string, TabGroup>>
   projectLayouts: Record<WorkspaceContextID, TabGroupLayoutNode>
   projectFocusedGroupId: Record<WorkspaceContextID, string>
+  /** Center-pane tabs (terminal / browser / editor / conversations) per context. */
+  projectCenterTabs: Record<WorkspaceContextID, CenterTabState>
+  /** Bumped whenever a Files/Git tab is opened, so the layout can reveal the tools panel. */
+  sideToolRequests: Record<WorkspaceContextID, number>
 
   activeLeftPanel: 'explorer' | 'search' | 'issues'
   leftSidebarOpen: boolean
@@ -378,6 +400,16 @@ export interface WorkspaceSlice {
   setGroupSplitRatio: (projectId: WorkspaceContextID, nodePath: string, ratio: number) => void
   /** Focus a group (where new tabs land + which group is "current"). */
   setFocusedGroup: (projectId: WorkspaceContextID, groupId: string) => void
+
+  // ---- Center tab actions ---------------------------------------------------
+  // addTabToGroup / removeTabFromGroup / activateTabInGroup route center-type
+  // refs (editor, browser, terminal, conversations) to the center strip.
+  /** Select a center tab or a fixed view (CENTER_WORKSPACE_TAB / CENTER_TASKS_TAB). */
+  selectCenterTab: (projectId: WorkspaceContextID, id: string) => void
+  /** Reorder center dynamic tabs by index (toIndex is an insertion index). */
+  reorderCenterTabs: (projectId: WorkspaceContextID, fromIndex: number, toIndex: number) => void
+  /** Move legacy center-type tabs out of the context's tab groups into the center strip. */
+  normalizeWorkspaceTabs: (projectId: WorkspaceContextID) => void
 }
 
 // ---------------------------------------------------------------------------

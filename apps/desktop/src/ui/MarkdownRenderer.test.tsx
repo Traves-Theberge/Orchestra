@@ -10,26 +10,30 @@ describe('MarkdownRenderer with HTML visualizations', () => {
     expect(screen.queryByTestId('html-render-frame')).toBeNull()
   })
 
-  it('renders t3-html fence as an isolated HtmlRenderFrame', () => {
+  it('renders orchestra-html fence as an isolated HtmlRenderFrame', () => {
     const content = `
-\`\`\`t3-html
+\`\`\`orchestra-html
 <!-- title: Dynamic Chart -->
 <div class="metrics">Data Points</div>
 \`\`\`
 `
     render(<MarkdownRenderer content={content} />)
-    expect(screen.getByTestId('html-render-frame')).toBeDefined()
+    const frame = screen.getByTestId('html-render-frame')
+    expect(frame).toBeDefined()
+    expect(frame.closest('pre')).toBeNull()
     expect(screen.getByTitle('Dynamic Chart')).toBeDefined()
   })
 
   it('renders clean borderless streaming placeholder when html fence is still unclosed during streaming', () => {
     const content = `
-\`\`\`t3-html
+\`\`\`orchestra-html
 <!-- title: Dynamic Chart -->
 <div class="metrics">Data Points in progress...
 `
     render(<MarkdownRenderer content={content} isStreaming={true} />)
-    expect(screen.getByTestId('html-render-streaming')).toBeDefined()
+    const streaming = screen.getByTestId('html-render-streaming')
+    expect(streaming).toBeDefined()
+    expect(streaming.closest('pre')).toBeNull()
     expect(screen.getByText('Generating preview…')).toBeDefined()
     expect(screen.queryByTestId('html-render-frame')).toBeNull()
   })

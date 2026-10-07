@@ -12,7 +12,7 @@ import { KubernetesTab } from './KubernetesTab'
 
 type TabId = 'unsandbox' | 'tailscale' | 'kubernetes'
 
-export function SandboxDashboard({ config, onOpenSettings }: { config: BackendConfig | null; onOpenSettings?: () => void }) {
+export function SandboxDashboard({ config, onOpenSettings, embedded = false }: { config: BackendConfig | null; onOpenSettings?: () => void; embedded?: boolean }) {
   const [activeTab, setActiveTab] = useState<TabId>('unsandbox')
 
   const [unsandboxStatus, setUnsandboxStatus] = useState<UnsandboxStatus | null>(null)
@@ -46,14 +46,16 @@ export function SandboxDashboard({ config, onOpenSettings }: { config: BackendCo
   ]
 
   return (
-    <div className="h-full overflow-auto bg-background">
-      <div className="w-full px-6 pt-6 pb-16 space-y-8">
-        <header className="flex items-end justify-between gap-4">
-          <div className="space-y-2">
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50">Compute</p>
-            <h1 className="text-4xl font-semibold tracking-tight">Remote Execution</h1>
-          </div>
-        </header>
+    <div className={embedded ? '' : 'h-full overflow-auto bg-background'}>
+      <div className={embedded ? 'space-y-6' : 'w-full px-6 pt-6 pb-16 space-y-8'}>
+        {!embedded && (
+          <header className="flex items-end justify-between gap-4">
+            <div className="space-y-2">
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50">Compute</p>
+              <h1 className="text-4xl font-semibold tracking-tight">Remote Execution</h1>
+            </div>
+          </header>
+        )}
 
         <div className="flex items-end gap-1 border-b border-border/30">
           {tabs.map((tab) => (

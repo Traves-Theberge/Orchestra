@@ -50,4 +50,7 @@ const (
 	SSEHookCompleted SSEEventType = "HOOK_COMPLETED"
 	// SSEHookFailed signals that a lifecycle hook ended with a failure.
 	SSEHookFailed SSEEventType = "HOOK_FAILED"
+	// SSEAutomationRunUpdated carries an automation run (JSON) whenever its
+	// lifecycle state changes.
+	SSEAutomationRunUpdated SSEEventType = "AUTOMATION_RUN_UPDATED"
 )

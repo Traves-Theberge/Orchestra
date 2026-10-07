@@ -27,6 +27,7 @@ import {
   Play,
   Plus,
   RefreshCcw,
+  Server,
   ShieldCheck,
   SignalHigh,
   SlidersHorizontal,
@@ -78,6 +79,7 @@ import { normalizeTheme } from '@core/theme/defaults'
 import type { ChartPalette, RoleSet, Theme, ThemeMode, ThemeRoleKey } from '@core/theme/types'
 import { HarnessSetupPanel } from '@features/agents/panels/HarnessSetupPanel'
 import { UsagePage } from '@features/usage/UsagePage'
+import { SandboxDashboard } from '@features/sandbox/SandboxDashboard'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -164,6 +166,7 @@ const SECTIONS = [
   { id: 'harnesses', label: 'Harnesses', icon: Bot },
   { id: 'usage', label: 'Usage', icon: ChartNoAxesColumn },
   { id: 'integrations', label: 'Integrations', icon: Cable },
+  { id: 'remote', label: 'Remote', icon: Server },
   { id: 'appearance', label: 'Appearance', icon: Paintbrush },
   { id: 'terminal', label: 'Terminal', icon: Terminal },
   { id: 'browser', label: 'Browser', icon: Globe },
@@ -256,7 +259,7 @@ export function SettingsPage({
   onNotifSoundChange?: (sound: string) => void
   onNotifMutedChange?: (muted: boolean) => void
   onNotifVolumeChange?: (volume: number) => void
-  initialTab?: 'backend' | 'integrations' | 'shortcuts' | 'notifications'
+  initialTab?: 'backend' | 'integrations' | 'remote' | 'shortcuts' | 'notifications'
 }) {
   const { isMac } = usePlatform()
   const theme = useAppStore(s => s.theme)
@@ -313,6 +316,7 @@ export function SettingsPage({
     const tabToSection: Record<string, SectionId> = {
       backend: 'connections',
       integrations: 'integrations',
+      remote: 'remote',
       shortcuts: 'shortcuts',
       notifications: 'notifications',
     }
@@ -438,11 +442,16 @@ export function SettingsPage({
             <div className="mt-4">
               <IntegrationsPane config={config} />
             </div>
-            <div className="mt-8 rounded-2xl border border-border/40 bg-gradient-to-b from-card via-card to-muted/20 p-6 shadow-sm">
-              <SectionHeading icon={Globe} title="Remote execution" description="Configure Unsandbox credentials for remote code execution" />
-              <div className="mt-4">
+          </section>
+
+          {/* ── Remote ── */}
+          <section data-settings-section="remote" className="rounded-xl transition-colors duration-500 scroll-mt-4">
+            <SectionHeading icon={Server} title="Remote" description="Remote code execution via Unsandbox, Tailscale, and Kubernetes" />
+            <div className="mt-4 space-y-4">
+              <div className="rounded-2xl border border-border/40 bg-gradient-to-b from-card via-card to-muted/20 p-6 shadow-sm">
                 <UnsandboxConfigForm config={config} disabled={savingConfig || loadingConfig} />
               </div>
+              <SandboxDashboard config={config} embedded />
             </div>
           </section>
 

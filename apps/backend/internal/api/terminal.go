@@ -96,7 +96,7 @@ func (s *Server) TerminalWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	session, err := s.termManager.CreateSession(sessionID, dir, "/bin/bash")
+	session, err := s.termManager.GetOrCreateSession(sessionID, dir)
 	if err != nil {
 		s.logger.Error().Err(err).Msg("failed to create terminal session")
 		return

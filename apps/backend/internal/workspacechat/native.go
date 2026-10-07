@@ -260,7 +260,21 @@ func (s *Service) runNative(ctx context.Context, cancel context.CancelFunc, sess
 	}
 	s.mu.Lock()
 	native := s.native[sess.ID]
-	s.mu.Unlock()
+	if native != nil && s.nativeAgents[sess.ID] != agentKey(turn.Agent) {
+		// The agent profile is pinned to the provider process (thread
+		// instructions, agy --agent). A different selection restarts the
+		// process and resumes the same provider thread under the new profile.
+		delete(s.native, sess.ID)
+		delete(s.nativePrefixes, sess.ID)
+		s.mu.Unlock()
+		closeNative(native)
+		native = nil
+		if thread, e := s.persistedThread(ctx, sess.ID); e == nil && thread != "" {
+			sess.ProviderThreadID = thread
+		}
+	} else {
+		s.mu.Unlock()
+	}
 	var err error
 	if native == nil {
 		if agents.Provider(sess.Provider) == agents.ProviderAntigravity {
@@ -279,11 +293,21 @@ func (s *Service) runNative(ctx context.Context, cancel context.CancelFunc, sess
 	}
 	if native == nil && err == nil {
 		native, err = s.registry.(nativeRegistry).StartNativeSession(context.Background(), agents.Provider(sess.Provider), turn, sess.ProviderThreadID, onEvent)
+		if err != nil && turn.Agent != nil {
+			s.recordAgentReceipt(sess.ID, "", notApplied(err))
+		}
 		if err == nil {
 			info := native.ModelInfo()
 			_, err = s.db.Exec(`UPDATE workspace_chat_native SET thread_id=?,effective_model=?,approval_policy=?,sandbox_mode=? WHERE session_id=?`, native.ThreadID(), info.Model, info.ApprovalPolicy, info.SandboxMode, sess.ID)
+			if err == nil {
+				err = s.saveThreadAgentKey(sess.ID, agentKey(turn.Agent))
+			}
 			if err == nil && info.AgentID != "" {
-				_, err = s.db.Exec(`UPDATE workspace_chat_agent_selection SET effective_agent_id=?,observation='runtime_reported' WHERE session_id=?`, info.AgentID, sess.ID)
+				observation := info.AgentObservation
+				if observation == "" {
+					observation = "runtime_reported"
+				}
+				_, err = s.db.Exec(`UPDATE workspace_chat_agent_selection SET effective_agent_id=?,observation=? WHERE session_id=?`, info.AgentID, observation, sess.ID)
 			}
 			if err == nil {
 				s.mu.Lock()
@@ -292,6 +316,10 @@ func (s *Service) runNative(ctx context.Context, cancel context.CancelFunc, sess
 				} else {
 					s.native[sess.ID] = native
 					s.nativePrefixes[sess.ID] = prefix
+					if s.nativeAgents == nil {
+						s.nativeAgents = map[string]string{}
+					}
+					s.nativeAgents[sess.ID] = agentKey(turn.Agent)
 				}
 				s.mu.Unlock()
 				if err != nil {

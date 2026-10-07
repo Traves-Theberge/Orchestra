@@ -8,14 +8,18 @@ import { resetAppStore, useAppStore } from '@core/store'
 import { GLOBAL_PROJECT_ID } from '@core/store/types'
 import { WorkspaceLayout } from './WorkspaceLayout'
 
-vi.mock('./chat/WorkspaceChat', () => ({ WorkspaceChat: ({ projectId, config, headerTools, headerNavigation, contentOverride, onShowChat }: { projectId: string; config: { workspaceId?: string }; headerTools?: ReactNode; headerNavigation?: ReactNode; contentOverride?: ReactNode; onShowChat?: () => void }) => {
+vi.mock('./chat/WorkspaceChat', () => ({ WorkspaceChat: ({ projectId, config, headerTools, headerNavigation, contentOverride, onShowChat, breadcrumbSlot }: { projectId: string; config: { workspaceId?: string }; headerTools?: ReactNode; headerNavigation?: ReactNode; contentOverride?: ReactNode; onShowChat?: () => void; breadcrumbSlot?: HTMLElement | null }) => {
   const [draft, setDraft] = useState('')
-  return <div><header><h2>Conversation title</h2>{headerNavigation}<button aria-label="New conversation" onClick={onShowChat}>New conversation</button>{headerTools}</header>{contentOverride}<textarea hidden={!!contentOverride} aria-label={`Draft ${projectId}${config.workspaceId ? ` / ${config.workspaceId}` : ''}`} value={draft} onChange={e => setDraft(e.target.value)} /></div>
+  const breadcrumb = <h2>Conversation title</h2>
+  return <div>{breadcrumbSlot === undefined ? breadcrumb : breadcrumbSlot && createPortal(breadcrumb, breadcrumbSlot)}<header>{headerNavigation}<button aria-label="New conversation" onClick={onShowChat}>New conversation</button>{headerTools}</header>{contentOverride}<textarea hidden={!!contentOverride} aria-label={`Draft ${projectId}${config.workspaceId ? ` / ${config.workspaceId}` : ''}`} value={draft} onChange={e => setDraft(e.target.value)} /></div>
 } }))
 vi.mock('./SplitLayout', () => ({ SplitLayout: () => <div>Project tools</div> }))
 vi.mock('@features/git', () => ({ GitTab: () => <div>Repository changes</div> }))
 vi.mock('./file-explorer/FileExplorer', () => ({ FileExplorer: () => <div role="tree" className="h-full w-full">Workspace files</div> }))
 vi.mock('./panels/WorkspaceSearch', () => ({ WorkspaceSearch: () => <div>Workspace search</div> }))
+vi.mock('@features/terminal/TerminalView', () => ({ TerminalView: ({ sessionId }: { sessionId: string }) => <div>Terminal {sessionId}</div> }))
+vi.mock('./editor/EditorContent', () => ({ EditorContent: ({ file }: { file: { id: string } }) => <div>Editor {file.id}</div> }))
+vi.mock('./browser/BrowserContent', () => ({ BrowserContent: ({ tab }: { tab: { id: string } }) => <div>Browser {tab.id}</div> }))
 vi.mock('./panels/WorkspaceWelcome', () => ({ WorkspaceWelcome: () => <div>Welcome</div> }))
 beforeEach(() => {
   resetAppStore()
@@ -49,8 +53,7 @@ describe('WorkspaceLayout chat ownership', () => {
   it('fills the tools pane with Files until an active editor opens, then restores the resizable inspector', () => {
     render(<WorkspaceLayout />)
     fireEvent.click(screen.getByRole('button', { name: 'Show workspace tools' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Add workspace tool' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'File viewer' }))
+    fireEvent.click(screen.getByRole('button', { name: 'File sidebar' }))
     expect(screen.getByLabelText('Workspace tools')).toBeVisible()
     const filesView = screen.getByRole('region', { name: 'Workspace files view' })
     expect(filesView).toBeVisible()
@@ -64,15 +67,14 @@ describe('WorkspaceLayout chat ownership', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close workspace file sidebar' }))
     expect(screen.queryByRole('region', { name: 'Workspace files view' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Workspace search sidebar')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Add workspace tool' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'File viewer' }))
+    fireEvent.click(screen.getByRole('button', { name: 'File sidebar' }))
     expect(screen.getByRole('region', { name: 'Workspace files view' })).toBeVisible()
 
-    act(() => useAppStore.getState().addTabToGroup('a', { type: 'editor', id: 'open-file' }))
+    act(() => useAppStore.getState().addTabToGroup('a', { type: 'git', id: 'git' }))
     expect(screen.getByLabelText('Workspace file sidebar')).toHaveTextContent('Workspace files')
     expect(screen.getByRole('separator', { name: 'Resize workspace files' })).toBeVisible()
     expect(screen.getByText('Project tools')).toBeVisible()
-    act(() => useAppStore.getState().removeTabFromGroup('a', 'open-file'))
+    act(() => useAppStore.getState().removeTabFromGroup('a', 'git'))
     expect(screen.getByRole('region', { name: 'Workspace files view' })).toBeVisible()
     expect(screen.queryByLabelText('Workspace file sidebar')).not.toBeInTheDocument()
 
@@ -84,20 +86,19 @@ describe('WorkspaceLayout chat ownership', () => {
   })
   it('uses active tabs in any split group to decide whether Files gets its own full pane', () => {
     useAppStore.setState({ projectGroups: { a: {
-      left: { id: 'left', tabs: [{ type: 'editor', id: 'left-file' }], activeTabId: null },
-      right: { id: 'right', tabs: [{ type: 'editor', id: 'right-file' }], activeTabId: 'right-file' },
+      left: { id: 'left', tabs: [{ type: 'files', id: 'files' }], activeTabId: null },
+      right: { id: 'right', tabs: [{ type: 'git', id: 'git' }], activeTabId: 'git' },
     } } })
     render(<WorkspaceLayout />)
     const showTools = screen.queryByRole('button', { name: 'Show workspace tools' })
     if (showTools) fireEvent.click(showTools)
-    fireEvent.click(screen.getByRole('button', { name: 'Add workspace tool' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'File viewer' }))
+    fireEvent.click(screen.getByRole('button', { name: 'File sidebar' }))
     expect(screen.getByLabelText('Workspace file sidebar')).toBeVisible()
     expect(screen.queryByRole('region', { name: 'Workspace files view' })).not.toBeInTheDocument()
 
     act(() => useAppStore.setState({ projectGroups: { a: {
-      left: { id: 'left', tabs: [{ type: 'editor', id: 'left-file' }], activeTabId: null },
-      right: { id: 'right', tabs: [{ type: 'editor', id: 'right-file' }], activeTabId: null },
+      left: { id: 'left', tabs: [{ type: 'files', id: 'files' }], activeTabId: null },
+      right: { id: 'right', tabs: [{ type: 'git', id: 'git' }], activeTabId: null },
     } } }))
     expect(screen.getByRole('region', { name: 'Workspace files view' })).toBeVisible()
     expect(screen.queryByLabelText('Workspace file sidebar')).not.toBeInTheDocument()
@@ -133,12 +134,15 @@ describe('WorkspaceLayout chat ownership', () => {
     fireEvent.click(screen.getByRole('button', { name: 'New conversation' }))
     expect(screen.getByRole('tab', { name: 'Workspace' })).toHaveAttribute('aria-selected', 'true')
   })
-  it('keeps the shared tools toolbar inside the pane on the tools view', () => {
+  it('shows tool controls in the same strip as the Workspace / Tasks tabs only while tools are open', () => {
     render(<WorkspaceLayout />)
+    expect(screen.queryByLabelText('Workspace tool controls')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Show workspace tools' }))
     const tools = screen.getByLabelText('Workspace tools')
     const toolbar = screen.getByLabelText('Workspace tool controls')
-    expect(tools).toContainElement(toolbar)
+    const strip = screen.getByRole('tablist', { name: 'Project workspace' }).parentElement!
+    expect(strip).toContainElement(toolbar)
+    expect(tools).not.toContainElement(toolbar)
     expect(toolbar).toContainElement(screen.getByRole('button', { name: 'Hide workspace tools' }))
     expect(toolbar).toContainElement(screen.getByRole('button', { name: 'Maximize workspace tools' }))
     expect(screen.getAllByRole('button', { name: 'Maximize workspace tools' })).toHaveLength(1)
@@ -146,9 +150,9 @@ describe('WorkspaceLayout chat ownership', () => {
     expect(tools).not.toBeVisible()
     expect(screen.getByRole('button', { name: 'Show workspace tools' })).toBeVisible()
   })
-  it('preserves the mounted editor and terminal surface while switching to Tasks', () => {
+  it('preserves the mounted tools surface while switching to Tasks', () => {
     useAppStore.setState({
-      projectGroups: { a: { group: { id: 'group', tabs: [{ type: 'terminal', id: 'terminal-a' }], activeTabId: 'terminal-a' } } },
+      projectGroups: { a: { group: { id: 'group', tabs: [{ type: 'git', id: 'git' }], activeTabId: 'git' } } },
       projectLayouts: { a: { kind: 'leaf', groupId: 'group' } },
     })
     render(<WorkspaceLayout projectDetails={() => <div>Tasks content</div>} />)
@@ -166,9 +170,10 @@ describe('WorkspaceLayout chat ownership', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show workspace tools' }))
     expect(screen.getByRole('tab', { name: 'Workspace' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByLabelText('Workspace tools')).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'Add workspace tool' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'New terminal' }))
-    expect(onAddTerminal).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('button', { name: 'Terminal' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Git' }))
+    expect(onAddTerminal).not.toHaveBeenCalled()
+    expect(Object.values(useAppStore.getState().projectGroups.a)[0].tabs).toEqual([{ type: 'git', id: 'git' }])
     expect(screen.getByRole('tab', { name: 'Workspace' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByLabelText('Workspace tools')).toBeVisible()
   })
@@ -205,3 +210,101 @@ describe('WorkspaceLayout chat ownership', () => {
 const render = (ui: ReactElement) => renderBase(ui, { wrapper: AppTooltipProvider })
 beforeEach(() => vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} }))
 afterEach(() => vi.unstubAllGlobals())
+
+describe('WorkspaceLayout center tabs', () => {
+  const tabNames = () => screen.getAllByRole('tab').map(tab => tab.getAttribute('title') ?? tab.textContent)
+  const seedResources = () => useAppStore.setState({
+    openTerminals: [{ id: 'shell-1', title: 'Alpha Shell' }],
+    browserTabs: [{ id: 'web-1', url: 'http://localhost:3000', title: 'Preview', loading: false, canGoBack: false, canGoForward: false, projectId: 'a' }],
+    openFiles: [{ id: '/alpha/notes.md', filePath: '/alpha/notes.md', relativePath: 'notes.md', language: 'markdown', isDirty: false, content: '', loading: false, loadError: null, projectId: 'a' }],
+  })
+
+  it('puts the conversation breadcrumb left of Workspace in the one strip', () => {
+    render(<WorkspaceLayout />)
+    const strip = screen.getByRole('tablist', { name: 'Project workspace' }).parentElement!
+    const breadcrumb = screen.getByTestId('workspace-breadcrumb')
+    expect(strip).toContainElement(breadcrumb)
+    expect(breadcrumb).toContainElement(screen.getByRole('heading', { name: 'Conversation title' }))
+    expect(screen.getAllByRole('heading', { name: 'Conversation title' })).toHaveLength(1)
+    expect(breadcrumb.compareDocumentPosition(screen.getByRole('tab', { name: 'Workspace' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(strip).toContainElement(screen.getByRole('button', { name: 'Show workspace tools' }))
+  })
+
+  it('opens terminals, browsers and editors as selected center tabs without opening the tools panel', () => {
+    seedResources()
+    render(<WorkspaceLayout />)
+    const draft = screen.getByLabelText('Draft a')
+    act(() => useAppStore.getState().addTabToGroup('a', { type: 'terminal', id: 'shell-1' }))
+    expect(screen.getByRole('tab', { name: /Alpha Shell/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Workspace' })).toHaveAttribute('aria-selected', 'false')
+    expect(screen.getByText('Terminal shell-1')).toBeVisible()
+    expect(draft).not.toBeVisible()
+    expect(screen.getByLabelText('Workspace tools')).not.toBeVisible()
+    act(() => useAppStore.getState().addTabToGroup('a', { type: 'browser', id: 'web-1' }))
+    act(() => useAppStore.getState().addTabToGroup('a', { type: 'editor', id: '/alpha/notes.md' }))
+    expect(tabNames()).toEqual(['Workspace', 'Tasks', 'Alpha Shell', 'Preview', 'notes.md'])
+    expect(screen.getByRole('tab', { name: /notes\.md/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText('Editor /alpha/notes.md')).toBeVisible()
+    expect(useAppStore.getState().projectGroups.a).toBeUndefined()
+    expect(screen.getByLabelText('Workspace tools')).not.toBeVisible()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Workspace' }))
+    expect(screen.getByLabelText('Draft a')).toBe(draft)
+    expect(draft).toBeVisible()
+    expect(screen.getByText('Editor /alpha/notes.md')).not.toBeVisible()
+  })
+
+  it('keeps terminals mounted across tab, Tasks and workspace switches', () => {
+    seedResources()
+    render(<WorkspaceLayout projectDetails={() => <div>Tasks content</div>} />)
+    act(() => useAppStore.getState().addTabToGroup('a', { type: 'terminal', id: 'shell-1' }))
+    const terminal = screen.getByText('Terminal shell-1')
+    act(() => useAppStore.getState().addTabToGroup('a', { type: 'browser', id: 'web-1' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Tasks' }))
+    expect(screen.getByText('Tasks content')).toBeVisible()
+    act(() => useAppStore.getState().setActiveProjectId('b'))
+    act(() => useAppStore.getState().setActiveProjectId('a'))
+    expect(screen.getByText('Terminal shell-1')).toBe(terminal)
+    fireEvent.click(screen.getByRole('tab', { name: /Alpha Shell/ }))
+    expect(terminal).toBeVisible()
+  })
+
+  it('falls back to the previously selected tab, then Workspace, when closing the selected tab', () => {
+    seedResources()
+    render(<WorkspaceLayout projectDetails={() => <div>Tasks content</div>} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Tasks' }))
+    act(() => useAppStore.getState().addTabToGroup('a', { type: 'terminal', id: 'shell-1' }))
+    act(() => useAppStore.getState().addTabToGroup('a', { type: 'browser', id: 'web-1' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Close Preview' }))
+    expect(screen.getByRole('tab', { name: /Alpha Shell/ })).toHaveAttribute('aria-selected', 'true')
+    expect(useAppStore.getState().browserTabs).toEqual([])
+    fireEvent.click(screen.getByRole('button', { name: 'Close Alpha Shell' }))
+    expect(screen.getByRole('tab', { name: 'Tasks' })).toHaveAttribute('aria-selected', 'true')
+    expect(useAppStore.getState().openTerminals).toEqual([])
+  })
+
+  it('opens Files and Git in the right panel and reveals it when hidden', () => {
+    render(<WorkspaceLayout />)
+    const tools = screen.getByLabelText('Workspace tools')
+    expect(tools).not.toBeVisible()
+    act(() => useAppStore.getState().addTabToGroup('a', { type: 'git', id: 'git' }))
+    expect(tools).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Hide workspace tools' }))
+    expect(tools).not.toBeVisible()
+    act(() => useAppStore.getState().addTabToGroup('a', { type: 'git', id: 'git' }))
+    expect(tools).toBeVisible()
+    expect(useAppStore.getState().projectCenterTabs.a).toBeUndefined()
+  })
+
+  it('migrates legacy tool groups holding terminal and browser tabs into the center strip', () => {
+    seedResources()
+    useAppStore.setState({
+      projectGroups: { a: { group: { id: 'group', tabs: [{ type: 'terminal', id: 'shell-1' }, { type: 'git', id: 'git' }, { type: 'browser', id: 'web-1' }], activeTabId: 'web-1' } } },
+      projectLayouts: { a: { kind: 'leaf', groupId: 'group' } },
+    })
+    render(<WorkspaceLayout />)
+    expect(tabNames()).toEqual(['Workspace', 'Tasks', 'Alpha Shell', 'Preview'])
+    expect(useAppStore.getState().projectGroups.a.group).toEqual({ id: 'group', tabs: [{ type: 'git', id: 'git' }], activeTabId: 'git' })
+    expect(screen.getByText('Project tools')).toBeVisible()
+  })
+})

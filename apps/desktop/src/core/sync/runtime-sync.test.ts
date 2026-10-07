@@ -42,6 +42,28 @@ const snapshot = normalizeSnapshotPayload({
 })
 
 describe('startRuntimeSync', () => {
+  it('forwards AUTOMATION_RUN_UPDATED run payloads from the event envelope', () => {
+    const sources: FakeEventSource[] = []
+    const runs: Record<string, unknown>[] = []
+    const sync = startRuntimeSync(
+      baseConfig,
+      { onSnapshot: () => {}, onTimelineEvent: () => {}, onStatus: () => {}, onError: () => {}, onAutomationRun: (run) => runs.push(run) },
+      {
+        fetchSnapshot: vi.fn().mockResolvedValue(snapshot),
+        normalizeSnapshot: normalizeSnapshotPayload,
+        normalizeEnvelope: normalizeEventEnvelope,
+        createEventSource: () => { const source = new FakeEventSource(); sources.push(source); return source },
+        setIntervalFn: () => 0,
+        clearIntervalFn: () => {},
+        setTimeoutFn: () => 0,
+        clearTimeoutFn: () => {},
+      },
+    )
+    sources[0]?.emit('AUTOMATION_RUN_UPDATED', JSON.stringify({ type: 'AUTOMATION_RUN_UPDATED', timestamp: 'now', data: { id: 'run-1', status: 'running' } }))
+    expect(runs).toEqual([{ id: 'run-1', status: 'running' }])
+    sync.stop()
+  })
+
   it('passes bearer token as query param when SSE is used', async () => {
     vi.useFakeTimers()
 

@@ -30,6 +30,10 @@ const Mode = "transcript_replay"
 const OrchestratorScope = "__orchestrator__"
 const maxText = 64 * 1024
 
+// replayBudget bounds a command harness's replayed transcript. The prompt is
+// passed as one shell argument, and Windows caps a command line at 32K chars.
+const replayBudget = 24 * 1024
+
 var ErrBusy = errors.New("conversation has an active or unsettled turn or delivery")
 var ErrNotFound = errors.New("conversation not found in this project")
 var ErrInvalid = errors.New("invalid chat request")
@@ -107,6 +111,12 @@ type Message struct {
 	RequestedAgentFormat      string `json:"requested_agent_format,omitempty"`
 	EffectiveAgentID          string `json:"effective_agent_id,omitempty"`
 	AgentObservation          string `json:"agent_observation,omitempty"`
+	Provider                  string `json:"provider,omitempty"`
+	// Agent provenance: the agent the message was sent with (user) or
+	// produced under (assistant).
+	AgentID    string `json:"agent_id,omitempty"`
+	AgentName  string `json:"agent_name,omitempty"`
+	AgentColor string `json:"agent_color,omitempty"`
 }
 type Detail struct {
 	Session  Session          `json:"session"`
@@ -145,6 +155,8 @@ type Service struct {
 	orchestratorTools    []map[string]any
 	orchestratorExecutor agents.ToolExecutor
 	agentCatalog         *agentcatalog.Service
+	mcpSource            MCPSource
+	nativeAgents         map[string]string
 }
 
 // New recovers incomplete deliveries as unknown; it never resubmits them.
@@ -157,6 +169,18 @@ func New(database *db.DB, registry Registry, roots []string) (*Service, error) {
 		return nil, err
 	}
 	if err = migrateNative(database); err != nil {
+		return nil, err
+	}
+	if err = migrateAgentProfiles(database); err != nil {
+		return nil, err
+	}
+	if err = migrateHarnessSwitch(database); err != nil {
+		return nil, err
+	}
+	// The inline HTML fence was renamed to orchestra-html; keep earlier
+	// conversations rendering.
+	if _, err = database.Exec(`UPDATE workspace_chat_messages SET text=REPLACE(text,'t3-html','orchestra-html') WHERE instr(text,'t3-html')>0;
+	 UPDATE workspace_chat_events SET event=REPLACE(event,'t3-html','orchestra-html') WHERE instr(event,'t3-html')>0;`); err != nil {
 		return nil, err
 	}
 	if _, err = database.Exec(`CREATE TABLE IF NOT EXISTS workspace_chat_workspaces(session_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, cwd TEXT NOT NULL); CREATE INDEX IF NOT EXISTS workspace_chat_workspace_scope ON workspace_chat_workspaces(workspace_id);`); err != nil {
@@ -185,7 +209,7 @@ func New(database *db.DB, registry Registry, roots []string) (*Service, error) {
 	if err = tx.Commit(); err != nil {
 		return nil, err
 	}
-	return &Service{db: database, registry: registry, roots: append([]string(nil), roots...), active: map[string]context.CancelFunc{}, native: map[string]agents.NativeSession{}, nativePrefixes: map[string]string{}}, nil
+	return &Service{db: database, registry: registry, roots: append([]string(nil), roots...), active: map[string]context.CancelFunc{}, native: map[string]agents.NativeSession{}, nativePrefixes: map[string]string{}, nativeAgents: map[string]string{}}, nil
 }
 
 // ConfigureAgentCatalog installs the single scoped catalog used to validate
@@ -472,7 +496,7 @@ func (s *Service) DetailAfter(ctx context.Context, pid, id string, after int64) 
 	if err = s.validateSessionScope(ctx, &v); err != nil {
 		return Detail{}, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT m.id,m.session_id,m.role,m.text,m.status,m.client_message_id,m.created_at,COALESCE(a.requested_agent_id,''),COALESCE(a.scope,''),COALESCE(a.content_hash,''),COALESCE(a.format,'') FROM workspace_chat_messages m LEFT JOIN workspace_chat_submission_agents a ON a.message_id=m.id WHERE m.session_id=? ORDER BY m.ordinal`, id)
+	rows, err := s.db.QueryContext(ctx, `SELECT m.id,m.session_id,m.role,m.text,m.status,m.client_message_id,m.created_at,COALESCE(a.requested_agent_id,''),COALESCE(a.scope,''),COALESCE(a.content_hash,''),COALESCE(a.format,''),COALESCE(mp.provider,''),COALESCE(ma.agent_id,''),COALESCE(ma.agent_name,''),COALESCE(ma.agent_color,'') FROM workspace_chat_messages m LEFT JOIN workspace_chat_submission_agents a ON a.message_id=m.id LEFT JOIN workspace_chat_message_providers mp ON mp.message_id=m.id LEFT JOIN workspace_chat_message_agents ma ON ma.message_id=m.id WHERE m.session_id=? ORDER BY m.ordinal`, id)
 	if err != nil {
 		return Detail{}, err
 	}
@@ -480,8 +504,11 @@ func (s *Service) DetailAfter(ctx context.Context, pid, id string, after int64) 
 	result := Detail{Session: v, Messages: []Message{}}
 	for rows.Next() {
 		var m Message
-		if err := rows.Scan(&m.ID, &m.SessionID, &m.Role, &m.Text, &m.Status, &m.ClientMessageID, &m.CreatedAt, &m.RequestedAgentID, &m.RequestedAgentScope, &m.RequestedAgentContentHash, &m.RequestedAgentFormat); err != nil {
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.Role, &m.Text, &m.Status, &m.ClientMessageID, &m.CreatedAt, &m.RequestedAgentID, &m.RequestedAgentScope, &m.RequestedAgentContentHash, &m.RequestedAgentFormat, &m.Provider, &m.AgentID, &m.AgentName, &m.AgentColor); err != nil {
 			return Detail{}, err
+		}
+		if m.Provider == "" {
+			m.Provider = v.Provider
 		}
 		if m.RequestedAgentID != "" {
 			m.AgentObservation = "requested_unobserved"
@@ -582,8 +609,9 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 			return Accepted{}, fmt.Errorf("%w: Antigravity configuration changes require a new conversation", ErrUnsupported)
 		}
 	}
+	var resolvedAgent *agents.ResolvedAgent
 	if req.RequestedAgentID != "" {
-		if err = s.validateAgentIntent(ctx, pid, d.Session.Provider, req.RequestedAgentID, req.RequestedAgentScope, req.RequestedAgentContentHash, req.RequestedAgentFormat); err != nil {
+		if resolvedAgent, err = s.resolveAgentIntent(ctx, pid, d.Session.Provider, req.RequestedAgentID, req.RequestedAgentScope, req.RequestedAgentContentHash, req.RequestedAgentFormat); err != nil {
 			return Accepted{}, err
 		}
 	} else if hasAgentIntent(req.RequestedAgentID, req.RequestedAgentScope, req.RequestedAgentContentHash, req.RequestedAgentFormat) {
@@ -613,8 +641,13 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 	if err != nil {
 		return Accepted{}, err
 	}
-	turn := agents.TurnRequest{SessionID: uuid.NewString(), ProjectID: pid, Workspace: root, WorkspaceRoot: root, ProjectRootWorkspace: true, Prompt: req.Text, Timeout: 10 * time.Minute, RuntimeTarget: agents.RuntimeLocal, RequestedModel: req.RequestedModel, RequestedMaxTurns: req.RequestedMaxTurns, RequestedAgentID: req.RequestedAgentID, RequestedAgentScope: req.RequestedAgentScope, RequestedAgentContentHash: req.RequestedAgentContentHash, RequestedAgentFormat: req.RequestedAgentFormat}
+	turn := agents.TurnRequest{SessionID: uuid.NewString(), ProjectID: pid, Workspace: root, WorkspaceRoot: root, ProjectRootWorkspace: true, Prompt: req.Text, Timeout: turnTimeout(ctx), RuntimeTarget: agents.RuntimeLocal, RequestedModel: req.RequestedModel, RequestedMaxTurns: req.RequestedMaxTurns, RequestedAgentID: req.RequestedAgentID, RequestedAgentScope: req.RequestedAgentScope, RequestedAgentContentHash: req.RequestedAgentContentHash, RequestedAgentFormat: req.RequestedAgentFormat}
 	turn.AccountID = d.Session.AccountID
+	turn.StreamReasoning = true
+	turn.Agent = resolvedAgent
+	if turn.MCPServers, err = s.runMCPServers(ctx, resolvedAgent); err != nil {
+		return Accepted{}, err
+	}
 	if pid == OrchestratorScope {
 		if s.supportsControl(agents.Provider(d.Session.Provider)) {
 			turn.ToolSpecs = s.orchestratorTools
@@ -624,6 +657,8 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 		if err != nil {
 			return Accepted{}, err
 		}
+	} else {
+		turn.DeveloperInstructions = visualInstructions
 	}
 	if req.RequestedMaxTurns != nil {
 		return Accepted{}, ErrUnsupported
@@ -659,19 +694,28 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 			return Accepted{}, fmt.Errorf("%w: %s", ErrUnsupported, err)
 		}
 	}
+	agentSwitch := false
+	if nativeMode {
+		from, pending, e := s.handoffPending(ctx, id)
+		if e != nil {
+			return Accepted{}, e
+		}
+		// Native threads pin the agent profile (thread instructions, agy
+		// --agent). Switching agents mid-conversation starts a fresh provider
+		// thread seeded with the provider-neutral transcript.
+		threadKey, e := s.threadAgentKey(ctx, id)
+		if e != nil {
+			return Accepted{}, e
+		}
+		agentSwitch = d.Session.ProviderThreadID != "" && threadKey != agentKey(resolvedAgent)
+		if pending {
+			turn.Prompt = handoffTranscript(d.Messages, from, d.Session.Provider, req.Text, maxText)
+		} else if agentSwitch {
+			turn.Prompt = agentHandoffTranscript(d.Messages, resolvedAgent, req.Text, maxText)
+		}
+	}
 	if !nativeMode {
-		var transcript strings.Builder
-		transcript.WriteString("This is a new provider turn with Orchestra conversation transcript replay, not native session resume. Work only in the selected project. Previous messages follow as conversation context.\n")
-		for _, m := range d.Messages {
-			if m.Status == "completed" {
-				fmt.Fprintf(&transcript, "\n[%s]\n%s\n", m.Role, m.Text)
-			}
-		}
-		fmt.Fprintf(&transcript, "\n[user]\n%s", req.Text)
-		if transcript.Len() > maxText {
-			return Accepted{}, fmt.Errorf("%w: conversation transcript is full; create a new conversation", ErrInvalid)
-		}
-		turn.Prompt = transcript.String()
+		turn.Prompt = replayTranscript("This is a new provider turn with Orchestra conversation transcript replay, not native session resume. Work only in the selected project. Previous messages follow as conversation context.\n", d.Messages, req.Text, replayBudget)
 	}
 	m := Message{ID: uuid.NewString(), SessionID: id, Role: "user", Text: req.Text, Status: "accepted", ClientMessageID: req.ClientMessageID, CreatedAt: stamp(), RequestedAgentID: req.RequestedAgentID, RequestedAgentScope: req.RequestedAgentScope, RequestedAgentContentHash: req.RequestedAgentContentHash, RequestedAgentFormat: req.RequestedAgentFormat}
 	if req.RequestedAgentID != "" {
@@ -704,6 +748,10 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 	if _, err = tx.ExecContext(ctx, `UPDATE workspace_chat_sessions SET status='running',updated_at=?,error='' WHERE id=?`, m.CreatedAt, id); err != nil {
 		return Accepted{}, err
 	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_message_providers(message_id,provider) VALUES(?,?)`, m.ID, d.Session.Provider); err != nil {
+		return Accepted{}, err
+	}
+	m.Provider = d.Session.Provider
 	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_submissions(message_id,requested_model) VALUES(?,?)`, m.ID, req.RequestedModel); err != nil {
 		return Accepted{}, err
 	}
@@ -722,6 +770,18 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_submission_efforts(message_id,effort) VALUES(?,?)`, m.ID, req.RequestedReasoningEffort); err != nil {
 		return Accepted{}, err
+	}
+	if resolvedAgent != nil {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_message_agents(message_id,agent_id,agent_name,agent_color) VALUES(?,?,?,?)`, m.ID, resolvedAgent.ID, resolvedAgent.Name, resolvedAgent.Color); err != nil {
+			return Accepted{}, err
+		}
+		m.AgentID, m.AgentName, m.AgentColor = resolvedAgent.ID, resolvedAgent.Name, resolvedAgent.Color
+	}
+	if agentSwitch {
+		if _, err = tx.ExecContext(ctx, `UPDATE workspace_chat_native SET thread_id='',cumulative_turn_count=NULL WHERE session_id=?`, id); err != nil {
+			return Accepted{}, err
+		}
+		d.Session.ProviderThreadID = ""
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_efforts(session_id,requested) VALUES(?,?) ON CONFLICT(session_id) DO UPDATE SET requested=excluded.requested,observed=CASE WHEN excluded.requested<>'' AND excluded.requested<>observed THEN '' ELSE observed END`, id, req.RequestedReasoningEffort); err != nil {
 		return Accepted{}, err
@@ -765,12 +825,32 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 func (s *Service) run(ctx context.Context, cancel context.CancelFunc, sess Session, m Message, turn agents.TurnRequest) {
 	defer s.wg.Done()
 	defer cancel()
-	result, err := s.registry.RunTurn(ctx, agents.Provider(sess.Provider), turn, nil)
+	reasoning := newReasoningStream(turn.SessionID)
+	result, err := s.registry.RunTurn(ctx, agents.Provider(sess.Provider), turn, func(e agents.Event) {
+		for _, ne := range reasoning.events(e) {
+			if err := s.recordEvent(sess.ID, ne); err != nil {
+				log.Printf("workspace chat reasoning event for session %s: %v", sess.ID, err)
+			}
+		}
+	})
+	if turn.Agent != nil {
+		if result.AgentObservation != "" {
+			s.recordAgentReceipt(sess.ID, result.EffectiveAgentID, result.AgentObservation)
+		} else {
+			s.recordAgentReceipt(sess.ID, "", notApplied(err))
+		}
+	}
 	status, msgStatus, errorText := "idle", "completed", ""
 	if err != nil || result.ExitCode != 0 {
 		status = "failed"
 		msgStatus = "failed"
-		errorText = "Provider turn failed. Inspect CLI configuration and account readiness."
+		if text := assistantText(result.Output); text != "" {
+			errorText = fmt.Sprintf("Provider turn failed: %s", text)
+		} else if err != nil {
+			errorText = fmt.Sprintf("Provider turn failed: %v", err)
+		} else {
+			errorText = "Provider turn failed. Inspect CLI configuration and account readiness."
+		}
 	}
 	if ctx.Err() != nil {
 		status = "interrupted"
@@ -799,7 +879,21 @@ func (s *Service) finish(sess Session, m Message, output, status, msgStatus, err
 		return txErr
 	}
 	if output != "" {
-		if _, txErr = tx.Exec(`INSERT INTO workspace_chat_messages(id,session_id,role,text,status,created_at) VALUES(?,?,?,?,?,?)`, uuid.NewString(), sess.ID, "assistant", output, msgStatus, stamp()); txErr != nil {
+		replyID := uuid.NewString()
+		if _, txErr = tx.Exec(`INSERT INTO workspace_chat_messages(id,session_id,role,text,status,created_at) VALUES(?,?,?,?,?,?)`, replyID, sess.ID, "assistant", output, msgStatus, stamp()); txErr != nil {
+			return txErr
+		}
+		if _, txErr = tx.Exec(`INSERT INTO workspace_chat_message_providers(message_id,provider) VALUES(?,?)`, replyID, sess.Provider); txErr != nil {
+			return txErr
+		}
+		// The reply was produced under the agent its user message selected.
+		if _, txErr = tx.Exec(`INSERT INTO workspace_chat_message_agents(message_id,agent_id,agent_name,agent_color) SELECT ?,agent_id,agent_name,agent_color FROM workspace_chat_message_agents WHERE message_id=?`, replyID, m.ID); txErr != nil {
+			return txErr
+		}
+	}
+	if msgStatus == "completed" {
+		// The new harness's native thread now holds the replayed context.
+		if _, txErr = tx.Exec(`DELETE FROM workspace_chat_handoffs WHERE session_id=?`, sess.ID); txErr != nil {
 			return txErr
 		}
 	}
@@ -838,6 +932,14 @@ func assistantText(raw string) string {
 			if p["type"] == "assistant" {
 				if v := agents.ExtractMessage(p); v != "" {
 					text = append(text, v)
+				}
+			}
+			// OpenCode `run --format json`: {"type":"text","part":{"type":"text","text":"..."}}
+			if p["type"] == "text" {
+				if part, ok := p["part"].(map[string]any); ok {
+					if v, ok := part["text"].(string); ok && v != "" {
+						text = append(text, v)
+					}
 				}
 			}
 		} else if !strings.HasPrefix(line, "{") && !strings.HasPrefix(line, "[") {

@@ -26,7 +26,7 @@ describe('HtmlRenderFrame', () => {
     // srcdoc must be used to avoid Chromium cross-origin blob URL navigation blocks
     const srcDoc = frame.getAttribute('srcdoc')
     expect(srcDoc).toContain('450k turns')
-    expect(srcDoc).toContain('id="t3-theme"')
+    expect(srcDoc).toContain('id="orchestra-theme"')
   })
 
   it('opens full-screen modal when maximize button is clicked', () => {

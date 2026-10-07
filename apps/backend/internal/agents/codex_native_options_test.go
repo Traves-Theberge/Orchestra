@@ -59,6 +59,9 @@ func TestNativeReasoningEffortWirePayloadAndDefaultOmission(t *testing.T) {
 		if err = json.Unmarshal([]byte(line), &params); err != nil {
 			t.Fatal(err)
 		}
+		if params["summary"] != "detailed" {
+			t.Fatalf("reasoning summary not requested: %v", params)
+		}
 		effort, present := params["effort"]
 		if i == 1 {
 			if effort != "high" {

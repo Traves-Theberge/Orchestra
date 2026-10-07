@@ -55,6 +55,19 @@ func (s *Service) modelsForAccount(ctx context.Context, pid, provider, accountID
 	p := agents.NormalizeProvider(provider)
 	r, ok := s.registry.(modelRegistry)
 	if !ok || !s.supportsNative(p) {
+		if p == agents.ProviderClaude {
+			return ModelCatalog{
+				ProjectID:   pid,
+				Provider:    string(p),
+				Observation: "provider_catalog",
+				Models: []agents.NativeModel{
+					{ID: "claude-fable-5-1", Model: "claude-fable-5-1", DisplayName: "Claude Fable 5.1"},
+					{ID: "claude-opus-5-5", Model: "claude-opus-5-5", DisplayName: "Claude Opus 5.5"},
+					{ID: "claude-sonnet-5-5", Model: "claude-sonnet-5-5", DisplayName: "Claude Sonnet 5.5", IsDefault: true},
+					{ID: "claude-haiku-4-5", Model: "claude-haiku-4-5", DisplayName: "Claude Haiku 4.5"},
+				},
+			}, nil
+		}
 		return ModelCatalog{}, ErrUnsupported
 	}
 	s.mu.Lock()

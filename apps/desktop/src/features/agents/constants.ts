@@ -1,7 +1,7 @@
-import { Settings2, FileText, Zap, Plug, Scale, Sparkles, Bot, ScrollText, TerminalSquare, Shield, Cpu, FolderTree, LayoutDashboard } from 'lucide-react'
-import type { ActiveAgentProvider, Provider, CategoryDef } from './types'
+import { Settings2, FileText, Zap, Plug, Scale, Sparkles, Bot, ScrollText, TerminalSquare, Shield, Cpu, FolderTree } from 'lucide-react'
+import type { Provider, CategoryDef } from './types'
 
-export const PROVIDERS: { id: ActiveAgentProvider; label: string; description: string }[] = [
+export const PROVIDERS: { id: Provider; label: string; description: string }[] = [
   { id: 'claude', label: 'Claude', description: "Anthropic's Claude Code — deep reasoning and careful analysis" },
   { id: 'codex', label: 'Codex', description: "OpenAI's Codex — fast iteration and broad knowledge" },
   { id: 'antigravity', label: 'Antigravity', description: 'Google Antigravity harness — independent configuration and capabilities' },
@@ -9,8 +9,16 @@ export const PROVIDERS: { id: ActiveAgentProvider; label: string; description: s
   { id: '8gent', label: '8gent', description: 'Open-source autonomous coding agent — local-first, self-evolving' },
 ]
 
+/** Orchestra (all harnesses) view. */
+export const ORCHESTRA_PROVIDER = { id: 'orchestra' as const, label: 'Orchestra', description: 'Agents, skills and MCP servers that apply across every harness' }
+
+export const ORCHESTRA_CATEGORIES: CategoryDef[] = [
+  { id: 'agents', label: 'Agents', icon: Bot },
+  { id: 'skills', label: 'Skills', icon: Sparkles },
+  { id: 'mcp', label: 'MCP Servers', icon: Plug },
+]
+
 export const CLAUDE_CATEGORIES: CategoryDef[] = [
-  { id: 'overview', label: 'Overview', icon: LayoutDashboard, pinned: true },
   { id: 'settings', label: 'Settings', icon: Settings2, pinned: true },
   { id: 'instructions', label: 'Instructions', icon: FileText, pinned: true },
   { id: 'agents', label: 'Sub-agents', icon: Bot },
@@ -21,7 +29,6 @@ export const CLAUDE_CATEGORIES: CategoryDef[] = [
 ]
 
 export const CODEX_CATEGORIES: CategoryDef[] = [
-  { id: 'overview', label: 'Overview', icon: LayoutDashboard, pinned: true },
   { id: 'config', label: 'Config', icon: Settings2, pinned: true },
   { id: 'approvals', label: 'Approvals & Sandbox', icon: Shield, pinned: true },
   { id: 'models', label: 'Models & Providers', icon: Cpu, pinned: true },
@@ -35,18 +42,7 @@ export const CODEX_CATEGORIES: CategoryDef[] = [
   { id: 'rules', label: 'Rules', icon: Scale },
 ]
 
-export const GEMINI_CATEGORIES: CategoryDef[] = [
-  { id: 'overview', label: 'Overview', icon: LayoutDashboard, pinned: true },
-  { id: 'settings', label: 'Settings', icon: Settings2, pinned: true },
-  { id: 'models', label: 'Models', icon: Cpu, pinned: true },
-  { id: 'permissions', label: 'Permissions', icon: Shield, pinned: true },
-  { id: 'context', label: 'Context', icon: ScrollText, pinned: true },
-  { id: 'commands', label: 'Commands', icon: TerminalSquare },
-  { id: 'mcp', label: 'MCP Servers', icon: Plug },
-]
-
 export const OPENCODE_CATEGORIES: CategoryDef[] = [
-  { id: 'overview', label: 'Overview', icon: LayoutDashboard, pinned: true },
   { id: 'config', label: 'Config', icon: Settings2, pinned: true },
   { id: 'models', label: 'Models', icon: Cpu, pinned: true },
   { id: 'instructions', label: 'Instructions', icon: FileText, pinned: true },
@@ -58,7 +54,6 @@ export const OPENCODE_CATEGORIES: CategoryDef[] = [
 ]
 
 export const EIGHTGENT_CATEGORIES: CategoryDef[] = [
-  { id: 'overview', label: 'Overview', icon: LayoutDashboard, pinned: true },
   { id: 'settings', label: 'Settings', icon: Settings2, pinned: true },
   { id: 'instructions', label: 'Instructions', icon: FileText, pinned: true },
   { id: 'skills', label: 'Skills', icon: Sparkles },
@@ -72,10 +67,9 @@ export const MODELS_BY_PROVIDER: Record<Provider, { value: string; label: string
     { value: 'sonnet', label: 'Sonnet (latest)' },
     { value: 'opus', label: 'Opus (latest)' },
     { value: 'haiku', label: 'Haiku (latest)' },
-    { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-    { value: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
-    { value: 'claude-opus-4-6[1m]', label: 'Claude Opus 4.6 (1M context)' },
-    { value: 'claude-sonnet-4-5-20250514', label: 'Claude Sonnet 4.5' },
+    { value: 'claude-fable-5-1', label: 'Claude Fable 5.1' },
+    { value: 'claude-opus-5-5', label: 'Claude Opus 5.5' },
+    { value: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5' },
     { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
   ],
   codex: [
@@ -90,11 +84,6 @@ export const MODELS_BY_PROVIDER: Record<Provider, { value: string; label: string
     { value: 'gpt-5.2', label: 'GPT 5.2' },
     { value: 'codex-mini-latest', label: 'Codex Mini (latest)' },
     { value: 'o3', label: 'o3' },
-  ],
-  gemini: [
-    { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-    { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
   ],
   opencode: [
     { value: 'openai/gpt-5.3-codex', label: 'OpenAI GPT 5.3 Codex' },
@@ -124,7 +113,6 @@ export const HOOK_EVENTS_BY_PROVIDER: Record<Provider, string[]> = {
   antigravity: [],
   claude: ['SessionStart', 'SessionEnd', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PermissionRequest', 'Notification', 'Stop', 'SubagentStop', 'PreCompact'],
   codex: [],
-  gemini: ['SessionStart', 'SessionEnd', 'BeforeAgent', 'AfterAgent', 'BeforeModel', 'AfterModel', 'BeforeToolSelection'],
   opencode: [],
   '8gent': ['SessionStart', 'SessionEnd', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop'],
 }
@@ -133,7 +121,6 @@ export const EFFORT_LEVELS: Record<Provider, string[]> = {
   antigravity: [],
   claude: ['low', 'medium', 'high'],
   codex: ['low', 'medium', 'high', 'very-high', 'max', 'reasoning'],
-  gemini: ['low', 'medium', 'high'],
   opencode: ['low', 'medium', 'high'],
   '8gent': ['low', 'medium', 'high'],
 }
@@ -148,12 +135,6 @@ export const APPROVAL_MODES: Record<Provider, { label: string; value: string }[]
     { label: 'Auto', value: 'auto' },
   ],
   codex: [
-    { label: 'Interactive', value: 'interactive' },
-    { label: 'Auto-edit', value: 'auto-edit' },
-    { label: 'Full-auto', value: 'full-auto' },
-    { label: 'On-request', value: 'on-request' },
-  ],
-  gemini: [
     { label: 'Interactive', value: 'interactive' },
     { label: 'Auto-edit', value: 'auto-edit' },
     { label: 'Full-auto', value: 'full-auto' },

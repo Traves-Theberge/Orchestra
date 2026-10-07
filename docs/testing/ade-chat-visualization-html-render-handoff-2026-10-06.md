@@ -18,7 +18,7 @@ Orchestra adopts the 1:1 T3 Code visualization capability adapted to Orchestra's
    - Responsive multi-width height measurement curve with standard sampling widths (`[320, 375, 430, 520, 640, 728, 860, 1000, 1144]`), clamped between 80px and 2000px.
    - Orchestra theme variable mapping including categorical chart palettes (`--chart-1` through `--chart-6`), fonts, background, foreground, border, and muted colors.
    - Zero-flash bootstrap injection: embeds `:root` variables synchronously into `<head>` before first paint using the URL hash fragment (`#t3-theme=...`).
-   - Extractors for both tool execution results (`html_render`, `html_preview`, `render_html`) and markdown fenced code blocks (`t3-html`, `orchestra-html`).
+   - Extractors for both tool execution results (`html_render`, `html_preview`, `render_html`) and markdown fenced code blocks (`orchestra-html`).
 
 2. **Security & Sandboxing (`apps/desktop/src/features/workspace/chat/html-render/HtmlRenderDocument.tsx`)**:
    - Strict iframe isolation with `sandbox="allow-scripts allow-forms"`. Critically omits `allow-same-origin` to ensure rendered scripts cannot access Electron IPC, `window.orchestra`, local cookies, tokens, or local storage.
@@ -31,7 +31,7 @@ Orchestra adopts the 1:1 T3 Code visualization capability adapted to Orchestra's
    - `HtmlRenderModal`: Pop-out studio dialog with Preview vs. Source code tabs, viewport presets (Fluid 100%, Tablet 768px, Mobile 390px with Dynamic Island frame), clipboard copy, and `.html` file export. Cleaned of redundant header branding text and icons for a distraction-free studio experience.
 
 4. **Streaming & Stability Refinements**:
-   - **Zero-Flicker Streaming (`MarkdownRenderer.tsx`)**: Displays an animated `StreamingVisualizationSkeleton` while a ````t3-html```` block is incomplete/streaming, preventing hundreds of rapid iframe reloads and syntax error crashes. Transitions smoothly to the live interactive frame once the code block is closed.
+   - **Zero-Flicker Streaming (`MarkdownRenderer.tsx`)**: Displays an animated `StreamingVisualizationSkeleton` while a ````orchestra-html```` block is incomplete/streaming, preventing hundreds of rapid iframe reloads and syntax error crashes. Transitions smoothly to the live interactive frame once the code block is closed.
    - **In-Place Multi-Mockup Rendering**: Retains code blocks in the natural markdown flow, rendering multiple distinct mocks sequentially without message inversion or layout teleporting.
    - **Scroll Pinning (`WorkspaceChat.tsx`)**: Replaces asynchronous `scrollIntoView({ behavior: 'smooth' })` during streaming with direct scroll pinning (`scrollTop = scrollHeight`), eliminating scroll bouncing, jitter, and false jump button triggers.
    - **Refined Agent Working Status**: Replaces the plain loader paragraph with `AgentWorkingStatus` featuring an animated orbital glowing badge, typing dots, descriptive status text, and an accessible inline Stop button.

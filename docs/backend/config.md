@@ -45,7 +45,7 @@ For each configuration field, `Load()` follows this precedence:
 | `ORCHESTRA_AGENT_MAX_TURNS` | int | `25` | Maximum agent execution turns per run |
 | `ORCHESTRA_AGENT_COMMAND_CODEX` | string | `codex exec ...` | Shell command template for Codex agent |
 | `ORCHESTRA_AGENT_COMMAND_CLAUDE` | string | `claude -p ...` | Shell command template for Claude agent |
-| `ORCHESTRA_AGENT_COMMAND_OPENCODE` | string | `opencode -p ...` | Shell command template for OpenCode agent |
+| `ORCHESTRA_AGENT_COMMAND_OPENCODE` | string | `opencode run ...` | Shell command template for OpenCode agent |
 | `ORCHESTRA_AGENT_COMMAND_GEMINI` | string | `gemini -p ...` | Shell command template for Gemini agent |
 | `ORCHESTRA_AGENT_COMMAND_UNSANDBOX` | string | *(empty)* | Shell command template for Unsandbox agent |
 | `ORCHESTRA_TRACKER_TYPE` | string | *(empty)* | Tracker backend type. `github` selects GitHub; other values fall back to the local SQLite-backed tracker in normal runtime |
@@ -86,7 +86,7 @@ Each agent provider has a built-in command template using `{{prompt}}` as a plac
 |----------|----------------|
 | CODEX | `codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json {{prompt}}` |
 | CLAUDE | `claude -p {{prompt}} --output-format stream-json --verbose --dangerously-skip-permissions` |
-| OPENCODE | `opencode -p {{prompt}} -f json` |
+| OPENCODE | `opencode run {{prompt}} --format json` |
 | GEMINI | `gemini -p {{prompt}} --output-format stream-json --approval-mode yolo` |
 
 ---

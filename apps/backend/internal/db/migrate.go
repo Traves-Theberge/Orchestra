@@ -105,6 +105,13 @@ func runMigrations(db *sql.DB) error {
 		{"runs", "requested_max_turns", "INTEGER CHECK(requested_max_turns IS NULL OR (typeof(requested_max_turns) = 'integer' AND requested_max_turns BETWEEN 1 AND 100))"},
 		{"runs", "disabled_tools", "TEXT DEFAULT '[]'"},
 		{"issues", "requested_max_turns", "INTEGER CHECK(requested_max_turns IS NULL OR (typeof(requested_max_turns) = 'integer' AND requested_max_turns BETWEEN 1 AND 100))"},
+		// Orchestra-managed MCP servers passed to harness runs.
+		{"mcp_servers", "type", "TEXT NOT NULL DEFAULT 'local'"},
+		{"mcp_servers", "args", "TEXT NOT NULL DEFAULT '[]'"},
+		{"mcp_servers", "env", "TEXT NOT NULL DEFAULT '{}'"},
+		{"mcp_servers", "url", "TEXT NOT NULL DEFAULT ''"},
+		{"mcp_servers", "headers", "TEXT NOT NULL DEFAULT '{}'"},
+		{"mcp_servers", "enabled", "INTEGER NOT NULL DEFAULT 1"},
 	}
 
 	for _, m := range migrations {

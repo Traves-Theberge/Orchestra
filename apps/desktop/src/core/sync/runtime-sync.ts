@@ -20,6 +20,8 @@ type RuntimeSyncHandlers = {
   onError: (message: string) => void
   /** Called when a GitHub connection or disconnection event is received. */
   onGitHubChange?: (eventType: string, projectId: string) => void
+  /** Called with the run payload of an AUTOMATION_RUN_UPDATED event. */
+  onAutomationRun?: (run: Record<string, unknown>) => void
 }
 
 /**
@@ -201,6 +203,21 @@ export function startRuntimeSync(config: BackendConfig, handlers: RuntimeSyncHan
         }
       })
     }
+
+    stream.addEventListener('AUTOMATION_RUN_UPDATED', (event) => {
+      if (!handlers.onAutomationRun) return
+      try {
+        const dataText = (event as { data?: string }).data ?? ''
+        const parsed = dataText ? JSON.parse(dataText) as Record<string, unknown> : {}
+        // The backend wraps payloads in an event envelope ({ type, timestamp, data }).
+        const run = parsed.data && typeof parsed.data === 'object' && !Array.isArray(parsed.data)
+          ? parsed.data as Record<string, unknown>
+          : parsed
+        handlers.onAutomationRun(run)
+      } catch {
+        handlers.onAutomationRun({})
+      }
+    })
 
     stream.onerror = () => {
       handlers.onStatus('SSE disconnected (polling fallback)')

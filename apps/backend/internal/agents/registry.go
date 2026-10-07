@@ -205,13 +205,16 @@ func validateTurnOptions(ctx context.Context, provider Provider, runner Runner, 
 	if request.RequestedMaxTurns != nil {
 		return fmt.Errorf("requested_max_turns is not supported: task turn-budget semantics are not implemented")
 	}
-	if request.RequestedAgentID == "" {
+	if request.RequestedAgentID == "" && request.Agent == nil {
 		if request.RequestedAgentScope != "" || request.RequestedAgentContentHash != "" || request.RequestedAgentFormat != "" {
 			return fmt.Errorf("agent selection metadata requires a requested agent id")
 		}
 	} else {
-		if request.RequestedAgentScope != "project" && request.RequestedAgentScope != "global" {
+		if request.RequestedAgentScope != "" && request.RequestedAgentScope != "project" && request.RequestedAgentScope != "global" {
 			return fmt.Errorf("requested agent scope must be project or global")
+		}
+		if request.Agent == nil {
+			return fmt.Errorf("requested agent %q was not resolved to a profile", request.RequestedAgentID)
 		}
 		if remote {
 			return fmt.Errorf("requested agent selection is not supported by runtime target %s", request.RuntimeTarget)
@@ -226,6 +229,10 @@ func validateTurnOptions(ctx context.Context, provider Provider, runner Runner, 
 	}
 	if remote && transport == nil {
 		return fmt.Errorf("runtime target not configured: %s", request.RuntimeTarget)
+	}
+	if remote && len(request.MCPServers) > 0 {
+		// Remote transports cannot receive per-run temp files; never pretend.
+		return fmt.Errorf("orchestra MCP servers are not supported by runtime target %s", request.RuntimeTarget)
 	}
 	if request.RequestedModel != "" {
 		if remote {

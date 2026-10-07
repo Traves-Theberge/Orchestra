@@ -1,4 +1,4 @@
-import { Activity, Cpu, FileText, FolderTree, ListTodo, Network, Settings2 } from 'lucide-react'
+import { Activity, CalendarClock, Cpu, FileText, FolderTree, ListTodo, Network, Settings2 } from 'lucide-react'
 import { Command } from 'cmdk'
 import { useAppStore } from '@core/store'
 import { type SectionID } from '@layout/sections'
@@ -20,6 +20,7 @@ export function AppCommandPalette({ onCreateIssue, onTogglePolling }: AppCommand
   const navItems: { id: SectionID; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
     { id: 'ORCHESTRATOR', label: 'Go to Orchestrator', icon: Network },
     { id: 'ISSUES', label: 'Go to Tasks', icon: ListTodo },
+    { id: 'AUTOMATIONS', label: 'Go to Automations', icon: CalendarClock },
     { id: 'PROJECTS', label: 'Go to Projects', icon: FolderTree },
     { id: 'AGENTS', label: 'Go to Agents', icon: Cpu },
     { id: 'SETTINGS', label: 'Go to Settings', icon: Settings2 },

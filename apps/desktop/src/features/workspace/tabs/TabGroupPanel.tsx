@@ -1,34 +1,25 @@
-import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react'
+import { useState, useRef, useEffect, useContext, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  File,
-  Globe,
-  Terminal,
   X,
   Plus,
-  FileText,
   SplitSquareHorizontal,
   SplitSquareVertical,
-  Settings,
   GitBranch,
   Folder,
-  MessageSquare,
+  FolderTree,
   PanelRight,
 } from 'lucide-react'
 import { useAppStore } from '@core/store'
-import { projectIdForWorkspaceContext, workspaceSelectionKey } from '@core/store/workspace-context'
-import { getAgentIcon } from '@layout/shared/controls'
+import { isSideTab } from '@core/store/group-helpers'
 import type { TabGroup, TabRef, WorkspaceContextID } from '@core/store/types'
-import { EditorContent } from '../editor/EditorContent'
-import { BrowserContent } from '../browser/BrowserContent'
 import { WorkspaceToolsControls } from '../WorkspaceToolsControls'
-import { TerminalView } from '@features/terminal/TerminalView'
-import { GitTab } from '@features/git'
-import { FileExplorer } from '../file-explorer/FileExplorer'
-import { ConversationsPanel } from '../panels/ConversationsPanel'
 import { WorkspaceEmptyTools } from '../WorkspaceEmptyTools'
 import { TabContextMenu } from './TabContextMenu'
-import { ORCHESTRA_FILE_MIME, shellQuote } from '../file-explorer/FileTreeRow'
+import { OpenFileSidebarContext, ToolbarTabSlotContext } from './toolbar-tab-slot'
+import { ORCHESTRA_FILE_MIME } from '../file-explorer/FileTreeRow'
+import { TabContent, TabIcon } from './TabContent'
+import { closeWorkspaceTab, tabTitle } from './tab-actions'
 
 interface TabGroupPanelProps {
   projectId: WorkspaceContextID
@@ -40,31 +31,25 @@ interface TabGroupPanelProps {
   onToggleTools?: () => void
 }
 
-export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds, onInspectTask, onToggleTools }: TabGroupPanelProps) {
-  const workspaceRoot = () => {
-    const state = useAppStore.getState()
-    const project = state.projects.find(p => p.id === projectIdForWorkspaceContext(state, projectId))
-    const workspace = state.config ? state.knownProjectWorkspaces[workspaceSelectionKey(state.config.baseUrl, projectId)] : undefined
-    return { project, cwd: workspace?.path ?? state.projectExplorerRoots[projectId] ?? project?.root_path ?? undefined }
-  }
+/**
+ * A tab group in the right tools panel. Only Files and Git tabs live here;
+ * terminals, browsers, editors and conversations are center tabs.
+ */
+export function TabGroupPanel({ projectId, group: rawGroup, isFocused, siblingGroupIds, onInspectTask, onToggleTools }: TabGroupPanelProps) {
+  // Legacy groups may still hold center-type refs until the store migrates
+  // them; never render those here.
+  const sideTabs = rawGroup.tabs.filter(isSideTab)
+  const group = { ...rawGroup, tabs: sideTabs, activeTabId: sideTabs.some(t => t.id === rawGroup.activeTabId) ? rawGroup.activeTabId : null }
   const openFiles = useAppStore((s) => s.openFiles)
   const browserTabs = useAppStore((s) => s.browserTabs)
   const openTerminals = useAppStore((s) => s.openTerminals)
-  const config = useAppStore((s) => s.config)
-  const explorerRoot = useAppStore((s) => s.explorerRoot)
 
   const activateTabInGroup = useAppStore((s) => s.activateTabInGroup)
-  const removeTabFromGroup = useAppStore((s) => s.removeTabFromGroup)
   const addTabToGroup = useAppStore((s) => s.addTabToGroup)
   const splitGroup = useAppStore((s) => s.splitGroup)
   const closeGroup = useAppStore((s) => s.closeGroup)
   const setFocusedGroup = useAppStore((s) => s.setFocusedGroup)
-  const closeFile = useAppStore((s) => s.closeFile)
-  const closeBrowserTab = useAppStore((s) => s.closeBrowserTab)
-  const setOpenTerminals = useAppStore((s) => s.setOpenTerminals)
   const openFile = useAppStore((s) => s.openFile)
-  const openBrowserTab = useAppStore((s) => s.openBrowserTab)
-  const setActiveSection = useAppStore((s) => s.setActiveSection)
   const reorderTabsInGroup = useAppStore((s) => s.reorderTabsInGroup)
 
   const [plusOpen, setPlusOpen] = useState(false)
@@ -117,116 +102,21 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds, on
     splitRef.current?.focus()
   }
 
-  const closeTab = useCallback(
-    (ref: TabRef) => {
-      // Remove from group's tab list first
-      removeTabFromGroup(projectId, ref.id)
-      // Then dispose the underlying resource
-      if (ref.type === 'editor') closeFile(ref.id)
-      if (ref.type === 'browser') closeBrowserTab(ref.id)
-      if (ref.type === 'terminal') {
-        setOpenTerminals(openTerminals.filter((t) => t.id !== ref.id))
-      }
-    },
-    [projectId, removeTabFromGroup, closeFile, closeBrowserTab, setOpenTerminals, openTerminals],
-  )
+  const closeTab = (ref: TabRef) => closeWorkspaceTab(projectId, ref)
 
   // Render content for the active tab
   const activeRef = group.tabs.find((t) => t.id === group.activeTabId)
-  const activeContent: ReactNode = (() => {
-    if (!activeRef) return (
-      <WorkspaceEmptyTools projectId={projectId} />
-    )
-    if (activeRef.type === 'editor') {
-      const file = openFiles.find((f) => f.id === activeRef.id)
-      return file ? <EditorContent file={file} /> : null
-    }
-    if (activeRef.type === 'browser') {
-      const tab = browserTabs.find((t) => t.id === activeRef.id)
-      return tab ? <BrowserContent tab={tab} /> : null
-    }
-    if (activeRef.type === 'terminal') {
-      const term = openTerminals.find((t) => t.id === activeRef.id)
-      if (!term || !config) return null
-      return (
-        <TerminalView
-          sessionId={term.id}
-          projectId={term.projectId}
-          cwd={term.cwd}
-          baseUrl={config.baseUrl}
-          apiToken={config.apiToken}
-          initialCommand={term.initialCommand}
-        />
-      )
-    }
-    if (activeRef.type === 'git') {
-      const state = useAppStore.getState()
-      const project = state.projects.find(p => p.id === projectIdForWorkspaceContext(state, projectId))
-      const workspace = config ? state.knownProjectWorkspaces[workspaceSelectionKey(config.baseUrl, projectId)] : undefined
-      if (!project || !config) return null
-      return (
-        <div role="tabpanel" aria-label="Git & pull requests" className="h-full min-h-0 min-w-0 flex-1 overflow-hidden">
-          <GitTab
-            key={`${config.baseUrl}:${projectId}`}
-            project={project}
-            config={config}
-            workspace={workspace ? { id: workspace.workspaceId, path: workspace.path, branch: workspace.branch } : undefined}
-            onInspectTask={onInspectTask}
-          />
-        </div>
-      )
-    }
-    if (activeRef.type === 'files') {
-      return (
-        <section aria-label="Workspace files view" className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <FileExplorer />
-        </section>
-      )
-    }
-    if (activeRef.type === 'conversations') {
-      return (
-        <div role="tabpanel" aria-label="Conversations" className="h-full min-h-0 min-w-0 flex-1 overflow-hidden">
-          <ConversationsPanel projectId={projectId} />
-        </div>
-      )
-    }
-    return null
-  })()
+  const activeContent: ReactNode = activeRef
+    ? <TabContent projectId={projectId} tabRef={activeRef} onInspectTask={onInspectTask} />
+    : <WorkspaceEmptyTools projectId={projectId} />
 
-  const titleFor = (ref: TabRef): { title: string; isDirty?: boolean } => {
-    if (ref.type === 'editor') {
-      const f = openFiles.find((x) => x.id === ref.id)
-      return { title: f?.relativePath.split('/').pop() ?? 'Untitled', isDirty: f?.isDirty }
-    }
-    if (ref.type === 'browser') {
-      const t = browserTabs.find((x) => x.id === ref.id)
-      return { title: t?.title || 'New Tab' }
-    }
-    if (ref.type === 'terminal') {
-      const t = openTerminals.find((x) => x.id === ref.id)
-      return { title: t?.title || 'Shell' }
-    }
-    if (ref.type === 'git') {
-      return { title: 'Git & pull requests' }
-    }
-    if (ref.type === 'files') {
-      return { title: 'Files & terminals' }
-    }
-    if (ref.type === 'conversations') {
-      return { title: 'Conversations' }
-    }
-    return { title: '' }
-  }
+  const titleFor = (ref: TabRef) => tabTitle(ref, { openFiles, browserTabs, openTerminals })
+  const iconFor = (ref: TabRef, isActive: boolean) => <TabIcon tabRef={ref} active={isActive} />
 
-  const iconFor = (ref: TabRef, isActive: boolean) => {
-    const cls = isActive ? 'text-primary' : 'text-muted-foreground/50'
-    if (ref.type === 'editor') return <File size={11} className={cls} />
-    if (ref.type === 'browser') return <Globe size={11} className={cls} />
-    if (ref.type === 'git') return <GitBranch size={11} className={cls} />
-    if (ref.type === 'files') return <Folder size={11} className={cls} />
-    if (ref.type === 'conversations') return <MessageSquare size={11} className={cls} />
-    return <Terminal size={11} className={cls} />
-  }
+  const toolbarSlot = useContext(ToolbarTabSlotContext)
+  const openFileSidebar = useContext(OpenFileSidebarContext)
+  const inToolbar = Boolean(toolbarSlot) && siblingGroupIds.length <= 1
+  const placeStrip = (strip: ReactNode) => (inToolbar && toolbarSlot ? createPortal(strip, toolbarSlot) : strip)
 
   return (
     <div
@@ -237,8 +127,8 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds, on
         if (!isFocused) setFocusedGroup(projectId, group.id)
       }}
     >
-      {/* Tab strip */}
-      <div className="flex items-center border-b border-border/40 bg-muted/20 shrink-0 h-9 select-none">
+      {/* Tab strip: in the tool toolbar when this is the only group */}
+      {placeStrip(<div className={inToolbar ? 'flex h-full min-w-0 flex-1 items-center select-none' : 'flex items-center border-b border-border/40 bg-muted/20 shrink-0 h-9 select-none'}>
         <div role="tablist" aria-label="Workspace tool tabs" className="flex-1 flex items-center overflow-x-auto min-w-0 h-full">
           {group.tabs.map((ref, index) => {
             const isActive = group.activeTabId === ref.id
@@ -252,7 +142,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds, on
             return (
               <div
                 key={`${ref.type}-${ref.id}`}
-                className="relative inline-flex shrink-0 h-9 border-r border-border/30"
+                className={inToolbar ? 'relative inline-flex shrink-0 h-7' : 'relative inline-flex shrink-0 h-9 border-r border-border/30'}
                 draggable
                 onDragStart={(e) => {
                   setDraggingTabId(ref.id)
@@ -319,12 +209,14 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds, on
                     e.preventDefault()
                     setContextMenu({ x: e.clientX, y: e.clientY, tab: ref })
                   }}
-                  className={`group relative inline-flex items-center gap-1.5 px-3 h-9 transition-colors shrink-0 text-left ${
+                  className={`group relative inline-flex items-center gap-1.5 transition-colors shrink-0 text-left ${
                     isDragging ? 'cursor-grabbing opacity-40' : 'cursor-grab'
                   } ${
-                    isActive
-                      ? 'bg-background text-foreground font-medium shadow-xs border-t-2 border-t-primary -mt-px'
-                      : 'bg-transparent text-muted-foreground/75 hover:text-foreground hover:bg-muted/30'
+                    inToolbar
+                      ? `h-7 rounded-md px-2.5 ${isActive ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}`
+                      : `px-3 h-9 ${isActive
+                        ? 'bg-background text-foreground font-medium shadow-xs border-t-2 border-t-primary -mt-px'
+                        : 'bg-transparent text-muted-foreground/75 hover:text-foreground hover:bg-muted/30'}`
                   }`}
                   title={title}
                 >
@@ -374,7 +266,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds, on
               }
               setPlusOpen((v) => !v)
             }}
-            className={`inline-flex items-center justify-center size-9 transition-colors shrink-0 ${
+            className={`inline-flex items-center justify-center ${inToolbar ? 'size-7 rounded-md' : 'size-9'} transition-colors shrink-0 ${
               plusOpen
                 ? 'text-foreground bg-muted/50'
                 : 'text-muted-foreground/60 hover:text-foreground hover:bg-muted/30'
@@ -387,7 +279,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds, on
 
         {/* Split + close-group menu + controls — far right */}
         <div className="flex items-center shrink-0 pr-1 gap-0.5">
-          <WorkspaceToolsControls inToolbar={false} />
+          {!inToolbar && <WorkspaceToolsControls inToolbar={false} />}
           <button
             ref={splitRef}
             aria-label="Split group"
@@ -418,7 +310,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds, on
               <X size={13} />
             </button>
           )}
-          {onToggleTools && (
+          {onToggleTools && !inToolbar && (
             <button
               onClick={onToggleTools}
               aria-label="Hide workspace tools"
@@ -429,7 +321,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds, on
             </button>
           )}
         </div>
-      </div>
+      </div>)}
 
       {/* Content area */}
       <div
@@ -475,7 +367,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds, on
           data-portal-menu="open"
           className="fixed z-[9999] bg-popover border border-border/60 rounded-lg shadow-xl py-1 min-w-[240px] backdrop-blur-sm text-foreground"
           style={(() => {
-            const w = 240, h = 380, m = 8
+            const w = 240, h = 120, m = 8
             const left = Math.min(Math.max(m, plusAnchor.left), window.innerWidth - w - m)
             const top = plusAnchor.top + h + m > window.innerHeight ? Math.max(m, plusAnchor.top - h - 12) : plusAnchor.top
             return { left, top }
@@ -484,13 +376,23 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds, on
         >
           <PlusMenuItem
             icon={<Folder size={13} />}
-            label="Files & terminals"
+            label="Files"
             onClick={() => {
               closePlusMenu()
               setFocusedGroup(projectId, group.id)
               addTabToGroup(projectId, { type: 'files', id: 'files' }, group.id)
             }}
           />
+          {openFileSidebar && (
+            <PlusMenuItem
+              icon={<FolderTree size={13} />}
+              label="File sidebar"
+              onClick={() => {
+                closePlusMenu()
+                openFileSidebar()
+              }}
+            />
+          )}
           <PlusMenuItem
             icon={<GitBranch size={13} />}
             label="Git & pull requests"
@@ -498,118 +400,6 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds, on
               closePlusMenu()
               setFocusedGroup(projectId, group.id)
               addTabToGroup(projectId, { type: 'git', id: 'git' }, group.id)
-            }}
-          />
-          <PlusMenuItem
-            icon={<MessageSquare size={13} />}
-            label="Conversations"
-            onClick={() => {
-              closePlusMenu()
-              setFocusedGroup(projectId, group.id)
-              addTabToGroup(projectId, { type: 'conversations', id: 'conversations' }, group.id)
-            }}
-          />
-          <PlusMenuItem
-            icon={<Terminal size={13} />}
-            label="New Terminal"
-            shortcut="Ctrl+T"
-            onClick={() => {
-              closePlusMenu()
-              setFocusedGroup(projectId, group.id)
-              const id = `shell-${Date.now()}`
-              const { project: proj, cwd } = workspaceRoot()
-              const initialCommand = undefined
-              const title = proj ? `${proj.name} Shell` : 'Shell'
-              setOpenTerminals([
-                ...useAppStore.getState().openTerminals,
-                { id, title, projectId: proj?.id, cwd, initialCommand },
-              ])
-              addTabToGroup(projectId, { type: 'terminal', id }, group.id)
-            }}
-          />
-          <PlusMenuItem
-            icon={<Globe size={13} />}
-            label="New Browser Tab"
-            shortcut="Ctrl+Shift+B"
-            onClick={() => {
-              closePlusMenu()
-              setFocusedGroup(projectId, group.id)
-              openBrowserTab(undefined, projectId)
-            }}
-          />
-          <PlusMenuItem
-            icon={<FileText size={13} />}
-            label="New Markdown"
-            shortcut="Ctrl+Shift+M"
-            onClick={async () => {
-              closePlusMenu()
-              setFocusedGroup(projectId, group.id)
-              const root = workspaceRoot().cwd || explorerRoot
-              if (!root) {
-                alert('Cannot create markdown: no project root available. Open a project first.')
-                return
-              }
-              if (!config?.baseUrl) {
-                alert('Cannot create markdown: backend not connected.')
-                return
-              }
-              const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-              const filename = `Untitled-${stamp}.md`
-              const absPath = `${root.replace(/\/$/, '')}/${filename}`
-              const initial = `# Untitled\n\n`
-              try {
-                const url = `${config.baseUrl}/api/v1/workspace/file?path=${encodeURIComponent(absPath)}`
-                const headers: Record<string, string> = { 'Content-Type': 'text/plain' }
-                if (config.apiToken) headers['Authorization'] = `Bearer ${config.apiToken}`
-                const res = await fetch(url, { method: 'PUT', headers, body: initial })
-                if (!res.ok) {
-                  const errText = await res.text().catch(() => '')
-                  alert(`Failed to create file: HTTP ${res.status} ${errText.slice(0, 200)}`)
-                  return
-                }
-                openFile(absPath, filename, undefined, projectId)
-              } catch (err) {
-                alert(`Failed to create file: ${(err as Error).message}`)
-              }
-            }}
-          />
-          <div className="my-1 h-px bg-border/60" />
-          {[
-            { id: 'claude', label: 'Claude', command: 'claude' },
-            { id: 'codex', label: 'Codex', command: 'codex' },
-            { id: 'antigravity', label: 'Antigravity', command: 'agy' },
-            { id: 'opencode', label: 'OpenCode', command: 'opencode' },
-            { id: '8gent', label: '8gent', command: '8gent' },
-          ].map((agent) => (
-            <PlusMenuItem
-              key={agent.id}
-              icon={getAgentIcon(agent.id, 13)}
-              label={agent.label}
-              onClick={() => {
-                closePlusMenu()
-                setFocusedGroup(projectId, group.id)
-                const id = `shell-${Date.now()}`
-                const { project: proj, cwd } = workspaceRoot()
-                // `~` must stay unquoted so the shell expands it; any concrete
-                // path goes through shellQuote to defuse spaces / quotes / $.
-                const cdArg = cwd ? shellQuote(cwd) : '~'
-                const cmd = `cd ${cdArg} && clear && ${agent.command}`
-                const title = `${agent.label}${proj ? ` · ${proj.name}` : ''}`
-                setOpenTerminals([
-                  ...useAppStore.getState().openTerminals,
-                  { id, title, projectId: proj?.id, cwd, initialCommand: cmd },
-                ])
-                addTabToGroup(projectId, { type: 'terminal', id }, group.id)
-              }}
-            />
-          ))}
-          <div className="my-1 h-px bg-border/60" />
-          <PlusMenuItem
-            icon={<Settings size={13} className="text-muted-foreground" />}
-            label="Agent settings…"
-            onClick={() => {
-              closePlusMenu()
-              setActiveSection('AGENTS')
             }}
           />
         </div>,

@@ -16,7 +16,7 @@ afterEach(() => {
 })
 
 function mount(config: { baseUrl: string; apiToken: string } | null = null) {
-  const openBrowserTab = vi.fn()
+
   const setFocusedGroup = vi.fn()
   const addTabToGroup = vi.fn()
   const setOpenTerminals = vi.fn()
@@ -30,7 +30,7 @@ function mount(config: { baseUrl: string; apiToken: string } | null = null) {
     openFiles: [],
     openTerminals: [],
     config,
-    openBrowserTab,
+
     setFocusedGroup,
     addTabToGroup,
     setOpenTerminals,
@@ -45,22 +45,35 @@ function mount(config: { baseUrl: string; apiToken: string } | null = null) {
     isFocused={true}
     siblingGroupIds={['group-a']}
   />)
-  return { openBrowserTab, setFocusedGroup, addTabToGroup, setOpenTerminals, openFile, setActiveSection, splitGroup, closeGroup }
+  return { setFocusedGroup, addTabToGroup, setOpenTerminals, openFile, setActiveSection, splitGroup, closeGroup }
 }
 
 describe('workspace tab group menus', () => {
-  it('adds a browser tab in the current workspace and restores focus to the Add tab trigger', () => {
-    const { openBrowserTab, setFocusedGroup } = mount()
+  it('offers only Files, File sidebar and Git, adds them to this group and restores focus', () => {
+    const { addTabToGroup, setFocusedGroup } = mount()
     const trigger = screen.getByRole('button', { name: 'Add tab' })
     fireEvent.click(trigger)
-    expect(screen.getByRole('menu')).toBeInTheDocument()
-    expect(document.body).toContainElement(screen.getByRole('menu'))
-    fireEvent.click(screen.getByRole('menuitem', { name: /New Browser Tab/ }))
-
-    expect(openBrowserTab).toHaveBeenCalledExactlyOnceWith(undefined, 'project-a')
+    const menu = screen.getByRole('menu')
+    expect(document.body).toContainElement(menu)
+    expect(screen.getAllByRole('menuitem').map(item => item.getAttribute('aria-label'))).toEqual(['Files', 'Git & pull requests'])
+    expect(screen.queryByRole('menuitem', { name: /Terminal|Browser|Markdown|Conversations/ })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Git & pull requests' }))
+    expect(addTabToGroup).toHaveBeenCalledExactlyOnceWith('project-a', { type: 'git', id: 'git' }, 'group-a')
     expect(setFocusedGroup).toHaveBeenCalledExactlyOnceWith('project-a', 'group-a')
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
     expect(trigger).toHaveFocus()
+  })
+
+  it('never renders center-type tabs left over in a legacy group', () => {
+    useAppStore.setState({ openTerminals: [{ id: 'shell-1', title: 'Old shell' }] })
+    render(<TabGroupPanel
+      projectId="project-a"
+      group={{ id: 'legacy', tabs: [{ type: 'terminal', id: 'shell-1' }, { type: 'git', id: 'git' }], activeTabId: 'shell-1' }}
+      isFocused={true}
+      siblingGroupIds={['legacy']}
+    />)
+    expect(screen.queryByRole('tab', { name: /Old shell/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Git & pull requests/ })).toBeInTheDocument()
   })
 
   it('splits downward by group ID and closes without closing the group on Escape', () => {
@@ -77,58 +90,6 @@ describe('workspace tab group menus', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
     expect(trigger).toHaveFocus()
     expect(closeGroup).not.toHaveBeenCalled()
-  })
-
-  it('creates an idle terminal in the exact project workspace through the terminal menu choice', () => {
-    const { setOpenTerminals, setFocusedGroup, addTabToGroup } = mount()
-    fireEvent.click(screen.getByRole('button', { name: 'Add tab' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'New Terminal' }))
-
-    expect(setOpenTerminals).toHaveBeenCalledOnce()
-    const [term] = setOpenTerminals.mock.calls[0][0]
-    expect(term).toMatchObject({ title: 'Alpha Shell', projectId: 'project-a', cwd: 'C:/fixture/alpha', initialCommand: undefined })
-    expect(addTabToGroup).toHaveBeenCalledExactlyOnceWith('project-a', { type: 'terminal', id: term.id }, 'group-a')
-    expect(setFocusedGroup).toHaveBeenCalledExactlyOnceWith('project-a', 'group-a')
-  })
-
-  it.each([
-    ['Claude', 'claude'], ['Codex', 'codex'], ['Antigravity', 'agy'], ['OpenCode', 'opencode'], ['8gent', '8gent'],
-  ])('starts the %s terminal choice with a safely scoped workspace command', (label, executable) => {
-    const { setOpenTerminals, addTabToGroup } = mount()
-    fireEvent.click(screen.getByRole('button', { name: 'Add tab' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: label }))
-
-    const [term] = setOpenTerminals.mock.calls[0][0]
-    expect(term).toMatchObject({
-      title: `${label} · Alpha`,
-      projectId: 'project-a',
-      cwd: 'C:/fixture/alpha',
-      initialCommand: `cd 'C:/fixture/alpha' && clear && ${executable}`,
-    })
-    expect(addTabToGroup).toHaveBeenCalledExactlyOnceWith('project-a', { type: 'terminal', id: term.id }, 'group-a')
-  })
-
-  it('creates Markdown through the scoped fixture HTTP boundary and opens the same path', async () => {
-    const { openFile } = mount({ baseUrl: 'http://fixture.invalid', apiToken: 'fixture-token' })
-    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => ({ ok: true, status: 201, text: async () => '' }))
-    vi.stubGlobal('fetch', fetchMock)
-    vi.spyOn(Date.prototype, 'toISOString').mockReturnValue('2026-10-05T12:34:56.000Z')
-    fireEvent.click(screen.getByRole('button', { name: 'Add tab' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'New Markdown' }))
-
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
-    const [url, request] = fetchMock.mock.calls[0]
-    expect(url).toBe('http://fixture.invalid/api/v1/workspace/file?path=C%3A%2Ffixture%2Falpha%2FUntitled-2026-10-05T12-34-56.md')
-    expect(request).toMatchObject({ method: 'PUT', body: '# Untitled\n\n' })
-    expect(openFile).toHaveBeenCalledExactlyOnceWith('C:/fixture/alpha/Untitled-2026-10-05T12-34-56.md', 'Untitled-2026-10-05T12-34-56.md', undefined, 'project-a')
-  })
-
-  it('routes Agent settings to the existing Agents section without opening a terminal', () => {
-    const { setActiveSection, setOpenTerminals } = mount()
-    fireEvent.click(screen.getByRole('button', { name: 'Add tab' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: /Agent settings/ }))
-    expect(setActiveSection).toHaveBeenCalledExactlyOnceWith('AGENTS')
-    expect(setOpenTerminals).not.toHaveBeenCalled()
   })
 
   it('closes the group only after choosing Close group', () => {

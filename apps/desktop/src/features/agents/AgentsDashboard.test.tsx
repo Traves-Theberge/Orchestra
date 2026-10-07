@@ -5,8 +5,10 @@ import { resetAppStore, useAppStore } from '@core/store'
 
 const mockUseClaudeConfig = vi.fn()
 const mockUseCodexConfig = vi.fn()
-const mockUseGeminiConfig = vi.fn()
 const mockUseOpenCodeConfig = vi.fn()
+vi.mock('./panels/OrchestraAgentsPanel', () => ({ OrchestraAgentsPanel: ({ projectId }: { projectId: string }) => <div>Orchestra agents [{projectId}]</div> }))
+vi.mock('./panels/OrchestraSkillsPanel', () => ({ OrchestraSkillsPanel: () => <div>Orchestra skills</div> }))
+vi.mock('./panels/McpStatusPanel', () => ({ McpStatusPanel: ({ harness }: { harness?: string }) => <div>MCP status {harness ?? 'all'}</div> }))
 vi.mock('./panels/AgentResourcesPanel', () => ({ AgentResourcesPanel: ({ harness, scope, kind }: { harness: string; scope: string; kind: string }) => <div>{harness} {scope} {kind} resources</div> }))
 
 vi.mock('./hooks/use-claude-config', () => ({
@@ -15,7 +17,6 @@ vi.mock('./hooks/use-claude-config', () => ({
 
 vi.mock('./hooks/use-provider-domain-config', () => ({
   useCodexConfig: (...args: unknown[]) => mockUseCodexConfig(...args),
-  useGeminiConfig: (...args: unknown[]) => mockUseGeminiConfig(...args),
   useOpenCodeConfig: (...args: unknown[]) => mockUseOpenCodeConfig(...args),
 }))
 
@@ -29,7 +30,6 @@ vi.mock('./panels/SkillsPanel', () => ({ SkillsPanel: marker('Claude Skills Pane
 vi.mock('./panels/HooksPanel', () => ({ HooksPanel: marker('Hooks Panel') }))
 vi.mock('./panels/MCPPanel', () => ({ MCPPanel: marker('MCP Panel') }))
 vi.mock('./panels/RulesPanel', () => ({ RulesPanel: marker('Claude Rules Panel') }))
-vi.mock('./panels/SubAgentsPanel', () => ({ SubAgentsPanel: marker('Claude SubAgents Panel') }))
 vi.mock('./panels/PermissionsPanel', () => ({ PermissionsPanel: marker('Generic Permissions Panel') }))
 vi.mock('./panels/CodexConfigPanel', () => ({ CodexConfigPanel: marker('Codex Config Panel') }))
 vi.mock('./panels/CodexApprovalsPanel', () => ({ CodexApprovalsPanel: marker('Codex Approvals Panel') }))
@@ -37,21 +37,12 @@ vi.mock('./panels/CodexModelPanel', () => ({ CodexModelPanel: marker('Codex Mode
 vi.mock('./panels/CodexEnvironmentPanel', () => ({ CodexEnvironmentPanel: marker('Codex Environment Panel') }))
 vi.mock('./panels/CodexProfilesPanel', () => ({ CodexProfilesPanel: marker('Codex Profiles Panel') }))
 vi.mock('./panels/CodexInstructionsPanel', () => ({ CodexInstructionsPanel: marker('Codex Instructions Panel') }))
-vi.mock('./panels/CodexSubAgentsPanel', () => ({ CodexSubAgentsPanel: marker('Codex SubAgents Panel') }))
-vi.mock('./panels/CodexSkillsPanel', () => ({ CodexSkillsPanel: marker('Codex Skills Panel') }))
 vi.mock('./panels/CodexRulesPanel', () => ({ CodexRulesPanel: marker('Codex Rules Panel') }))
-vi.mock('./panels/GeminiSettingsPanel', () => ({ GeminiSettingsPanel: marker('Gemini Settings') }))
-vi.mock('./panels/GeminiModelPanel', () => ({ GeminiModelPanel: marker('Gemini Model Panel') }))
-vi.mock('./panels/GeminiPermissionsPanel', () => ({ GeminiPermissionsPanel: marker('Gemini Permissions Panel') }))
-vi.mock('./panels/GeminiContextPanel', () => ({ GeminiContextPanel: marker('Gemini Context Panel') }))
-vi.mock('./panels/GeminiCommandsPanel', () => ({ GeminiCommandsPanel: marker('Gemini Commands Panel') }))
 vi.mock('./panels/OpenCodeConfigPanel', () => ({ OpenCodeConfigPanel: marker('OpenCode Config') }))
 vi.mock('./panels/OpenCodeModelPanel', () => ({ OpenCodeModelPanel: marker('OpenCode Model Panel') }))
 vi.mock('./panels/OpenCodeInstructionsPanel', () => ({ OpenCodeInstructionsPanel: marker('OpenCode Instructions Panel') }))
 vi.mock('./panels/OpenCodePermissionsPanel', () => ({ OpenCodePermissionsPanel: marker('OpenCode Permissions Panel') }))
-vi.mock('./panels/OpenCodeAgentsPanel', () => ({ OpenCodeAgentsPanel: marker('OpenCode Agents Panel') }))
 vi.mock('./panels/OpenCodeCommandsPanel', () => ({ OpenCodeCommandsPanel: marker('OpenCode Commands Panel') }))
-vi.mock('./panels/OpenCodeSkillsPanel', () => ({ OpenCodeSkillsPanel: marker('OpenCode Skills Panel') }))
 
 function makeCommonState() {
   return {
@@ -84,7 +75,6 @@ describe('AgentsDashboard', () => {
   it('uses the sidebar scope for configuration reads and removes duplicate dashboard controls', async () => {
     mockUseClaudeConfig.mockReturnValue({ ...makeCommonState(), rules: [], skills: [], subagents: [] })
     mockUseCodexConfig.mockReturnValue({ ...makeCommonState(), config: [], instructions: [], subagents: [], skills: [], rules: [] })
-    mockUseGeminiConfig.mockReturnValue({ ...makeCommonState(), settings: [], context: [], commands: [] })
     mockUseOpenCodeConfig.mockReturnValue({ ...makeCommonState(), config: [], agents: [], commands: [], skills: [] })
     act(() => useAppStore.getState().setActiveAgentProvider('codex'))
     render(<AgentsDashboard config={{ baseUrl: 'http://localhost:4010', apiToken: 'test' }} />)
@@ -96,7 +86,7 @@ describe('AgentsDashboard', () => {
       // AgentsSubNav uses this same store action for its scope dropdown.
       useAppStore.getState().setActiveAgentScope('PROJECT', 'project-1')
     })
-    expect(await screen.findByText('Harness setup')).toBeTruthy()
+    expect(await screen.findByText('Codex Config Panel')).toBeTruthy()
     expect(mockUseCodexConfig).toHaveBeenLastCalledWith(expect.anything(), 'PROJECT', 'project-1')
     act(() => useAppStore.getState().setActiveAgentCategory('mcp'))
     expect(mockUseCodexConfig).toHaveBeenLastCalledWith(expect.anything(), 'PROJECT', 'project-1')
@@ -108,13 +98,42 @@ describe('AgentsDashboard', () => {
     expect(screen.queryByText(/Project MCP configuration is read-only here/)).toBeNull()
   })
 
-  it('normalizes stale Gemini tab state to Antigravity without exposing Gemini as an active tab', async () => {
+  it('normalizes retired Gemini tab state to the Orchestra view without exposing Gemini', async () => {
+    mockUseClaudeConfig.mockReturnValue({ ...makeCommonState(), rules: [], skills: [], subagents: [] })
+    mockUseCodexConfig.mockReturnValue({ ...makeCommonState(), config: [], instructions: [], subagents: [], skills: [], rules: [] })
+    mockUseOpenCodeConfig.mockReturnValue({ ...makeCommonState(), config: [], agents: [], commands: [], skills: [] })
     useAppStore.setState({ activeAgentProvider: 'gemini', availableAgents: ['gemini', 'antigravity'] } as never)
-    render(<AgentsDashboard config={null} />)
+    render(<AgentsDashboard config={{ baseUrl: 'http://localhost:4010', apiToken: 'test' }} />)
 
-    await waitFor(() => expect(useAppStore.getState().activeAgentProvider).toBe('antigravity'))
-    expect(screen.getByRole('heading', { name: 'Antigravity' })).toBeInTheDocument()
-    expect(screen.queryByText('Gemini Settings')).not.toBeInTheDocument()
+    await waitFor(() => expect(useAppStore.getState().activeAgentProvider).toBe('orchestra'))
+    expect(await screen.findByText('Orchestra agents []')).toBeInTheDocument()
+    expect(screen.queryByText(/Gemini/)).not.toBeInTheDocument()
+  })
+
+  it('routes the Orchestra view to agents, skills and MCP status', async () => {
+    mockUseClaudeConfig.mockReturnValue({ ...makeCommonState(), rules: [], skills: [], subagents: [] })
+    mockUseCodexConfig.mockReturnValue({ ...makeCommonState(), config: [], instructions: [], subagents: [], skills: [], rules: [] })
+    mockUseOpenCodeConfig.mockReturnValue({ ...makeCommonState(), config: [], agents: [], commands: [], skills: [] })
+    act(() => useAppStore.getState().setActiveAgentProvider('orchestra'))
+    render(<AgentsDashboard config={{ baseUrl: 'http://localhost:4010', apiToken: 'test' }} />)
+    expect(await screen.findByText('Orchestra agents []')).toBeInTheDocument()
+    expect(useAppStore.getState().agentCategories.map(item => item.id)).toEqual(['agents', 'skills', 'mcp'])
+    act(() => useAppStore.getState().setActiveAgentCategory('skills'))
+    expect(screen.getByText('Orchestra skills')).toBeInTheDocument()
+    act(() => useAppStore.getState().setActiveAgentCategory('mcp'))
+    expect(screen.getByText('MCP status all')).toBeInTheDocument()
+    expect(mockUseCodexConfig).toHaveBeenLastCalledWith(null, 'GLOBAL', undefined)
+  })
+
+  it('shows MCP status for the harness above its MCP editor', () => {
+    mockUseClaudeConfig.mockReturnValue({ ...makeCommonState(), rules: [], skills: [], subagents: [] })
+    mockUseCodexConfig.mockReturnValue({ ...makeCommonState(), config: [], instructions: [], subagents: [], skills: [], rules: [] })
+    mockUseOpenCodeConfig.mockReturnValue({ ...makeCommonState(), config: [], agents: [], commands: [], skills: [] })
+    act(() => { useAppStore.getState().setActiveAgentProvider('codex') })
+    render(<AgentsDashboard config={{ baseUrl: 'http://localhost:4010', apiToken: 'test' }} />)
+    act(() => useAppStore.getState().setActiveAgentCategory('mcp'))
+    expect(screen.getByText('MCP status codex')).toBeInTheDocument()
+    expect(screen.getByText('MCP Panel')).toBeInTheDocument()
   })
   it('routes OpenCode categories to provider-specific panels', () => {
     mockUseClaudeConfig.mockReturnValue({
@@ -145,12 +164,6 @@ describe('AgentsDashboard', () => {
       subagents: [],
       skills: [],
       rules: [],
-    })
-    mockUseGeminiConfig.mockReturnValue({
-      ...makeCommonState(),
-      settings: [],
-      context: [],
-      commands: [],
     })
     mockUseOpenCodeConfig.mockReturnValue({
       ...makeCommonState(),
@@ -199,7 +212,6 @@ describe('AgentsDashboard', () => {
     const reload = vi.fn()
     mockUseClaudeConfig.mockReturnValue({ ...makeCommonState(), rules: [], skills: [], subagents: [] })
     mockUseCodexConfig.mockReturnValue({ ...makeCommonState(), config: [], instructions: [], subagents: [], skills: [], rules: [], readError: '403 forbidden', reload })
-    mockUseGeminiConfig.mockReturnValue({ ...makeCommonState(), settings: [], context: [], commands: [] })
     mockUseOpenCodeConfig.mockReturnValue({ ...makeCommonState(), config: [], agents: [], commands: [], skills: [] })
     act(() => {
       useAppStore.getState().setActiveAgentProvider('codex')

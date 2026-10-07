@@ -3,9 +3,9 @@
  */
 
 import type { StateCreator } from 'zustand'
-import { GLOBAL_PROJECT_ID } from '../types'
-import type { AppState, WorkspaceSlice, TreeNode, WorkspaceContextID, TabRef, TabGroup, TabGroupLayoutNode } from '../types'
-import { newGroupId, splitLeaf, removeLeaf, updateNodeAtPath, collectGroupIds } from '../group-helpers'
+import { CENTER_TASKS_TAB, CENTER_WORKSPACE_TAB, GLOBAL_PROJECT_ID } from '../types'
+import type { AppState, CenterTabState, WorkspaceSlice, TreeNode, WorkspaceContextID, TabRef, TabGroup, TabGroupLayoutNode } from '../types'
+import { newGroupId, splitLeaf, removeLeaf, updateNodeAtPath, collectGroupIds, isCenterTab, isSideTab } from '../group-helpers'
 import { getActiveWorkspaceContextId, selectedProjectWorkspace, workspaceResourceContext, workspaceSelectionKey } from '../workspace-context'
 
 // ---------------------------------------------------------------------------
@@ -72,6 +72,8 @@ export const createWorkspaceSlice: StateCreator<AppState, [], [], WorkspaceSlice
   projectGroups: {},
   projectLayouts: {},
   projectFocusedGroupId: {},
+  projectCenterTabs: {},
+  sideToolRequests: {},
   activeLeftPanel: 'explorer',
   leftSidebarOpen: true,
   leftSidebarWidth: 280,
@@ -200,7 +202,17 @@ export const createWorkspaceSlice: StateCreator<AppState, [], [], WorkspaceSlice
 
   // ---- Tab-group actions --------------------------------------------------
   addTabToGroup: (projectId, ref, groupId) => {
-    const state = get()
+    const migrated = withMigratedTabs(get(), projectId)
+    if (isCenterTab(ref)) {
+      const center = migrated.projectCenterTabs[projectId] ?? emptyCenter()
+      const tabs = center.tabs.some(t => t.id === ref.id) ? center.tabs : [...center.tabs, ref]
+      set({
+        projectGroups: migrated.projectGroups,
+        projectCenterTabs: { ...migrated.projectCenterTabs, [projectId]: selectInCenter({ ...center, tabs }, ref.id) },
+      })
+      return
+    }
+    const state = migrated
     const ensure = ensureProjectGroups(state, projectId)
     const targetGroupId = groupId ?? ensure.focusedGroupId
     const groups = { ...ensure.groups }
@@ -232,10 +244,22 @@ export const createWorkspaceSlice: StateCreator<AppState, [], [], WorkspaceSlice
       projectGroups: { ...state.projectGroups, [projectId]: groups },
       projectLayouts: { ...state.projectLayouts, [projectId]: layout },
       projectFocusedGroupId: { ...state.projectFocusedGroupId, [projectId]: focused },
+      projectCenterTabs: state.projectCenterTabs,
+      sideToolRequests: { ...state.sideToolRequests, [projectId]: (state.sideToolRequests[projectId] ?? 0) + 1 },
     })
   },
 
   removeTabFromGroup: (projectId, tabId) => {
+    const migrated = withMigratedTabs(get(), projectId)
+    const center = migrated.projectCenterTabs[projectId]
+    if (center?.tabs.some(t => t.id === tabId)) {
+      set({
+        projectGroups: migrated.projectGroups,
+        projectCenterTabs: { ...migrated.projectCenterTabs, [projectId]: removeFromCenter(center, tabId) },
+      })
+      return
+    }
+    if (migrated !== get()) set({ projectGroups: migrated.projectGroups, projectCenterTabs: migrated.projectCenterTabs })
     const state = get()
     const groups = state.projectGroups[projectId]
     if (!groups) return
@@ -261,6 +285,16 @@ export const createWorkspaceSlice: StateCreator<AppState, [], [], WorkspaceSlice
   },
 
   activateTabInGroup: (projectId, tabId) => {
+    const migrated = withMigratedTabs(get(), projectId)
+    const center = migrated.projectCenterTabs[projectId]
+    if (center?.tabs.some(t => t.id === tabId)) {
+      set({
+        projectGroups: migrated.projectGroups,
+        projectCenterTabs: { ...migrated.projectCenterTabs, [projectId]: selectInCenter(center, tabId) },
+      })
+      return
+    }
+    if (migrated !== get()) set({ projectGroups: migrated.projectGroups, projectCenterTabs: migrated.projectCenterTabs })
     const state = get()
     const groups = state.projectGroups[projectId]
     if (!groups) return
@@ -393,7 +427,102 @@ export const createWorkspaceSlice: StateCreator<AppState, [], [], WorkspaceSlice
       projectFocusedGroupId: { ...state.projectFocusedGroupId, [projectId]: groupId },
     })
   },
+
+  // ---- Center tab actions -------------------------------------------------
+  selectCenterTab: (projectId, id) => {
+    const migrated = withMigratedTabs(get(), projectId)
+    const center = migrated.projectCenterTabs[projectId] ?? emptyCenter()
+    if (!isFixedCenterId(id) && !center.tabs.some(t => t.id === id)) return
+    const next = selectInCenter(center, id)
+    if (next === center && migrated === get()) return
+    set({
+      projectGroups: migrated.projectGroups,
+      projectCenterTabs: { ...migrated.projectCenterTabs, [projectId]: next },
+    })
+  },
+
+  reorderCenterTabs: (projectId, fromIndex, toIndex) => {
+    const migrated = withMigratedTabs(get(), projectId)
+    const center = migrated.projectCenterTabs[projectId]
+    if (!center) return
+    const tabs = reorder(center.tabs, fromIndex, toIndex)
+    if (tabs === center.tabs) return
+    set({
+      projectGroups: migrated.projectGroups,
+      projectCenterTabs: { ...migrated.projectCenterTabs, [projectId]: { ...center, tabs } },
+    })
+  },
+
+  normalizeWorkspaceTabs: (projectId) => {
+    const migrated = withMigratedTabs(get(), projectId)
+    if (migrated === get()) return
+    set({ projectGroups: migrated.projectGroups, projectCenterTabs: migrated.projectCenterTabs })
+  },
 })
+
+// ---------------------------------------------------------------------------
+// Center tab helpers
+// ---------------------------------------------------------------------------
+
+function emptyCenter(): CenterTabState {
+  return { tabs: [], selectedId: CENTER_WORKSPACE_TAB, history: [] }
+}
+
+function isFixedCenterId(id: string): boolean {
+  return id === CENTER_WORKSPACE_TAB || id === CENTER_TASKS_TAB
+}
+
+/** Select `id`, remembering the previous selection for close fallback. */
+function selectInCenter(center: CenterTabState, id: string): CenterTabState {
+  if (center.selectedId === id) return center
+  const history = [...center.history.filter(h => h !== id && h !== center.selectedId), center.selectedId].slice(-50)
+  return { ...center, selectedId: id, history }
+}
+
+/** Remove a tab; when it was selected fall back to the previous valid selection, or Workspace. */
+function removeFromCenter(center: CenterTabState, tabId: string): CenterTabState {
+  const tabs = center.tabs.filter(t => t.id !== tabId)
+  const valid = (id: string) => isFixedCenterId(id) || tabs.some(t => t.id === id)
+  const history = center.history.filter(h => h !== tabId && valid(h))
+  if (center.selectedId !== tabId) return { ...center, tabs, history }
+  const selectedId = history[history.length - 1] ?? CENTER_WORKSPACE_TAB
+  return { tabs, selectedId, history: history.slice(0, -1) }
+}
+
+function reorder<T>(items: T[], fromIndex: number, toIndex: number): T[] {
+  if (fromIndex < 0 || fromIndex >= items.length || toIndex < 0 || toIndex > items.length || fromIndex === toIndex) return items
+  const next = items.slice()
+  const [moved] = next.splice(fromIndex, 1)
+  // When moving forward, the splice above shifts subsequent indices left by one.
+  next.splice(toIndex > fromIndex ? toIndex - 1 : toIndex, 0, moved)
+  return next.every((item, i) => item === items[i]) ? items : next
+}
+
+/**
+ * Legacy migration: tab groups used to hold terminal/browser/editor/conversations
+ * tabs. Move any such refs for `projectId` into the center strip (preserving
+ * order) and repair group activeTabIds. Returns `state` itself when unchanged.
+ */
+function withMigratedTabs(state: AppState, projectId: WorkspaceContextID): AppState {
+  const groups = state.projectGroups[projectId]
+  if (!groups || !Object.values(groups).some(g => g.tabs.some(isCenterTab))) return state
+  const center = state.projectCenterTabs[projectId] ?? emptyCenter()
+  const moved: TabRef[] = []
+  const nextGroups: Record<string, TabGroup> = {}
+  for (const [id, group] of Object.entries(groups)) {
+    const sideTabs = group.tabs.filter(isSideTab)
+    for (const ref of group.tabs) if (isCenterTab(ref)) moved.push(ref)
+    const activeTabId = sideTabs.some(t => t.id === group.activeTabId) ? group.activeTabId : (sideTabs[sideTabs.length - 1]?.id ?? null)
+    nextGroups[id] = { ...group, tabs: sideTabs, activeTabId }
+  }
+  const tabs = [...center.tabs]
+  for (const ref of moved) if (!tabs.some(t => t.id === ref.id)) tabs.push(ref)
+  return {
+    ...state,
+    projectGroups: { ...state.projectGroups, [projectId]: nextGroups },
+    projectCenterTabs: { ...state.projectCenterTabs, [projectId]: { ...center, tabs } },
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Internal helpers

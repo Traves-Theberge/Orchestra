@@ -9,6 +9,7 @@ export function getAgentIcon(name: string, size = 12): ReactNode {
   if (lower.includes('codex')) return <img src="./OpenAI_Symbol_1.png" width={size} height={size} alt="Codex" className={`${imgClass} dark:invert`} />
   if (lower.includes('gemini')) return <img src="./Google_Symbol_1.png" width={size} height={size} alt="Gemini" className={imgClass} />
   if (lower.includes('opencode')) return <img src="./opencode.png" width={size} height={size} alt="OpenCode" className={imgClass} />
+  if (lower.includes('antigravity')) return <img src="./antigravity.png" width={size} height={size} alt="Antigravity" className={imgClass} />
   if (lower.includes('8gent')) return <img src="./8gent.png" width={size} height={size} alt="8gent" className={imgClass} />
   return <Bot size={size} className="text-primary/60" />
 }

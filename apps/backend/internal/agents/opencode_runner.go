@@ -1,13 +1,13 @@
 package agents
 
 import (
-	"context"
 	"errors"
+	"regexp"
 )
 
-var ErrOpenCodeAgentSelectionUnverified = errors.New("OpenCode primary-agent selection is disabled until the installed CLI version and effective selection are verified by a canary")
-
 // OpenCodeRunner wraps CommandRunner with OpenCode-specific provider identification.
+// Agent selection is validated by the embedded CommandRunner capability check
+// and applied through an OPENCODE_CONFIG temp file plus --agent.
 type OpenCodeRunner struct {
 	*CommandRunner
 }
@@ -18,13 +18,14 @@ func NewOpenCodeRunner(command string) *OpenCodeRunner {
 	return &OpenCodeRunner{CommandRunner: NewCommandRunner(ProviderOpenCode, command)}
 }
 
-// ValidateAgentSelection intentionally fails closed. Current upstream CLI
-// documentation exposes --agent, but this runner has no installed-version,
-// effective-agent observation, or canary contract to prove that the flag is
-// honored by the configured command.
-func (r *OpenCodeRunner) ValidateAgentSelection(_ context.Context, request TurnRequest) error {
-	if request.RequestedAgentID == "" || request.RequestedAgentScope != "project" && request.RequestedAgentScope != "global" || request.RequestedAgentContentHash == "" {
-		return errors.New("requested OpenCode agent identity is incomplete")
+// OpenCode addresses models as "provider/model", e.g. "anthropic/claude-sonnet-5-5".
+var openCodeModelPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}/[A-Za-z0-9][A-Za-z0-9._:/\[\]-]{0,159}$`)
+
+// ValidateRequestedModel accepts well-formed provider/model ids; OpenCode itself
+// reports models the account cannot use. The adapter passes it as -m.
+func (r *OpenCodeRunner) ValidateRequestedModel(model string) error {
+	if !openCodeModelPattern.MatchString(model) {
+		return errors.New("model must be an OpenCode provider/model id")
 	}
-	return ErrOpenCodeAgentSelectionUnverified
+	return nil
 }

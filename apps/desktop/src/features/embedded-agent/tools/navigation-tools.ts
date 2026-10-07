@@ -3,11 +3,11 @@ import { z } from 'zod'
 
 const SECTIONS = [
   'ISSUES',
+  'AUTOMATIONS',
   'PROJECTS',
   'CONSOLE',
   'AGENTS',
   'WAREHOUSE',
-  'SANDBOX',
   'SETTINGS',
   'DOCS',
 ] as const
@@ -16,6 +16,7 @@ const SETTINGS_TABS = [
   'backend',
   'agents',
   'integrations',
+  'remote',
   'shortcuts',
   'notifications',
 ] as const
@@ -32,11 +33,11 @@ export function createNavigationTools(
       description:
         'Navigate the app to a specific section. ' +
         'Section mapping: ISSUES=Tasks/Issues, PROJECTS=Projects, CONSOLE=Live Console/Terminal, ' +
-        'AGENTS=Agent config, WAREHOUSE=Analytics/Token usage, SANDBOX=Code execution, ' +
+        'AGENTS=Agent config, WAREHOUSE=Analytics/Token usage, ' +
         'SETTINGS=Settings, DOCS=Documentation. ' +
         'Use when the user asks to go to, open, or show a section.',
       inputSchema: z.object({
-        section: z.enum(SECTIONS).describe('Section ID: ISSUES, PROJECTS, CONSOLE, AGENTS, WAREHOUSE (analytics), SANDBOX, SETTINGS, DOCS'),
+        section: z.enum(SECTIONS).describe('Section ID: ISSUES, PROJECTS, CONSOLE, AGENTS, WAREHOUSE (analytics), SETTINGS, DOCS'),
       }),
       execute: async (params) => {
         onNavigate(params.section)
@@ -46,7 +47,8 @@ export function createNavigationTools(
 
     open_settings_tab: tool({
       description:
-        'Open a specific tab within Settings (backend, agents, integrations, shortcuts, notifications). ' +
+        'Open a specific tab within Settings (backend, agents, integrations, remote, shortcuts, notifications). ' +
+        'Use remote for remote code execution (Unsandbox, Tailscale, Kubernetes). ' +
         'Use when the user asks to open a specific settings tab.',
       inputSchema: z.object({
         tab: z.enum(SETTINGS_TABS).describe('The settings tab to open'),

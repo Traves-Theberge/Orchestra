@@ -8,6 +8,8 @@ type NotificationState = {
   notifVolume: number
   setNotifVolume: (volume: number) => void
   playNotification: (issueIdentifier: string) => void
+  /** Plays the configured sound and shows an OS notification with a custom title and body. */
+  notify: (title: string, body: string) => void
 }
 
 /**
@@ -40,7 +42,7 @@ export function useNotifications(): NotificationState {
     localStorage.setItem('orchestra_notif_volume', String(volume))
   }
 
-  const playNotification = (issueIdentifier: string) => {
+  const notify = (title: string, body: string) => {
     if (notifMuted) return
 
     // Play audio notification
@@ -86,8 +88,8 @@ export function useNotifications(): NotificationState {
 
     // Show browser notification
     if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification('Agent Completed', {
-        body: `${issueIdentifier} has been moved to Review.`,
+      new Notification(title, {
+        body,
         icon: './favicon.ico',
       })
     } else if ('Notification' in window && Notification.permission !== 'denied') {
@@ -95,10 +97,15 @@ export function useNotifications(): NotificationState {
     }
   }
 
+  const playNotification = (issueIdentifier: string) => {
+    notify('Agent Completed', `${issueIdentifier} has been moved to Review.`)
+  }
+
   return {
     notifSound, setNotifSound,
     notifMuted, setNotifMuted,
     notifVolume, setNotifVolume,
     playNotification,
+    notify,
   }
 }

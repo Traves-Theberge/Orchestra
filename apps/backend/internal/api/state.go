@@ -16,7 +16,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
-	"github.com/orchestra/orchestra/apps/backend/internal/mcp"
 	"github.com/orchestra/orchestra/apps/backend/internal/orchestrator"
 	"github.com/orchestra/orchestra/apps/backend/internal/presenter"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
@@ -1387,75 +1386,4 @@ func (s *Server) GetMCPServers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"servers": servers})
-}
-
-// PostMCPServer handles POST /api/v1/mcp/servers by creating a new MCP server
-// entry and hot-reloading the MCP registry in the orchestrator.
-func (s *Server) PostMCPServer(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Name    string `json:"name"`
-		Command string `json:"command"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "invalid_json", "failed to decode request body")
-		return
-	}
-	if s.db == nil {
-		writeJSONError(w, http.StatusServiceUnavailable, "db_unavailable", "database not configured")
-		return
-	}
-
-	server, err := s.db.CreateMCPServer(r.Context(), body.Name, body.Command)
-	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "db_failed", "database operation failed")
-		return
-	}
-
-	// Hot reload orchestrator
-	snapshot := s.orchestrator.Snapshot()
-	allServers := snapshot.MCPServers
-	if allServers == nil {
-		allServers = make(map[string]string)
-	}
-	allServers[body.Name] = body.Command
-
-	// Create fresh registry
-	newReg := mcp.NewRegistry(allServers, s.logger)
-	newReg.StartAll(r.Context())
-	s.orchestrator.SetMCPRegistry(newReg, allServers)
-
-	writeJSON(w, http.StatusCreated, server)
-}
-
-// DeleteMCPServer handles DELETE /api/v1/mcp/servers/{id} by removing the MCP
-// server entry and rebuilding the MCP registry from the remaining database
-// entries and static configuration.
-func (s *Server) DeleteMCPServer(w http.ResponseWriter, r *http.Request) {
-	if s.db == nil {
-		writeJSONError(w, http.StatusServiceUnavailable, "db_unavailable", "database not configured")
-		return
-	}
-	id := chi.URLParam(r, "id")
-	if err := s.db.DeleteMCPServer(r.Context(), id); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "db_failed", "database operation failed")
-		return
-	}
-
-	// Reload all from DB + config to sync orchestrator
-	// Simplest: just tell user to restart OR implement full sync
-	// Let's implement sync
-	dbServers, _ := s.db.ListMCPServers(r.Context())
-	allServers := make(map[string]string)
-	for k, v := range s.config.MCPServers {
-		allServers[k] = v
-	}
-	for _, s := range dbServers {
-		allServers[s.Name] = s.Command
-	}
-
-	newReg := mcp.NewRegistry(allServers, s.logger)
-	newReg.StartAll(r.Context())
-	s.orchestrator.SetMCPRegistry(newReg, allServers)
-
-	w.WriteHeader(http.StatusNoContent)
 }

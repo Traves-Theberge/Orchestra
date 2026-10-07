@@ -14,8 +14,6 @@ import {
   fetchProviderHooks, updateProviderHooks,
   fetchCodexConfigFiles, saveCodexConfigFile, createCodexConfigFile, fetchCodexInstructionFiles, saveCodexInstructionFile, createCodexInstructionFile, fetchCodexSubAgents, saveCodexSubAgent, createCodexSubAgent, fetchCodexSkills, saveCodexSkill, createCodexSkill,
   deleteCodexSubAgent, deleteCodexSkill, fetchCodexRules, saveCodexRule, deleteCodexRule,
-  fetchGeminiSettingsFiles, saveGeminiSettingsFile, createGeminiSettingsFile, fetchGeminiContextFiles, saveGeminiContextFile, createGeminiContextFile, fetchGeminiCommands, saveGeminiCommand, createGeminiCommand,
-  deleteGeminiCommand,
   fetchOpenCodeConfigFiles, saveOpenCodeConfigFile, createOpenCodeConfigFile, fetchOpenCodeAgentsFiles, saveOpenCodeAgentFile, createOpenCodeAgentFile, fetchOpenCodeCommandsFiles, saveOpenCodeCommandFile, createOpenCodeCommandFile, fetchOpenCodeSkillsFiles, saveOpenCodeSkillFile, createOpenCodeSkillFile,
   deleteOpenCodeAgentFile, deleteOpenCodeCommandFile, deleteOpenCodeSkillFile,
 } from '@core/api/client'
@@ -65,19 +63,6 @@ export interface CodexConfigState extends ProviderCommonState {
   createInstructionFile: () => Promise<void>
   createSubagentFile: (name: string) => Promise<void>
   createSkillResource: (name: string) => Promise<void>
-}
-
-export interface GeminiConfigState extends ProviderCommonState {
-  settings: ProviderFileEntry[]
-  context: ProviderFileEntry[]
-  commands: ProviderFileEntry[]
-  saveSettingsFile: (path: string, content: string) => Promise<void>
-  saveContextFile: (path: string, content: string) => Promise<void>
-  saveCommandFile: (path: string, content: string) => Promise<void>
-  deleteCommandFile: (name: string) => Promise<void>
-  createSettingsResource: () => Promise<void>
-  createContextResource: () => Promise<void>
-  createCommandResource: (name: string) => Promise<void>
 }
 
 export interface OpenCodeConfigState extends ProviderCommonState {
@@ -575,180 +560,6 @@ export function useCodexConfig(backendConfig: BackendConfig | null, scope: Scope
     createInstructionFile,
     createSubagentFile,
     createSkillResource,
-    savePermissions: common.savePermissions,
-    saveModel: common.saveModel,
-    saveHooks: common.saveHooks,
-    addMCPServer: common.addMCPServer,
-    updateMCPServer: common.updateMCPServer,
-    toggleMCPServer: common.toggleMCPServer,
-    deleteMCPServer: common.deleteProviderServer,
-    deleteOrchestraMCPServer: common.deleteOrchestraMCPServer,
-    reload,
-    setError: common.setError,
-  }
-}
-
-export function useGeminiConfig(backendConfig: BackendConfig | null, scope: Scope, projectId?: string): GeminiConfigState {
-  const common = useProviderCommon(backendConfig, 'gemini', scope, projectId)
-  const [settings, setSettings] = useState<ProviderFileEntry[]>([])
-  const [context, setContext] = useState<ProviderFileEntry[]>([])
-  const [commands, setCommands] = useState<ProviderFileEntry[]>([])
-  const projId = scope === 'PROJECT' ? projectId : undefined
-  const readTarget = JSON.stringify([backendConfig?.baseUrl, backendConfig?.apiToken, scope, projId])
-  const beginRead = useConfigReadFence(readTarget)
-  const { loadCommon, setLoading, setError, setReadError, setSaving, setReadCompletedTarget } = common
-
-  const reload = useCallback(async () => {
-    if (!backendConfig) return
-    const isCurrent = beginRead()
-    setLoading(true)
-    try {
-      const [bundle] = await Promise.all([
-        Promise.all([
-          fetchGeminiSettingsFiles(backendConfig, scope.toLowerCase(), projId),
-          fetchGeminiContextFiles(backendConfig, scope.toLowerCase(), projId),
-          fetchGeminiCommands(backendConfig, scope.toLowerCase(), projId),
-        ]),
-        loadCommon(),
-      ])
-      if (!isCurrent()) return
-      setSettings(bundle[0].items)
-      setContext(bundle[1].items)
-      setCommands(bundle[2].items)
-      setReadError('')
-      setError('')
-    } catch (err) {
-      if (!isCurrent()) return
-      setReadError(err instanceof Error ? err.message : 'Failed to load Gemini config')
-    } finally {
-      if (isCurrent()) {
-        setReadCompletedTarget(readTarget)
-        setLoading(false)
-      }
-    }
-  }, [backendConfig, scope, projId, loadCommon, setError, setReadError, setLoading, beginRead, readTarget, setReadCompletedTarget])
-
-  useEffect(() => { void reload() }, [reload])
-
-  const saveSettingsFile = useCallback(async (path: string, content: string) => {
-    if (!backendConfig) return
-    setSaving(path)
-    try {
-      await saveGeminiSettingsFile(backendConfig, scope.toLowerCase(), content, projId, path)
-      setError('')
-      await reload()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save Gemini settings')
-    } finally {
-      setSaving(null)
-    }
-  }, [backendConfig, scope, projId, reload, setError, setSaving])
-
-  const saveContextFile = useCallback(async (path: string, content: string) => {
-    if (!backendConfig) return
-    setSaving(path)
-    try {
-      await saveGeminiContextFile(backendConfig, scope.toLowerCase(), content, projId, path)
-      setError('')
-      await reload()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save Gemini context')
-    } finally {
-      setSaving(null)
-    }
-  }, [backendConfig, scope, projId, reload, setError, setSaving])
-
-  const saveCommandFile = useCallback(async (path: string, content: string) => {
-    if (!backendConfig) return
-    setSaving(path)
-    try {
-      await saveGeminiCommand(backendConfig, scope.toLowerCase(), path.split('/').pop() ?? 'command', content, projId, path)
-      setError('')
-      await reload()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save Gemini command')
-    } finally {
-      setSaving(null)
-    }
-  }, [backendConfig, scope, projId, reload, setError, setSaving])
-
-  const deleteCommandFile = useCallback(async (name: string) => {
-    if (!backendConfig) return
-    setSaving(name)
-    try {
-      await deleteGeminiCommand(backendConfig, scope.toLowerCase(), name, projId)
-      setError('')
-      await reload()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete Gemini command')
-    } finally {
-      setSaving(null)
-    }
-  }, [backendConfig, scope, projId, reload, setError, setSaving])
-
-  const createSettingsResource = useCallback(async () => {
-    if (!backendConfig) return
-    setSaving('new')
-    try {
-      await createGeminiSettingsFile(backendConfig, scope.toLowerCase(), projId)
-      setError('')
-      await reload()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create Gemini settings')
-    } finally {
-      setSaving(null)
-    }
-  }, [backendConfig, scope, projId, reload, setError, setSaving])
-
-  const createContextResource = useCallback(async () => {
-    if (!backendConfig) return
-    setSaving('new')
-    try {
-      await createGeminiContextFile(backendConfig, scope.toLowerCase(), projId)
-      setError('')
-      await reload()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create Gemini context')
-    } finally {
-      setSaving(null)
-    }
-  }, [backendConfig, scope, projId, reload, setError, setSaving])
-
-  const createCommandResource = useCallback(async (name: string) => {
-    if (!backendConfig) return
-    setSaving('new')
-    try {
-      await createGeminiCommand(backendConfig, scope.toLowerCase(), name, projId)
-      setError('')
-      await reload()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create Gemini command')
-    } finally {
-      setSaving(null)
-    }
-  }, [backendConfig, scope, projId, reload, setError, setSaving])
-
-  return {
-    settings, context, commands,
-    projects: common.projects,
-    permissions: common.permissions,
-    modelConfig: common.modelConfig,
-    hooks: common.hooks,
-    providerMcpServers: common.providerMcpServers,
-    orchestraMcpServers: common.orchestraMcpServers,
-    mcpTools: common.mcpTools,
-    loading: common.loading,
-    error: common.error,
-    readError: common.readError,
-    saving: common.saving,
-    saveFile: saveSettingsFile,
-    saveSettingsFile,
-    saveContextFile,
-    saveCommandFile,
-    deleteCommandFile,
-    createSettingsResource,
-    createContextResource,
-    createCommandResource,
     savePermissions: common.savePermissions,
     saveModel: common.saveModel,
     saveHooks: common.saveHooks,

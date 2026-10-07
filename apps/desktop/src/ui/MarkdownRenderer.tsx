@@ -25,7 +25,7 @@ const sanitizeSchema = {
 
 function isCodeFenceClosed(content: string, rawHtml: string): boolean {
   if (!content) return true
-  const fenceRegex = /```(?:t3-html|orchestra-html|html-render|html-preview|html-visualization)[^\n]*\n([\s\S]*?)```/gi
+  const fenceRegex = /```(?:orchestra-html|html-render|html-preview|html-visualization)[^\n]*\n([\s\S]*?)```/gi
   let match: RegExpExecArray | null
   while ((match = fenceRegex.exec(content)) !== null) {
     if (match[1].trim() === rawHtml.trim()) {
@@ -51,6 +51,45 @@ function StreamingVisualizationSkeleton() {
       </span>
     </div>
   )
+}
+
+const CUSTOM_WIDGET_LANGS = [
+  'orchestra-html',
+  'html-render',
+  'html-preview',
+  'html-visualization',
+  'mermaid',
+]
+
+function isCustomWidgetBlock(node: any, children: any): boolean {
+  if (node?.children && Array.isArray(node.children)) {
+    for (const child of node.children) {
+      const cls = child?.properties?.className
+      const classList: string[] = Array.isArray(cls) ? cls : typeof cls === 'string' ? cls.split(/\s+/) : []
+      for (const c of classList) {
+        const match = /language-([a-zA-Z0-9_-]+)/.exec(c)
+        if (match && CUSTOM_WIDGET_LANGS.includes(match[1])) return true
+      }
+    }
+  }
+
+  const childList = Array.isArray(children) ? children : [children]
+  for (const child of childList) {
+    if (child && typeof child === 'object' && 'props' in child) {
+      const cls = (child as any).props?.className ?? ''
+      const match = /language-([a-zA-Z0-9_-]+)/.exec(cls)
+      if (match && CUSTOM_WIDGET_LANGS.includes(match[1])) return true
+
+      const nodeCls = (child as any).props?.node?.properties?.className
+      const classList: string[] = Array.isArray(nodeCls) ? nodeCls : typeof nodeCls === 'string' ? nodeCls.split(/\s+/) : []
+      for (const c of classList) {
+        const m = /language-([a-zA-Z0-9_-]+)/.exec(c)
+        if (m && CUSTOM_WIDGET_LANGS.includes(m[1])) return true
+      }
+    }
+  }
+
+  return false
 }
 
 interface MarkdownRendererProps {
@@ -104,10 +143,12 @@ export function MarkdownRenderer({
   }, [enableMath, allowHtml, extraRehypePlugins])
 
   // Same reasoning for the components map: re-creating these functions on
-  // every render is what makes MermaidBlock unmount/remount on each keystroke.
   const mergedComponents = useMemo<Components>(() => {
     const defaults: Components = {
-      pre({ children, className: cls, ...props }: any) {
+      pre({ children, className: cls, node, ...props }: any) {
+        if (isCustomWidgetBlock(node, children)) {
+          return <>{children}</>
+        }
         return <pre className={`relative border-0 ${cls ?? ''}`.trim()} {...props}>{children}</pre>
       },
       code({ children, className: cls, node, ...props }: any) {
@@ -123,7 +164,7 @@ export function MarkdownRenderer({
           return <MermaidBlock code={String(children).trim()} theme={theme} />
         }
 
-        if (['t3-html', 'orchestra-html', 'html-render', 'html-preview', 'html-visualization'].includes(language)) {
+        if (['orchestra-html', 'html-render', 'html-preview', 'html-visualization'].includes(language)) {
           const rawHtml = String(children).trim()
           const titleMatch = /<!--\s*title:\s*(.+?)\s*-->/i.exec(rawHtml) || /<h[12][^>]*>(.+?)<\/h[12]>/i.exec(rawHtml)
           const title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, '').trim() : 'Visualization'

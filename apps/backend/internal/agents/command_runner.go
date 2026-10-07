@@ -78,6 +78,27 @@ func (r *CommandRunner) RunTurn(ctx context.Context, request TurnRequest, onEven
 	if commandLine == "" {
 		return TurnResult{}, fmt.Errorf("agent command missing for provider %s", r.provider)
 	}
+	if request.StreamReasoning {
+		commandLine = withReasoningStream(r.provider, commandLine)
+	}
+	// Agent, model, effort, skills and Orchestra MCP servers are applied per
+	// run; every temp file the adapter creates is removed when the turn ends.
+	plan, err := planCommandAgent(r.provider, commandLine, request)
+	if err != nil {
+		return TurnResult{}, fmt.Errorf("apply agent profile: %w", err)
+	}
+	defer plan.cleanup()
+	commandLine = plan.commandLine
+	// Claude reads thread-scoped instructions from a file; a file also keeps
+	// long instructions off the length-limited Windows command line.
+	if request.DeveloperInstructions != "" && r.provider == ProviderClaude && !strings.Contains(commandLine, "system-prompt") {
+		file, err := writePromptFile(request.DeveloperInstructions)
+		if err != nil {
+			return TurnResult{}, err
+		}
+		defer os.Remove(file)
+		commandLine += " --append-system-prompt-file " + shellQuote(filepath.ToSlash(file))
+	}
 
 	// Inject ToolSpecs and ResourceSpecs into .orchestra/ subdirectory so they
 	// don't pollute the project's git history when agents run `git add -A`.
@@ -97,15 +118,35 @@ func (r *CommandRunner) RunTurn(ctx context.Context, request TurnRequest, onEven
 		ensureGitignoreEntry(gitignorePath, ".orchestra/")
 	}
 
-	finalPrompt := strings.TrimSpace(request.Prompt)
-	resolvedCommand := strings.ReplaceAll(commandLine, "{{prompt}}", shellQuote(finalPrompt))
+	finalPrompt := plan.promptPrefix + strings.TrimSpace(request.Prompt)
+	promptArg := shellQuote(finalPrompt)
+	if runtime.GOOS == "windows" && strings.Contains(commandLine, "{{prompt}}") {
+		// The shell receives its script as one Windows command-line argument,
+		// which is truncated near 8K and leaves the quoted prompt unterminated.
+		// Expand the prompt from a file inside the shell instead.
+		file, err := writePromptFile(finalPrompt)
+		if err != nil {
+			return TurnResult{}, err
+		}
+		defer os.Remove(file)
+		promptArg = `"$(cat ` + shellQuote(filepath.ToSlash(file)) + `)"`
+	}
+	resolvedCommand := strings.ReplaceAll(commandLine, "{{prompt}}", promptArg)
 	commandContainsPrompt := strings.Contains(commandLine, "{{prompt}}")
-	processEnv := accountSubprocessEnv(sessionID, r.provider, request.CredentialHome)
+	processEnv := append(accountSubprocessEnv(sessionID, r.provider, request.CredentialHome), plan.env...)
+	stampReceipt := func(result TurnResult) TurnResult {
+		if request.Agent != nil {
+			result.EffectiveAgentID = request.Agent.ID
+			result.AgentObservation = plan.receipt.observation()
+		}
+		return result
+	}
 
 	// Shell input and terminal logs can echo commands. Never send API keys or
 	// access tokens through a shared PTY; run those turns as sanitized subprocesses.
 	if r.termManager != nil && runtime.GOOS != "windows" && !containsPTYSecret(processEnv) {
-		return r.runInPTY(ctx, request, sessionID, resolvedCommand, finalPrompt, commandContainsPrompt, processEnv, onEvent)
+		result, err := r.runInPTY(ctx, request, sessionID, resolvedCommand, finalPrompt, commandContainsPrompt, processEnv, onEvent)
+		return stampReceipt(result), err
 	}
 
 	cmdCtx, cancel := context.WithCancel(ctx)
@@ -323,6 +364,7 @@ func (r *CommandRunner) RunTurn(ctx context.Context, request TurnRequest, onEven
 		Output:    collector.output(),
 		Usage:     collector.usage(),
 	}
+	result = stampReceipt(result)
 
 	streamErrMu.Lock()
 	deferredErr := streamErr
@@ -1072,6 +1114,39 @@ func isPTYSecret(entry string) bool {
 		}
 	}
 	return false
+}
+
+// withReasoningStream adds Claude Code's partial-message stream and thinking
+// summaries to a stream-json command. Newer models omit thinking text unless
+// summaries are requested. Flags the user already set are left alone.
+func withReasoningStream(provider Provider, commandLine string) string {
+	if provider != ProviderClaude || !strings.Contains(commandLine, "stream-json") {
+		return commandLine
+	}
+	if !strings.Contains(commandLine, "--include-partial-messages") {
+		commandLine += " --include-partial-messages"
+	}
+	if !strings.Contains(commandLine, "--settings") {
+		commandLine += " --settings " + shellQuote(`{"showThinkingSummaries":true}`)
+	}
+	return commandLine
+}
+
+func writePromptFile(prompt string) (string, error) {
+	f, err := os.CreateTemp("", "orchestra-prompt-*.txt")
+	if err != nil {
+		return "", fmt.Errorf("write prompt file: %w", err)
+	}
+	if _, err = f.WriteString(prompt); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return "", fmt.Errorf("write prompt file: %w", err)
+	}
+	if err = f.Close(); err != nil {
+		os.Remove(f.Name())
+		return "", fmt.Errorf("write prompt file: %w", err)
+	}
+	return f.Name(), nil
 }
 
 func shellQuote(value string) string {

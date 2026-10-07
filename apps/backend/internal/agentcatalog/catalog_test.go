@@ -53,7 +53,7 @@ func TestCatalogNativeOpenCodeDefinitionRoundTripAndReceipts(t *testing.T) {
 	if cat.SelectionCapability != SelectionUnavailable || len(cat.Items) != 1 {
 		t.Fatalf("catalog did not report truthful unavailable selection: %#v", cat)
 	}
-	if cat.Items[0].ID != "team/planner" || cat.Items[0].AgentID != "team/planner" || cat.Items[0].Content != "" || cat.Items[0].SelectionStatus != SelectionUnavailable {
+	if cat.Items[0].ID != "team/planner" || cat.Items[0].AgentID != "harness:global:opencode:team/planner" || cat.Items[0].Content != "" || cat.Items[0].SelectionStatus != SelectionUnavailable {
 		t.Fatalf("unexpected metadata/list content: %#v", cat.Items[0])
 	}
 	loaded, err := service.Get(context.Background(), Request{ProjectID: "fixture", Harness: "OPENCODE", Scope: ScopeGlobal}, KindAgentDefinition, "team/planner")
@@ -104,6 +104,27 @@ func TestCatalogNativeOpenCodeDefinitionRoundTripAndReceipts(t *testing.T) {
 	}
 }
 
+func TestCatalogAcceptsTheFormatItReportsForOpenCode(t *testing.T) {
+	service, _, _ := testService(t)
+	content := "---\ndescription: Reviewer\nmode: primary\n---\n\nReview.\n"
+	created, err := service.Mutate(context.Background(), MutationRequest{Operation: "create", ProjectID: "fixture", Harness: "OPENCODE", Scope: ScopeGlobal, Kind: KindAgentDefinition, ResourceID: "reviewer", RequestID: uuid.NewString(), Format: "opencode-markdown", Content: content})
+	if err != nil {
+		t.Fatalf("create with listed format: %v", err)
+	}
+	cat, err := service.List(context.Background(), Request{ProjectID: "fixture", Harness: "OPENCODE", Scope: ScopeGlobal})
+	if err != nil || len(cat.Items) != 1 {
+		t.Fatal(cat, err)
+	}
+	listed := cat.Items[0]
+	if listed.Format != "opencode-markdown" {
+		t.Fatalf("listed format %q", listed.Format)
+	}
+	// Editing round-trips the reported format.
+	if _, err = service.Mutate(context.Background(), MutationRequest{Operation: "update", ProjectID: "fixture", Harness: "OPENCODE", Scope: ScopeGlobal, Kind: KindAgentDefinition, ResourceID: "reviewer", RequestID: uuid.NewString(), ExpectedHash: created.ContentHash, Format: listed.Format, Content: content + "More.\n"}); err != nil {
+		t.Fatalf("update with listed format: %v", err)
+	}
+}
+
 func TestCatalogRejectsPathTraversalAndUnallowlistedConfig(t *testing.T) {
 	service, _, _ := testService(t)
 	request := MutationRequest{Operation: "create", ProjectID: "fixture", Harness: "OPENCODE", Scope: ScopeGlobal, Kind: KindAgentDefinition, ResourceID: "../escape", RequestID: uuid.NewString(), Format: "opencode-v1", Content: "---\nmode: primary\n---\n\nNo.\n"}
@@ -142,10 +163,10 @@ func TestAntigravityCatalogUsesNativeCLIPathsAndPreservesProfileRole(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Harness != "ANTIGRAVITY" || got.Content != content || got.Format != "antigravity-markdown" || got.Mode != "subagent" || got.SelectionStatus != SelectionConfiguredUnapplied || got.SelectableAsPrimary {
+	if got.Harness != "ANTIGRAVITY" || got.Content != content || got.Format != "antigravity-markdown" || got.Mode != "subagent" || got.SelectionStatus != "subagent_only" || got.SelectableAsPrimary {
 		t.Fatalf("profile identity, raw content, or role changed: %#v", got)
 	}
-	if _, err = service.Get(context.Background(), Request{ProjectID: "__orchestrator__", Harness: "GEMINI", Scope: ScopeGlobal}, KindAgentDefinition, "security-reviewer"); !errors.Is(err, ErrNotFound) {
+	if _, err = service.Get(context.Background(), Request{ProjectID: "__orchestrator__", Harness: "GEMINI", Scope: ScopeGlobal}, KindAgentDefinition, "security-reviewer"); !errors.Is(err, ErrUnsupported) {
 		t.Fatalf("Antigravity profile appeared under legacy Gemini: %v", err)
 	}
 

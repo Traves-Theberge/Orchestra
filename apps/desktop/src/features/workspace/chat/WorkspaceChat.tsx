@@ -1,18 +1,39 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { ArrowDown, ArrowUp, CheckCircle2, ChevronRight, Loader2, Paperclip, ShieldCheck, Sparkles, Square, Terminal, X } from 'lucide-react'
 import { MarkdownRenderer } from '@ui/MarkdownRenderer'
 import { AppTooltip } from '@ui/tooltip-wrapper'
 import { HarnessIcon } from '@ui/HarnessIcon'
 import { ChatMessage } from './ChatMessage'
-import { extractHtmlRenderFromEvents } from './html-render'
+import { extractHtmlRendersFromEvents, type HtmlRenderReference } from './html-render'
+
+const IMPLEMENT_REFERENCE_HTML_LIMIT = 24_000
+
+function regenerateVariantPrompt(index: number, render: HtmlRenderReference): string {
+  return `Regenerate Variant #${index + 1} ("${render.title}") as a fresh, improved take that keeps its direction. Publish it as an HTML render.`
+}
+
+function implementVariantPrompt(index: number, render: HtmlRenderReference): string {
+  const request = `Implement Variant #${index + 1} ("${render.title}") in this project. Integrate it with the existing components, styles, and conventions rather than pasting the standalone HTML.`
+  const html = render.html?.trim()
+  if (!html || html.length > IMPLEMENT_REFERENCE_HTML_LIMIT) return request
+  // The fence must be longer than any backtick run inside the page.
+  const longestRun = Math.max(0, ...(html.match(/`+/g) ?? []).map(run => run.length))
+  const fence = '`'.repeat(Math.max(3, longestRun + 1))
+  return `${request}\n\nReference HTML for the variant:\n\n${fence}html\n${html}\n${fence}`
+}
 import { MessageRail } from './MessageRail'
 import { HarnessPicker } from './HarnessPicker'
 import { AgentPicker } from './AgentPicker'
+import { AgentMentionMenu } from './AgentMentions'
+import { insertMention, mentionCandidates, mentionQuery, useAgentDirectory } from './agent-mentions'
+import { readAgentModelChoice, writeAgentModelChoice } from './agent-model-memory'
+import { agentColor, agentDisplayName, parseAgentObservation } from '@features/agents/lib/agent-display'
 import { type AgentSelection } from '@core/api/agent-catalog'
 import { useAppStore } from '@core/store'
 import { chatDraftStorageKey, readChatDraftReceipt, writeChatDraftReceipt } from './chat-draft-storage'
 import {
-  createWorkspaceChatSession, renameWorkspaceChatSession, fetchWorkspaceChat, fetchWorkspaceChatProviders, fetchWorkspaceChatModels,
+  createWorkspaceChatSession, renameWorkspaceChatSession, switchWorkspaceChatProvider, fetchWorkspaceChat, fetchWorkspaceChatProviders, fetchWorkspaceChatModels,
   listWorkspaceChatSessions, sendWorkspaceChatMessage, stopWorkspaceChatTurn, replyWorkspaceChatRequest,
   type BackendConfig, type WorkspaceChatProvider, type WorkspaceChatSession,
   type WorkspaceChatSnapshot, type WorkspaceChatRequest, type WorkspaceChatEvent, type WorkspaceChatModelCatalog,
@@ -36,8 +57,15 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
+// Codex reasoning items carry summary/content as string arrays; tolerate the older { text } part shape.
+function reasoningText(item: Record<string, unknown>): string {
+  const parts = (value: unknown) => Array.isArray(value) ? value.map(part => typeof part === 'string' ? part : textValue(record(part).text)).filter(Boolean) : []
+  const summary = parts(item.summary)
+  return (summary.length ? summary : parts(item.content)).join('\n\n')
+}
 function AgentActivity({ events }: { events: WorkspaceChatEvent[] }) {
   const items = new Map<string, { label: string; text: string; status: string }>()
+  const reasoningParts = new Map<string, Record<string, string>>()
   for (const event of events) {
     const payload = record(event.payload)
     const item = record(payload.item)
@@ -47,9 +75,26 @@ function AgentActivity({ events }: { events: WorkspaceChatEvent[] }) {
       const label = ({ commandExecution: 'Command', fileChange: 'File changes', mcpToolCall: 'Tool', webSearch: 'Search', reasoning: 'Reasoning' })[kind] ?? kind
       const detail = kind === 'commandExecution' ? [textValue(item.command), textValue(item.aggregatedOutput)].filter(Boolean).join('\n')
         : kind === 'fileChange' && Array.isArray(item.changes) ? item.changes.map(change => { const c = record(change); return [textValue(c.path), textValue(record(c.kind).type), textValue(c.diff)].filter(Boolean).join('\n') }).join('\n\n')
-        : kind === 'reasoning' && Array.isArray(item.summary) ? item.summary.map(s => textValue(record(s).text)).filter(Boolean).join('\n')
+        : kind === 'reasoning' ? reasoningText(item)
         : kind === 'mcpToolCall' ? JSON.stringify(item, null, 2) : textValue(item.query) || textValue(item.text)
+      if (kind === 'reasoning') {
+        // The completed item is authoritative; streamed deltas fill in until then. Never show raw JSON for reasoning.
+        const text = detail || items.get(key)?.text || ''
+        if (text || event.type !== 'item/completed') items.set(key, { label, text, status: event.type === 'item/completed' ? 'completed' : 'running' })
+        else items.delete(key)
+        continue
+      }
       items.set(key, { label, text: detail || JSON.stringify(item, null, 2), status: event.type === 'item/completed' ? 'completed' : 'running' })
+    } else if (event.type === 'item/reasoning/summaryTextDelta' || event.type === 'item/reasoning/textDelta') {
+      if (items.get(key)?.status === 'completed') continue
+      const part = event.type === 'item/reasoning/summaryTextDelta' ? `s${Number(payload.summaryIndex ?? 0)}` : `c${Number(payload.contentIndex ?? 0)}`
+      const parts = { ...reasoningParts.get(key) }
+      parts[part] = (parts[part] ?? '') + (event.delta || textValue(payload.delta))
+      reasoningParts.set(key, parts)
+      // Prefer the summary stream; fall back to raw reasoning text when the model produced no summary.
+      const ordered = (prefix: string) => Object.keys(parts).filter(k => k.startsWith(prefix)).sort((a, b) => Number(a.slice(1)) - Number(b.slice(1))).map(k => parts[k])
+      const summaries = ordered('s')
+      items.set(key, { label: 'Reasoning', text: (summaries.length ? summaries : ordered('c')).filter(Boolean).join('\n\n'), status: 'running' })
     } else if (event.type === 'item/commandExecution/outputDelta' && items.has(key)) {
       const previous = items.get(key)!
       items.set(key, { ...previous, text: previous.text + (event.delta || textValue(payload.delta)) })
@@ -64,8 +109,18 @@ function AgentActivity({ events }: { events: WorkspaceChatEvent[] }) {
       items.set(key, { label: 'Provider error', text: textValue(record(payload.error).message) || textValue(payload.message) || JSON.stringify(payload), status: 'failed' })
     }
   }
+  // Reasoning with no text yet is noise; show it once a summary arrives.
+  for (const [key, item] of items) if (item.label === 'Reasoning' && !item.text.trim()) items.delete(key)
   if (!items.size) return null
   return <div aria-label="Agent activity" className="space-y-2">{[...items].map(([key, item]) => <details key={key} className="group/tool overflow-hidden rounded-xl border border-border/40 bg-muted/10 text-xs"><summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 font-medium"><ChevronRight className="size-3 text-muted-foreground transition-transform group-open/tool:rotate-90" />{item.label === 'Command' ? <Terminal className="size-3.5 text-muted-foreground" /> : <Sparkles className="size-3.5 text-muted-foreground" />}<span className="flex-1">{item.label}</span><span className="flex items-center gap-1 text-[10px] font-normal text-muted-foreground">{item.status === 'completed' && <CheckCircle2 className="size-3" />}{item.status === 'running' && <Loader2 className="size-3 animate-spin" />}{item.status}</span></summary><pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words border-t border-border/30 bg-background/40 px-4 py-3 font-mono text-[11px] leading-5">{item.text}</pre></details>)}</div>
+}
+
+function HarnessDivider({ provider }: { provider: string }) {
+  return <div role="separator" aria-label={`Switched to ${provider.toLowerCase()}`} className="mb-5 flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground/60"><span className="h-px flex-1 bg-border/60" /><HarnessIcon id={provider.toLowerCase()} size={12} /><span>Continued on {provider.charAt(0) + provider.slice(1).toLowerCase()}</span><span className="h-px flex-1 bg-border/60" /></div>
+}
+
+function AgentDivider({ name, color }: { name: string; color?: string }) {
+  return <div role="separator" aria-label={`Switched to ${name}`} className="mb-5 flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground/60"><span className="h-px flex-1 bg-border/60" />{color ? <span aria-hidden="true" className="size-1.5 rounded-full" style={{ backgroundColor: color }} /> : null}<span>Switched to {name}</span><span className="h-px flex-1 bg-border/60" /></div>
 }
 
 function StreamingAssistant({ events, projectId, provider }: { events: WorkspaceChatEvent[]; projectId: string; provider?: string }) {
@@ -154,12 +209,14 @@ function RuntimeRequestCard({ request, disabled, onReply }: { request: Workspace
 /** Mounted with a backend/project key: no draft or session is shared across workspaces. */
 type WorkspaceChatProps = {
   config: BackendConfig; projectId: string; projectName: string; headerTools?: ReactNode; headerNavigation?: ReactNode; contentOverride?: ReactNode; onShowChat?: () => void; active?: boolean
+  /** When provided, the project › title breadcrumb renders into this element instead of an inline header. `null` renders it nowhere (inactive chats). */
+  breadcrumbSlot?: HTMLElement | null
 }
 export function WorkspaceChat(props: WorkspaceChatProps) {
   // This key stays in React memory; persisted keys are credential digests only.
   return <ScopedWorkspaceChat key={JSON.stringify([props.config.baseUrl, props.config.apiToken, props.projectId, props.config.workspaceId ?? ''])} {...props} />
 }
-function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, headerNavigation, contentOverride, onShowChat, active = true }: WorkspaceChatProps) {
+function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, headerNavigation, contentOverride, onShowChat, active = true, breadcrumbSlot }: WorkspaceChatProps) {
   const requestedConversation = useAppStore(state => state.requestedWorkspaceConversation)
   const [providers, setProviders] = useState<WorkspaceChatProvider[]>([])
   const providersRef = useRef(providers)
@@ -211,6 +268,9 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
   const agentKey = JSON.stringify([sessionId, agentHarness])
   const inheritedAgent = snapshot?.session.requested_agent_id && snapshot.session.requested_agent_scope ? { agent_id: snapshot.session.requested_agent_id, agent_scope: snapshot.session.requested_agent_scope, agent_content_hash: snapshot.session.requested_agent_content_hash ?? '', agent_format: snapshot.session.requested_agent_format ?? '' } : undefined
   const selectedAgent = Object.hasOwn(agentSelections, agentKey) ? agentSelections[agentKey] ?? undefined : inheritedAgent
+  const agentDirectory = useAgentDirectory(config, projectId, agentHarness, active)
+  const [mention, setMention] = useState<{ start: number; query: string; active: number } | null>(null)
+  const mentionOptions = mention ? mentionCandidates(agentDirectory, agentHarness, mention.query) : []
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -261,7 +321,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
   }, [addFiles])
   const nativeSession = snapshot?.session.id === sessionId && snapshot?.session.conversation_mode === 'native_session'
   const nativeComposer = nativeSession || (!sessionId && selectedProvider?.conversation_mode === 'native_session')
-  const catalogProvider = nativeSession ? snapshot.session.provider : !sessionId && selectedProvider?.conversation_mode === 'native_session' ? provider : ''
+  const catalogProvider = snapshot?.session.provider || provider
   const catalogKey = catalogProvider ? JSON.stringify([config.baseUrl, config.apiToken, projectId, sessionId, catalogProvider]) : ''
   const catalog = modelCatalog.key === catalogKey ? modelCatalog.data : undefined
   const selectedModel = modelSelection.key === catalogKey && catalog?.models.some(m => m.model === modelSelection.model) ? modelSelection.model : ''
@@ -273,6 +333,56 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
   const events = snapshot?.events ?? []
   const datedTimeline = messages.length > 0 && messages.every((m, index) => Number.isFinite(Date.parse(m.created_at)) && (index === 0 || Date.parse(m.created_at) >= Date.parse(messages[index - 1].created_at)))
   const eventsBetween = (start: number, end: number) => events.filter(e => { const timestamp = Date.parse(e.created_at); return Number.isFinite(timestamp) && timestamp > start && timestamp <= end })
+  /** Agent and applied receipt for an assistant message: its own fields, then its prompt's, then the session's for the latest turn. */
+  const messageAgent = (index: number) => {
+    const message = messages[index]
+    if (message.role !== 'assistant') return {}
+    let prompt: typeof message | undefined
+    for (let i = index - 1; i >= 0; i--) if (messages[i].role === 'user') { prompt = messages[i]; break }
+    const latest = index === messages.length - 1
+    const id = message.effective_agent_id || prompt?.effective_agent_id || prompt?.requested_agent_id || (latest ? snapshot?.session.effective_agent_id : '') || ''
+    const observation = parseAgentObservation(message.agent_observation || prompt?.agent_observation || (latest ? snapshot?.session.agent_observation : undefined))
+    if (!id) return { agentObservation: observation }
+    const known = agentDirectory.find(agent => agent.id === id)
+    return { agent: { name: known?.name || agentDisplayName(id), color: agentColor(known?.color, id) }, agentObservation: observation }
+  }
+  /** Divider before a user turn whose agent differs from the previous user turn's. */
+  const agentSwitch = (index: number) => {
+    const message = messages[index]
+    if (message.role !== 'user') return undefined
+    let previous: typeof message | undefined
+    for (let i = index - 1; i >= 0; i--) if (messages[i].role === 'user') { previous = messages[i]; break }
+    if (!previous) return undefined
+    const id = message.requested_agent_id || ''
+    if (id === (previous.requested_agent_id || '')) return undefined
+    if (!id) return { name: projectId === '__orchestrator__' ? 'Maestro' : 'default agent' }
+    const known = agentDirectory.find(agent => agent.id === id)
+    return { name: known?.name || agentDisplayName(id), color: agentColor(known?.color, id) }
+  }
+  const updateMention = (input: HTMLTextAreaElement) => {
+    const token = mentionQuery(input.value, input.selectionStart ?? input.value.length)
+    setMention(token ? { ...token, active: 0 } : null)
+  }
+  const pickMention = (name: string) => {
+    const input = textareaRef.current
+    if (!mention || !input) return
+    const next = insertMention(draft, mention.start, input.selectionStart ?? draft.length, name)
+    setDraft(next.text)
+    drafts.current[sessionId] = next.text
+    setMention(null)
+    requestAnimationFrame(() => { input.focus(); input.setSelectionRange(next.caret, next.caret) })
+  }
+  const rememberAgentModel = (model: string, effort: string) => {
+    if (selectedAgent) writeAgentModelChoice(config.baseUrl, selectedAgent.agent_id, { model, effort })
+  }
+  const chooseAgent = (value?: AgentSelection) => {
+    setAgentSelections(previous => ({ ...previous, [agentKey]: value ?? null }))
+    const remembered = value ? readAgentModelChoice(config.baseUrl, value.agent_id) : undefined
+    if (remembered) {
+      setModelSelection({ key: catalogKey, model: remembered.model })
+      setEffortSelection({ key: catalogKey, model: remembered.model, effort: remembered.effort })
+    }
+  }
 
   const persist = (selectedId = sessionId) => {
     if (!storageKey.current) return
@@ -499,15 +609,22 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
       setError('Conversation recovered. Your draft has not been sent; send it when ready.')
     })
   }
-  const send = () => {
-    const hasContent = draft.trim().length > 0 || attachments.length > 0
+  /**
+   * Sends the draft (with attachments), or `override` text instead. An override
+   * leaves the user's draft and attachments untouched.
+   */
+  const send = (override?: string) => {
+    const overriding = override !== undefined
+    const hasContent = overriding ? override.trim().length > 0 : draft.trim().length > 0 || attachments.length > 0
     if (!storageReady || legacyGeminiSession || creating.current || submitted.current || !hasContent || working || pending || mutationPending.current || observationError || (sessionId && uncertainSession === sessionId) || (sessionId ? snapshot?.session.id !== sessionId : !selectedProvider?.enabled || loading)) return
-    let text = draft.trim()
-    if (attachments.length > 0) {
-      const imageMarkdown = attachments.map(att => `![${att.name}](${att.url})`).join('\n\n')
-      text = text ? `${text}\n\n${imageMarkdown}` : imageMarkdown
+    let text = overriding ? override.trim() : draft.trim()
+    if (!overriding) {
+      if (attachments.length > 0) {
+        const imageMarkdown = attachments.map(att => `![${att.name}](${att.url})`).join('\n\n')
+        text = text ? `${text}\n\n${imageMarkdown}` : imageMarkdown
+      }
+      setAttachments([])
     }
-    setAttachments([])
     const messageId = crypto.randomUUID()
     const targetId = sessionId || crypto.randomUUID()
     submitted.current = { sessionId: targetId, messageId, text }
@@ -518,7 +635,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
         creating.current = { sessionId: targetId, provider, title: draftTitle || undefined, agent: selectedAgent, uncertain: false }
         if (selectedAgent) setAgentSelections(previous => ({ ...previous, [JSON.stringify([targetId, provider])]: selectedAgent }))
         setSessionId(targetId)
-        drafts.current[targetId] = text
+        drafts.current[targetId] = overriding ? draft : text
         persist(targetId)
         const session = draftTitle || selectedAgent ? await createWorkspaceChatSession(config, projectId, provider, targetId, { ...(draftTitle ? { title: draftTitle } : {}), ...selectedAgent }) : await createWorkspaceChatSession(config, projectId, provider, targetId)
         if (generation.current !== epoch) return
@@ -540,13 +657,18 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
         session: result.session,
         messages: [...previous.messages.filter(m => m.id !== result.message.id), result.message],
       } : null)
-      setDraft('')
-      drafts.current[targetId] = ''
-      if (!sessionId) drafts.current[''] = ''
+      if (!overriding) {
+        setDraft('')
+        drafts.current[targetId] = ''
+        if (!sessionId) drafts.current[''] = ''
+      }
       submitted.current = null
       persist(targetId)
     }, true)
   }
+  const variantActionsDisabled = !storageReady || legacyGeminiSession || working || pending || !sessionId || snapshot?.session.id !== sessionId || !!creating.current || !!submitted.current || uncertainSession === sessionId || !!observationError
+  const regenerateVariant = (index: number, render: HtmlRenderReference) => send(regenerateVariantPrompt(index, render))
+  const implementVariant = (index: number, render: HtmlRenderReference) => send(implementVariantPrompt(index, render))
 
   const interrupt = () => {
     if (!working || pending || snapshot?.session.status === 'stopping') return
@@ -593,6 +715,30 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
     finally { titleSaving.current = false; mutationPending.current = false; if (generation.current === epoch) setPending(false) }
   }
 
+  const switchHarness = async (id: string) => {
+    const current = snapshot?.session
+    if (!current || current.id !== sessionId || mutationPending.current) return
+    mutationPending.current = true
+    setPending(true)
+    const epoch = generation.current
+    try {
+      try { await switchWorkspaceChatProvider(config, projectId, current.id, id, current.provider) }
+      catch (failure) {
+        // A lost response may have committed. Observe before reporting.
+        const observed = await fetchWorkspaceChat(config, projectId, current.id)
+        if (observed.session.provider.toLowerCase() !== id.toLowerCase()) throw failure
+      }
+      const observed = await fetchWorkspaceChat(config, projectId, current.id)
+      if (generation.current !== epoch) return
+      if (observed.session.id !== current.id || observed.session.project_id !== projectId || (config.workspaceId && observed.session.workspace_id !== config.workspaceId)) throw new Error('Harness switch response belongs to another workspace.')
+      setSnapshot(observed)
+      setSessions(previous => previous.map(s => s.id === current.id ? observed.session : s))
+      setProvider(observed.session.provider)
+      setError(null)
+    } catch (failure) { if (generation.current === epoch) setError(errorText(failure)) }
+    finally { mutationPending.current = false; if (generation.current === epoch) setPending(false) }
+  }
+
   const reply = (request: WorkspaceChatRequest, answer: Record<string, unknown>) => {
     if (request.status !== 'pending' || pending || observationError || blockedRequests[request.id]) return
     setBlockedRequests(previous => ({ ...previous, [request.id]: true }))
@@ -607,22 +753,29 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
     })
   }
 
+  const breadcrumb = <>
+    <span className="max-w-36 shrink-0 truncate text-[11px] text-muted-foreground">{projectName}</span><ChevronRight className="size-3 shrink-0 text-muted-foreground/50" />
+    <h2 className={`min-w-8 truncate text-[13px] font-medium ${breadcrumbSlot === undefined ? 'flex-1' : 'max-w-[50ch]'}`}>{titleEditor ? <input autoFocus aria-label="Conversation name" value={titleEditor.value} disabled={pending} onFocus={e => e.currentTarget.select()} onChange={e => setTitleEditor({ ...titleEditor, value: e.target.value })} onBlur={() => { void saveTitle() }} onKeyDown={e => { if (e.nativeEvent.isComposing) return; if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); void saveTitle() } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setTitleEditor(null) } }} className="w-full min-w-[20ch] rounded border border-border bg-background px-1 outline-none focus:border-primary" /> : <button type="button" aria-label={`Rename conversation: ${conversationTitle}`} title={conversationTitle} disabled={pending || !!creating.current || (sessionId !== '' && snapshot?.session.id !== sessionId)} onClick={() => setTitleEditor({ id: sessionId, original: conversationTitle, value: conversationTitle })} className="block w-full max-w-[50ch] truncate rounded px-1 text-left hover:bg-accent disabled:opacity-50">{conversationTitle}</button>}</h2>
+    {(working || observationError) && <span className="shrink-0 text-[10px] text-muted-foreground">{observationError ? 'Disconnected' : 'Working'}</span>}
+  </>
+
   return (
     <section aria-label={`${projectName} workspace chat`} onKeyDown={e => {
       if (e.defaultPrevented || e.key !== 'Escape' || e.nativeEvent.isComposing) return
       if (working) { e.preventDefault(); interrupt() }
     }} className="relative flex h-full min-h-0 min-w-0 flex-col bg-background">
-      <header className="shrink-0 px-3 pt-1">
+      {breadcrumbSlot === undefined ? <header className="shrink-0 px-3 pt-1">
         <div className="flex min-h-9 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
-        <span className="max-w-36 truncate text-[11px] text-muted-foreground">{projectName}</span><ChevronRight className="size-3 shrink-0 text-muted-foreground/50" />
-        <h2 className="min-w-8 flex-1 truncate text-[13px] font-medium">{titleEditor ? <input autoFocus aria-label="Conversation name" value={titleEditor.value} disabled={pending} onFocus={e => e.currentTarget.select()} onChange={e => setTitleEditor({ ...titleEditor, value: e.target.value })} onBlur={() => { void saveTitle() }} onKeyDown={e => { if (e.nativeEvent.isComposing) return; if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); void saveTitle() } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setTitleEditor(null) } }} className="w-full rounded border border-border bg-background px-1 outline-none focus:border-primary" /> : <button type="button" aria-label={`Rename conversation: ${conversationTitle}`} title={conversationTitle} disabled={pending || !!creating.current || (sessionId !== '' && snapshot?.session.id !== sessionId)} onClick={() => setTitleEditor({ id: sessionId, original: conversationTitle, value: conversationTitle })} className="block w-full truncate rounded px-1 text-left hover:bg-accent disabled:opacity-50">{conversationTitle}</button>}</h2>
+        {breadcrumb}
         {headerNavigation}
-        {(working || observationError) && <span className="shrink-0 text-[10px] text-muted-foreground">{observationError ? 'Disconnected' : 'Working'}</span>}
         {headerTools && <div className="flex shrink-0 items-center gap-0.5">
           {headerTools}
         </div>}
         </div>
-      </header>
+      </header> : <>
+        {breadcrumbSlot && createPortal(<nav aria-label="Conversation" className="flex min-w-0 items-center gap-1.5">{breadcrumb}</nav>, breadcrumbSlot)}
+        {(headerNavigation || headerTools) && <header className="flex shrink-0 items-center justify-end gap-0.5 px-3 pt-1">{headerNavigation}{headerTools}</header>}
+      </>}
       {contentOverride && <div className="min-h-0 flex-1 overflow-auto">{contentOverride}</div>}
       <div hidden={!!contentOverride} className={`${contentOverride ? 'hidden' : 'flex'} min-h-0 flex-1 flex-col`}>
       {(error || observationError) && <div role="alert" className="border-b border-destructive/20 bg-destructive/5 px-5 py-3 text-xs text-destructive">{error || observationError}</div>}
@@ -633,12 +786,14 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
         <div role="log" aria-label="Conversation messages" className="mx-auto max-w-[760px] space-y-5 pb-4">
           {messages.map((message, index) => {
             const turnEvents = datedTimeline ? eventsBetween(index === 0 ? -Infinity : Date.parse(messages[index - 1].created_at), Date.parse(message.created_at)) : []
-            const htmlRender = extractHtmlRenderFromEvents(turnEvents)
+            const htmlRenders = extractHtmlRendersFromEvents(turnEvents)
             return (
               <Fragment key={message.id}>
                 {datedTimeline && <AgentActivity events={turnEvents} />}
                 <div data-rail-message-id={message.id}>
-                  <ChatMessage message={message} provider={snapshot?.session.provider ?? ''} projectId={projectId} htmlRender={htmlRender} />
+                  {index > 0 && message.provider && messages[index - 1].provider && message.provider !== messages[index - 1].provider && <HarnessDivider provider={message.provider} />}
+                  {(() => { const change = agentSwitch(index); return change ? <AgentDivider {...change} /> : null })()}
+                  <ChatMessage message={message} provider={message.provider || snapshot?.session.provider || ''} projectId={projectId} htmlRenders={htmlRenders} onRegenerateVariant={regenerateVariant} onImplementVariant={implementVariant} variantActionsDisabled={variantActionsDisabled} {...messageAgent(index)} />
                 </div>
               </Fragment>
             )
@@ -678,6 +833,8 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
         {legacyGeminiSession && <p role="status" className="mb-2 text-xs text-muted-foreground">Gemini conversation history is preserved and read-only. Choose a current harness to start a new conversation.</p>}
         {uncertainSession === sessionId && sessionId && <p role="status" className="mb-2 text-xs text-destructive">Delivery is uncertain. Your draft is retained; inspect the conversation before starting a new turn.</p>}
         {creating.current && creating.current.sessionId !== sessionId && <p role="status" className="mb-2 text-xs text-muted-foreground">Recover the pending chat from Conversations before sending another message.</p>}{submitted.current && submitted.current.sessionId !== sessionId && <p role="status" className="mb-2 text-xs text-muted-foreground">Resolve the pending message in its conversation before sending another message.</p>}{storageWarning && <p role="status" className="mb-2 text-xs text-muted-foreground">{storageWarning}</p>}{snapshot?.session.error && <p role="status" className="mb-2 text-xs text-destructive">{snapshot.session.error}</p>}
+        <div className="relative">
+        <AgentMentionMenu candidates={mentionOptions} active={mention?.active ?? 0} onActiveChange={index => setMention(previous => previous ? { ...previous, active: index } : previous)} onPick={agent => pickMention(agent.name)} />
         <div
           onDragOver={e => {
             if (e.dataTransfer?.types?.includes('Files')) {
@@ -724,7 +881,17 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
               ))}
             </div>
           )}
-          <textarea ref={textareaRef} aria-label="Message agent" value={draft} onChange={e => { setDraft(e.target.value); drafts.current[sessionId] = e.target.value; persist() }} onPaste={handlePaste} rows={3} disabled={pending || legacyGeminiSession} placeholder={legacyGeminiSession ? 'Legacy conversation history is read-only' : working ? 'Draft your next message while the agent works…' : 'Ask anything, or describe a change…'} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send() } }} className="block max-h-60 min-h-[96px] w-full resize-none bg-transparent px-4 pt-4 text-[15px] leading-6 outline-none placeholder:text-muted-foreground/55 disabled:opacity-50 sm:px-5" />
+          <textarea ref={textareaRef} aria-label="Message agent" aria-autocomplete="list" aria-expanded={mentionOptions.length > 0} value={draft} onChange={e => { setDraft(e.target.value); drafts.current[sessionId] = e.target.value; persist(); updateMention(e.target) }} onSelect={e => { if (mention) updateMention(e.currentTarget) }} onBlur={() => setMention(null)} onPaste={handlePaste} rows={3} disabled={pending || legacyGeminiSession} placeholder={legacyGeminiSession ? 'Legacy conversation history is read-only' : working ? 'Draft your next message while the agent works…' : 'Ask anything, or describe a change…'} onKeyDown={e => {
+            if (e.nativeEvent.isComposing) return
+            if (mention && mentionOptions.length) {
+              const count = mentionOptions.length
+              const current = Math.min(mention.active, count - 1)
+              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setMention({ ...mention, active: (current + (e.key === 'ArrowDown' ? 1 : -1) + count) % count }); return }
+              if ((e.key === 'Enter' && !e.shiftKey) || (e.key === 'Tab' && !e.shiftKey)) { e.preventDefault(); pickMention(mentionOptions[current].name); return }
+              if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setMention(null); return }
+            }
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
+          }} className="block max-h-60 min-h-[96px] w-full resize-none bg-transparent px-4 pt-4 text-[15px] leading-6 outline-none placeholder:text-muted-foreground/55 disabled:opacity-50 sm:px-5" />
           <div aria-label="Main agent controls" className="flex min-w-0 flex-wrap items-center gap-2 px-3 pb-3 pt-1 sm:px-4">
             <AppTooltip content="Attach images (or paste Ctrl+V)">
               <button
@@ -751,24 +918,22 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
                 }
               }}
             />
-            <HarnessPicker providers={providers} provider={snapshot?.session.provider || creating.current?.provider || provider} disabled={loading || pending || working} locked={!!creating.current || !!submitted.current || !!submittedReply.current || !!uncertainSession}
-              catalog={catalog} model={selectedModel} effort={selectedEffort} effortOptions={effortOptions} effortDisabled={pending || working} onEffort={value => setEffortSelection({ key: catalogKey, model: effortModel?.model ?? '', effort: value })} onModel={value => setModelSelection({ key: catalogKey, model: value })} onProvider={id => {
+            <HarnessPicker providers={providers} provider={snapshot?.session.provider || creating.current?.provider || provider} disabled={loading || pending || working} locked={!!creating.current || !!submitted.current || !!submittedReply.current || working || pending}
+              catalog={catalog} model={selectedModel} effort={selectedEffort} effortOptions={effortOptions} effortDisabled={pending || working} onEffort={value => { setEffortSelection({ key: catalogKey, model: effortModel?.model ?? '', effort: value }); rememberAgentModel(effortModel?.model ?? '', value) }} onModel={value => { setModelSelection({ key: catalogKey, model: value }); rememberAgentModel(value, '') }} onProvider={id => {
                 if (id.toLowerCase() === (snapshot?.session.provider || provider).toLowerCase()) return
-                if (creating.current || submitted.current || submittedReply.current || uncertainSession || working || pending) return
-                if (sessionId) {
-                  drafts.current[sessionId] = draft
-                  drafts.current[''] = draft
-                  setSessionId(''); setSnapshot(null); setError(null); setObservationError(null)
-                }
+                if (creating.current || submitted.current || submittedReply.current || working || pending) return
+                // Keep the conversation: the backend rebinds it and replays history into the new harness.
+                if (sessionId) { void switchHarness(id); return }
                 setProvider(id)
               }} />
-            <AgentPicker config={config} projectId={projectId} harness={agentHarness} selection={selectedAgent} disabled={loading || pending || working || legacyGeminiSession || !!creating.current || !!submitted.current || !!submittedReply.current || !!uncertainSession} onChange={value => setAgentSelections(previous => ({ ...previous, [agentKey]: value ?? null }))} />
+            <AgentPicker config={config} projectId={projectId} harness={agentHarness} selection={selectedAgent} disabled={loading || pending || working || legacyGeminiSession || !!creating.current || !!submitted.current || !!submittedReply.current || !!uncertainSession} onChange={chooseAgent} />
             <span className="flex-1" />
             {working ? <button aria-label="Stop current turn" title="Interrupt current turn (Escape)" disabled={pending || snapshot?.session.status === 'stopping'} onClick={interrupt} className="shrink-0 rounded-full border border-border bg-background p-2 disabled:opacity-40"><Square className="size-3.5" /></button>
-              : <button aria-label="Send message" title="Send message" disabled={!storageReady || legacyGeminiSession || !!creating.current || !!submitted.current || (!draft.trim() && attachments.length === 0) || pending || !!observationError || (sessionId ? !snapshot || uncertainSession === sessionId : loading || !selectedProvider?.enabled)} onClick={send} className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-[transform,background-color] hover:-translate-y-0.5 hover:bg-primary/90 disabled:translate-y-0 disabled:bg-foreground disabled:text-background disabled:opacity-25"><ArrowUp className="size-4" /></button>}
+              : <button aria-label="Send message" title="Send message" disabled={!storageReady || legacyGeminiSession || !!creating.current || !!submitted.current || (!draft.trim() && attachments.length === 0) || pending || !!observationError || (sessionId ? !snapshot || uncertainSession === sessionId : loading || !selectedProvider?.enabled)} onClick={() => send()} className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-[transform,background-color] hover:-translate-y-0.5 hover:bg-primary/90 disabled:translate-y-0 disabled:bg-foreground disabled:text-background disabled:opacity-25"><ArrowUp className="size-4" /></button>}
           </div>
         </div>
-        {nativeComposer && (!catalog || modelCatalog.error) && <p className="mt-2 text-[10px] text-muted-foreground">{modelCatalog.key === catalogKey && modelCatalog.error ? `Model catalog unavailable: ${modelCatalog.error}. Provider default remains available.` : 'Loading provider model catalog…'}</p>}
+        </div>
+        {nativeComposer &&(!catalog || modelCatalog.error) && <p className="mt-2 text-[10px] text-muted-foreground">{modelCatalog.key === catalogKey && modelCatalog.error ? `Model catalog unavailable: ${modelCatalog.error}. Provider default remains available.` : 'Loading provider model catalog…'}</p>}
         {!loading && !sessionId && !selectedProvider?.enabled && <p className="mt-2 text-xs text-muted-foreground">{providers.map(p => `${p.label}: ${p.reason || 'unavailable'}`).join(' · ') || 'Workspace chat is unavailable on this backend. Refresh after updating the backend.'}</p>}
         <p className="mt-2.5 px-1 text-[10px] tracking-wide text-muted-foreground/65">{working ? 'Drafts stay unsent until the current turn finishes · Esc to interrupt' : 'Enter to send · Shift+Enter for a new line'}</p>
       </footer>

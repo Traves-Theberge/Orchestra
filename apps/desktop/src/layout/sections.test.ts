@@ -9,6 +9,14 @@ describe('sections', () => {
     expect(getSectionVisibility('CONSOLE').showConsole).toBe(true)
     expect(getSectionVisibility('ORCHESTRATOR').showOrchestrator).toBe(true)
   })
+  it('places Automations between Tasks and Agents', () => {
+    const ids = sidebarItems.map(item => item.id)
+    expect(ids.indexOf('AUTOMATIONS')).toBe(ids.indexOf('ISSUES') + 1)
+    expect(ids.indexOf('AGENTS')).toBe(ids.indexOf('AUTOMATIONS') + 1)
+    expect(isSectionID('AUTOMATIONS')).toBe(true)
+    expect(getSectionVisibility('AUTOMATIONS').showAutomations).toBe(true)
+    expect(getSectionVisibility('ISSUES').showAutomations).toBe(false)
+  })
   it('STUDIO is not a valid SectionID', () => {
     expect(isSectionID('STUDIO')).toBe(false)
   })

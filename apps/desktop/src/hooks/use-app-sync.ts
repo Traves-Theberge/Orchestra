@@ -13,11 +13,14 @@ import {
 import { startRuntimeSync } from '@core/sync/runtime-sync'
 import { applySnapshotUpdate } from '@core/sync/runtime-store'
 import { useAppStore } from '@core/store'
+import { handleAutomationRunEvent } from '@features/automations/lib/run-events'
 
 interface UseAppSyncOpts {
   issueLookupId: string
   executeIssueLookup: (id: string) => Promise<void>
   playNotification: (id: string) => void
+  /** OS notification + sound with custom text (automation runs). */
+  notify?: (title: string, body: string) => void
   setErrorMessage: (message: string) => void
 }
 
@@ -43,12 +46,14 @@ export function useAppSync(
   const issueLookupIdRef = useRef(opts.issueLookupId)
   const executeIssueLookupRef = useRef(opts.executeIssueLookup)
   const playNotificationRef = useRef(opts.playNotification)
+  const notifyRef = useRef(opts.notify)
   const setErrorMessageRef = useRef(opts.setErrorMessage)
 
   // Update refs every render
   issueLookupIdRef.current = opts.issueLookupId
   executeIssueLookupRef.current = opts.executeIssueLookup
   playNotificationRef.current = opts.playNotification
+  notifyRef.current = opts.notify
   setErrorMessageRef.current = opts.setErrorMessage
 
   // Main SSE/polling sync effect — only re-runs when config changes
@@ -100,6 +105,9 @@ export function useAppSync(
             useAppStore.getState().setStatusMessage('Protected host detected. Add bearer token in Settings -> Backend Configuration.')
           }
           useAppStore.getState().setLoadingState(false)
+        },
+        onAutomationRun: (run) => {
+          handleAutomationRunEvent(run, (title, body) => notifyRef.current?.(title, body))
         },
         onGitHubChange: (_eventType, _projectId) => {
           fetchProjects(config).then(projs => useAppStore.getState().setProjects(projs)).catch(() => {})

@@ -27,7 +27,7 @@ func Load() (Config, error) {
 		"CLAUDE":      "claude -p {{prompt}} --output-format stream-json --verbose --dangerously-skip-permissions",
 		"CODEX":       "codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json {{prompt}}",
 		"ANTIGRAVITY": "agy -p {{prompt}} --output-format stream-json",
-		"OPENCODE":    "opencode -p {{prompt}} -f json",
+		"OPENCODE":    "opencode run {{prompt}} --format json",
 		"8GENT":       "8gent run --yes --output-format stream-json {{prompt}}",
 	}
 	nativeAgentCommands := map[string]string{"CODEX": "codex app-server", "ANTIGRAVITY": "agy"}
@@ -235,6 +235,7 @@ func Load() (Config, error) {
 	trackerWorkerAssigneeIDs := parseStateList(trackerWorkerAssigneeIDsRaw)
 	projectRoots := parseStateList(projectRootsRaw)
 	mcpServers := parseMCPServers(mcpServersRaw)
+	orchestraMCPServers := parseMCPServers(mcpServersRaw)
 
 	// Merge with Claude Code MCP servers
 	claudeCodeServers := readClaudeCodeMCPServers()
@@ -325,6 +326,7 @@ func Load() (Config, error) {
 		GitHubClientID:           githubClientID,
 		GitHubClientSecret:       githubClientSecret,
 		MCPServers:               mcpServers,
+		OrchestraMCPServers:      orchestraMCPServers,
 		TelemetryProviders:       telemetryProviders,
 		TelemetryRetentionDays:   telemetryRetentionDays,
 		TelemetryStoreRawPayload: telemetryStoreRawPayload,

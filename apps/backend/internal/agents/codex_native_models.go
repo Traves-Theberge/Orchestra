@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 )
@@ -40,6 +41,9 @@ func (r *Registry) NativeModels(ctx context.Context, provider Provider, request 
 		return nil, errors.New("native remote model catalog unsupported")
 	}
 	command, _ := r.NativeCommandFor(provider)
+	if provider == ProviderAntigravity {
+		return probeAntigravityModels(ctx, command)
+	}
 	catalogCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	session, err := startCodexNativeProcess(catalogCtx, command, request, nil)
@@ -106,4 +110,46 @@ func (r *Registry) NativeModels(ctx context.Context, provider Provider, request 
 		seen[cursor] = true
 	}
 	return nil, errors.New("native model catalog exceeds page bound")
+}
+func probeAntigravityModels(ctx context.Context, command string) ([]NativeModel, error) {
+	binary, err := resolveAntigravityExecutable(command)
+	if err == nil && binary != "" {
+		probeCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(probeCtx, binary, "models")
+		if out, err := cmd.Output(); err == nil {
+			var models []NativeModel
+			for _, line := range strings.Split(string(out), "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" || strings.HasPrefix(line, "Fetching") {
+					continue
+				}
+				parts := strings.Split(line, "\t")
+				modelID := strings.TrimSpace(parts[0])
+				displayName := modelID
+				if len(parts) > 1 {
+					displayName = strings.TrimSpace(parts[1])
+				}
+				if modelID != "" {
+					models = append(models, NativeModel{
+						ID:          modelID,
+						Model:       modelID,
+						DisplayName: displayName,
+						IsDefault:   strings.Contains(modelID, "3.8-flash-high") || strings.Contains(modelID, "3.8-flash"),
+					})
+				}
+			}
+			if len(models) > 0 {
+				return models, nil
+			}
+		}
+	}
+	return []NativeModel{
+		{ID: "gemini-3.8-flash-high", Model: "gemini-3.8-flash-high", DisplayName: "Gemini 3.8 Flash (High)", IsDefault: true},
+		{ID: "gemini-3.8-flash-medium", Model: "gemini-3.8-flash-medium", DisplayName: "Gemini 3.8 Flash (Medium)"},
+		{ID: "gemini-3.7-flash-high", Model: "gemini-3.7-flash-high", DisplayName: "Gemini 3.7 Flash (High)"},
+		{ID: "gemini-3.1-pro-high", Model: "gemini-3.1-pro-high", DisplayName: "Gemini 3.1 Pro (High)"},
+		{ID: "claude-sonnet-4-6", Model: "claude-sonnet-4-6", DisplayName: "Claude Sonnet 4.6 (Thinking)"},
+		{ID: "claude-opus-4-6-thinking", Model: "claude-opus-4-6-thinking", DisplayName: "Claude Opus 4.6 (Thinking)"},
+	}, nil
 }

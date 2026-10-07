@@ -34,7 +34,7 @@ flowchart LR
 | `ORCHESTRA_AGENT_MAX_TURNS` | int | `25` | Maximum conversation turns per agent run |
 | `ORCHESTRA_AGENT_COMMAND_CODEX` | string | `codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json {{prompt}}` | Custom Codex command template |
 | `ORCHESTRA_AGENT_COMMAND_CLAUDE` | string | `claude -p {{prompt}} --output-format stream-json --verbose --dangerously-skip-permissions` | Custom Claude command template |
-| `ORCHESTRA_AGENT_COMMAND_OPENCODE` | string | `opencode -p {{prompt}} -f json` | Custom OpenCode command template |
+| `ORCHESTRA_AGENT_COMMAND_OPENCODE` | string | `opencode run {{prompt}} --format json` | Custom OpenCode command template |
 | `ORCHESTRA_AGENT_COMMAND_GEMINI` | string | `gemini -p {{prompt}} --output-format stream-json --approval-mode yolo` | Custom Gemini command template |
 | `ORCHESTRA_AGENT_COMMAND_UNSANDBOX` | string | _(none)_ | Custom Unsandbox agent command template |
 | `ORCHESTRA_MAX_CONCURRENT` | int | `6` | Maximum concurrent agent runs |

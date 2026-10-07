@@ -13,6 +13,7 @@ vi.mock('@core/api/client', () => ({
   fetchWorkspaceChatModels: vi.fn(),
   createWorkspaceChatSession: vi.fn(), fetchWorkspaceChat: vi.fn(),
   renameWorkspaceChatSession: vi.fn(),
+  switchWorkspaceChatProvider: vi.fn(),
   sendWorkspaceChatMessage: vi.fn(), stopWorkspaceChatTurn: vi.fn(),
   replyWorkspaceChatRequest: vi.fn(),
 }))
@@ -160,7 +161,7 @@ describe('WorkspaceChat', () => {
     expect(useAppStore.getState().requestedWorkspaceConversation?.requestId).toBe(1)
     expect(api.sendWorkspaceChatMessage).not.toHaveBeenCalled()
   })
-  it('offers registered harnesses in an existing chat and retains the draft when changing harness', async () => {
+  it('switches harness in place, keeping the conversation and draft', async () => {
     vi.mocked(api.fetchWorkspaceChatProviders).mockResolvedValue({ providers: [
       { id: 'codex', label: 'Codex', enabled: true, provider_resume: false, conversation_mode: 'transcript_replay' },
       { id: '8GENT', label: '8gent', enabled: true, provider_resume: false, conversation_mode: 'transcript_replay' },
@@ -171,16 +172,15 @@ describe('WorkspaceChat', () => {
     fireEvent.change(screen.getByLabelText('Message agent'), { target: { value: 'Carry this draft' } })
     fireEvent.click(screen.getByLabelText('Choose harness and model'))
     expect(screen.getByRole('button', { name: 'Use Claude Code' })).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: 'Use 8gent' }))
+    const switched = { ...session, provider: '8GENT' }
+    vi.mocked(api.switchWorkspaceChatProvider).mockResolvedValue(switched)
+    vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({ session: switched, messages: [] })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Use 8gent' })) })
+    expect(api.switchWorkspaceChatProvider).toHaveBeenCalledWith(config, 'project-a', session.id, '8GENT', session.provider)
+    await waitFor(() => expect(screen.getByLabelText('Choose harness and model')).toHaveTextContent('8gent'))
     expect(screen.getByLabelText('Message agent')).toHaveValue('Carry this draft')
-    expect(screen.getByLabelText('Choose harness and model')).toHaveTextContent('8gent')
     expect(api.createWorkspaceChatSession).not.toHaveBeenCalled()
     expect(api.sendWorkspaceChatMessage).not.toHaveBeenCalled()
-    fireEvent.keyDown(document, { key: 'Escape' })
-    expect(screen.queryByRole('dialog', { name: 'Harnesses and models' })).not.toBeInTheDocument()
-    await selectConversation()
-    expect(screen.getByLabelText('Choose harness and model')).toHaveTextContent('Codex')
-    expect(screen.getByLabelText('Message agent')).toHaveValue('Carry this draft')
   })
   it('observes late provider usage on the next bounded idle poll', async () => {
     const mounted = open()
@@ -470,6 +470,27 @@ describe('WorkspaceChat', () => {
     await selectConversation()
     expect(screen.getAllByText('Final answer')).toHaveLength(1)
   })
+  it('sends Implement and Regenerate for the selected variant without touching the draft', async () => {
+    const variants = 'Two takes.\n\n```orchestra-html\n<!-- title: Calm -->\n<div>calm</div>\n```\n\n```orchestra-html\n<!-- title: Bold -->\n<div>bold</div>\n```'
+    vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({ session, messages: [{ ...message, id: 'assistant-v', role: 'assistant', text: variants, status: 'completed' }] })
+    open()
+    await selectConversation()
+    fireEvent.change(screen.getByLabelText('Message agent'), { target: { value: 'My unsent draft' } })
+    fireEvent.click(await screen.findByRole('tab', { name: 'Variant #2' }))
+    expect(screen.getByTitle('Bold')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Implement' }))
+    await waitFor(() => expect(api.sendWorkspaceChatMessage).toHaveBeenCalledTimes(1))
+    expect(api.sendWorkspaceChatMessage).toHaveBeenCalledWith(config, 'project-a', 'chat-a', expect.any(String),
+      'Implement Variant #2 ("Bold") in this project. Integrate it with the existing components, styles, and conventions rather than pasting the standalone HTML.\n\nReference HTML for the variant:\n\n```html\n<!-- title: Bold -->\n<div>bold</div>\n```')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Implement' })).toBeEnabled())
+    expect(screen.getByLabelText('Message agent')).toHaveValue('My unsent draft')
+
+    vi.mocked(api.sendWorkspaceChatMessage).mockClear()
+    fireEvent.click(screen.getByRole('button', { name: 'Regenerate' }))
+    await waitFor(() => expect(api.sendWorkspaceChatMessage).toHaveBeenCalledWith(config, 'project-a', 'chat-a', expect.any(String),
+      'Regenerate Variant #2 ("Bold") as a fresh, improved take that keeps its direction. Publish it as an HTML render.'))
+    expect(screen.getByLabelText('Message agent')).toHaveValue('My unsent draft')
+  })
   it('sends the exact provider-reported model slug only after explicit selection', async () => {
     vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({ session: { ...session, conversation_mode: 'native_session' }, messages: [] })
     vi.mocked(api.fetchWorkspaceChatModels).mockResolvedValue({ project_id: 'project-a', provider: 'codex', observation: 'provider_catalog', models: [
@@ -607,6 +628,21 @@ describe('WorkspaceChat', () => {
     const response = screen.getByText('Repository inspected')
     expect(activity.compareDocumentPosition(response) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.getByText(/git status.*clean/s)).toBeInTheDocument()
+  })
+  it('renders Codex reasoning from string summaries and streamed deltas, never raw JSON', async () => {
+    vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({ session, messages: [], events: [
+      { sequence: 1, type: 'item/completed', turn_id: 'turn-a', item_id: 'r1', created_at: '', payload: { item: { id: 'r1', type: 'reasoning', summary: ['Checked the router'], content: [] } } },
+      { sequence: 2, type: 'item/started', turn_id: 'turn-a', item_id: 'r2', created_at: '', payload: { item: { id: 'r2', type: 'reasoning', summary: [], content: [] } } },
+      { sequence: 3, type: 'item/reasoning/summaryTextDelta', turn_id: 'turn-a', item_id: 'r2', delta: 'Streaming ', created_at: '', payload: { summaryIndex: 0 } },
+      { sequence: 4, type: 'item/reasoning/summaryTextDelta', turn_id: 'turn-a', item_id: 'r2', delta: 'thoughts', created_at: '', payload: { summaryIndex: 0 } },
+      { sequence: 5, type: 'item/completed', turn_id: 'turn-a', item_id: 'r3', created_at: '', payload: { item: { id: 'r3', type: 'reasoning', summary: [], content: [] } } },
+    ] })
+    open()
+    await selectConversation()
+    expect(screen.getByText('Checked the router')).toBeInTheDocument()
+    expect(screen.getByText('Streaming thoughts')).toBeInTheDocument()
+    expect(screen.getAllByText('Reasoning')).toHaveLength(2)
+    expect(screen.queryByText(/"type": "reasoning"/)).not.toBeInTheDocument()
   })
   it('keeps a definite preaccept model rejection editable without labeling it uncertain', async () => {
     vi.mocked(api.sendWorkspaceChatMessage).mockRejectedValue(Object.assign(new Error('Model unsupported'), { code: 'chat_provider_unavailable' }))

@@ -360,7 +360,7 @@ function DetailPopover({
   const now = useNow(60_000)
   const openHarnessSetup = () => {
     setActiveAgentProvider(provider === 'claude' ? 'claude' : 'codex')
-    setActiveAgentCategory('overview')
+    setActiveAgentCategory(provider === 'claude' ? 'settings' : 'config')
     setActiveSection('AGENTS')
   }
   return (

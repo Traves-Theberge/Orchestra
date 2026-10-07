@@ -59,6 +59,9 @@ type Config struct {
 	GitHubClientSecret string
 	// MCPServers maps MCP server names to their command or URL.
 	MCPServers map[string]string
+	// OrchestraMCPServers are the ORCHESTRA_MCP_SERVERS entries only (no
+	// servers imported from harness configs); they are passed to harness runs.
+	OrchestraMCPServers map[string]string
 	// TelemetryProviders lists provider names whose session logs are ingested for telemetry.
 	TelemetryProviders []string
 	// TelemetryRetentionDays is the number of days to retain telemetry events before pruning.

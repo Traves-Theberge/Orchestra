@@ -131,6 +131,40 @@ func TestAPICorsPreflightAllowsLoopbackOrigin(t *testing.T) {
 	}
 }
 
+// A burst of page reads (e.g. the Agents dashboard) must not turn into an
+// opaque browser "Failed to fetch": preflights must not consume rate-limit
+// tokens, and a 429 must still carry CORS headers so the client can read it.
+func TestAPIRateLimitedResponsesCarryCORSHeaders(t *testing.T) {
+	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""})
+	const origin = "http://127.0.0.1:5173"
+
+	for i := 0; i < 100; i++ {
+		req := httptest.NewRequest(http.MethodOptions, "/api/v1/state", nil)
+		req.Header.Set("Origin", origin)
+		req.Header.Set("Access-Control-Request-Method", http.MethodGet)
+		res := httptest.NewRecorder()
+		router.ServeHTTP(res, req)
+		if res.Code != http.StatusOK {
+			t.Fatalf("preflight %d: expected 200, got %d", i, res.Code)
+		}
+	}
+
+	limited := false
+	for i := 0; i < 100 && !limited; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+		req.Header.Set("Origin", origin)
+		res := httptest.NewRecorder()
+		router.ServeHTTP(res, req)
+		if got := res.Header().Get("Access-Control-Allow-Origin"); got != origin {
+			t.Fatalf("request %d (status %d): expected CORS allow origin %q, got %q", i, res.Code, origin, got)
+		}
+		limited = res.Code == http.StatusTooManyRequests
+	}
+	if !limited {
+		t.Fatal("expected the burst to be rate limited")
+	}
+}
+
 func TestEventsEndpointStreamsSnapshotFrame(t *testing.T) {
 	router := NewRouter(zerolog.Nop(), orchestrator.NewService(), &config.Config{WorkspaceRoot: t.TempDir(), Host: "127.0.0.1", APIToken: ""})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events?once=1", nil)

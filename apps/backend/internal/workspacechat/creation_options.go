@@ -54,36 +54,57 @@ func hasAgentIntent(id, scope, hash, format string) bool {
 }
 
 func (s *Service) validateAgentIntent(ctx context.Context, pid, provider, id, scope, hash, format string) error {
-	if id == "" || (scope != string(agentcatalog.ScopeProject) && scope != string(agentcatalog.ScopeGlobal)) || hash == "" {
-		return ErrInvalid
+	_, err := s.resolveAgentIntent(ctx, pid, provider, id, scope, hash, format)
+	return err
+}
+
+// resolveAgentIntent resolves a selection to the exact profile the harness
+// adapter applies, and checks the adapter can apply it. Stable agent ids
+// ("<source>:<scope>:<harness|orchestra>:<name>") carry their scope, so scope
+// and content hash are optional for them (automations send only the id);
+// legacy bare ids still require scope and hash.
+func (s *Service) resolveAgentIntent(ctx context.Context, pid, provider, id, scope, hash, format string) (*agents.ResolvedAgent, error) {
+	_, parsedScope, _, _, stable := agentcatalog.ParseAgentID(id)
+	if id == "" || scope != "" && scope != string(agentcatalog.ScopeProject) && scope != string(agentcatalog.ScopeGlobal) {
+		return nil, ErrInvalid
+	}
+	if !stable && (scope == "" || hash == "") {
+		return nil, ErrInvalid
+	}
+	if stable && scope != "" && agentcatalog.Scope(scope) != parsedScope {
+		return nil, ErrInvalid
+	}
+	if stable {
+		scope = string(parsedScope)
 	}
 	if pid == OrchestratorScope && scope != string(agentcatalog.ScopeGlobal) {
-		return ErrForbidden
+		return nil, ErrForbidden
 	}
 	if s.agentCatalog == nil {
-		return fmt.Errorf("%w: agent catalog is unavailable", ErrUnsupported)
+		return nil, fmt.Errorf("%w: agent catalog is unavailable", ErrUnsupported)
 	}
 	workspaceID, _, _, err := s.scope(ctx, pid)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if err = s.agentCatalog.ValidateSelection(ctx, pid, workspaceID, provider, agentcatalog.Scope(scope), id, hash, format); err != nil {
+	resolved, err := s.agentCatalog.ResolveAgent(ctx, agentcatalog.ResolveRequest{ProjectID: pid, WorkspaceID: workspaceID, Harness: provider, AgentID: id, Scope: scope, Hash: hash, Format: format})
+	if err != nil {
 		if errors.Is(err, agentcatalog.ErrInvalid) {
-			return ErrInvalid
+			return nil, ErrInvalid
 		}
 		if errors.Is(err, agentcatalog.ErrForbidden) {
-			return ErrForbidden
+			return nil, ErrForbidden
 		}
 		if errors.Is(err, agentcatalog.ErrNotFound) || errors.Is(err, agentcatalog.ErrConflict) {
-			return ErrConflict
+			return nil, fmt.Errorf("%w: %v", ErrConflict, err)
 		}
-		return fmt.Errorf("%w: %v", ErrUnsupported, err)
+		return nil, fmt.Errorf("%w: %v", ErrUnsupported, err)
 	}
-	turn := agents.TurnRequest{ProjectID: pid, RequestedAgentID: id, RequestedAgentScope: scope, RequestedAgentContentHash: hash, RequestedAgentFormat: format, RuntimeTarget: agents.RuntimeLocal}
+	turn := agents.TurnRequest{ProjectID: pid, RequestedAgentID: id, RequestedAgentScope: scope, RequestedAgentContentHash: hash, RequestedAgentFormat: format, RuntimeTarget: agents.RuntimeLocal, Agent: resolved}
 	if err = s.registry.ValidateTurnOptions(agents.NormalizeProvider(provider), turn); err != nil {
-		return fmt.Errorf("%w: %v", ErrUnsupported, err)
+		return nil, fmt.Errorf("%w: %v", ErrUnsupported, err)
 	}
-	return nil
+	return resolved, nil
 }
 
 func (s *Service) matchAgentIntent(ctx context.Context, sessionID, id, scope, hash, format string) error {

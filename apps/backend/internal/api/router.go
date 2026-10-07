@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/orchestra/orchestra/apps/backend/internal/agentcatalog"
+	"github.com/orchestra/orchestra/apps/backend/internal/automations"
 	"github.com/orchestra/orchestra/apps/backend/internal/config"
 	"github.com/orchestra/orchestra/apps/backend/internal/control"
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
@@ -56,6 +57,7 @@ type Server struct {
 	workspaceChat       *workspacechat.Service
 	orchestratorControl *control.Service
 	worktreeJobs        *worktreejobs.Service
+	automations         *automations.Service
 	worktreeRemovals    *workspacelifecycle.Service
 	agentCatalog        *agentcatalog.Service
 	codexDeviceLogin    *harnesssetup.DeviceLoginManager
@@ -119,7 +121,12 @@ func NewRouterWithPubSub(
 			server.workspaceChat = value
 		case *harnessaccounts.Store:
 			server.accounts = value
+		case *automations.Service:
+			server.automations = value
 		}
+	}
+	if server.workspaceChat != nil && warehouseDB != nil {
+		server.workspaceChat.ConfigureMCP(server.orchestraMCPServers)
 	}
 	if warehouseDB != nil {
 		catalog, err := agentcatalog.New(warehouseDB, cfg.ProjectRoots, cfg.WorkspaceRoot, cfg.AgentCommands, cfg.NativeAgentCommands)
@@ -180,6 +187,9 @@ func NewRouterWithPubSub(
 		})
 		if err == nil {
 			server.worktreeJobs = jobs
+			if server.automations != nil {
+				server.automations.ConfigureWorktrees(jobs)
+			}
 		} else {
 			logger.Warn().Err(err).Msg("workspace creation jobs unavailable")
 		}
@@ -190,10 +200,10 @@ func NewRouterWithPubSub(
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recoverer)
 	r.Use(RequestLogger(logger))
-	r.Use(RateLimit(20, 60)) // 20 req/s sustained, 60 burst
-	r.Use(securityHeaders)
-	r.Use(contentTypeGuard)
-	r.Use(middleware.Timeout(30 * time.Second))
+	// CORS runs before the rate limiter and other short-circuiting middleware so
+	// that preflights are answered without consuming rate-limit tokens and every
+	// early error response (429, 415, 504) still carries CORS headers. Without
+	// them the browser surfaces a readable 429 as an opaque "Failed to fetch".
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
@@ -201,6 +211,10 @@ func NewRouterWithPubSub(
 		AllowCredentials: false,
 		MaxAge:           300,
 	}))
+	r.Use(RateLimit(20, 60)) // 20 req/s sustained, 60 burst
+	r.Use(securityHeaders)
+	r.Use(contentTypeGuard)
+	r.Use(middleware.Timeout(30 * time.Second))
 	r.MethodNotAllowed(server.methodNotAllowed)
 	r.NotFound(server.notFound)
 
@@ -249,7 +263,16 @@ func NewRouterWithPubSub(
 	protected.Get("/api/v1/config/agents/items", server.GetAgentConfigs)
 	protected.Post("/api/v1/config/agents/new", server.PostAgentConfigNew)
 	protected.Post("/api/v1/config/agents/items", server.PostAgentConfigUpdate)
-	protected.Get("/api/v1/agents", server.GetAgents)
+	protected.Get("/api/v1/agents", server.GetAgentsOrProfiles)
+	protected.Post("/api/v1/agents", server.PostAgentProfile)
+	protected.Patch("/api/v1/agents/{provider}", server.PatchAgentProfile)
+	protected.Delete("/api/v1/agents/{provider}", server.DeleteAgentProfile)
+	protected.Get("/api/v1/agent-profiles", server.GetAgentProfiles)
+	protected.Post("/api/v1/agent-profiles", server.PostAgentProfile)
+	protected.Patch("/api/v1/agent-profiles/{id}", server.PatchAgentProfile)
+	protected.Delete("/api/v1/agent-profiles/{id}", server.DeleteAgentProfile)
+	protected.Get("/api/v1/harnesses/capabilities", server.GetHarnessCapabilities)
+	protected.Get("/api/v1/skills", server.GetSkills)
 	protected.Get("/api/v1/agents/setup", server.GetHarnessSetup)
 	protected.Put("/api/v1/agents/{provider}/registration", server.SetHarnessRegistration)
 	protected.Get("/api/v1/agents/accounts", server.ListHarnessAccounts)
@@ -329,6 +352,8 @@ func NewRouterWithPubSub(
 
 	protected.Get("/api/v1/mcp/tools", server.GetMCPTools)
 	protected.Get("/api/v1/mcp/servers", server.GetMCPServers)
+	protected.Get("/api/v1/mcp/servers/status", server.GetMCPServerStatus)
+	protected.Post("/api/v1/mcp/servers/{id}/probe", server.PostMCPServerProbe)
 	protected.Post("/api/v1/mcp/servers", server.PostMCPServer)
 	protected.Delete("/api/v1/mcp/servers/{id}", server.DeleteMCPServer)
 
@@ -358,6 +383,7 @@ func NewRouterWithPubSub(
 	protected.Get("/api/v1/projects/{project_id}/worktree-removals/{request_id}", server.GetProjectWorktreeRemoval)
 	protected.Post("/api/v1/projects/{project_id}/worktree-jobs", server.PostWorktreeJob)
 	protected.Get("/api/v1/projects/{project_id}/worktree-jobs/{request_id}", server.GetWorktreeJob)
+	server.registerAutomationRoutes(protected)
 	protected.Delete("/api/v1/projects/{project_id}", server.DeleteProject)
 	protected.Post("/api/v1/projects/{project_id}/git/commit", server.withGitWorkspace(server.PostGitCommit))
 	protected.Post("/api/v1/projects/{project_id}/git/push", server.withGitWorkspace(server.PostGitPush))
@@ -453,6 +479,7 @@ func NewRouterWithPubSub(
 	protected.Post("/api/v1/orchestrator/chat/sessions", orchestratorChatScope(server.PostWorkspaceChatSession))
 	protected.Get("/api/v1/orchestrator/chat/sessions/{session_id}", orchestratorChatScope(server.GetWorkspaceChatSession))
 	protected.Patch("/api/v1/orchestrator/chat/sessions/{session_id}/title", orchestratorChatScope(server.PatchWorkspaceChatTitle))
+	protected.Patch("/api/v1/orchestrator/chat/sessions/{session_id}/provider", orchestratorChatScope(server.PatchWorkspaceChatProvider))
 	protected.Post("/api/v1/orchestrator/chat/sessions/{session_id}/messages", orchestratorChatScope(server.PostWorkspaceChatMessage))
 	protected.Post("/api/v1/orchestrator/chat/sessions/{session_id}/stop", orchestratorChatScope(server.PostWorkspaceChatStop))
 	protected.Post("/api/v1/orchestrator/chat/sessions/{session_id}/requests/{request_id}/reply", orchestratorChatScope(server.PostWorkspaceChatReply))
@@ -469,6 +496,7 @@ func NewRouterWithPubSub(
 	protected.Post("/api/v1/projects/{project_id}/chat/sessions", server.PostWorkspaceChatSession)
 	protected.Get("/api/v1/projects/{project_id}/chat/sessions/{session_id}", server.GetWorkspaceChatSession)
 	protected.Patch("/api/v1/projects/{project_id}/chat/sessions/{session_id}/title", server.PatchWorkspaceChatTitle)
+	protected.Patch("/api/v1/projects/{project_id}/chat/sessions/{session_id}/provider", server.PatchWorkspaceChatProvider)
 	protected.Post("/api/v1/projects/{project_id}/chat/sessions/{session_id}/archive", server.PostWorkspaceChatArchive)
 	protected.Post("/api/v1/projects/{project_id}/chat/sessions/{session_id}/unarchive", server.PostWorkspaceChatUnarchive)
 	protected.Get("/api/v1/projects/{project_id}/chat/sessions/{session_id}/history", server.GetWorkspaceChatArchiveHistory)

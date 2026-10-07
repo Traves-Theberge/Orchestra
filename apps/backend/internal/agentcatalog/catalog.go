@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -22,6 +21,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/orchestra/orchestra/apps/backend/internal/agents"
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
 	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
 	"gopkg.in/yaml.v3"
@@ -74,6 +74,19 @@ type Item struct {
 	SelectionStatus     string `json:"selection_status"`
 	Reason              string `json:"reason,omitempty"`
 	Content             string `json:"content,omitempty"`
+	// Normalized Agent fields (docs/superpowers/specs/agents-profiles-2026-10-07.md).
+	Source              string                   `json:"source,omitempty"`
+	Name                string                   `json:"name,omitempty"`
+	CompatibleHarnesses []string                 `json:"compatible_harnesses,omitempty"`
+	Model               string                   `json:"model,omitempty"`
+	Effort              string                   `json:"effort,omitempty"`
+	Color               string                   `json:"color,omitempty"`
+	Skills              []string                 `json:"skills,omitempty"`
+	MCPServers          []string                 `json:"mcp_servers,omitempty"`
+	Permissions         *agents.AgentPermissions `json:"permissions,omitempty"`
+	Selectable          bool                     `json:"selectable"`
+	UnavailableReason   string                   `json:"unavailable_reason,omitempty"`
+	prompt              string
 }
 
 type Capabilities struct {
@@ -143,6 +156,23 @@ type Service struct {
 	probeMu       sync.Mutex
 	probeCache    map[string]runtimeProbe
 	mu            sync.Mutex
+	// home overrides os.UserHomeDir for global scope (tests, ORCHESTRA config).
+	home string
+}
+
+// SetHome injects the global-scope home directory. Orchestra global agents
+// live at <home>/.orchestra/agents.
+func (s *Service) SetHome(home string) { s.home = home }
+
+func (s *Service) homeDir() (string, error) {
+	if s.home != "" {
+		return s.home, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return "", fmt.Errorf("global home unavailable")
+	}
+	return home, nil
 }
 
 type runtimeProbe struct{ capability, version, reason string }
@@ -187,7 +217,7 @@ func (s *Service) List(ctx context.Context, req Request) (Catalog, error) {
 	if len(resourceSpecs(harness, resolvedScope{scope: ScopeGlobal, root: ""})) == 0 {
 		observation = "unsupported"
 	}
-	catalog := Catalog{ProjectID: req.ProjectID, WorkspaceID: req.WorkspaceID, Harness: harness, Scope: req.Scope, Observation: observation, SelectionCapability: probe.capability, RuntimeVersion: probe.version, Reason: probe.reason, Capabilities: Capabilities{List: true, Create: canAuthor, Update: canAuthor, Delete: canAuthor, SelectPrimary: false, SelectionReason: probe.reason}, Items: []Item{}}
+	catalog := Catalog{ProjectID: req.ProjectID, WorkspaceID: req.WorkspaceID, Harness: harness, Scope: req.Scope, Observation: observation, SelectionCapability: probe.capability, RuntimeVersion: probe.version, Reason: probe.reason, Capabilities: Capabilities{List: true, Create: canAuthor, Update: canAuthor, Delete: canAuthor, SelectPrimary: probe.capability == SelectionSelectablePrimary, SelectionReason: probe.reason}, Items: []Item{}}
 	if req.Scope == ScopeProject {
 		catalog.Root = scopes[0].root
 	}
@@ -251,23 +281,8 @@ func (s *Service) ValidateSelection(ctx context.Context, projectID, workspaceID,
 	if projectID == "__orchestrator__" && scope != ScopeGlobal {
 		return ErrForbidden
 	}
-	cat, err := s.List(ctx, Request{ProjectID: projectID, WorkspaceID: workspaceID, Harness: harness, Scope: scope})
-	if err != nil {
-		return err
-	}
-	for _, item := range cat.Items {
-		if item.Kind != KindAgentDefinition || item.AgentID != agentID || item.Scope != scope {
-			continue
-		}
-		if item.ContentHash != expectedHash || format != "" && item.Format != format {
-			return ErrConflict
-		}
-		if item.Mode == "subagent" {
-			return fmt.Errorf("%w: %s", ErrUnsupported, "subagent definitions cannot be selected as primary")
-		}
-		return nil
-	}
-	return ErrNotFound
+	_, err := s.ResolveAgent(ctx, ResolveRequest{ProjectID: projectID, WorkspaceID: workspaceID, Harness: harness, AgentID: agentID, Scope: string(scope), Hash: expectedHash, Format: format})
+	return err
 }
 
 func (s *Service) GetReceipt(ctx context.Context, requestID string) (Receipt, error) {
@@ -498,9 +513,9 @@ func (s *Service) scopes(ctx context.Context, req Request) ([]resolvedScope, err
 	}
 	result := []resolvedScope{}
 	if req.Scope == ScopeGlobal || req.Scope == ScopeEffective {
-		home, err := os.UserHomeDir()
-		if err != nil || home == "" {
-			return nil, fmt.Errorf("global home unavailable")
+		home, err := s.homeDir()
+		if err != nil {
+			return nil, err
 		}
 		result = append(result, resolvedScope{ScopeGlobal, home})
 	}
@@ -591,29 +606,8 @@ func resourceSpecs(harness string, scope resolvedScope) []resourceSpec {
 	default:
 		return nil
 	}
-
-	if scope.scope == ScopeGlobal {
-		specs = append(specs, resourceSpec{scope.root, filepath.Join(scope.root, ".agents", "agents"), KindAgentDefinition, ".md", true})
-		specs = append(specs, resourceSpec{scope.root, filepath.Join(scope.root, ".agents", "skills"), KindSkill, "", true})
-		if harness != "CODEX" {
-			specs = append(specs, resourceSpec{scope.root, filepath.Join(scope.root, ".codex", "agents"), KindAgentDefinition, ".toml", false})
-		}
-		if harness != "CLAUDE" {
-			specs = append(specs, resourceSpec{scope.root, filepath.Join(scope.root, ".claude", "agents"), KindAgentDefinition, ".md", true})
-		}
-		if harness != "OPENCODE" {
-			specs = append(specs, resourceSpec{filepath.Join(scope.root, ".config", "opencode"), filepath.Join(scope.root, ".config", "opencode", "agents"), KindAgentDefinition, ".md", true})
-		}
-		if harness != "ANTIGRAVITY" {
-			specs = append(specs, resourceSpec{scope.root, filepath.Join(scope.root, ".gemini", "config", "agents"), KindAgentDefinition, ".md", true})
-		}
-	} else if scope.scope == ScopeProject {
-		if harness != "ANTIGRAVITY" {
-			specs = append(specs, resourceSpec{scope.root, filepath.Join(scope.root, ".agents", "agents"), KindAgentDefinition, ".md", true})
-			specs = append(specs, resourceSpec{scope.root, filepath.Join(scope.root, ".agents", "skills"), KindSkill, "", true})
-		}
-	}
-
+	// Per-harness discovery only: a harness's list never includes another
+	// harness's directories.
 	return specs
 }
 
@@ -680,13 +674,32 @@ func walkResources(root, dir string, kind Kind, harness string, scope Scope, cap
 		if id == "" {
 			return nil
 		}
-		meta := parseMetadata(data)
-		status, reason := selectionStatus(harness, kind, meta.mode, capability)
-		agentID := ""
-		if kind == KindAgentDefinition {
-			agentID = id
+		meta := parseAgentFile(data, format)
+		if kind == KindAgentDefinition && harness == "CLAUDE" && meta.mode == "" {
+			// Claude .claude/agents files work both ways: `claude --agent <name>` runs
+			// one as the main session, and Claude can also delegate to it as a subagent.
+			meta.mode = "all"
 		}
-		items = append(items, Item{ItemID: string(kind) + ":" + string(scope) + ":" + id, ID: id, AgentID: agentID, Kind: kind, Harness: harness, Scope: scope, Path: path, ContentHash: contentHash(data), Format: formatName(harness, format), DisplayName: first(meta.name, id), Description: meta.description, Mode: meta.mode, SelectableAsPrimary: status == "primary_selectable", SelectionStatus: status, Reason: reason})
+		status, reason := selectionStatus(harness, kind, meta.mode, capability)
+		item := Item{ItemID: string(kind) + ":" + string(scope) + ":" + id, ID: id, Kind: kind, Harness: harness, Scope: scope, Path: path, ContentHash: contentHash(data), Format: formatName(harness, format), DisplayName: first(meta.name, id), Description: meta.description, Mode: meta.mode, SelectableAsPrimary: status == SelectionSelectablePrimary, SelectionStatus: status, Reason: reason}
+		if kind == KindAgentDefinition {
+			item.AgentID = HarnessAgentID(scope, harness, id)
+			item.Source = agents.AgentSourceHarness
+			item.Name = harnessAgentName(harness, id, meta.name)
+			item.CompatibleHarnesses = []string{harness}
+			item.Model, item.Effort, item.Color = meta.model, meta.effort, meta.color
+			item.Skills, item.MCPServers = meta.skills, meta.mcpServers
+			if meta.permissions != (agents.AgentPermissions{}) {
+				perms := meta.permissions
+				item.Permissions = &perms
+			}
+			item.Selectable = status == SelectionSelectablePrimary
+			if !item.Selectable {
+				item.UnavailableReason = reason
+			}
+			item.prompt = meta.prompt
+		}
+		items = append(items, item)
 		return nil
 	})
 	return items, err
@@ -748,7 +761,8 @@ func (s *Service) targetPath(ctx context.Context, req Request, kind Kind, id, fo
 				return "", ErrInvalid
 			}
 			if harness == "OPENCODE" {
-				if format != "" && format != "opencode-v1" && format != "opencode-v2" && format != "md" {
+				// Accept the format the catalog itself reports (formatName) so listed items round-trip.
+				if format != "" && format != "opencode-markdown" && format != "opencode-v1" && format != "opencode-v2" && format != "md" {
 					return "", ErrInvalid
 				}
 				ext = ".md"
@@ -836,7 +850,7 @@ func validateNativeContent(req MutationRequest, content string) error {
 			return nil
 		}
 		if req.Harness == "OPENCODE" {
-			if req.Format != "opencode-v1" && req.Format != "opencode-v2" {
+			if req.Format != "opencode-markdown" && req.Format != "opencode-v1" && req.Format != "opencode-v2" {
 				return ErrInvalid
 			}
 			if !strings.HasPrefix(content, "---\n") {
@@ -871,151 +885,6 @@ func validateNativeContent(req MutationRequest, content string) error {
 	return nil
 }
 
-func selectionStatus(harness string, kind Kind, mode, capability string) (string, string) {
-	if kind == KindSkill {
-		return SelectionUnsupported, "Skills are not primary-agent profiles."
-	}
-	if harness == "ANTIGRAVITY" {
-		return SelectionConfiguredUnapplied, "The CLI exposes --agent, but effective custom-agent selection has not been verified by an isolated native canary. Profile role metadata is preserved separately."
-	}
-	if mode == "subagent" {
-		return "subagent_only", "This native definition is marked as a subagent."
-	}
-	if capability == SelectionUnavailable || capability == SelectionUnsupported {
-		return capability, "The configured " + harness + " runtime has not established primary agent selection."
-	}
-	return SelectionSelectablePrimary, ""
-}
-
-func supportsAuthoring(harness string) bool {
-	return harness == "OPENCODE" || harness == "CLAUDE" || harness == "CODEX" || harness == "ANTIGRAVITY"
-}
-
-func (s *Service) selectionProbe(ctx context.Context, harness string) runtimeProbe {
-	command := strings.TrimSpace(s.commands[harness])
-	if command == "" {
-		return runtimeProbe{SelectionUnavailable, "", "No " + harness + " command is configured."}
-	}
-	return runtimeProbe{SelectionSelectablePrimary, "", ""}
-}
-
-func probeOpenCodeCommand(ctx context.Context, command string) runtimeProbe {
-	binary, ok := configuredExecutable(command)
-	if !ok {
-		return runtimeProbe{SelectionUnknown, "", "The configured OpenCode command is a shell expression; its executable cannot be safely probed."}
-	}
-	if filepath.Base(strings.ToLower(binary)) != "opencode" && filepath.Base(strings.ToLower(binary)) != "opencode.exe" {
-		return runtimeProbe{SelectionUnknown, "", "The configured command does not directly identify the OpenCode executable."}
-	}
-	resolved, err := exec.LookPath(binary)
-	if err != nil {
-		return runtimeProbe{SelectionUnavailable, "", "The configured OpenCode executable is not installed or not on PATH."}
-	}
-	probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	versionOut, versionErr := exec.CommandContext(probeCtx, resolved, "--version").CombinedOutput()
-	if versionErr != nil {
-		return runtimeProbe{SelectionUnknown, "", "OpenCode version could not be observed from the configured executable."}
-	}
-	version := strings.TrimSpace(string(versionOut))
-	helpCtx, helpCancel := context.WithTimeout(ctx, 3*time.Second)
-	defer helpCancel()
-	helpOut, helpErr := exec.CommandContext(helpCtx, resolved, "run", "--help").CombinedOutput()
-	if helpErr != nil {
-		return runtimeProbe{SelectionUnknown, version, "OpenCode run --help could not be observed safely."}
-	}
-	if !strings.Contains(string(helpOut), "--agent") {
-		return runtimeProbe{SelectionUnsupported, version, "The configured OpenCode CLI does not advertise run --agent."}
-	}
-	return runtimeProbe{SelectionConfiguredUnapplied, version, "The configured OpenCode CLI advertises run --agent, but Orchestra has no isolated effective-agent canary for this version."}
-}
-
-// probeAntigravityCommand performs only bounded, read-only CLI probes. Agent
-// selection remains configured-but-unapplied until a native canary verifies
-// the effective custom agent for the installed version.
-func probeAntigravityCommand(ctx context.Context, command string) runtimeProbe {
-	binary, ok := configuredExecutable(command)
-	if !ok {
-		return runtimeProbe{SelectionUnknown, "", "The configured Antigravity command is a shell expression; its executable cannot be safely probed."}
-	}
-	base := strings.ToLower(filepath.Base(binary))
-	if base != "agy" && base != "agy.exe" {
-		return runtimeProbe{SelectionUnknown, "", "The configured command does not directly identify the Antigravity CLI executable."}
-	}
-	resolved, err := exec.LookPath(binary)
-	if err != nil {
-		return runtimeProbe{SelectionUnavailable, "", "The configured Antigravity executable is not installed or not on PATH."}
-	}
-	versionCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	versionOut, versionErr := exec.CommandContext(versionCtx, resolved, "--version").CombinedOutput()
-	if versionErr != nil {
-		return runtimeProbe{SelectionUnknown, "", "Antigravity CLI version could not be observed safely."}
-	}
-	version := strings.TrimSpace(string(versionOut))
-	helpCtx, helpCancel := context.WithTimeout(ctx, 3*time.Second)
-	defer helpCancel()
-	helpOut, helpErr := exec.CommandContext(helpCtx, resolved, "--help").CombinedOutput()
-	if helpErr != nil {
-		return runtimeProbe{SelectionUnknown, version, "Antigravity CLI help could not be observed safely."}
-	}
-	help := string(helpOut)
-	for _, flag := range []string{"--agent", "--input-format", "--output-format", "--conversation"} {
-		if !strings.Contains(help, flag) {
-			return runtimeProbe{SelectionUnsupported, version, "The configured Antigravity CLI does not advertise the required native session flags."}
-		}
-	}
-	return runtimeProbe{SelectionConfiguredUnapplied, version, "The CLI advertises native agent selection and resumable stream-json sessions; effective custom-agent selection has not been verified with an isolated provider canary."}
-}
-
-func configuredExecutable(command string) (string, bool) {
-	var out strings.Builder
-	quote := rune(0)
-	escaped := false
-	started := false
-	for _, ch := range command {
-		if escaped {
-			out.WriteRune(ch)
-			escaped = false
-			started = true
-			continue
-		}
-		if ch == '\\' && quote != '\'' {
-			escaped = true
-			continue
-		}
-		if quote != 0 {
-			if ch == quote {
-				quote = 0
-			} else {
-				out.WriteRune(ch)
-			}
-			started = true
-			continue
-		}
-		if ch == '\'' || ch == '"' {
-			quote = ch
-			started = true
-			continue
-		}
-		if ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' {
-			if started {
-				break
-			}
-			continue
-		}
-		if strings.ContainsRune(";&|<>$`()", ch) {
-			return "", false
-		}
-		out.WriteRune(ch)
-		started = true
-	}
-	if quote != 0 || escaped || out.Len() == 0 {
-		return "", false
-	}
-	return out.String(), true
-}
-
 func first(values ...string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {
@@ -1025,34 +894,6 @@ func first(values ...string) string {
 	return ""
 }
 
-func parseMetadata(data []byte) struct{ name, description, mode string } {
-	var out struct{ name, description, mode string }
-	text := string(data)
-	if !strings.HasPrefix(text, "---\n") {
-		return out
-	}
-	end := strings.Index(text[4:], "\n---")
-	if end < 0 {
-		return out
-	}
-	var fields map[string]any
-	if yaml.Unmarshal([]byte(text[4:4+end]), &fields) != nil {
-		return out
-	}
-	out.name, _ = fields["name"].(string)
-	out.description, _ = fields["description"].(string)
-	out.mode, _ = fields["mode"].(string)
-	if subagent, ok := fields["subagent"].(bool); ok && subagent {
-		out.mode = "subagent"
-	} else if mainAgent, ok := fields["mainAgent"].(bool); ok {
-		if mainAgent {
-			out.mode = "primary"
-		} else {
-			out.mode = "subagent"
-		}
-	}
-	return out
-}
 func formatName(harness, ext string) string {
 	if harness == "OPENCODE" && ext == ".md" {
 		return "opencode-markdown"
@@ -1065,7 +906,7 @@ func formatName(harness, ext string) string {
 func normalizeHarness(raw string) (string, error) {
 	v := strings.ToUpper(strings.TrimSpace(raw))
 	switch v {
-	case "OPENCODE", "CODEX", "CLAUDE", "GEMINI", "8GENT", "ANTIGRAVITY":
+	case "OPENCODE", "CODEX", "CLAUDE", "8GENT", "ANTIGRAVITY":
 		return v, nil
 	default:
 		return "", ErrUnsupported

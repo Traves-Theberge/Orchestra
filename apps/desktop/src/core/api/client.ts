@@ -354,6 +354,7 @@ export type WorkspaceChatMessage = {
   requested_agent_id?: string; requested_agent_scope?: 'project' | 'global'
   requested_agent_content_hash?: string; requested_agent_format?: string
   effective_agent_id?: string; agent_observation?: string
+  provider?: string
 }
 export type WorkspaceChatEvent = {
   sequence: number; type: string; thread_id?: string; turn_id?: string; item_id?: string
@@ -418,6 +419,12 @@ export function fetchWorkspaceChat(config: BackendConfig, projectId: string, ses
 export function renameWorkspaceChatSession(config: BackendConfig, projectId: string, sessionId: string, title: string, expectedTitle: string) {
   return requestJSON<WorkspaceChatSession>(config, `${workspaceChatPath(projectId)}/sessions/${encodeURIComponent(sessionId)}/title`, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, expected_title: expectedTitle }),
+  })
+}
+/** Moves an idle conversation to another harness; history is replayed into the new harness's first turn. */
+export function switchWorkspaceChatProvider(config: BackendConfig, projectId: string, sessionId: string, provider: string, expectedProvider: string) {
+  return requestJSON<WorkspaceChatSession>(config, `${workspaceChatPath(projectId)}/sessions/${encodeURIComponent(sessionId)}/provider`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, expected_provider: expectedProvider }),
   })
 }
 export function sendWorkspaceChatMessage(config: BackendConfig, projectId: string, sessionId: string, clientMessageId: string, text: string, requestedModel?: string, requestedReasoningEffort?: string, agent?: { agent_id: string; agent_scope: string; agent_content_hash: string; agent_format: string }) {
@@ -2959,4 +2966,282 @@ export async function applyStudioTemplate(
       body: JSON.stringify({ name, vars }),
     },
   )
+}
+
+// ---------------------------------------------------------------------------
+// Automations (scheduled agent runs)
+// ---------------------------------------------------------------------------
+
+export type AutomationScheduleKind = 'hourly' | 'daily' | 'weekdays' | 'weekly' | 'cron'
+
+export type AutomationSchedule = {
+  kind: AutomationScheduleKind
+  /** "HH:MM" for daily / weekdays / weekly. */
+  time?: string
+  /** 0-59, hourly only. */
+  minute?: number
+  /** 0-6, Sunday = 0, weekly only. */
+  day?: number
+  /** 5-field cron expression when kind = cron. */
+  cron?: string
+  /** IANA timezone; empty = backend local zone. */
+  timezone?: string
+}
+
+export type AutomationWorkspaceMode = 'project' | 'new_worktree'
+
+export type AutomationPrecheck = { command: string; timeout_seconds: number }
+
+export type AutomationInput = {
+  name: string
+  prompt: string
+  provider: string
+  model?: string
+  reasoning_effort?: string
+  project_id?: string
+  task_id?: string
+  workspace_mode?: AutomationWorkspaceMode
+  base_branch?: string
+  schedule: AutomationSchedule
+  grace_minutes?: number
+  precheck?: AutomationPrecheck
+  enabled?: boolean
+  /** Optional agent (Agent.id) applied to each run; empty means the harness default. */
+  agent_id?: string
+}
+
+export type AutomationRunStatus =
+  | 'queued' | 'starting' | 'running'
+  | 'succeeded' | 'failed' | 'cancelled'
+  | 'skipped_precheck' | 'skipped_missed' | 'skipped_busy' | 'skipped_unavailable'
+
+export type AutomationRunTrigger = 'scheduled' | 'manual'
+
+export type Automation = Required<Pick<AutomationInput, 'name' | 'prompt' | 'provider' | 'schedule'>> & Omit<AutomationInput, 'name' | 'prompt' | 'provider' | 'schedule'> & {
+  id: string
+  created_at: string
+  updated_at: string
+  next_run_at: string
+  last_run_at: string
+  last_run_status: AutomationRunStatus | ''
+  schedule_description: string
+  project_name: string
+  task_identifier: string
+  task_title: string
+}
+
+export type AutomationRun = {
+  id: string
+  automation_id: string
+  automation_name: string
+  run_number: number
+  title: string
+  trigger: AutomationRunTrigger
+  status: AutomationRunStatus
+  scheduled_for: string
+  started_at: string
+  finished_at: string
+  project_id: string
+  workspace_id: string
+  workspace_path: string
+  branch: string
+  chat_project_id: string
+  chat_session_id: string
+  task_id: string
+  provider: string
+  model: string
+  output: string
+  output_truncated: boolean
+  error: string
+  precheck?: { exit_code: number; stdout: string; stderr: string; duration_ms: number } | null
+  usage?: { input_tokens: number; output_tokens: number; total_tokens: number } | null
+  occurrence_count: number
+}
+
+export type AutomationSchedulePreview = {
+  valid: boolean
+  description: string
+  next_runs: string[]
+  error?: string
+}
+
+const automationPath = (id: string) => `/api/v1/automations/${encodeURIComponent(id)}`
+const automationRunPath = (id: string) => `/api/v1/automation-runs/${encodeURIComponent(id)}`
+const jsonInit = (method: string, body?: unknown): RequestInit => ({
+  method,
+  headers: { 'Content-Type': 'application/json' },
+  body: body === undefined ? undefined : JSON.stringify(body),
+})
+
+export async function listAutomations(config: BackendConfig): Promise<Automation[]> {
+  const payload = await requestJSON<{ automations?: Automation[] }>(config, '/api/v1/automations')
+  return payload.automations ?? []
+}
+
+export function getAutomation(config: BackendConfig, id: string): Promise<Automation> {
+  return requestJSON<Automation>(config, automationPath(id))
+}
+
+export function createAutomation(config: BackendConfig, input: AutomationInput): Promise<Automation> {
+  return requestJSON<Automation>(config, '/api/v1/automations', jsonInit('POST', input))
+}
+
+export function updateAutomation(config: BackendConfig, id: string, input: Partial<AutomationInput>): Promise<Automation> {
+  return requestJSON<Automation>(config, automationPath(id), jsonInit('PATCH', input))
+}
+
+export async function deleteAutomation(config: BackendConfig, id: string): Promise<void> {
+  await requestJSON<void>(config, automationPath(id), { method: 'DELETE' })
+}
+
+export function runAutomationNow(config: BackendConfig, id: string): Promise<AutomationRun> {
+  return requestJSON<AutomationRun>(config, `${automationPath(id)}/run`, { method: 'POST' })
+}
+
+export function pauseAutomation(config: BackendConfig, id: string): Promise<Automation> {
+  return requestJSON<Automation>(config, `${automationPath(id)}/pause`, { method: 'POST' })
+}
+
+export function resumeAutomation(config: BackendConfig, id: string): Promise<Automation> {
+  return requestJSON<Automation>(config, `${automationPath(id)}/resume`, { method: 'POST' })
+}
+
+export async function listAutomationRunsFor(config: BackendConfig, id: string): Promise<AutomationRun[]> {
+  const payload = await requestJSON<{ runs?: AutomationRun[] }>(config, `${automationPath(id)}/runs`)
+  return payload.runs ?? []
+}
+
+export async function listAutomationRuns(config: BackendConfig, opts: { status?: string; limit?: number } = {}): Promise<AutomationRun[]> {
+  const params = new URLSearchParams()
+  if (opts.status) params.set('status', opts.status)
+  if (opts.limit) params.set('limit', String(opts.limit))
+  const suffix = params.toString() ? `?${params.toString()}` : ''
+  const payload = await requestJSON<{ runs?: AutomationRun[] }>(config, `/api/v1/automation-runs${suffix}`)
+  return payload.runs ?? []
+}
+
+export function getAutomationRun(config: BackendConfig, runId: string): Promise<AutomationRun> {
+  return requestJSON<AutomationRun>(config, automationRunPath(runId))
+}
+
+export function cancelAutomationRun(config: BackendConfig, runId: string): Promise<AutomationRun> {
+  return requestJSON<AutomationRun>(config, `${automationRunPath(runId)}/cancel`, { method: 'POST' })
+}
+
+export function previewAutomationSchedule(config: BackendConfig, schedule: AutomationSchedule): Promise<AutomationSchedulePreview> {
+  return requestJSON<AutomationSchedulePreview>(config, '/api/v1/automations/schedule/preview', jsonInit('POST', { schedule }))
+}
+
+// ---------------------------------------------------------------------------
+// Cross-harness agents, skills and MCP (docs/superpowers/specs/agents-profiles-2026-10-07.md)
+// ---------------------------------------------------------------------------
+
+export type CapabilityFlag = { supported: boolean; mechanism?: string; note?: string }
+export type HarnessCapabilityKey = 'agent_select' | 'agent_inline' | 'skills' | 'mcp' | 'instructions' | 'model' | 'effort' | 'permissions'
+export type HarnessCapabilities = { harness: string } & Partial<Record<HarnessCapabilityKey, CapabilityFlag>>
+
+export type AgentMode = 'primary' | 'subagent' | 'all'
+export type AgentPermissionValue = 'allow' | 'ask' | 'deny'
+export type AgentPermissions = Partial<Record<'edit' | 'bash' | 'webfetch', AgentPermissionValue>>
+
+/** Normalized agent (harness file or Orchestra-native). */
+export type OrchestraAgent = {
+  id: string
+  name: string
+  description?: string
+  mode: AgentMode
+  source: 'harness' | 'orchestra'
+  scope: 'project' | 'global'
+  harness?: string
+  compatible_harnesses?: string[]
+  model?: string
+  effort?: string
+  color?: string
+  prompt?: string
+  skills?: string[]
+  mcp_servers?: string[]
+  permissions?: AgentPermissions
+  path?: string
+  format?: string
+  content_hash?: string
+  selectable?: boolean
+  unavailable_reason?: string
+}
+
+export type OrchestraAgentInput = {
+  scope: 'project' | 'global'
+  project_id?: string
+  name: string
+  description?: string
+  mode: AgentMode
+  color?: string
+  model?: string
+  effort?: string
+  prompt: string
+  skills?: string[]
+  mcp_servers?: string[]
+  permissions?: AgentPermissions
+}
+
+export type AgentSkill = { name: string; description?: string; path?: string; scope?: string; harness?: string; content_hash?: string }
+
+export type McpServerStatusValue = 'connected' | 'disabled' | 'failed' | 'needs_auth' | 'unknown'
+export type McpServerStatus = {
+  name: string
+  type?: 'local' | 'remote'
+  command?: string
+  args?: string[]
+  url?: string
+  enabled?: boolean
+  source: 'orchestra' | 'harness'
+  /** Owning harness for harness-native servers. */
+  harness?: string
+  status: McpServerStatusValue
+  error?: string
+}
+
+function agentQuery(params: Record<string, string | undefined>): string {
+  const query = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) if (value) query.set(key, value)
+  const text = query.toString()
+  return text ? `?${text}` : ''
+}
+
+export async function fetchHarnessCapabilities(config: BackendConfig): Promise<HarnessCapabilities[]> {
+  const payload = await requestJSON<{ harnesses?: HarnessCapabilities[] }>(config, '/api/v1/harnesses/capabilities')
+  return Array.isArray(payload?.harnesses) ? payload.harnesses : []
+}
+
+/** Unified agent list (harness + Orchestra). Tolerates the legacy `{ agents: string[] }` shape. */
+export async function fetchUnifiedAgents(config: BackendConfig, opts: { projectId?: string; harness?: string } = {}): Promise<OrchestraAgent[]> {
+  // /agents without filters still returns provider names; agent-profiles is always the unified list.
+  const payload = await requestJSON<{ agents?: unknown[] }>(config, `/api/v1/agent-profiles${agentQuery({ project_id: opts.projectId, harness: opts.harness })}`)
+  const list = Array.isArray(payload?.agents) ? payload.agents : []
+  return list.filter((item): item is OrchestraAgent => !!item && typeof item === 'object' && typeof (item as OrchestraAgent).id === 'string')
+}
+
+export function createOrchestraAgent(config: BackendConfig, input: OrchestraAgentInput): Promise<OrchestraAgent> {
+  return requestJSON<OrchestraAgent>(config, '/api/v1/agents', jsonInit('POST', input))
+}
+
+export function updateOrchestraAgent(config: BackendConfig, id: string, input: Partial<OrchestraAgentInput>): Promise<OrchestraAgent> {
+  return requestJSON<OrchestraAgent>(config, `/api/v1/agents/${encodeURIComponent(id)}`, jsonInit('PATCH', input))
+}
+
+export async function deleteOrchestraAgent(config: BackendConfig, id: string): Promise<void> {
+  await requestJSON<unknown>(config, `/api/v1/agents/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export async function fetchAgentSkills(config: BackendConfig, opts: { projectId?: string; harness?: string } = {}): Promise<AgentSkill[]> {
+  const payload = await requestJSON<{ skills?: AgentSkill[] }>(config, `/api/v1/skills${agentQuery({ project_id: opts.projectId, harness: opts.harness })}`)
+  return Array.isArray(payload?.skills) ? payload.skills : []
+}
+
+export async function fetchMcpServerStatus(config: BackendConfig): Promise<McpServerStatus[]> {
+  const payload = await requestJSON<{ servers?: McpServerStatus[] }>(config, '/api/v1/mcp/servers/status')
+  return Array.isArray(payload?.servers) ? payload.servers : []
+}
+
+export function probeMcpServer(config: BackendConfig, name: string): Promise<McpServerStatus> {
+  return requestJSON<McpServerStatus>(config, `/api/v1/mcp/servers/${encodeURIComponent(name)}/probe`, { method: 'POST' })
 }

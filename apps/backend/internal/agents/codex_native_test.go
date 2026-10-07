@@ -36,6 +36,14 @@ func TestNativeFixtureProcess(t *testing.T) {
 				_ = f.Close()
 			}
 		}
+		if mode == "record" {
+			f, _ := os.OpenFile("rpc-log.jsonl", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+			if f != nil {
+				line, _ := json.Marshal(map[string]any{"method": msg.Method, "params": msg.Params})
+				_, _ = fmt.Fprintln(f, string(line))
+				_ = f.Close()
+			}
+		}
 		response := func(v any) { send(map[string]any{"id": msg.ID, "result": v}) }
 		switch msg.Method {
 		case "initialize":
@@ -105,6 +113,8 @@ func TestNativeFixtureProcess(t *testing.T) {
 					}
 				}
 			}
+		case "skills/extraRoots/set":
+			response(map[string]any{})
 		case "model/list":
 			if mode == "catalog-eof" {
 				os.Exit(0)

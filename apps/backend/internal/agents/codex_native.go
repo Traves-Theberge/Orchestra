@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -58,6 +59,74 @@ type codexNativeSession struct {
 	toolExecutor     ToolExecutor
 	toolNames        map[string]bool
 	toolContext      context.Context
+	receipt          *agentReceipt
+	cleanups         []func()
+	cleanupOnce      sync.Once
+}
+
+// applyAgent maps the resolved agent and Orchestra MCP servers onto app-server
+// thread parameters: config overrides (mcp_servers, model_reasoning_effort)
+// and process-scoped skill roots. Instructions and model are set by the caller.
+func (s *codexNativeSession) applyAgent(ctx context.Context, request TurnRequest) (map[string]any, error) {
+	params := map[string]any{}
+	config := map[string]any{}
+	agent := request.Agent
+	if agent != nil {
+		s.receipt = &agentReceipt{agent: agent}
+		if agent.Permissions.Restrictive() {
+			s.receipt.skip("permissions")
+		}
+	}
+	if agent != nil && agent.Effort != "" {
+		if err := validateNativeReasoningEffort(agent.Effort); err != nil {
+			return nil, fmt.Errorf("agent effort: %w", err)
+		}
+		config["model_reasoning_effort"] = agent.Effort
+	}
+	if servers := mcpForRun(request); len(servers) > 0 {
+		mcpServers := map[string]any{}
+		for _, srv := range servers {
+			if srv.Remote() {
+				entry := map[string]any{"url": srv.URL}
+				if len(srv.Headers) > 0 {
+					entry["http_headers"] = srv.Headers
+				}
+				mcpServers[srv.Name] = entry
+				continue
+			}
+			entry := map[string]any{"command": srv.Command, "args": nonNilArgs(srv.Args)}
+			if len(srv.Env) > 0 {
+				entry["env"] = srv.Env
+			}
+			mcpServers[srv.Name] = entry
+		}
+		config["mcp_servers"] = mcpServers
+	}
+	if skills := nonNativeSkills(agent); len(skills) > 0 {
+		dir, err := os.MkdirTemp("", "orchestra-codex-skills-*")
+		if err != nil {
+			return nil, err
+		}
+		s.cleanups = append(s.cleanups, func() { _ = os.RemoveAll(dir) })
+		if err = stageSkills(dir, skills); err != nil {
+			return nil, err
+		}
+		if _, err = s.rpc(ctx, "skills/extraRoots/set", map[string]any{"extraRoots": []string{dir}}); err != nil {
+			return nil, fmt.Errorf("apply agent skills: %w", err)
+		}
+	}
+	if len(config) > 0 {
+		params["config"] = config
+	}
+	return params, nil
+}
+
+func (s *codexNativeSession) runCleanups() {
+	s.cleanupOnce.Do(func() {
+		for i := len(s.cleanups) - 1; i >= 0; i-- {
+			s.cleanups[i]()
+		}
+	})
 }
 
 // startCodexNativeProcess only initializes the protocol, without creating a thread.
@@ -134,8 +203,15 @@ func NewCodexNativeSession(ctx context.Context, command string, request TurnRequ
 	fail := func(err error) (NativeSession, error) { _ = s.Close(); return nil, err }
 	method := "thread/start"
 	params := map[string]any{"cwd": request.Workspace}
-	if request.DeveloperInstructions != "" {
-		params["developerInstructions"] = request.DeveloperInstructions
+	applied, err := s.applyAgent(readyCtx, request)
+	if err != nil {
+		return fail(err)
+	}
+	for key, value := range applied {
+		params[key] = value
+	}
+	if instructions := combineInstructions(request.DeveloperInstructions, request.Agent); instructions != "" {
+		params["developerInstructions"] = instructions
 	}
 	// Dynamic tools are stored with the provider thread at creation. Resume reuses
 	// those declarations; ThreadResumeParams does not accept dynamicTools.
@@ -153,8 +229,8 @@ func NewCodexNativeSession(ctx context.Context, command string, request TurnRequ
 		method = "thread/resume"
 		params["threadId"] = threadID
 	}
-	if request.RequestedModel != "" {
-		params["model"] = request.RequestedModel
+	if model := effectiveModel(request); model != "" {
+		params["model"] = model
 	}
 	// Native chat deliberately inherits provider sandbox/approval settings; never auto-approve.
 	result, err := s.rpc(readyCtx, method, params)
@@ -186,6 +262,10 @@ func NewCodexNativeSession(ctx context.Context, command string, request TurnRequ
 	s.mu.Lock()
 	s.thread = res.Thread.ID
 	s.info = NativeModelInfo{Model: res.Model, ApprovalPolicy: policy, SandboxMode: res.Sandbox.Type, ReasoningEffort: res.ReasoningEffort}
+	if request.Agent != nil {
+		s.info.AgentID = request.Agent.ID
+		s.info.AgentObservation = s.receipt.observation()
+	}
 	s.knownTurns = map[string]bool{}
 	for i, turn := range res.Thread.Turns {
 		if i < len(res.Thread.Turns)-256 || turn.ID == "" {
@@ -580,6 +660,9 @@ func (s *codexNativeSession) SendTurnWithOptions(ctx context.Context, text strin
 		s.mu.Unlock()
 	}()
 	params := map[string]any{"threadId": s.ThreadID(), "input": []map[string]string{{"type": "text", "text": text}}}
+	// Model catalogs can default reasoning summaries to "none", leaving reasoning
+	// items empty. The override is per turn and also applies to resumed threads.
+	params["summary"] = "detailed"
 	if model != "" {
 		params["model"] = model
 		s.mu.Lock()
@@ -826,5 +909,6 @@ func (s *codexNativeSession) Close() error {
 	s.cancel()
 	_ = s.stdin.Close()
 	<-s.done
+	s.runCleanups()
 	return nil
 }
