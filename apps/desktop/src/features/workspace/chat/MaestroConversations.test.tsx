@@ -16,7 +16,7 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
-const conversationNames = () => screen.getAllByRole('button').filter(b => !b.getAttribute('aria-label')?.startsWith('Delete')).map(b => b.textContent)
+const conversationNames = () => screen.getAllByRole('button').filter(b => !b.getAttribute('aria-label')?.startsWith('Conversation actions')).map(b => b.textContent)
 
 it('lists Maestro conversations newest first, opens one, starts new and highlights the current one', async () => {
   render(<MaestroConversations />)
@@ -38,11 +38,13 @@ it('deletes a conversation after confirming in the dialog and starts fresh when 
   render(<MaestroConversations />)
   await screen.findByRole('button', { name: 'Open conversation Latest review' })
   act(() => { window.dispatchEvent(new CustomEvent(CHAT_SESSION_EVENT, { detail: { projectId: '__orchestrator__', sessionId: 'b' } })) })
-  fireEvent.click(screen.getByRole('button', { name: 'Delete conversation Latest review' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Conversation actions for Latest review' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Delete Conversation…' }))
   expect(screen.getByRole('dialog')).toHaveTextContent('Delete conversation?')
   fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
   expect(api.deleteWorkspaceChatSession).not.toHaveBeenCalled()
-  fireEvent.click(screen.getByRole('button', { name: 'Delete conversation Latest review' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Conversation actions for Latest review' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Delete Conversation…' }))
   vi.mocked(api.listWorkspaceChatSessions).mockResolvedValue({ sessions: [session('a', 'Older plan', '2026-10-01T00:00:00Z')] } as never)
   fireEvent.click(screen.getByRole('button', { name: 'Delete conversation' }))
   await waitFor(() => expect(api.deleteWorkspaceChatSession).toHaveBeenCalledWith(config, '__orchestrator__', 'b'))
@@ -60,10 +62,21 @@ it('opens the same right-click menu as project conversations', async () => {
   expect(screen.getByRole('dialog')).toHaveTextContent('Older plan')
 })
 
+it('toggles the actions menu from the dots button', async () => {
+  render(<MaestroConversations />)
+  const dots = await screen.findByRole('button', { name: 'Conversation actions for Older plan' })
+  fireEvent.click(dots)
+  expect(screen.getByRole('menu', { name: 'Older plan conversation actions' })).toBeInTheDocument()
+  expect(dots).toHaveAttribute('aria-expanded', 'true')
+  fireEvent.mouseDown(dots); fireEvent.click(dots)
+  expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+})
+
 it('cannot delete a conversation while it is running', async () => {
   vi.mocked(api.listWorkspaceChatSessions).mockResolvedValue({ sessions: [session('r', 'Busy run', '2026-10-06T00:00:00Z', 'running')] } as never)
   render(<MaestroConversations />)
-  expect(await screen.findByRole('button', { name: 'Delete conversation Busy run' })).toBeDisabled()
+  fireEvent.click(await screen.findByRole('button', { name: 'Conversation actions for Busy run' }))
+  expect(screen.getByRole('menuitem', { name: 'Delete Conversation…' })).toBeDisabled()
 })
 
 const seenKey = `orchestra:chat-last-seen:v1:${config.baseUrl}`

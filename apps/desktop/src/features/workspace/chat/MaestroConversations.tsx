@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { SquarePen, Trash2 } from 'lucide-react'
+import { MoreHorizontal, SquarePen } from 'lucide-react'
 import { useAppStore } from '@core/store'
 import { deleteWorkspaceChatSession, listWorkspaceChatSessions, stopWorkspaceChatTurn, type WorkspaceChatSession } from '@core/api/client'
 import { getAgentIcon } from '@layout/shared/controls'
@@ -99,7 +99,6 @@ export function MaestroConversations() {
     <nav aria-label="Maestro conversations" className="min-h-0 flex-1 overflow-auto px-2 pb-2">
       {sorted.map(session => {
         const active = session.id === currentId
-        const running = session.status === 'running' || session.status === 'stopping'
         const title = session.title || 'Untitled conversation'
         return <div key={session.id} onContextMenu={event => { event.preventDefault(); event.stopPropagation(); setMenu({ x: event.clientX, y: event.clientY, session }) }}
           className={`group/session flex min-w-0 items-center gap-0.5 rounded pl-1.5 ${active ? 'bg-foreground/[0.08]' : 'hover:bg-foreground/[0.04]'}`}>
@@ -110,10 +109,16 @@ export function MaestroConversations() {
             <span className="min-w-0 flex-1 truncate"><span className={active ? 'text-foreground' : 'text-foreground/80'}>{title}</span><span> · {modeLabel(session.conversation_mode)}</span></span>
             <span className="shrink-0 text-[10px]" title={session.updated_at || session.created_at}>{shortObservedAge(session.updated_at || session.created_at, now)}</span>
           </button>
-          <button type="button" aria-label={`Delete conversation ${title}`} title={running ? 'Stop the running turn before deleting' : 'Delete conversation'} disabled={running}
-            onClick={event => { event.stopPropagation(); setDeleteError(''); setPendingDelete(session) }}
-            className="shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:bg-muted hover:text-destructive focus-visible:opacity-100 disabled:opacity-0 group-hover/session:opacity-100 group-hover/session:disabled:opacity-40">
-            <Trash2 size={12} />
+          <button type="button" aria-label={`Conversation actions for ${title}`} aria-haspopup="menu" aria-expanded={menu?.session.id === session.id} title="More actions"
+            onMouseDown={event => event.stopPropagation()}
+            onClick={event => {
+              event.stopPropagation()
+              if (menu?.session.id === session.id) { setMenu(null); return }
+              const box = event.currentTarget.getBoundingClientRect()
+              setMenu({ x: box.left, y: box.bottom + 4, session })
+            }}
+            className={`shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover/session:opacity-100 ${menu?.session.id === session.id ? 'opacity-100 bg-muted text-foreground' : 'opacity-0'}`}>
+            <MoreHorizontal size={12} />
           </button>
         </div>
       })}
