@@ -270,7 +270,7 @@ export function KanbanBoard({
     e.dataTransfer.effectAllowed = 'move'
     hideNativeDragImage(e)
     const rect = e.currentTarget.getBoundingClientRect()
-    const item = enrichedIssues.find((candidate) => getActionIssueRef(candidate) === issueIdentifier)
+    const item = enrichedIssues.find((candidate) => getIssueActionRef(candidate) === issueIdentifier)
     if (item) setDragPreview({ item, width: rect.width, offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top, x: rect.left, y: rect.top })
     // Defer so the drag has started before the source card dims.
     requestAnimationFrame(() => setDraggingIssueId(issueIdentifier))
@@ -487,7 +487,7 @@ export function KanbanBoard({
   ]
 
   const orderedColumns = columnOrder.map((id) => columns.find((column) => column.id === id)!)
-  const draggingItem = draggingIssueId ? enrichedIssues.find((item) => getActionIssueRef(item) === draggingIssueId) : undefined
+  const draggingItem = draggingIssueId ? enrichedIssues.find((item) => getIssueActionRef(item) === draggingIssueId) : undefined
   const dragSourceColumn = draggingItem ? Object.entries(COLUMN_TO_STATE).find(([, state]) => normalizeState(state) === normalizeState(draggingItem.state))?.[0] ?? '' : ''
   const dropTargets = dragSourceColumn ? DRAG_TRANSITIONS[dragSourceColumn] ?? [] : []
   const filteredList = enrichedIssues.filter((item) =>
@@ -772,23 +772,21 @@ export function KanbanBoard({
 
   return (
     <div className="flex-1 flex flex-col min-h-0 gap-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4 shrink-0">
-        <div className="flex flex-wrap items-center gap-1">
-          <button
-            onClick={() => setActiveTab('board')}
-            className={`h-8 px-3 rounded-md text-[12px] font-medium transition-colors ${activeTab === 'board' ? 'bg-foreground/10 text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04]'}`}
-          >
-            Board
-          </button>
-          <button
-            onClick={() => setActiveTab('workitems')}
-            className={`h-8 px-3 rounded-md text-[12px] font-medium transition-colors ${activeTab === 'workitems' ? 'bg-foreground/10 text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04]'}`}
-          >
-            Work Items
-          </button>
-
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 px-5 pt-4 shrink-0">
+        <div className="flex min-w-0 items-center gap-2">
+          {activeTab === 'board' && projects.length > 1 && (
+            <CustomDropdown
+              className="w-56"
+              value={projectFilter}
+              options={[
+                { label: 'All Projects', value: 'all', icon: <FolderTree className="size-3" /> },
+                ...projects.map((project) => ({ label: project.name, value: project.id, icon: <Folder className="size-3" /> })),
+              ]}
+              onChange={setProjectFilter}
+            />
+          )}
         {activeTab === 'workitems' && projects.length > 0 && (
-          <div className="relative ml-2" ref={pickerRef}>
+          <div className="relative" ref={pickerRef}>
             <button
               ref={projectPickerTriggerRef}
               onClick={() => setProjectPickerOpen(v => !v)}
@@ -822,21 +820,10 @@ export function KanbanBoard({
           </div>
         )}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {activeTab === 'board' && projects.length > 1 && (
-            <CustomDropdown
-              className="w-56"
-              value={projectFilter}
-              options={[
-                { label: 'All Projects', value: 'all', icon: <FolderTree className="size-3" /> },
-                ...projects.map((project) => ({ label: project.name, value: project.id, icon: <Folder className="size-3" /> })),
-              ]}
-              onChange={setProjectFilter}
-            />
-          )}
+        <div className="flex min-w-0 justify-center">
           {activeTab === 'board' && (
             <div className="flex min-w-0 items-center gap-2">
-              <div className="relative w-44 sm:w-56">
+              <div className="relative w-56 sm:w-80">
                 <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/50" />
                 <input
                   ref={searchRef}
@@ -872,6 +859,22 @@ export function KanbanBoard({
               )}
             </div>
           )}
+        </div>
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+          <div className="flex items-center gap-1">
+          <button
+            onClick={() => setActiveTab('board')}
+            className={`h-8 px-3 rounded-md text-[12px] font-medium transition-colors ${activeTab === 'board' ? 'bg-foreground/10 text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04]'}`}
+          >
+            Board
+          </button>
+          <button
+            onClick={() => setActiveTab('workitems')}
+            className={`h-8 px-3 rounded-md text-[12px] font-medium transition-colors ${activeTab === 'workitems' ? 'bg-foreground/10 text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04]'}`}
+          >
+            Work Items
+          </button>
+          </div>
           <button
             onClick={() => handleCreateClick('backlog')}
             className="h-8 px-3.5 inline-flex items-center gap-1.5 rounded-md bg-foreground text-background hover:bg-foreground/90 text-[12px] font-semibold tracking-tight transition-colors"

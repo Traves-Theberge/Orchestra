@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resetAppStore } from '@core/store'
 import type { Project } from '@core/api/types'
@@ -163,5 +163,20 @@ describe('Kanban task search and drag', () => {
     mount()
     fireEvent.keyDown(window, { key: '/' })
     expect(screen.getByRole('searchbox', { name: 'Search tasks' })).toHaveFocus()
+  })
+
+  it('renders mid-drag: dims the source, outlines the allowed column, fades the rest', async () => {
+    mount()
+    const store = new Map<string, string>()
+    const dataTransfer = { effectAllowed: '', dropEffect: '', setData: (k: string, v: string) => store.set(k, v), getData: (k: string) => store.get(k) || '', setDragImage: () => {} } as unknown as DataTransfer
+    fireEvent.dragStart(screen.getByTestId('kanban-task-task-12'), { dataTransfer, clientX: 10, clientY: 10 })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    expect(screen.getByTestId('kanban-task-task-12').className).toContain('opacity-40')
+    expect(screen.getByTestId('kanban-column-progress').className).toContain('opacity-30')
+    expect(screen.getByTestId('kanban-column-todo').className).not.toContain('opacity-30')
+    fireEvent.dragOver(screen.getByTestId('kanban-column-todo'), { dataTransfer })
+    expect(screen.getByText('Move to To Do')).toBeInTheDocument()
+    fireEvent.dragEnd(screen.getByTestId('kanban-task-task-12'), { dataTransfer })
+    expect(screen.getByTestId('kanban-task-task-12').className).not.toContain('opacity-40')
   })
 })
