@@ -62,7 +62,8 @@ describe('UsageStatusBar', () => {
     expect(roster).toHaveTextContent('Local tracking off')
     expect(roster).not.toHaveTextContent('System default')
     fireEvent.click(screen.getByRole('button', { name: /Usage details and history/ }))
-    expect(useAppStore.getState().activeSection).toBe('WAREHOUSE')
+    expect(useAppStore.getState().activeSection).toBe('SETTINGS')
+    expect(useAppStore.getState().activeSettingsSection).toBe('usage')
     expect(screen.queryByRole('dialog', { name: 'Usage insights' })).not.toBeInTheDocument()
   })
   it('refreshes local histories and quota windows from the roster', async () => {

@@ -13,9 +13,22 @@ type Props = {
   worktree: ProjectWorktree
   onRemoved: () => void
   onCloseWorkspace?: () => void
+  openDialog?: boolean
+  onOpenDialogChange?: (open: boolean) => void
+  onOpenMenu?: (info: { x: number; y: number; requestId?: string; retryAllowed?: boolean }) => void
 }
 
-export function WorktreeRemovalControls({ config, projectId, projectName, worktree, onRemoved, onCloseWorkspace }: Props) {
+export function WorktreeRemovalControls({
+  config,
+  projectId,
+  projectName,
+  worktree,
+  onRemoved,
+  onCloseWorkspace,
+  openDialog,
+  onOpenDialogChange,
+  onOpenMenu,
+}: Props) {
   const trigger = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const [menu, setMenu] = useState<{ left: number; top: number } | null>(null)
@@ -25,6 +38,21 @@ export function WorktreeRemovalControls({ config, projectId, projectName, worktr
   const [message, setMessage] = useState('')
   const [retryAllowed, setRetryAllowed] = useState(false)
 
+  useEffect(() => {
+    if (openDialog) {
+      if (!requestId || retryAllowed) {
+        setRequestId('')
+        setMessage('')
+        setRetryAllowed(false)
+      }
+      setDialogOpen(true)
+    }
+  }, [openDialog, requestId, retryAllowed])
+
+  const handleDialogOpen = (open: boolean) => {
+    setDialogOpen(open)
+    onOpenDialogChange?.(open)
+  }
   const branchLabel = worktree.branch || 'Detached'
   const canRemove = !worktree.primary && !worktree.is_main_worktree && !worktree.locked && !worktree.prunable
   const removalUnavailableReason = worktree.primary || worktree.is_main_worktree
@@ -147,7 +175,20 @@ export function WorktreeRemovalControls({ config, projectId, projectName, worktr
       aria-label={`Workspace actions for ${projectName} workspace ${branchLabel}`}
       aria-haspopup="menu"
       aria-expanded={menu !== null}
-      onClick={openMenu}
+      onClick={event => {
+        event.stopPropagation()
+        if (onOpenMenu) {
+          const rect = event.currentTarget.getBoundingClientRect()
+          onOpenMenu({
+            x: rect.right,
+            y: rect.bottom + 4,
+            requestId,
+            retryAllowed,
+          })
+          return
+        }
+        openMenu(event)
+      }}
       onKeyDown={event => event.stopPropagation()}
       className="ml-auto shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
       title="Workspace actions"
@@ -203,7 +244,7 @@ export function WorktreeRemovalControls({ config, projectId, projectName, worktr
       </div>,
       document.body,
     )}
-    <Dialog open={dialogOpen} onOpenChange={open => { if (!busy) setDialogOpen(open) }}>
+    <Dialog open={dialogOpen} onOpenChange={open => { if (!busy) handleDialogOpen(open) }}>
       <DialogContent
         role="alertdialog"
         srTitle="Remove worktree?"
@@ -223,7 +264,7 @@ export function WorktreeRemovalControls({ config, projectId, projectName, worktr
         {message && <p role="alert" className="text-xs text-destructive">{message}</p>}
         <DialogFooter className="gap-2">
           {requestId && <button type="button" disabled={busy} onClick={() => void checkStatus()} className="rounded-md border border-border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50">Check status</button>}
-          <button type="button" disabled={busy} onClick={() => setDialogOpen(false)} className="rounded-md border border-border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50">Cancel</button>
+          <button type="button" disabled={busy} onClick={() => handleDialogOpen(false)} className="rounded-md border border-border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50">Cancel</button>
           <button type="button" data-testid="remove-worktree-confirm" disabled={!config || busy || (!!requestId && !retryAllowed)} onClick={() => void remove()} className="rounded-md bg-destructive px-3 py-2 text-sm font-medium text-destructive-foreground hover:opacity-90 disabled:opacity-50">{busy ? 'Checking…' : 'Remove worktree'}</button>
         </DialogFooter>
       </DialogContent>

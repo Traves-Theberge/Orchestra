@@ -191,13 +191,20 @@ func (s *Service) List(ctx context.Context, req Request) (Catalog, error) {
 	if req.Scope == ScopeProject {
 		catalog.Root = scopes[0].root
 	}
+	seen := map[string]bool{}
 	for _, scope := range scopes {
 		items, readErr := s.readScope(ctx, req.ProjectID, harness, scope, probe.capability)
 		if readErr != nil {
 			catalog.Observation = "unavailable"
 			return Catalog{}, readErr
 		}
-		catalog.Items = append(catalog.Items, items...)
+		for _, item := range items {
+			key := string(item.Kind) + ":" + string(item.Scope) + ":" + item.ID
+			if !seen[key] {
+				seen[key] = true
+				catalog.Items = append(catalog.Items, item)
+			}
+		}
 	}
 	sort.Slice(catalog.Items, func(i, j int) bool {
 		if catalog.Items[i].Kind != catalog.Items[j].Kind {
@@ -255,8 +262,8 @@ func (s *Service) ValidateSelection(ctx context.Context, projectID, workspaceID,
 		if item.ContentHash != expectedHash || format != "" && item.Format != format {
 			return ErrConflict
 		}
-		if !item.SelectableAsPrimary || cat.SelectionCapability != SelectionSelectablePrimary {
-			return fmt.Errorf("%w: %s", ErrUnsupported, item.Reason)
+		if item.Mode == "subagent" {
+			return fmt.Errorf("%w: %s", ErrUnsupported, "subagent definitions cannot be selected as primary")
 		}
 		return nil
 	}
@@ -556,6 +563,7 @@ type resourceSpec struct {
 
 func resourceSpecs(harness string, scope resolvedScope) []resourceSpec {
 	base := scope.root
+	var specs []resourceSpec
 	switch harness {
 	case "OPENCODE":
 		if scope.scope == ScopeGlobal {
@@ -563,19 +571,50 @@ func resourceSpecs(harness string, scope resolvedScope) []resourceSpec {
 		} else {
 			base = filepath.Join(base, ".opencode")
 		}
-		return []resourceSpec{{base, filepath.Join(base, "agents"), KindAgentDefinition, ".md", true}, {base, filepath.Join(base, "skills"), KindSkill, "", true}}
+		specs = append(specs, resourceSpec{base, filepath.Join(base, "agents"), KindAgentDefinition, ".md", true})
+		specs = append(specs, resourceSpec{base, filepath.Join(base, "skills"), KindSkill, "", true})
 	case "CLAUDE":
-		return []resourceSpec{{scope.root, filepath.Join(scope.root, ".claude", "agents"), KindAgentDefinition, ".md", true}, {scope.root, filepath.Join(scope.root, ".claude", "skills"), KindSkill, "", true}}
+		specs = append(specs, resourceSpec{scope.root, filepath.Join(scope.root, ".claude", "agents"), KindAgentDefinition, ".md", true})
+		specs = append(specs, resourceSpec{scope.root, filepath.Join(scope.root, ".claude", "skills"), KindSkill, "", true})
 	case "CODEX":
-		return []resourceSpec{{scope.root, filepath.Join(scope.root, ".codex", "agents"), KindAgentDefinition, ".toml", false}, {scope.root, filepath.Join(scope.root, ".agents", "skills"), KindSkill, "", true}, {scope.root, filepath.Join(scope.root, ".codex", "skills"), KindSkill, ".md", false}}
+		specs = append(specs, resourceSpec{scope.root, filepath.Join(scope.root, ".codex", "agents"), KindAgentDefinition, ".toml", false})
+		specs = append(specs, resourceSpec{scope.root, filepath.Join(scope.root, ".agents", "skills"), KindSkill, "", true})
+		specs = append(specs, resourceSpec{scope.root, filepath.Join(scope.root, ".codex", "skills"), KindSkill, ".md", false})
 	case "ANTIGRAVITY":
 		if scope.scope == ScopeGlobal {
-			return []resourceSpec{{scope.root, filepath.Join(scope.root, ".gemini", "config", "agents"), KindAgentDefinition, ".md", true}, {scope.root, filepath.Join(scope.root, ".gemini", "antigravity-cli", "skills"), KindSkill, "", true}}
+			specs = append(specs, resourceSpec{scope.root, filepath.Join(scope.root, ".gemini", "config", "agents"), KindAgentDefinition, ".md", true})
+			specs = append(specs, resourceSpec{scope.root, filepath.Join(scope.root, ".gemini", "antigravity-cli", "skills"), KindSkill, "", true})
+		} else {
+			specs = append(specs, resourceSpec{scope.root, filepath.Join(scope.root, ".agents", "agents"), KindAgentDefinition, ".md", true})
+			specs = append(specs, resourceSpec{scope.root, filepath.Join(scope.root, ".agents", "skills"), KindSkill, "", true})
 		}
-		return []resourceSpec{{scope.root, filepath.Join(scope.root, ".agents", "agents"), KindAgentDefinition, ".md", true}, {scope.root, filepath.Join(scope.root, ".agents", "skills"), KindSkill, "", true}}
 	default:
 		return nil
 	}
+
+	if scope.scope == ScopeGlobal {
+		specs = append(specs, resourceSpec{scope.root, filepath.Join(scope.root, ".agents", "agents"), KindAgentDefinition, ".md", true})
+		specs = append(specs, resourceSpec{scope.root, filepath.Join(scope.root, ".agents", "skills"), KindSkill, "", true})
+		if harness != "CODEX" {
+			specs = append(specs, resourceSpec{scope.root, filepath.Join(scope.root, ".codex", "agents"), KindAgentDefinition, ".toml", false})
+		}
+		if harness != "CLAUDE" {
+			specs = append(specs, resourceSpec{scope.root, filepath.Join(scope.root, ".claude", "agents"), KindAgentDefinition, ".md", true})
+		}
+		if harness != "OPENCODE" {
+			specs = append(specs, resourceSpec{filepath.Join(scope.root, ".config", "opencode"), filepath.Join(scope.root, ".config", "opencode", "agents"), KindAgentDefinition, ".md", true})
+		}
+		if harness != "ANTIGRAVITY" {
+			specs = append(specs, resourceSpec{scope.root, filepath.Join(scope.root, ".gemini", "config", "agents"), KindAgentDefinition, ".md", true})
+		}
+	} else if scope.scope == ScopeProject {
+		if harness != "ANTIGRAVITY" {
+			specs = append(specs, resourceSpec{scope.root, filepath.Join(scope.root, ".agents", "agents"), KindAgentDefinition, ".md", true})
+			specs = append(specs, resourceSpec{scope.root, filepath.Join(scope.root, ".agents", "skills"), KindSkill, "", true})
+		}
+	}
+
+	return specs
 }
 
 func walkResources(root, dir string, kind Kind, harness string, scope Scope, capability string) ([]Item, error) {
@@ -836,28 +875,16 @@ func selectionStatus(harness string, kind Kind, mode, capability string) (string
 	if kind == KindSkill {
 		return SelectionUnsupported, "Skills are not primary-agent profiles."
 	}
-	switch harness {
-	case "ANTIGRAVITY":
+	if harness == "ANTIGRAVITY" {
 		return SelectionConfiguredUnapplied, "The CLI exposes --agent, but effective custom-agent selection has not been verified by an isolated native canary. Profile role metadata is preserved separately."
-	case "OPENCODE":
-		if mode == "subagent" {
-			return "subagent_only", "OpenCode marks this profile as a subagent."
-		}
-		if mode != "primary" && mode != "all" {
-			return SelectionUnknown, "Native mode is absent or unrecognized; this profile is not offered for primary selection."
-		}
-		if capability == SelectionUnavailable || capability == SelectionUnsupported || capability == SelectionUnknown {
-			return capability, "The configured OpenCode runtime has not established primary agent selection."
-		}
-		return SelectionConfiguredUnapplied, "The CLI exposes agent selection, but Orchestra has no effective-agent canary for this version."
-	case "CLAUDE", "CODEX":
-		if mode == "subagent" {
-			return "subagent_only", "This native definition is marked as a subagent."
-		}
-		return SelectionConfiguredUnapplied, "This Orchestra adapter has not verified primary-agent selection for this harness."
-	default:
-		return SelectionUnsupported, "Primary-agent selection is not supported by this harness adapter."
 	}
+	if mode == "subagent" {
+		return "subagent_only", "This native definition is marked as a subagent."
+	}
+	if capability == SelectionUnavailable || capability == SelectionUnsupported {
+		return capability, "The configured " + harness + " runtime has not established primary agent selection."
+	}
+	return SelectionSelectablePrimary, ""
 }
 
 func supportsAuthoring(harness string) bool {
@@ -865,34 +892,11 @@ func supportsAuthoring(harness string) bool {
 }
 
 func (s *Service) selectionProbe(ctx context.Context, harness string) runtimeProbe {
-	if harness == "ANTIGRAVITY" {
-		command := strings.TrimSpace(s.commands[harness])
-		if command == "" {
-			return runtimeProbe{SelectionUnavailable, "", "No Antigravity CLI command is configured. Native profiles and skills can still be discovered and authored."}
-		}
-		return probeAntigravityCommand(ctx, command)
-	}
-	if harness != "OPENCODE" {
-		if harness == "CODEX" || harness == "CLAUDE" {
-			return runtimeProbe{SelectionConfiguredUnapplied, "", "Discovered native definitions are not proven primary-agent selectors in this Orchestra adapter."}
-		}
-		return runtimeProbe{SelectionUnsupported, "", "This harness has no verified primary-agent selection adapter."}
-	}
 	command := strings.TrimSpace(s.commands[harness])
 	if command == "" {
-		return runtimeProbe{SelectionUnavailable, "", "No OpenCode runner command is configured."}
+		return runtimeProbe{SelectionUnavailable, "", "No " + harness + " command is configured."}
 	}
-	s.probeMu.Lock()
-	if cached, ok := s.probeCache[command]; ok {
-		s.probeMu.Unlock()
-		return cached
-	}
-	s.probeMu.Unlock()
-	result := probeOpenCodeCommand(ctx, command)
-	s.probeMu.Lock()
-	s.probeCache[command] = result
-	s.probeMu.Unlock()
-	return result
+	return runtimeProbe{SelectionSelectablePrimary, "", ""}
 }
 
 func probeOpenCodeCommand(ctx context.Context, command string) runtimeProbe {

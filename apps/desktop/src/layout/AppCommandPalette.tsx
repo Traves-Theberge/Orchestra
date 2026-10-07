@@ -1,4 +1,4 @@
-import { Activity, Cpu, Database, FileText, FolderTree, ListTodo, Network, Settings2 } from 'lucide-react'
+import { Activity, Cpu, FileText, FolderTree, ListTodo, Network, Settings2 } from 'lucide-react'
 import { Command } from 'cmdk'
 import { useAppStore } from '@core/store'
 import { type SectionID } from '@layout/sections'
@@ -22,7 +22,6 @@ export function AppCommandPalette({ onCreateIssue, onTogglePolling }: AppCommand
     { id: 'ISSUES', label: 'Go to Tasks', icon: ListTodo },
     { id: 'PROJECTS', label: 'Go to Projects', icon: FolderTree },
     { id: 'AGENTS', label: 'Go to Agents', icon: Cpu },
-    { id: 'WAREHOUSE', label: 'Go to Usage', icon: Database },
     { id: 'SETTINGS', label: 'Go to Settings', icon: Settings2 },
     { id: 'DOCS', label: 'Go to Documentation', icon: FileText },
   ]

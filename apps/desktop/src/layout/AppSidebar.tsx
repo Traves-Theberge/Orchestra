@@ -21,6 +21,7 @@ import {
   Settings,
   Terminal,
   Type,
+  X,
 } from 'lucide-react'
 import type { IssueListItem } from '@core/api/client'
 import type { IssueInspectionOwner } from '@/hooks/use-issue-actions'
@@ -296,6 +297,7 @@ function SidebarSearch({
   const [results, setResults] = useState<IssueListItem[]>([])
   const [pending, setPending] = useState(false)
   const [showResults, setShowResults] = useState(false)
+  const [selectedIndex, setSelectedIndex] = useState(-1)
   const inputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -318,11 +320,17 @@ function SidebarSearch({
           const res = await onSearch(query)
           setResults(res)
           setShowResults(true)
-        } catch { setResults([]) }
-        finally { setPending(false) }
+          setSelectedIndex(-1)
+        } catch {
+          setResults([])
+          setSelectedIndex(-1)
+        } finally {
+          setPending(false)
+        }
       } else {
         setResults([])
         setShowResults(false)
+        setSelectedIndex(-1)
       }
     }, 300)
     return () => clearTimeout(id)
@@ -339,59 +347,140 @@ function SidebarSearch({
     return () => document.removeEventListener('keydown', down, true)
   }, [])
 
+  const handleSelect = (r: IssueListItem) => {
+    const id = r.identifier ?? r.issue_identifier ?? r.id ?? r.issue_id
+    if (id) onResultClick?.(id)
+    setShowResults(false)
+    setQuery('')
+    setSelectedIndex(-1)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      if (query) {
+        setQuery('')
+        setResults([])
+      }
+      setShowResults(false)
+      setSelectedIndex(-1)
+      inputRef.current?.blur()
+      return
+    }
+
+    if (!showResults || results.length === 0) return
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setSelectedIndex((prev) => (prev + 1) % results.length)
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setSelectedIndex((prev) => (prev <= 0 ? results.length - 1 : prev - 1))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      const target = selectedIndex >= 0 ? results[selectedIndex] : results[0]
+      if (target) handleSelect(target)
+    }
+  }
+
   return (
     <div className="px-2 pb-2.5" ref={containerRef}>
-      <div className="group relative flex h-8 items-center gap-2 rounded-lg bg-muted/40 border border-border/30 px-2.5 focus-within:bg-background focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10 transition-all">
-        {pending
-          ? <Loader2 size={13} className="shrink-0 text-primary animate-spin" />
-          : <Search size={13} className="shrink-0 text-muted-foreground/50 group-focus-within:text-primary transition-colors" />
-        }
+      <div
+        className="group relative flex h-8.5 items-center gap-2 rounded-lg bg-muted/30 hover:bg-muted/50 focus-within:bg-background border border-border/50 hover:border-border/70 focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15 px-2.5 transition-all shadow-[0_1px_2px_rgba(0,0,0,0.02)] cursor-text"
+        onClick={() => inputRef.current?.focus()}
+      >
+        {pending ? (
+          <Loader2 size={13.5} className="shrink-0 text-primary animate-spin" />
+        ) : (
+          <Search size={13.5} className="shrink-0 text-muted-foreground/50 group-hover:text-muted-foreground/75 group-focus-within:text-primary transition-colors" />
+        )}
         <input
           ref={inputRef}
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => query.trim().length >= 2 && setShowResults(true)}
+          onKeyDown={handleKeyDown}
           placeholder="Search…"
-          className="flex-1 min-w-0 bg-transparent text-[11.5px] text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
+          aria-label="Search issues and tasks"
+          autoComplete="off"
+          spellCheck={false}
+          className="flex-1 min-w-0 bg-transparent text-xs text-foreground placeholder:text-muted-foreground/45 focus:outline-none"
         />
-        <kbd className="pointer-events-none inline-flex h-4 select-none items-center gap-0.5 rounded bg-muted/60 border border-border/40 px-1 font-mono text-[9px] text-muted-foreground/50 shrink-0">
-          {isMac ? '⌘' : '⌃'}K
-        </kbd>
+        {query ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              setQuery('')
+              setResults([])
+              setShowResults(false)
+              setSelectedIndex(-1)
+              inputRef.current?.focus()
+            }}
+            className="size-5 rounded flex items-center justify-center text-muted-foreground/50 hover:text-foreground hover:bg-muted transition-colors shrink-0"
+            aria-label="Clear search"
+            title="Clear search (Esc)"
+          >
+            <X size={12} strokeWidth={2.2} />
+          </button>
+        ) : (
+          <div className="pointer-events-none flex items-center gap-1 select-none shrink-0" aria-hidden="true">
+            <kbd className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-[5px] bg-background/90 dark:bg-muted/80 px-1.5 font-mono text-[10px] font-semibold text-muted-foreground/80 border border-border/80 shadow-[0_1px_1.5px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.1)] group-focus-within:border-primary/40 group-focus-within:text-foreground transition-all">
+              {isMac ? '⌘' : 'Ctrl'}
+            </kbd>
+            <kbd className="inline-flex h-5 min-w-[18px] items-center justify-center rounded-[5px] bg-background/90 dark:bg-muted/80 px-1 font-mono text-[10px] font-semibold text-muted-foreground/80 border border-border/80 shadow-[0_1px_1.5px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.1)] group-focus-within:border-primary/40 group-focus-within:text-foreground transition-all">
+              K
+            </kbd>
+          </div>
+        )}
       </div>
 
       {showResults && results.length > 0 && createPortal(
         <div
           ref={dropdownRef}
-          className="fixed overflow-hidden rounded-xl border border-border bg-popover text-foreground shadow-2xl animate-in fade-in zoom-in-95 duration-100 z-[99999]"
+          className="fixed overflow-hidden rounded-xl border border-border/80 bg-popover/95 backdrop-blur-md text-foreground shadow-2xl animate-in fade-in zoom-in-95 duration-100 z-[99999]"
           style={{
             top: (containerRef.current?.getBoundingClientRect().bottom ?? 80) + 4,
             left: containerRef.current?.getBoundingClientRect().left ?? 0,
             width: containerRef.current?.getBoundingClientRect().width ?? 240,
           }}
         >
-          <div className="px-3 py-1.5 border-b border-border/40">
-            <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">{results.length} result{results.length !== 1 ? 's' : ''}</span>
+          <div className="flex items-center justify-between px-3 py-1.5 border-b border-border/40 bg-muted/20">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+              {results.length} result{results.length !== 1 ? 's' : ''}
+            </span>
+            <span className="text-[9px] text-muted-foreground/50 font-mono">↑↓ to navigate · ↵ to open</span>
           </div>
           <div className="max-h-[320px] overflow-auto">
-            {results.map((r, i) => (
-              <button
-                key={r.id ?? r.issue_id ?? r.identifier ?? r.issue_identifier ?? `r-${i}`}
-                className="flex w-full flex-col gap-0.5 px-3 py-2 text-left hover:bg-foreground/[0.04] transition-colors border-b border-border/20 last:border-0"
-                onClick={() => {
-                  const id = r.identifier ?? r.issue_identifier
-                  if (id) onResultClick?.(id)
-                  setShowResults(false)
-                  setQuery('')
-                }}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-[10px] font-bold text-primary shrink-0">{r.identifier ?? r.issue_identifier ?? '—'}</span>
-                  <span className="truncate text-[11.5px] font-medium text-foreground">{r.title ?? 'Untitled'}</span>
-                </div>
-                {r.state && <span className="text-[10px] text-muted-foreground/50">{r.state}</span>}
-              </button>
-            ))}
+            {results.map((r, i) => {
+              const isSelected = i === selectedIndex
+              return (
+                <button
+                  key={r.id ?? r.issue_id ?? r.identifier ?? r.issue_identifier ?? `r-${i}`}
+                  type="button"
+                  className={`flex w-full flex-col gap-0.5 px-3 py-2 text-left transition-colors border-b border-border/15 last:border-0 ${
+                    isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-foreground/[0.04]'
+                  }`}
+                  onMouseEnter={() => setSelectedIndex(i)}
+                  onClick={() => handleSelect(r)}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className={`font-mono text-[10px] font-bold shrink-0 ${isSelected ? 'text-primary' : 'text-primary/90'}`}>
+                      {r.identifier ?? r.issue_identifier ?? '—'}
+                    </span>
+                    <span className="truncate text-xs font-medium text-foreground">
+                      {r.title ?? 'Untitled'}
+                    </span>
+                  </div>
+                  {r.state && (
+                    <span className="text-[10px] text-muted-foreground/60 capitalize">
+                      {r.state.toLowerCase().replace(/_/g, ' ')}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
           </div>
         </div>,
         document.body
@@ -486,16 +575,15 @@ function SidebarFooterIcons({
   showApiDocs: boolean
   collapsed?: boolean
 }) {
-  const footerItems = ['WAREHOUSE', 'DOCS', 'SETTINGS']
+  const footerItems = ['DOCS', 'SETTINGS']
     .map(id => items.find(item => item.id === id))
     .filter((item): item is SidebarItem => Boolean(item))
   const settingsItem = footerItems.find(item => item.id === 'SETTINGS')
   const orderedItems = footerItems.filter(item => item.id !== 'SETTINGS')
-
   return (
     <div aria-label="Sidebar tools" className={`shrink-0 px-2 pt-1 pb-0.5 ${collapsed ? 'flex flex-col items-center gap-1' : 'flex items-center justify-start gap-1'}`}>
       {orderedItems.map(item => {
-        const Icon = item.id === 'WAREHOUSE' ? ChartNoAxesColumn : item.icon
+        const Icon = item.icon
         const active = activeSection === item.id
         return (
           <AppTooltip key={item.id} content={item.label} side={collapsed ? 'right' : 'top'}>
@@ -624,6 +712,7 @@ function SettingsSubNav({ onBack }: { onBack: () => void }) {
 
 function ConsoleSubNav({ onBack, onInspectTask }: { onBack: () => void; onInspectTask?: (issue: IssueListItem, owner: IssueInspectionOwner) => void }) {
   const [projectQuery, setProjectQuery] = useState('')
+  const [refreshKey, setRefreshKey] = useState(0)
   const projects = useAppStore(s => s.projects)
   const selectProject = (id: string) => {
     const project = projects.find(item => item.id === id)
@@ -641,10 +730,10 @@ function ConsoleSubNav({ onBack, onInspectTask }: { onBack: () => void; onInspec
 
       {/* Project switcher */}
       <div className="px-2 py-1.5 shrink-0">
-        <ProjectControls projects={projects} query={projectQuery} onQueryChange={setProjectQuery} onSelect={selectProject} onAddProject={() => useAppStore.getState().setCreateProjectDialogOpen(true)} onNewTask={() => useAppStore.getState().openCreateTaskDialog()} />
+        <ProjectControls projects={projects} query={projectQuery} onQueryChange={setProjectQuery} onSelect={selectProject} onAddProject={() => useAppStore.getState().setCreateProjectDialogOpen(true)} onNewTask={() => useAppStore.getState().openCreateTaskDialog()} onRefresh={() => setRefreshKey(k => k + 1)} />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto"><ProjectWorkspaceTree query={projectQuery} onSelect={selectProject} onInspectTask={onInspectTask} /></div>
+      <div className="min-h-0 flex-1 overflow-auto"><ProjectWorkspaceTree query={projectQuery} onSelect={selectProject} onInspectTask={onInspectTask} refreshKey={refreshKey} /></div>
 
     </div>
   )

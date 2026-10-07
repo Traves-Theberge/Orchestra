@@ -27,4 +27,8 @@ describe('sections', () => {
     const vis = getSectionVisibility('CONSOLE')
     expect('showStudio' in vis).toBe(false)
   })
+
+  it('sidebarItems does not contain WAREHOUSE', () => {
+    expect(sidebarItems.find(i => i.id === 'WAREHOUSE')).toBeUndefined()
+  })
 })

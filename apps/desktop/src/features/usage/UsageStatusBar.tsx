@@ -203,9 +203,9 @@ function UsageRoster({ config, limits, refreshing, onRefresh }: { config: Backen
         const summary = window ? `${remainingPct(window)}% ${windowLabel(window)} remaining` : observation?.status === 'error' ? 'Observation failed' : observation?.status === 'unavailable' ? 'Quota window unavailable' : 'Quota not observed'
         const local = history?.[provider]
         const localText = !local ? 'Checking local history…' : local.kind === 'ready' && local.summary ? `${formatTokens(local.summary.total_tokens)} tokens · local 30d` : local.kind === 'off' ? 'Local tracking off' : local.kind === 'empty' ? 'No local history' : 'Local history unavailable'
-        return <button type="button" key={provider} onClick={() => { setOpen(false); setActiveSection('WAREHOUSE') }} className="flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-accent/60"><ProviderIcon provider={provider} size={16} /><span className="min-w-0 flex-1"><span title={providerLabel(provider)} className="block truncate text-xs font-medium">{providerLabel(provider)}{observation?.account_label ? <span className="ml-1 font-normal text-muted-foreground">· {observation.account_label}</span> : null}</span><span className="block truncate text-[10px] text-muted-foreground/70">{localText}</span></span><span className="max-w-32 shrink-0 truncate text-[10px] text-muted-foreground">{summary}</span><ChevronRight size={12} className="shrink-0 text-muted-foreground/60" /></button>
+        return <button type="button" key={provider} onClick={() => { setOpen(false); setActiveSection('SETTINGS'); const s = useAppStore.getState(); s.setActiveSettingsSection('usage'); s.scrollToSettingsSection?.('usage') }} className="flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-accent/60"><ProviderIcon provider={provider} size={16} /><span className="min-w-0 flex-1"><span title={providerLabel(provider)} className="block truncate text-xs font-medium">{providerLabel(provider)}{observation?.account_label ? <span className="ml-1 font-normal text-muted-foreground">· {observation.account_label}</span> : null}</span><span className="block truncate text-[10px] text-muted-foreground/70">{localText}</span></span><span className="max-w-32 shrink-0 truncate text-[10px] text-muted-foreground">{summary}</span><ChevronRight size={12} className="shrink-0 text-muted-foreground" /></button>
       })}</div>
-      <button type="button" onClick={() => { setOpen(false); setActiveSection('WAREHOUSE') }} className="flex w-full items-center justify-between border-t border-border/60 px-3 py-2.5 text-xs font-medium hover:bg-accent/60">Usage details and history <ChevronRight size={13} /></button>
+      <button type="button" onClick={() => { setOpen(false); setActiveSection('SETTINGS'); const s = useAppStore.getState(); s.setActiveSettingsSection('usage'); s.scrollToSettingsSection?.('usage') }} className="flex w-full items-center justify-between border-t border-border/60 px-3 py-2.5 text-xs font-medium hover:bg-accent/60">Usage details and history <ChevronRight size={13} /></button>
     </div>}
   </div>
 }
@@ -401,7 +401,7 @@ function DetailPopover({
       <div className="p-1">
         <button
           type="button"
-          onClick={() => setActiveSection('WAREHOUSE')}
+          onClick={() => { setActiveSection('SETTINGS'); const s = useAppStore.getState(); s.setActiveSettingsSection('usage'); s.scrollToSettingsSection?.('usage') }}
           className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-[12px] text-foreground/85 hover:bg-foreground/[0.06] hover:text-foreground transition-colors"
         >
           <span>Usage details and history</span>

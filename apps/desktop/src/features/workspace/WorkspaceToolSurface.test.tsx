@@ -25,10 +25,9 @@ it('portals its compact menu, opens file viewer and dismisses with keyboard focu
   openMenu()
   const menu = screen.getByRole('menu', { name: 'Add workspace tool' })
   expect(container.contains(menu)).toBe(false)
-  expect(screen.getByRole('menuitem', { name: 'File viewer' })).toHaveFocus()
+  expect(screen.getByRole('menuitem', { name: 'Files & terminals' })).toHaveFocus()
   fireEvent.keyDown(menu, { key: 'ArrowDown' })
-  // No terminal callback and the disabled action is skipped.
-  expect(screen.getByRole('menuitem', { name: 'New markdown document' })).toHaveFocus()
+  expect(screen.getByRole('menuitem', { name: 'Git & pull requests' })).toHaveFocus()
   fireEvent.keyDown(menu, { key: 'Escape' })
   expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Add workspace tool' })).toHaveFocus()
@@ -37,10 +36,9 @@ it('portals its compact menu, opens file viewer and dismisses with keyboard focu
   expect(screen.getByRole('button', { name: 'Maximize workspace tools' })).toBeVisible()
 })
 
-it('keeps the full borderless control strip inside the pane and reports its refresh slot', async () => {
+it('keeps the full borderless control strip inside the pane', async () => {
   const onToggleTools = vi.fn()
-  const setRefreshTarget = vi.fn()
-  render(<WorkspaceToolSurface toolsOpen onToggleTools={onToggleTools} onRefreshTargetChange={setRefreshTarget}><div>Tools</div></WorkspaceToolSurface>)
+  render(<WorkspaceToolSurface toolsOpen onToggleTools={onToggleTools}><div>Tools</div></WorkspaceToolSurface>)
   const toolbar = screen.getByLabelText('Workspace tool controls')
   expect(toolbar).toHaveClass('h-10')
   expect(toolbar).not.toHaveClass('border-t', 'border-b')
@@ -50,7 +48,6 @@ it('keeps the full borderless control strip inside the pane and reports its refr
   expect(toolbar).toContainElement(screen.getByRole('button', { name: 'Hide workspace tools' }))
   expect(toolbar).toContainElement(screen.getByRole('button', { name: 'Maximize workspace tools' }))
   expect(screen.getByRole('button', { name: 'Hide workspace tools' })).not.toHaveAttribute('title')
-  await waitFor(() => expect(setRefreshTarget).toHaveBeenCalledWith(expect.any(HTMLSpanElement)))
   openFiles()
   expect(toolbar).toContainElement(screen.getByRole('button', { name: 'Toggle workspace search' }))
   fireEvent.click(screen.getByRole('button', { name: 'Hide workspace tools' }))

@@ -7,12 +7,14 @@ import { TabGroupPanel } from './tabs/TabGroupPanel'
 interface SplitLayoutProps {
   projectId: WorkspaceContextID
   layout: TabGroupLayoutNode
+  onInspectTask?: (identifier: string) => void
+  onToggleTools?: () => void
 }
 
-export function SplitLayout({ projectId, layout }: SplitLayoutProps) {
+export function SplitLayout({ projectId, layout, onInspectTask, onToggleTools }: SplitLayoutProps) {
   return (
     <div className="h-full w-full min-h-0 min-w-0 bg-background">
-      <SplitNode projectId={projectId} layout={layout} path="" />
+      <SplitNode projectId={projectId} layout={layout} path="" onInspectTask={onInspectTask} onToggleTools={onToggleTools} />
     </div>
   )
 }
@@ -21,9 +23,11 @@ interface SplitNodeProps {
   projectId: WorkspaceContextID
   layout: TabGroupLayoutNode
   path: string
+  onInspectTask?: (identifier: string) => void
+  onToggleTools?: () => void
 }
 
-function SplitNode({ projectId, layout, path }: SplitNodeProps) {
+function SplitNode({ projectId, layout, path, onInspectTask, onToggleTools }: SplitNodeProps) {
   const groups = useAppStore((s) => s.projectGroups[projectId] ?? {})
   const focusedGroupId = useAppStore((s) => s.projectFocusedGroupId[projectId] ?? '')
   const fullLayout = useAppStore((s) => s.projectLayouts[projectId])
@@ -38,13 +42,15 @@ function SplitNode({ projectId, layout, path }: SplitNodeProps) {
         group={group}
         isFocused={layout.groupId === focusedGroupId}
         siblingGroupIds={siblingIds}
+        onInspectTask={onInspectTask}
+        onToggleTools={onToggleTools}
       />
     )
   }
-  return <SplitBranch projectId={projectId} layout={layout} path={path} />
+  return <SplitBranch projectId={projectId} layout={layout} path={path} onInspectTask={onInspectTask} onToggleTools={onToggleTools} />
 }
 
-function SplitBranch({ projectId, layout, path }: SplitNodeProps & { layout: Extract<TabGroupLayoutNode, { kind: 'split' }> }) {
+function SplitBranch({ projectId, layout, path, onInspectTask, onToggleTools }: SplitNodeProps & { layout: Extract<TabGroupLayoutNode, { kind: 'split' }> }) {
   const setRatio = useAppStore((s) => s.setGroupSplitRatio)
   const isHorizontal = layout.direction === 'horizontal'
   const firstFlex = `${layout.ratio * 100}%`
@@ -86,7 +92,7 @@ function SplitBranch({ projectId, layout, path }: SplitNodeProps & { layout: Ext
   return (
     <div className={`flex ${isHorizontal ? 'flex-row' : 'flex-col'} h-full w-full min-h-0 min-w-0`}>
       <div className="min-h-0 min-w-0" style={{ flexBasis: firstFlex, flexGrow: 0, flexShrink: 1 }}>
-        <SplitNode projectId={projectId} layout={layout.first} path={path === '' ? 'first' : `${path}.first`} />
+        <SplitNode projectId={projectId} layout={layout.first} path={path === '' ? 'first' : `${path}.first`} onInspectTask={onInspectTask} onToggleTools={onToggleTools} />
       </div>
       <div
         onPointerDown={onResize}
@@ -97,7 +103,7 @@ function SplitBranch({ projectId, layout, path }: SplitNodeProps & { layout: Ext
         } ${hovering ? 'bg-primary/50' : 'bg-border/40'}`}
       />
       <div className="min-h-0 min-w-0" style={{ flexBasis: secondFlex, flexGrow: 0, flexShrink: 1 }}>
-        <SplitNode projectId={projectId} layout={layout.second} path={path === '' ? 'second' : `${path}.second`} />
+        <SplitNode projectId={projectId} layout={layout.second} path={path === '' ? 'second' : `${path}.second`} onInspectTask={onInspectTask} onToggleTools={onToggleTools} />
       </div>
     </div>
   )

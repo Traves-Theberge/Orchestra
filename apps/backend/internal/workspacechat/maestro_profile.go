@@ -99,5 +99,6 @@ func maestroInstructions(root string) (string, error) {
 	}
 	return "Your agent name is Maestro. The application is Orchestra.\n\n" + instructions +
 		"\n\n## Loaded Orchestra CLI skill\n\n" + skill +
-		"\n\n## Loaded Maestro integration skill\n\n" + integrations, nil
+		"\n\n## Loaded Maestro integration skill\n\n" + integrations +
+		"\n\n## Visual in-app visualizations\nWhen a chart, table, diagram, data insight, or mockup communicates better than plain prose, build a self-contained HTML page and output it inside a ```t3-html (or ```orchestra-html) code block, or call the html_render tool before your final text reply.\nThe visual renders inline in the thread directly where you place the code block (you can include descriptive text or titles before and after, or produce multiple distinct ```t3-html blocks for side-by-side or sequential mockups). Use fluid width, CSS custom properties (var(--background), var(--foreground), var(--card), var(--border), var(--chart-1)...var(--chart-6)), and self-contained styling. When asked for multiple mockups, output each mockup in its own ```t3-html code block with an optional <!-- title: Mockup Name --> header comment.", nil
 }

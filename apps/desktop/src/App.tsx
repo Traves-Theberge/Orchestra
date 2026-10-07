@@ -9,7 +9,6 @@ import type { SessionSummary } from '@core/api/types'
 import { ProjectDetailView } from '@features/projects/ProjectDetailView'
 import { WorkspaceChat } from '@features/workspace/chat/WorkspaceChat'
 import { getActiveWorkspaceContextId, selectedProjectWorkspace } from '@core/store/workspace-context'
-import { UsagePage } from '@features/usage/UsagePage'
 import { UsageStatusBar } from '@features/usage/UsageStatusBar'
 import { TerminalMultiplexer } from '@features/terminal/TerminalMultiplexer'
 import { AppShell } from '@layout/AppShell'
@@ -416,13 +415,6 @@ export default function App() {
             </SectionErrorBoundary>
           ) : null}
 
-          {sectionVisibility.showWarehouse ? (
-            <SectionErrorBoundary name="Usage">
-              <section className="flex-1 flex flex-col min-h-0">
-                <UsagePage config={config} />
-              </section>
-            </SectionErrorBoundary>
-          ) : null}
 
           {sectionVisibility.showIssueBoard ? (
             <SectionErrorBoundary name="Kanban Board">

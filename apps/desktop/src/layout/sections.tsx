@@ -1,6 +1,5 @@
 import {
   Cpu,
-  Database,
   FileText,
   FolderTree,
   ListTodo,
@@ -26,7 +25,6 @@ export const sidebarItems: SidebarItem[] = [
   { id: 'PROJECTS', label: 'Projects', description: 'Chat, files, terminals, Git and tasks', icon: FolderTree },
   { id: 'ISSUES', label: 'Tasks', description: 'Task board and inspector', icon: ListTodo },
   { id: 'AGENTS', label: 'Agents', description: 'Global agent configurations', icon: Cpu },
-  { id: 'WAREHOUSE', label: 'Usage', description: 'Per-agent tokens, cost, and sessions', icon: Database },
   { id: 'SANDBOX', label: 'Remote', description: 'Remote code execution', icon: SandboxIcon },
   { id: 'DOCS', label: 'Documentation', description: 'User & engineering guides', icon: FileText },
   { id: 'SETTINGS', label: 'Settings', description: 'Backend profiles, integrations, notifications, and shortcuts', icon: Settings2 },
@@ -93,7 +91,7 @@ export function getSectionVisibility(activeSection: SectionID): SectionVisibilit
     showIssueBoard: activeSection === 'ISSUES',
     showProjects: false,
     showAgents: activeSection === 'AGENTS',
-    showWarehouse: activeSection === 'WAREHOUSE',
+    showWarehouse: false,
     showSandbox: activeSection === 'SANDBOX',
     showSettings: activeSection === 'SETTINGS',
     showDocs: activeSection === 'DOCS',

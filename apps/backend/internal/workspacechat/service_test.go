@@ -341,3 +341,34 @@ func TestWorkspaceChatProjectOwnership(t *testing.T) {
 		t.Fatalf("unexpected dispatch count: %d", len(r.calls))
 	}
 }
+
+func TestOrchestratorScopeRegisteredHarnessAvailability(t *testing.T) {
+	svc, _, _, root := fixture(t, &recordingRunner{})
+	orchestratorDir := filepath.Join(root, ".orchestra", "orchestrator")
+	if err := os.MkdirAll(orchestratorDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.ConfigureOrchestrator(orchestratorDir, []map[string]any{{"type": "function"}}, func(ctx context.Context, tool string, args map[string]any) map[string]any {
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	runner := &recordingRunner{output: "claude output"}
+	svc.registry.(*agents.Registry).SetRunner(agents.ProviderClaude, runner)
+	providers, err := svc.Providers(context.Background(), OrchestratorScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var claudeFound bool
+	for _, p := range providers {
+		if p.ID == string(agents.ProviderClaude) {
+			claudeFound = true
+			if !p.Enabled {
+				t.Fatalf("expected Claude to be enabled in orchestrator scope, got: %+v", p)
+			}
+		}
+	}
+	if !claudeFound {
+		t.Fatal("Claude provider not found in catalog")
+	}
+}

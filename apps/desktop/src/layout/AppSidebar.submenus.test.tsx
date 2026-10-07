@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Bot, Settings } from 'lucide-react'
 import { resetAppStore, useAppStore } from '@core/store'
 import type { SidebarItem } from '@layout/types'
+import type { IssueListItem } from '@core/api/client'
 import { AppSidebar } from './AppSidebar'
 
 vi.mock('@/hooks/use-platform', () => ({ usePlatform: () => ({ isMac: false, platform: 'win32' }) }))
@@ -23,7 +24,7 @@ afterEach(() => {
   resetAppStore()
 })
 
-function mount(activeSection: string, onSectionChange = vi.fn()) {
+function mount(activeSection: string, onSectionChange = vi.fn(), onSearch?: (q: string) => Promise<IssueListItem[]>, onResultClick?: (id: string) => void) {
   useAppStore.setState({
     availableAgents: ['codex', 'opencode'],
     activeAgentProvider: 'codex',
@@ -39,6 +40,8 @@ function mount(activeSection: string, onSectionChange = vi.fn()) {
     selectedProjectID={null}
     onSelectProject={vi.fn()}
     onCreateProject={vi.fn()}
+    onSearch={onSearch}
+    onResultClick={onResultClick}
   />)
   return { onSectionChange }
 }
@@ -77,5 +80,58 @@ describe('sidebar Agents and Settings submenus', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Appearance' }))
     expect(scrollToSettingsSection).toHaveBeenLastCalledWith('appearance')
+  })
+})
+
+describe('SidebarSearch component', () => {
+  it('renders polished platform keycaps and focuses on Ctrl+K', () => {
+    mount('AGENTS')
+    const searchInput = screen.getByPlaceholderText('Search…')
+    expect(searchInput).toBeInTheDocument()
+    expect(screen.getByText('Ctrl')).toBeInTheDocument()
+    expect(screen.getByText('K')).toBeInTheDocument()
+
+    fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
+    expect(document.activeElement).toBe(searchInput)
+  })
+
+  it('searches issues and allows selecting via keyboard navigation', async () => {
+    const onSearch = vi.fn().mockResolvedValue([
+      { id: 'ISSUE-1', identifier: 'ISSUE-1', title: 'Fix bug', state: 'IN_PROGRESS' },
+    ])
+    const onResultClick = vi.fn()
+    mount('AGENTS', vi.fn(), onSearch, onResultClick)
+
+    const searchInput = screen.getByPlaceholderText('Search…')
+    fireEvent.change(searchInput, { target: { value: 'Fix' } })
+
+    await vi.waitFor(() => {
+      expect(onSearch).toHaveBeenCalledWith('Fix')
+      expect(screen.getByText('Fix bug')).toBeInTheDocument()
+    })
+
+    fireEvent.keyDown(searchInput, { key: 'ArrowDown' })
+    fireEvent.keyDown(searchInput, { key: 'Enter' })
+
+    expect(onResultClick).toHaveBeenCalledWith('ISSUE-1')
+  })
+
+  it('clears query and closes dropdown when clear button or Escape is pressed', async () => {
+    const onSearch = vi.fn().mockResolvedValue([
+      { id: 'ISSUE-1', identifier: 'ISSUE-1', title: 'Fix bug', state: 'IN_PROGRESS' },
+    ])
+    mount('AGENTS', vi.fn(), onSearch)
+
+    const searchInput = screen.getByPlaceholderText('Search…') as HTMLInputElement
+    fireEvent.change(searchInput, { target: { value: 'Fix' } })
+
+    await vi.waitFor(() => {
+      expect(screen.getByText('Fix bug')).toBeInTheDocument()
+    })
+
+    // Press Escape to dismiss
+    fireEvent.keyDown(searchInput, { key: 'Escape' })
+    expect(screen.queryByText('Fix bug')).not.toBeInTheDocument()
+    expect(searchInput.value).toBe('')
   })
 })

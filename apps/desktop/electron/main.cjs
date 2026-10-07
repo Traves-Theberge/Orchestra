@@ -420,7 +420,7 @@ function createWindow() {
           `font-src 'self' data: ${fontFileHosts}; ` +
           `connect-src ${connectSrc}; ` +
           "media-src 'self' blob:; " +
-          "worker-src 'self' blob:"
+          "worker-src 'self' blob:; frame-src 'self' data: blob: about:"
         ],
       },
     })

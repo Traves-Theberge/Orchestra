@@ -10,6 +10,10 @@ import {
   SplitSquareHorizontal,
   SplitSquareVertical,
   Settings,
+  GitBranch,
+  Folder,
+  MessageSquare,
+  PanelRight,
 } from 'lucide-react'
 import { useAppStore } from '@core/store'
 import { projectIdForWorkspaceContext, workspaceSelectionKey } from '@core/store/workspace-context'
@@ -19,6 +23,10 @@ import { EditorContent } from '../editor/EditorContent'
 import { BrowserContent } from '../browser/BrowserContent'
 import { WorkspaceToolsControls } from '../WorkspaceToolsControls'
 import { TerminalView } from '@features/terminal/TerminalView'
+import { GitTab } from '@features/git'
+import { FileExplorer } from '../file-explorer/FileExplorer'
+import { ConversationsPanel } from '../panels/ConversationsPanel'
+import { WorkspaceEmptyTools } from '../WorkspaceEmptyTools'
 import { TabContextMenu } from './TabContextMenu'
 import { ORCHESTRA_FILE_MIME, shellQuote } from '../file-explorer/FileTreeRow'
 
@@ -28,9 +36,11 @@ interface TabGroupPanelProps {
   isFocused: boolean
   /** Existing groupIds in the project — used for "Move to" submenu (future). */
   siblingGroupIds: string[]
+  onInspectTask?: (identifier: string) => void
+  onToggleTools?: () => void
 }
 
-export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: TabGroupPanelProps) {
+export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds, onInspectTask, onToggleTools }: TabGroupPanelProps) {
   const workspaceRoot = () => {
     const state = useAppStore.getState()
     const project = state.projects.find(p => p.id === projectIdForWorkspaceContext(state, projectId))
@@ -125,10 +135,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
   const activeRef = group.tabs.find((t) => t.id === group.activeTabId)
   const activeContent: ReactNode = (() => {
     if (!activeRef) return (
-      <div className="h-full flex flex-col items-center justify-center gap-3 text-muted-foreground/40 p-8">
-        <Plus size={28} strokeWidth={1.4} />
-        <p className="text-xs">Open a tab in this group via the + button.</p>
-      </div>
+      <WorkspaceEmptyTools projectId={projectId} />
     )
     if (activeRef.type === 'editor') {
       const file = openFiles.find((f) => f.id === activeRef.id)
@@ -152,6 +159,37 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
         />
       )
     }
+    if (activeRef.type === 'git') {
+      const state = useAppStore.getState()
+      const project = state.projects.find(p => p.id === projectIdForWorkspaceContext(state, projectId))
+      const workspace = config ? state.knownProjectWorkspaces[workspaceSelectionKey(config.baseUrl, projectId)] : undefined
+      if (!project || !config) return null
+      return (
+        <div role="tabpanel" aria-label="Git & pull requests" className="h-full min-h-0 min-w-0 flex-1 overflow-hidden">
+          <GitTab
+            key={`${config.baseUrl}:${projectId}`}
+            project={project}
+            config={config}
+            workspace={workspace ? { id: workspace.workspaceId, path: workspace.path, branch: workspace.branch } : undefined}
+            onInspectTask={onInspectTask}
+          />
+        </div>
+      )
+    }
+    if (activeRef.type === 'files') {
+      return (
+        <section aria-label="Workspace files view" className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <FileExplorer />
+        </section>
+      )
+    }
+    if (activeRef.type === 'conversations') {
+      return (
+        <div role="tabpanel" aria-label="Conversations" className="h-full min-h-0 min-w-0 flex-1 overflow-hidden">
+          <ConversationsPanel projectId={projectId} />
+        </div>
+      )
+    }
     return null
   })()
 
@@ -168,6 +206,15 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
       const t = openTerminals.find((x) => x.id === ref.id)
       return { title: t?.title || 'Shell' }
     }
+    if (ref.type === 'git') {
+      return { title: 'Git & pull requests' }
+    }
+    if (ref.type === 'files') {
+      return { title: 'Files & terminals' }
+    }
+    if (ref.type === 'conversations') {
+      return { title: 'Conversations' }
+    }
     return { title: '' }
   }
 
@@ -175,6 +222,9 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
     const cls = isActive ? 'text-primary' : 'text-muted-foreground/50'
     if (ref.type === 'editor') return <File size={11} className={cls} />
     if (ref.type === 'browser') return <Globe size={11} className={cls} />
+    if (ref.type === 'git') return <GitBranch size={11} className={cls} />
+    if (ref.type === 'files') return <Folder size={11} className={cls} />
+    if (ref.type === 'conversations') return <MessageSquare size={11} className={cls} />
     return <Terminal size={11} className={cls} />
   }
 
@@ -188,8 +238,8 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
       }}
     >
       {/* Tab strip */}
-      <div className="flex items-center border-b border-border/30 shrink-0 h-11">
-        <div className="flex-1 flex items-center overflow-x-auto min-w-0">
+      <div className="flex items-center border-b border-border/40 bg-muted/20 shrink-0 h-9 select-none">
+        <div role="tablist" aria-label="Workspace tool tabs" className="flex-1 flex items-center overflow-x-auto min-w-0 h-full">
           {group.tabs.map((ref, index) => {
             const isActive = group.activeTabId === ref.id
             const isDragging = draggingTabId === ref.id
@@ -202,7 +252,7 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
             return (
               <div
                 key={`${ref.type}-${ref.id}`}
-                className="relative inline-flex shrink-0"
+                className="relative inline-flex shrink-0 h-9 border-r border-border/30"
                 draggable
                 onDragStart={(e) => {
                   setDraggingTabId(ref.id)
@@ -261,30 +311,30 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
                   <span className="pointer-events-none absolute right-0 top-1 bottom-1 w-[2px] rounded-full bg-primary" />
                 )}
                 <button
+                  role="tab"
+                  aria-selected={isActive}
                   data-active-tab={isActive}
                   onClick={() => activateTabInGroup(projectId, ref.id)}
                   onContextMenu={(e) => {
                     e.preventDefault()
                     setContextMenu({ x: e.clientX, y: e.clientY, tab: ref })
                   }}
-                  className={`group relative inline-flex items-center gap-1.5 px-3 h-11 transition-colors shrink-0 ${
+                  className={`group relative inline-flex items-center gap-1.5 px-3 h-9 transition-colors shrink-0 text-left ${
                     isDragging ? 'cursor-grabbing opacity-40' : 'cursor-grab'
                   } ${
                     isActive
-                      ? 'text-foreground'
-                      : 'text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.03]'
+                      ? 'bg-background text-foreground font-medium shadow-xs border-t-2 border-t-primary -mt-px'
+                      : 'bg-transparent text-muted-foreground/75 hover:text-foreground hover:bg-muted/30'
                   }`}
                   title={title}
                 >
-                  {isActive && (
-                    <span className="absolute bottom-0 left-2 right-2 h-[2px] rounded-full bg-primary" />
-                  )}
                   {iconFor(ref, isActive)}
                   {isDirty && <span className="size-1.5 rounded-full bg-primary shrink-0" />}
                   <span className="text-[12px] font-medium tracking-tight truncate max-w-[160px]">{title}</span>
                   <span
                     role="button"
                     tabIndex={0}
+                    aria-label={`Close ${title}`}
                     onClick={(e) => {
                       e.stopPropagation()
                       closeTab(ref)
@@ -298,7 +348,11 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
                     }}
                     onMouseDown={(e) => e.stopPropagation()}
                     onDragStart={(e) => e.preventDefault()}
-                    className="inline-flex items-center justify-center size-4 -mr-1 rounded text-muted-foreground/50 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-foreground/[0.06] transition-all"
+                    className={`inline-flex items-center justify-center size-4 -mr-1 rounded hover:bg-muted transition-all ${
+                      isActive
+                        ? 'text-muted-foreground/70 opacity-70 group-hover:opacity-100 hover:text-foreground'
+                        : 'text-muted-foreground/50 opacity-0 group-hover:opacity-70 hover:!opacity-100 hover:text-foreground'
+                    }`}
                   >
                     <X size={11} />
                   </span>
@@ -320,20 +374,20 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
               }
               setPlusOpen((v) => !v)
             }}
-            className={`inline-flex items-center justify-center size-11 transition-colors shrink-0 ${
+            className={`inline-flex items-center justify-center size-9 transition-colors shrink-0 ${
               plusOpen
-                ? 'text-foreground bg-foreground/[0.04]'
-                : 'text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.03]'
+                ? 'text-foreground bg-muted/50'
+                : 'text-muted-foreground/60 hover:text-foreground hover:bg-muted/30'
             }`}
-            title="New…"
+            title="New tab…"
           >
             <Plus size={13} strokeWidth={2.25} />
           </button>
         </div>
 
-        {/* Split + close-group menu — far right */}
-        <div className="flex items-center shrink-0">
-          <WorkspaceToolsControls />
+        {/* Split + close-group menu + controls — far right */}
+        <div className="flex items-center shrink-0 pr-1 gap-0.5">
+          <WorkspaceToolsControls inToolbar={false} />
           <button
             ref={splitRef}
             aria-label="Split group"
@@ -362,6 +416,16 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
               title="Close group"
             >
               <X size={13} />
+            </button>
+          )}
+          {onToggleTools && (
+            <button
+              onClick={onToggleTools}
+              aria-label="Hide workspace tools"
+              title="Hide workspace tools"
+              className="flex items-center justify-center size-7 my-1 mx-0.5 rounded-md text-muted-foreground/50 hover:text-foreground hover:bg-muted/40 transition-colors"
+            >
+              <PanelRight size={13} />
             </button>
           )}
         </div>
@@ -418,6 +482,33 @@ export function TabGroupPanel({ projectId, group, isFocused, siblingGroupIds }: 
           })()}
           onMouseDown={(e) => e.stopPropagation()}
         >
+          <PlusMenuItem
+            icon={<Folder size={13} />}
+            label="Files & terminals"
+            onClick={() => {
+              closePlusMenu()
+              setFocusedGroup(projectId, group.id)
+              addTabToGroup(projectId, { type: 'files', id: 'files' }, group.id)
+            }}
+          />
+          <PlusMenuItem
+            icon={<GitBranch size={13} />}
+            label="Git & pull requests"
+            onClick={() => {
+              closePlusMenu()
+              setFocusedGroup(projectId, group.id)
+              addTabToGroup(projectId, { type: 'git', id: 'git' }, group.id)
+            }}
+          />
+          <PlusMenuItem
+            icon={<MessageSquare size={13} />}
+            label="Conversations"
+            onClick={() => {
+              closePlusMenu()
+              setFocusedGroup(projectId, group.id)
+              addTabToGroup(projectId, { type: 'conversations', id: 'conversations' }, group.id)
+            }}
+          />
           <PlusMenuItem
             icon={<Terminal size={13} />}
             label="New Terminal"

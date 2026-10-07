@@ -27,6 +27,7 @@ const message: api.WorkspaceChatMessage = {
 }
 beforeEach(() => {
   resetAppStore()
+  useAppStore.setState({ config, projects: [{ id: 'project-a', name: 'Alpha', root_path: '/repo', remote_url: '' }] })
   vi.stubGlobal('crypto', webcrypto)
   sessionStorage.clear()
   vi.resetAllMocks()
@@ -41,13 +42,14 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); vi.useRealTimers() })
 const open = (overrides: Partial<React.ComponentProps<typeof WorkspaceChat>> = {}) => render(<WorkspaceChat config={config} projectId="project-a" projectName="Alpha" {...overrides} />)
-async function openThreadList() {
-  fireEvent.click(screen.getByRole('button', { name: 'Toggle conversations' }))
-  await screen.findByRole('button', { name: 'Open conversation: Review changes' })
-}
-async function selectConversation(title = 'Review changes') {
-  await openThreadList()
-  fireEvent.click(screen.getByRole('button', { name: `Open conversation: ${title}` }))
+async function selectConversation(title = 'Review changes', id?: string) {
+  let targetId = id
+  if (!targetId) {
+    if (title === 'Other conversation') targetId = 'chat-b'
+    else if (title === 'Old Gemini chat') targetId = 'legacy-gemini'
+    else targetId = session.id
+  }
+  act(() => useAppStore.getState().requestWorkspaceConversation('project-a', targetId))
   await screen.findByRole('button', { name: `Rename conversation: ${title}` })
 }
 
@@ -75,9 +77,7 @@ describe('WorkspaceChat', () => {
     vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({ session: legacySession, messages: [{ ...message, id: 'legacy-message', session_id: legacySession.id, text: 'Historical Gemini message' }] })
     open()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Toggle conversations' }))
-    await screen.findByRole('button', { name: 'Open conversation: Old Gemini chat' })
-    fireEvent.click(screen.getByRole('button', { name: 'Open conversation: Old Gemini chat' }))
+    await selectConversation('Old Gemini chat', legacySession.id)
     expect(await screen.findByText('Historical Gemini message')).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('Gemini conversation history is preserved and read-only')
     expect(screen.getByRole('button', { name: 'Choose harness and model' })).toHaveTextContent('Gemini')
@@ -87,18 +87,6 @@ describe('WorkspaceChat', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Choose harness and model' }))
     expect(await screen.findByRole('button', { name: 'Use Antigravity' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Use Gemini' })).not.toBeInTheDocument()
-  })
-
-  it('opens and closes the conversation list with Escape and restores trigger focus', async () => {
-    open()
-    await openThreadList()
-    const toggle = screen.getByRole('button', { name: 'Toggle conversations' })
-    const list = screen.getByRole('navigation', { name: 'Workspace conversations' })
-    expect(toggle).toHaveAttribute('aria-expanded', 'true')
-    fireEvent.keyDown(list, { key: 'Escape' })
-    expect(screen.queryByRole('navigation', { name: 'Workspace conversations' })).not.toBeInTheDocument()
-    expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    expect(toggle).toHaveFocus()
   })
   it('renames inline and reconciles a committed mutation with a lost response', async () => {
     open(); await selectConversation()
@@ -154,7 +142,7 @@ describe('WorkspaceChat', () => {
   it('opens a sidebar-requested conversation without sending a message', async () => {
     useAppStore.setState({ config, projects: [{ id: 'project-a', name: 'Alpha', root_path: '/alpha', remote_url: '' }] })
     open()
-    await screen.findByRole('button', { name: 'Toggle conversations' })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Rename conversation: New conversation' })).not.toBeDisabled())
     act(() => useAppStore.getState().requestWorkspaceConversation('project-a', session.id))
     await screen.findByRole('button', { name: 'Rename conversation: Review changes' })
     expect(api.fetchWorkspaceChat).toHaveBeenCalledWith(config, 'project-a', session.id)
@@ -163,7 +151,7 @@ describe('WorkspaceChat', () => {
   })
   it('does not consume a sidebar conversation request from a different backend', async () => {
     open()
-    await screen.findByRole('button', { name: 'Toggle conversations' })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Rename conversation: New conversation' })).not.toBeDisabled())
     act(() => useAppStore.setState({ requestedWorkspaceConversation: {
       baseUrl: 'http://other-backend:4014', apiToken: config.apiToken, projectId: 'project-a', sessionId: session.id, requestId: 1,
     } }))
@@ -312,36 +300,15 @@ describe('WorkspaceChat', () => {
     // A correction typed while reconciling must survive the accepted old receipt.
     fireEvent.change(screen.getByLabelText('Message agent'), { target: { value: 'A later unsent correction' } })
     vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({ session, messages: [{ ...message, client_message_id: clientId, text: 'Persist delivery identity' }] })
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh conversations' }))
+    act(() => { window.dispatchEvent(new CustomEvent('orchestra:harness-registration-changed')) })
     await waitFor(() => expect(screen.getByLabelText('Send message')).not.toBeDisabled())
     expect(screen.getByLabelText('Message agent')).toHaveValue('A later unsent correction')
     expect(api.sendWorkspaceChatMessage).toHaveBeenCalledTimes(1)
     expect(api.createWorkspaceChatSession).not.toHaveBeenCalled()
   })
-  it('renders conversation refresh in the supplied workspace-tools toolbar slot', async () => {
-    const toolbar = document.createElement('div')
-    toolbar.setAttribute('aria-label', 'Workspace tool controls')
-    const target = document.createElement('span')
-    toolbar.append(target)
-    document.body.append(toolbar)
-    const mounted = render(<WorkspaceChat config={config} projectId="project-a" projectName="Alpha" refreshToolbarTarget={target} />)
-    try {
-      await selectConversation()
-      const refresh = screen.getByRole('button', { name: 'Refresh conversations' })
-      expect(toolbar).toContainElement(refresh)
-      expect(screen.getByRole('region', { name: 'Alpha workspace chat' })).not.toContainElement(refresh)
-      expect(refresh).not.toHaveAttribute('title')
-      const previousCalls = vi.mocked(api.listWorkspaceChatSessions).mock.calls.length
-      fireEvent.click(refresh)
-      await waitFor(() => expect(api.listWorkspaceChatSessions).toHaveBeenCalledTimes(previousCalls + 1))
-    } finally {
-      mounted.unmount()
-      toolbar.remove()
-    }
-  })
   it('does not start an agent or create a session on mount', async () => {
     open()
-    await openThreadList()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Rename conversation: New conversation' })).not.toBeDisabled())
     expect(api.createWorkspaceChatSession).not.toHaveBeenCalled()
     expect(api.sendWorkspaceChatMessage).not.toHaveBeenCalled()
     expect(screen.getByLabelText('Message agent')).not.toBeDisabled()
@@ -351,8 +318,7 @@ describe('WorkspaceChat', () => {
     vi.mocked(api.fetchWorkspaceChat).mockImplementation(async (_config, _project, id) => ({ session: { ...session, id }, messages: [] }))
     vi.mocked(api.sendWorkspaceChatMessage).mockImplementation(async (_config, _project, id, clientId, text) => ({ session: { ...session, id, status: 'running' }, message: { ...message, session_id: id, client_message_id: clientId, text } }))
     open()
-    await waitFor(() => expect(screen.getByRole('button', { name: 'New conversation' })).not.toBeDisabled())
-    fireEvent.click(screen.getByRole('button', { name: 'New conversation' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Rename conversation: New conversation' })).not.toBeDisabled())
     expect(api.createWorkspaceChatSession).not.toHaveBeenCalled()
     fireEvent.change(screen.getByLabelText('Message agent'), { target: { value: 'Start from this prompt' } })
     await waitFor(() => expect(screen.getByLabelText('Send message')).not.toBeDisabled())
@@ -376,8 +342,7 @@ describe('WorkspaceChat', () => {
   it('fails closed when a session snapshot belongs to another project', async () => {
     vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({ session: { ...session, project_id: 'project-b' }, messages: [] })
     open()
-    await openThreadList()
-    fireEvent.click(screen.getByRole('button', { name: 'Open conversation: Review changes' }))
+    act(() => useAppStore.getState().requestWorkspaceConversation('project-a', session.id))
     await screen.findByRole('alert')
     expect(screen.getByLabelText('Send message')).toBeDisabled()
     expect(api.sendWorkspaceChatMessage).not.toHaveBeenCalled()
@@ -395,8 +360,7 @@ describe('WorkspaceChat', () => {
     vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({ session: { ...session, status: 'running' }, messages: [message] })
     vi.mocked(api.stopWorkspaceChatTurn).mockResolvedValue({ session: { ...session, status: 'stopping' } })
     open()
-    await openThreadList()
-    fireEvent.click(screen.getByRole('button', { name: 'Open conversation: Review changes' }))
+    await selectConversation()
     fireEvent.click(await screen.findByLabelText('Stop current turn'))
     await waitFor(() => expect(api.stopWorkspaceChatTurn).toHaveBeenCalledExactlyOnceWith(config, 'project-a', 'chat-a'))
     expect(api.sendWorkspaceChatMessage).not.toHaveBeenCalled()
@@ -405,11 +369,10 @@ describe('WorkspaceChat', () => {
     vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({ session: { ...session, status: 'running' }, messages: [] })
     vi.mocked(api.stopWorkspaceChatTurn).mockResolvedValue({ session: { ...session, project_id: 'project-b', status: 'stopping' } })
     open()
-    await openThreadList()
-    fireEvent.click(screen.getByRole('button', { name: 'Open conversation: Review changes' }))
+    await selectConversation()
     fireEvent.click(await screen.findByLabelText('Stop current turn'))
     expect(await screen.findByRole('alert')).toHaveTextContent('another workspace')
-    expect(screen.queryByText('Stopping current turnâ€¦')).not.toBeInTheDocument()
+    expect(screen.queryByText('Stopping current turn…')).not.toBeInTheDocument()
   })
   it('preserves drafts separately when selecting another conversation', async () => {
     const second = { ...session, id: 'chat-b', title: 'Other conversation' }
@@ -452,8 +415,7 @@ describe('WorkspaceChat', () => {
       ], cursor: 5,
     })
     open()
-    await openThreadList()
-    fireEvent.click(screen.getByRole('button', { name: 'Open conversation: Review changes' }))
+    await selectConversation()
     expect(await screen.findByText('Hello world')).toBeInTheDocument()
     expect(screen.queryByText(/Provider thread: provider-thread/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Session details/)).not.toBeInTheDocument()
@@ -468,8 +430,7 @@ describe('WorkspaceChat', () => {
     vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({ session: { ...session, status: 'running' }, messages: [], requests: [request] })
     vi.mocked(api.replyWorkspaceChatRequest).mockResolvedValue({ ...request, status: 'answered' })
     open()
-    await openThreadList()
-    fireEvent.click(screen.getByRole('button', { name: 'Open conversation: Review changes' }))
+    await selectConversation()
     fireEvent.click(await screen.findByRole('button', { name: 'Allow once' }))
     await waitFor(() => expect(api.replyWorkspaceChatRequest).toHaveBeenCalledExactlyOnceWith(config, 'project-a', 'chat-a', 'approval-a', expect.any(String), { decision: 'accept' }))
     await waitFor(() => {
@@ -483,8 +444,7 @@ describe('WorkspaceChat', () => {
     vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({ session: { ...session, status: 'running' }, messages: [], requests: [request] })
     vi.mocked(api.replyWorkspaceChatRequest).mockRejectedValue(new Error('Disconnected'))
     open()
-    await openThreadList()
-    fireEvent.click(screen.getByRole('button', { name: 'Open conversation: Review changes' }))
+    await selectConversation()
     fireEvent.click(await screen.findByRole('button', { name: 'Deny' }))
     await screen.findByRole('alert')
     expect(screen.getByRole('button', { name: 'Deny' })).toBeDisabled()
@@ -495,8 +455,7 @@ describe('WorkspaceChat', () => {
     vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({ session: { ...session, status: 'running' }, messages: [], requests: [request] })
     vi.mocked(api.replyWorkspaceChatRequest).mockResolvedValue({ ...request, status: 'answered' })
     open()
-    await openThreadList()
-    fireEvent.click(screen.getByRole('button', { name: 'Open conversation: Review changes' }))
+    await selectConversation()
     expect(await screen.findByRole('button', { name: 'Submit answers' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'Small patch' }))
     fireEvent.click(screen.getByRole('button', { name: 'Submit answers' }))
@@ -602,8 +561,7 @@ describe('WorkspaceChat', () => {
     vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({ session: { ...session, status: 'running' }, messages: [message] })
     vi.mocked(api.stopWorkspaceChatTurn).mockResolvedValue({ session: { ...session, status: 'stopping' } })
     open()
-    await openThreadList()
-    fireEvent.click(screen.getByRole('button', { name: 'Open conversation: Review changes' }))
+    await selectConversation()
     await screen.findByLabelText('Stop current turn')
     fireEvent.change(screen.getByLabelText('Message agent'), { target: { value: 'Unsent follow-up' } })
     fireEvent.keyDown(screen.getByLabelText('Message agent'), { key: 'Enter' })

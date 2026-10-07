@@ -68,6 +68,9 @@ export type TabRef =
   | { type: 'editor'; id: string }
   | { type: 'browser'; id: string }
   | { type: 'terminal'; id: string }
+  | { type: 'git'; id: string }
+  | { type: 'files'; id: string }
+  | { type: 'conversations'; id: string }
 
 /** A single tab group: its own tab strip + active tab. */
 export interface TabGroup {

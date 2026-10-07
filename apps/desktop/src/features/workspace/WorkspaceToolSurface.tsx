@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { FileText, Folder, Globe, PanelRight, Plus, Search, Terminal, X } from 'lucide-react'
+import { FileText, Folder, GitBranch, Globe, MessageSquare, PanelRight, Plus, Search, Terminal, X } from 'lucide-react'
 import { AppTooltip } from '@ui/tooltip-wrapper'
 import { useAppStore } from '@core/store'
 import { getActiveWorkspaceContextId, selectedProjectWorkspace } from '@core/store/workspace-context'
@@ -72,7 +72,6 @@ export function WorkspaceToolSurface({ children, filesRequest, onAddTerminal, on
       {inspector && <AppTooltip content="Search files" side="bottom"><button type="button" aria-label="Toggle workspace search" aria-pressed={inspector === 'search'} onClick={() => { setInspector(current => current === 'search' ? null : 'search'); if (toolsOpen === false) onToggleTools?.() }} className="rounded p-1.5 text-muted-foreground hover:bg-muted"><Search size={13} /></button></AppTooltip>}
       {inspector && <AppTooltip content="Close file sidebar" side="bottom"><button type="button" aria-label="Close workspace file sidebar" onClick={() => setInspector(null)} className="rounded p-1 text-muted-foreground hover:bg-muted"><X size={12} /></button></AppTooltip>}
       <span className="flex-1" />
-      <span ref={onRefreshTargetChange} className="flex items-center gap-1" />
       <AppTooltip content="Add workspace tool" side="bottom"><button ref={trigger} type="button" aria-label="Add workspace tool" aria-haspopup="menu" aria-expanded={Boolean(menu)} onClick={event => {
           const rect = event.currentTarget.getBoundingClientRect()
           setMenu(current => current ? null : { left: Math.max(8, Math.min(rect.right - 224, window.innerWidth - 232)), top: Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - 184)), contextId })
@@ -94,6 +93,9 @@ export function WorkspaceToolSurface({ children, filesRequest, onAddTerminal, on
       const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
       items[next]?.focus()
     }}>
+      <button type="button" role="menuitem" className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs hover:bg-accent focus:bg-accent focus:outline-none" onClick={() => { dismiss(); useAppStore.getState().addTabToGroup(contextId, { type: 'files', id: 'files' }); if (toolsOpen === false) onToggleTools?.() }}><Folder size={14} />Files & terminals</button>
+      <button type="button" role="menuitem" className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs hover:bg-accent focus:bg-accent focus:outline-none" onClick={() => { dismiss(); useAppStore.getState().addTabToGroup(contextId, { type: 'git', id: 'git' }); if (toolsOpen === false) onToggleTools?.() }}><GitBranch size={14} />Git & pull requests</button>
+      <button type="button" role="menuitem" className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs hover:bg-accent focus:bg-accent focus:outline-none" onClick={() => { dismiss(); useAppStore.getState().addTabToGroup(contextId, { type: 'conversations', id: 'conversations' }); if (toolsOpen === false) onToggleTools?.() }}><MessageSquare size={14} />Conversations</button>
       <button type="button" role="menuitem" className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs hover:bg-accent focus:bg-accent focus:outline-none" onClick={() => { dismiss(); setInspector('files'); if (toolsOpen === false) onToggleTools?.() }}><Folder size={14} />File viewer</button>
       <button type="button" role="menuitem" disabled={!onAddTerminal} className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs hover:bg-accent focus:bg-accent focus:outline-none disabled:opacity-40" onClick={() => { dismiss(); onAddTerminal?.() }}><Terminal size={14} />New terminal</button>
       <button type="button" role="menuitem" disabled={creating || !config?.baseUrl || !(workspace?.path || explorerRoot)} className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs hover:bg-accent focus:bg-accent focus:outline-none disabled:opacity-40" onClick={() => { void createMarkdown() }}><FileText size={14} />New markdown document</button>

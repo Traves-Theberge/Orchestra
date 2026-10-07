@@ -232,12 +232,12 @@ describe('workspace cards', () => {
     expect(fetchArchivedWorkspaceChat).toHaveBeenCalledWith(expect.anything(), 'p1', 'old', 'gone', '/gone')
     expect(screen.queryByRole('button', { name: 'Restore conversation' })).toBeNull()
   })
-  it('refreshes workspaces without opening the worktree menu', async () => {
-    render(<ProjectWorkspaceTree query="" onSelect={vi.fn()} />)
+  it('refreshes workspaces on refreshKey update without opening the worktree menu', async () => {
+    const { rerender } = render(<ProjectWorkspaceTree query="" onSelect={vi.fn()} refreshKey={0} />)
     await screen.findByRole('button', { name: 'Open Repo workspace main' })
-    fireEvent.click(screen.getByRole('button', { name: 'Collapse Repo' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh workspaces for Repo' }))
-    expect(screen.getByRole('button', { name: 'Collapse Repo' })).toBeVisible()
+    vi.mocked(fetchProjectWorktrees).mockClear()
+    rerender(<ProjectWorkspaceTree query="" onSelect={vi.fn()} refreshKey={1} />)
+    expect(fetchProjectWorktrees).toHaveBeenCalled()
     expect(screen.queryByRole('menu')).toBeNull()
   })
   it('shows a disclosure count only for multiple actual agents', async () => {
@@ -262,5 +262,53 @@ describe('workspace cards', () => {
     expect(screen.queryByRole('status', { name: 'Terminal tab Unscoped shell; runtime state unverified' })).toBeNull()
     expect(screen.getByText('runtime unverified')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Archive conversation CLI replay' })).toBeVisible()
+  })
+
+  it('opens WorktreeContextMenu on right click and launches terminal in worktree cwd', async () => {
+    render(<ProjectWorkspaceTree query="" onSelect={vi.fn()} />)
+    const worktreeBtn = await screen.findByRole('button', { name: 'Open Repo workspace feature' })
+    fireEvent.contextMenu(worktreeBtn, { clientX: 100, clientY: 200 })
+
+    expect(screen.getByRole('menu', { name: 'Repo feature actions' })).toBeVisible()
+    expect(screen.getByRole('menuitem', { name: 'New Agent in Workspace…' })).toBeVisible()
+    expect(screen.getByRole('menuitem', { name: 'Open Terminal Here' })).toBeVisible()
+    expect(screen.getByRole('menuitem', { name: 'Open in…' })).toBeVisible()
+    expect(screen.getByRole('menuitem', { name: 'Copy Path' })).toBeVisible()
+    expect(screen.getByRole('menuitem', { name: 'Copy Branch Name' })).toBeVisible()
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Open Terminal Here' }))
+    const terminals = useAppStore.getState().openTerminals
+    expect(terminals.some(t => t.cwd === '/child' && t.title === 'feature Shell')).toBe(true)
+  })
+
+  it('triggers worktree removal dialog from the right click context menu', async () => {
+    render(<ProjectWorkspaceTree query="" onSelect={vi.fn()} />)
+    const worktreeBtn = await screen.findByRole('button', { name: 'Open Repo workspace feature' })
+    fireEvent.contextMenu(worktreeBtn, { clientX: 100, clientY: 200 })
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Remove worktree' }))
+    expect(screen.getByRole('alertdialog', { name: 'Remove worktree?' })).toBeVisible()
+  })
+
+  it('opens AgentContextMenu on right click and supports stopping active turn', async () => {
+    vi.mocked(listWorkspaceChatSessions).mockResolvedValueOnce({
+      sessions: [{ id: 'active-chat', project_id: 'p1', workspace_id: 'child', workspace_path: '/child', provider: 'codex', title: 'Running agent', status: 'running', conversation_mode: 'native_session' }]
+    } as never)
+    render(<ProjectWorkspaceTree query="" onSelect={vi.fn()} />)
+
+    const agentBtn = await screen.findByRole('button', { name: /Open codex native chat Running agent/ })
+    fireEvent.contextMenu(agentBtn, { clientX: 150, clientY: 250 })
+
+    expect(screen.getByRole('menu', { name: 'Running agent agent actions' })).toBeVisible()
+    expect(screen.getByRole('menuitem', { name: 'Open Conversation' })).toBeVisible()
+    expect(screen.getByRole('menuitem', { name: 'Stop Agent Turn' })).toBeVisible()
+    expect(screen.getByRole('menuitem', { name: 'Copy Session ID' })).toBeVisible()
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Stop Agent Turn' }))
+    expect(stopWorkspaceChatTurn).toHaveBeenCalledWith(
+      expect.objectContaining({ baseUrl: 'http://localhost:4010' }),
+      'p1',
+      'active-chat'
+    )
   })
 })

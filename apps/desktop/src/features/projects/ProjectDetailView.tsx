@@ -487,13 +487,15 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         <div className="flex flex-col h-full bg-background overflow-hidden">
             {/* Header — compact single row */}
             <div className="shrink-0 flex items-center gap-2 px-5 h-12 border-b border-border/30">
-                <button
-                    onClick={onBack}
-                    className="size-8 grid place-items-center rounded-md text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.04] transition-colors shrink-0"
-                    title="Back to projects"
-                >
-                    <ArrowLeft size={14} />
-                </button>
+                {!workspaceIntegrated && (
+                    <button
+                        onClick={onBack}
+                        className="size-8 grid place-items-center rounded-md text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.04] transition-colors shrink-0"
+                        title="Back to projects"
+                    >
+                        <ArrowLeft size={14} />
+                    </button>
+                )}
 
                 <h1 className="text-xs font-semibold tracking-tight truncate shrink-0">{project.name}</h1>
 

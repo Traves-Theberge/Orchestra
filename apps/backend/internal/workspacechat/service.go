@@ -276,10 +276,6 @@ func (s *Service) Providers(ctx context.Context, pid string) ([]Provider, error)
 		if s.supportsNative(p.id) {
 			mode, resume = "native_session", true
 		}
-		if pid == OrchestratorScope && !s.supportsControl(p.id) {
-			enabled = false
-			reason = "This harness has no native Orchestra control-tool adapter"
-		}
 		result = append(result, Provider{string(p.id), p.label, enabled, reason, mode, resume})
 	}
 	return result, nil
@@ -307,9 +303,6 @@ func (s *Service) createWithRequest(ctx context.Context, pid string, req CreateR
 		return Session{}, err
 	}
 	p := agents.NormalizeProvider(provider)
-	if pid == OrchestratorScope && !s.supportsControl(p) {
-		return Session{}, ErrUnsupported
-	}
 	if identity != "" {
 		existing, err := scanSession(s.db.QueryRowContext(ctx, `SELECT `+sessionFields+` FROM workspace_chat_sessions WHERE id=?`, identity))
 		if err == nil {
@@ -623,11 +616,10 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 	turn := agents.TurnRequest{SessionID: uuid.NewString(), ProjectID: pid, Workspace: root, WorkspaceRoot: root, ProjectRootWorkspace: true, Prompt: req.Text, Timeout: 10 * time.Minute, RuntimeTarget: agents.RuntimeLocal, RequestedModel: req.RequestedModel, RequestedMaxTurns: req.RequestedMaxTurns, RequestedAgentID: req.RequestedAgentID, RequestedAgentScope: req.RequestedAgentScope, RequestedAgentContentHash: req.RequestedAgentContentHash, RequestedAgentFormat: req.RequestedAgentFormat}
 	turn.AccountID = d.Session.AccountID
 	if pid == OrchestratorScope {
-		if !s.supportsControl(agents.Provider(d.Session.Provider)) {
-			return Accepted{}, ErrUnsupported
+		if s.supportsControl(agents.Provider(d.Session.Provider)) {
+			turn.ToolSpecs = s.orchestratorTools
+			turn.ToolExecutor = s.orchestratorExecutor
 		}
-		turn.ToolSpecs = s.orchestratorTools
-		turn.ToolExecutor = s.orchestratorExecutor
 		turn.DeveloperInstructions, err = maestroInstructions(root)
 		if err != nil {
 			return Accepted{}, err
