@@ -101,6 +101,25 @@ func (r *Registry) GetAdapterForProjectDirect(project db.Project) (tracker.Adapt
 	return r.factory(cfg, project.IssueSourceToken)
 }
 
+// GitHubAdapterForProject builds an adapter over the project's connected GitHub
+// repository. Projects without an explicit issue source use it so their own
+// repo issues still appear as work items. token must be a resolved access token.
+func (r *Registry) GitHubAdapterForProject(project db.Project, token string) (tracker.Adapter, error) {
+	if project.GitHubOwner == "" || project.GitHubRepo == "" || token == "" {
+		return nil, nil
+	}
+	if r.factory == nil {
+		return nil, fmt.Errorf("registry has no adapter factory")
+	}
+	cfg := &db.TrackerConfig{
+		ID:         "project-github:" + project.ID,
+		Type:       "github",
+		Endpoint:   project.GitHubOwner + "/" + project.GitHubRepo,
+		AuthMethod: "apikey",
+	}
+	return r.factory(cfg, token)
+}
+
 // GetForProjectDirect builds a tracker.Client directly from the project's embedded
 // issue_source_* fields, bypassing the global tracker_configs table entirely.
 // Returns (nil, nil) when the project has no issue source configured — callers

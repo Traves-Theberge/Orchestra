@@ -256,6 +256,14 @@ export function KanbanBoard({
     }
   }, [projects])
 
+  // Selecting a project elsewhere (sidebar, Work Items picker) narrows the board to it.
+  const followedProjectId = useRef(project?.id)
+  useEffect(() => {
+    if (!project?.id || project.id === followedProjectId.current) return
+    followedProjectId.current = project.id
+    if (projects.some((candidate) => candidate.id === project.id)) setProjectFilter(project.id)
+  }, [project?.id, projects])
+
   const isNoDragTarget = (target: EventTarget | null) => {
     return target instanceof Element && !!target.closest('[data-no-drag="true"]')
   }

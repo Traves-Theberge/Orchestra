@@ -2089,6 +2089,16 @@ func (s *Server) GetProjectTrackerIssues(w http.ResponseWriter, r *http.Request)
 		writeJSONError(w, http.StatusInternalServerError, "adapter_error", err.Error())
 		return
 	}
+	if adapter == nil && project.GitHubToken != "" {
+		// No explicit issue source: fall back to the project's connected GitHub repo.
+		if token, tokenErr := s.resolveGitHubToken(r.Context(), project); tokenErr == nil {
+			adapter, err = s.registry.GitHubAdapterForProject(project, token)
+			if err != nil {
+				writeJSONError(w, http.StatusInternalServerError, "adapter_error", err.Error())
+				return
+			}
+		}
+	}
 	if adapter == nil {
 		writeJSONError(w, http.StatusUnprocessableEntity, "no_source", "project has no issue source configured")
 		return

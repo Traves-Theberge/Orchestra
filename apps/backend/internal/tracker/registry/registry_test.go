@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/orchestra/orchestra/apps/backend/internal/db"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker"
 	"github.com/orchestra/orchestra/apps/backend/internal/tracker/registry"
 )
@@ -107,5 +108,22 @@ func TestAdapterClient_FetchByIdentifier(t *testing.T) {
 	}
 	if got.Title != "Stub" {
 		t.Errorf("title: got %q, want %q", got.Title, "Stub")
+	}
+}
+
+func TestRegistry_GitHubAdapterForProject(t *testing.T) {
+	var got *db.TrackerConfig
+	var gotToken string
+	reg := registry.NewWithFactory(nil, func(cfg *db.TrackerConfig, token string) (tracker.Adapter, error) {
+		got, gotToken = cfg, token
+		return &stubAdapter{}, nil
+	})
+	project := db.Project{ID: "p1", GitHubOwner: "acme", GitHubRepo: "app"}
+	a, err := reg.GitHubAdapterForProject(project, "tok")
+	if err != nil || a == nil || got.Type != "github" || got.Endpoint != "acme/app" || gotToken != "tok" {
+		t.Fatalf("adapter=%v err=%v cfg=%+v token=%q", a, err, got, gotToken)
+	}
+	if a, err := reg.GitHubAdapterForProject(db.Project{ID: "p2"}, "tok"); a != nil || err != nil {
+		t.Fatalf("expected no adapter without a repo, got %v %v", a, err)
 	}
 }
