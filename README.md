@@ -44,7 +44,7 @@ Orchestra connects your local projects and GitHub to AI coding agent harnesses t
 - Integration with GitHub project boards
 
 <p align="center">
-  <img src="apps/desktop/public/Tasks.png" alt="Orchestra Tasks Interface" width="800" />
+  <img src="apps/desktop/public/orchestra-workspace.png" alt="Orchestra workspace: project chat with the code-reviewer agent, unified tab strip and harness/agent pickers" width="800" />
 </p>
 
 
