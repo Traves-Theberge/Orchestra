@@ -404,6 +404,7 @@ func NewRouterWithPubSub(
 	protected.Post("/api/v1/projects/{project_id}/git/resolve", server.withGitWorkspace(server.PostGitConflictResolve))
 	protected.Post("/api/v1/projects/{project_id}/git/merge", server.withGitWorkspace(server.PostGitMerge))
 	protected.Post("/api/v1/projects/{project_id}/github/disconnect", server.HandleGitHubDisconnect)
+	protected.Post("/api/v1/projects/{project_id}/github/auto-connect", server.HandleGitHubAutoConnect)
 	protected.Post("/api/v1/projects/{project_id}/github/create-repo", server.PostCreateGitHubRepo)
 	protected.Get("/api/v1/projects/{project_id}/git/default-branch", server.withGitWorkspace(server.GetDefaultBranch))
 	protected.Get("/api/v1/projects/{project_id}/git/branches", server.withGitWorkspace(server.GetProjectGitBranches))

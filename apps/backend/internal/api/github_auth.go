@@ -163,6 +163,41 @@ func (s *Server) resolveGitHubToken(ctx context.Context, project db.Project) (st
 	return accessToken, nil
 }
 
+// HandleGitHubAutoConnect connects a project silently with the GitHub CLI's
+// login (`gh auth token`) when available. It never opens a browser; the
+// desktop falls back to the Connect GitHub button when this reports false.
+func (s *Server) HandleGitHubAutoConnect(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "project_id")
+	if projectID == "" || s.db == nil {
+		writeJSONError(w, http.StatusBadRequest, "missing_project_id", "project_id is required")
+		return
+	}
+	project, err := s.db.GetProjectByID(r.Context(), projectID)
+	if err != nil {
+		writeJSONError(w, http.StatusNotFound, "project_not_found", "project not found")
+		return
+	}
+	if project.GitHubToken != "" {
+		writeJSON(w, http.StatusOK, map[string]any{"connected": true, "source": "existing"})
+		return
+	}
+	out, err := exec.CommandContext(r.Context(), "gh", "auth", "token").Output()
+	token := strings.TrimSpace(string(out))
+	if err != nil || token == "" {
+		writeJSON(w, http.StatusOK, map[string]any{"connected": false, "reason": "GitHub CLI is not installed or not logged in (run `gh auth login`)."})
+		return
+	}
+	if err := s.updateProjectGitHubToken(r.Context(), projectID, token); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "connect_failed", "failed to store GitHub credentials")
+		return
+	}
+	s.logger.Info().Str("project_id", projectID).Msg("auto-connected github with cli token")
+	if s.pubsub != nil {
+		s.pubsub.Publish(observability.Event{Type: "GITHUB_CONNECTED", Data: map[string]any{"project_id": projectID}})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"connected": true, "source": "gh_cli"})
+}
+
 func (s *Server) HandleGitHubDisconnect(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "project_id")
 	if projectID == "" {

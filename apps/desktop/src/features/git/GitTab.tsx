@@ -16,6 +16,7 @@ import { ResizableSplit } from './ResizableSplit'
 import { CreateRepoDialog } from './CreateRepoDialog'
 import { ConflictBanner } from './ConflictBanner'
 import { useGitActions } from './use-git-actions'
+import { GitHubConnectBadge } from './GitHubConnectBadge'
 
 type SubTab = 'changes' | 'history' | 'branches' | 'prs' | 'issues'
 
@@ -32,7 +33,7 @@ function NoGitHubMessage({ kind }: { kind: 'pull requests' | 'issues' }) {
     <div className="flex-1 flex items-center justify-center px-6">
       <div className="text-center space-y-2">
         <p className="text-sm font-semibold text-foreground">No GitHub repository connected</p>
-        <p className="text-[11px] text-muted-foreground/70">Connect GitHub in the project header to view {kind}.</p>
+        <p className="text-[11px] text-muted-foreground/70">Connect GitHub from the Git toolbar to view {kind}.</p>
       </div>
     </div>
   )
@@ -138,6 +139,7 @@ function ScopedGitTab({
           </button>
         </AppTooltip>
 
+        <div className="shrink-0 pr-1.5"><GitHubConnectBadge config={baseConfig} project={project} /></div>
 
         <div role="tablist" aria-label="Project Git" className="flex w-full min-w-0 items-center gap-0 overflow-x-auto px-2">
           {subTabs.map((tab) => {

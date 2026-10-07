@@ -472,6 +472,17 @@ export function KanbanBoard({
         )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {activeTab === 'board' && projects.length > 1 && (
+            <CustomDropdown
+              className="w-56"
+              value={projectFilter}
+              options={[
+                { label: 'All Projects', value: 'all', icon: <FolderTree className="size-3" /> },
+                ...projects.map((project) => ({ label: project.name, value: project.id, icon: <Folder className="size-3" /> })),
+              ]}
+              onChange={setProjectFilter}
+            />
+          )}
           {activeTab === 'board' && (
             <div className="flex min-w-0 items-center gap-2">
               <div className="relative w-44 sm:w-56">
@@ -532,17 +543,6 @@ export function KanbanBoard({
                   { label: 'Done', value: 'Done', icon: <div className="size-1.5 rounded-full bg-primary" /> },
                 ]}
                 onChange={setStateFilter}
-              />
-            )}
-            {projects.length > 1 && (
-              <CustomDropdown
-                className="w-56"
-                value={projectFilter}
-                options={[
-                  { label: 'All Projects', value: 'all', icon: <FolderTree className="size-3" /> },
-                  ...projects.map((project) => ({ label: project.name, value: project.id, icon: <Folder className="size-3" /> })),
-                ]}
-                onChange={setProjectFilter}
               />
             )}
             <div className="flex items-center rounded-md bg-muted/30 p-0.5">
