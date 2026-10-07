@@ -175,7 +175,7 @@ describe('Kanban task search and drag', () => {
     expect(screen.getByTestId('kanban-column-progress').className).toContain('opacity-30')
     expect(screen.getByTestId('kanban-column-todo').className).not.toContain('opacity-30')
     fireEvent.dragOver(screen.getByTestId('kanban-column-todo'), { dataTransfer })
-    expect(screen.getByText('Move to To Do')).toBeInTheDocument()
+    expect(screen.getByText('Move to Planning')).toBeInTheDocument()
     fireEvent.dragEnd(screen.getByTestId('kanban-task-task-12'), { dataTransfer })
     expect(screen.getByTestId('kanban-task-task-12').className).not.toContain('opacity-40')
   })

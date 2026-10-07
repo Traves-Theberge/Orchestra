@@ -462,7 +462,7 @@ export function KanbanBoard({
     },
     {
       id: 'todo',
-      title: 'To Do',
+      title: 'Planning',
       items: todoItems,
       dot: 'bg-foreground/60',
     },
@@ -822,41 +822,45 @@ export function KanbanBoard({
         </div>
         <div className="flex min-w-0 justify-center">
           {activeTab === 'board' && (
-            <div className="flex min-w-0 items-center gap-2">
-              <div className="relative w-56 sm:w-80">
-                <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/50" />
+            <div className="group/search relative w-64 sm:w-[26rem]">
+              <div className="flex h-9 items-center gap-2 rounded-xl border border-border/40 bg-muted/25 px-3 shadow-sm shadow-black/[0.03] transition-all duration-200 hover:border-border/70 hover:bg-muted/40 focus-within:border-primary/40 focus-within:bg-background focus-within:shadow-md focus-within:ring-4 focus-within:ring-primary/10">
+                <Search aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground/45 transition-colors group-focus-within/search:text-primary" />
                 <input
                   ref={searchRef}
                   type="search"
                   aria-label="Search tasks"
-                  placeholder="Search tasks…  /"
+                  placeholder="Search tasks, IDs, agents, projects…"
                   autoComplete="off"
+                  spellCheck={false}
                   value={taskSearch}
                   onChange={(event) => setTaskSearch(event.currentTarget.value)}
                   onKeyDown={(event) => {
-                    if (event.key === 'Escape' && taskSearch) {
+                    if (event.key === 'Escape') {
                       event.preventDefault()
-                      setTaskSearch('')
+                      if (taskSearch) setTaskSearch('')
+                      else event.currentTarget.blur()
                     }
                   }}
-                  className="h-8 w-full rounded-md border border-border/50 bg-background pl-8 pr-8 text-[11px] text-foreground placeholder:text-muted-foreground/45 focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/15"
+                  className="h-full min-w-0 flex-1 bg-transparent text-[12px] text-foreground outline-none placeholder:text-muted-foreground/40 [&::-webkit-search-cancel-button]:hidden"
                 />
+                {taskSearch.trim() ? (
+                  <span aria-live="polite" className="shrink-0 rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-primary animate-in fade-in duration-150">
+                    {searchedIssues.length} of {visibleIssues.length}
+                  </span>
+                ) : (
+                  <kbd aria-hidden="true" className="shrink-0 rounded-md border border-border/50 bg-background/70 px-1.5 py-px font-mono text-[10px] text-muted-foreground/55 transition-opacity group-focus-within/search:opacity-0">/</kbd>
+                )}
                 {taskSearch && (
                   <button
                     type="button"
                     aria-label="Clear task search"
-                    onClick={() => setTaskSearch('')}
-                    className="absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded text-muted-foreground/60 hover:bg-muted hover:text-foreground"
+                    onClick={() => { setTaskSearch(''); searchRef.current?.focus() }}
+                    className="-mr-1 grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
                   >
                     <X aria-hidden="true" className="size-3.5" />
                   </button>
                 )}
               </div>
-              {taskSearch.trim() && (
-                <span aria-live="polite" className="whitespace-nowrap text-[10px] tabular-nums text-muted-foreground/60">
-                  {searchedIssues.length} of {visibleIssues.length}
-                </span>
-              )}
             </div>
           )}
         </div>
@@ -891,7 +895,7 @@ export function KanbanBoard({
                 options={[
                   { label: 'All States', value: 'all', icon: <CircleDashed className="size-3" /> },
                   { label: 'Backlog', value: 'Backlog', icon: <div className="size-1.5 rounded-full bg-muted-foreground/40" /> },
-                  { label: 'Todo', value: 'Todo', icon: <div className="size-1.5 rounded-full bg-muted-foreground" /> },
+                  { label: 'Planning', value: 'Todo', icon: <div className="size-1.5 rounded-full bg-muted-foreground" /> },
                   { label: 'In Progress', value: 'In Progress', icon: <div className="size-1.5 rounded-full bg-amber-500" /> },
                   { label: 'Review', value: 'Review', icon: <div className="size-1.5 rounded-full bg-blue-500" /> },
                   { label: 'Done', value: 'Done', icon: <div className="size-1.5 rounded-full bg-primary" /> },
@@ -1077,7 +1081,7 @@ export function KanbanBoard({
           <DialogHeader>
             <DialogTitle>Provide Feedback</DialogTitle>
             <DialogDescription>
-              Moving from Review back to {feedbackDialogTarget?.targetState === 'Todo' ? 'To Do' : 'In Progress'} requires feedback explaining what needs to change.
+              Moving from Review back to {feedbackDialogTarget?.targetState === 'Todo' ? 'Planning' : 'In Progress'} requires feedback explaining what needs to change.
             </DialogDescription>
           </DialogHeader>
           <div className="py-2">
@@ -1110,7 +1114,7 @@ export function KanbanBoard({
                 }
               }}
             >
-              {feedbackPending ? 'Moving…' : `Move to ${feedbackDialogTarget?.targetState === 'Todo' ? 'To Do' : 'In Progress'}`}
+              {feedbackPending ? 'Moving…' : `Move to ${feedbackDialogTarget?.targetState === 'Todo' ? 'Planning' : 'In Progress'}`}
             </Button>
           </DialogFooter>
         </DialogContent>

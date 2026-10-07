@@ -41,7 +41,7 @@ describe('KanbanBoard', () => {
     render(<KanbanBoard {...defaultProps} />)
 
     expect(screen.getByText('Backlog')).toBeTruthy()
-    expect(screen.getByText('To Do')).toBeTruthy()
+    expect(screen.getByText('Planning')).toBeTruthy()
     expect(screen.getByText('In Progress')).toBeTruthy()
     expect(screen.getByText('Review')).toBeTruthy()
     expect(screen.getByText('Done')).toBeTruthy()
@@ -64,7 +64,7 @@ describe('KanbanBoard', () => {
     render(<KanbanBoard {...defaultProps} />)
 
     const noTaskElements = screen.getAllByText('Empty')
-    // To Do, In Progress, Review, Done = 4 columns with the empty placeholder
+    // Planning, In Progress, Review, Done = 4 columns with the empty placeholder
     expect(noTaskElements.length).toBe(4)
   })
 })

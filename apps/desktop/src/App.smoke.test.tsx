@@ -301,7 +301,7 @@ describe('App smoke render', () => {
 
     await waitFor(() => {
       expect(screen.getAllByText(/Tasks/i).length).toBeGreaterThan(0)
-      expect(screen.getAllByText(/To Do/i).length).toBeGreaterThan(0)
+      expect(screen.getAllByText(/Planning/i).length).toBeGreaterThan(0)
       expect(screen.getAllByText(/In Progress/i).length).toBeGreaterThan(0)
       expect(screen.getAllByText(/Done/i).length).toBeGreaterThan(0)
     })
@@ -347,7 +347,7 @@ describe('App smoke render', () => {
       fireEvent.click(await screen.findByTestId('sidebar-nav-ISSUES'))
 
       await waitFor(() => {
-        expect(screen.getAllByText(/To Do/i).length).toBeGreaterThan(0)
+        expect(screen.getAllByText(/Planning/i).length).toBeGreaterThan(0)
       })
 
       // Open command palette and create task
@@ -593,7 +593,7 @@ describe('App smoke render', () => {
       fireEvent.click(await screen.findByTestId('sidebar-nav-ISSUES'))
 
       await waitFor(() => {
-        expect(screen.getAllByText(/To Do/i).length).toBeGreaterThan(0)
+        expect(screen.getAllByText(/Planning/i).length).toBeGreaterThan(0)
       })
 
       fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
