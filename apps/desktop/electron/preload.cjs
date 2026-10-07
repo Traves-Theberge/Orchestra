@@ -40,6 +40,16 @@ contextBridge.exposeInMainWorld('orchestraDesktop', {
   },
   getScaleFactor: () => 1,
   onSwitchTab: (callback) => ipcRenderer.on('orchestra:switch-tab', (_event, tabNum) => callback(tabNum)),
+  getZoom: () => ipcRenderer.invoke('orchestra:get-zoom'),
+  setZoom: (request) => {
+    if (!['in', 'out', 'reset'].includes(request) && !Number.isFinite(request)) throw new Error('invalid zoom request')
+    return ipcRenderer.invoke('orchestra:set-zoom', request)
+  },
+  onZoomChanged: (callback) => {
+    const listener = (_event, factor) => callback(factor)
+    ipcRenderer.on('orchestra:zoom-changed', listener)
+    return () => ipcRenderer.removeListener('orchestra:zoom-changed', listener)
+  },
   openOAuthWindow: (provider) => {
     if (typeof provider !== 'string') throw new Error('provider must be a string')
     return ipcRenderer.invoke('orchestra:oauth-window', provider)

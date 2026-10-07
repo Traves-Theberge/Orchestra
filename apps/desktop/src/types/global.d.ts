@@ -47,6 +47,10 @@ declare global {
       selectFolder: () => Promise<string | null>
       selectFile: (options?: { filters?: Array<{ name: string; extensions: string[] }> }) => Promise<string | null>
       getScaleFactor: () => number
+      /** App zoom factor (0.5–2), remembered across launches. Absent in browser mode. */
+      getZoom?: () => Promise<number>
+      setZoom?: (request: 'in' | 'out' | 'reset' | number) => Promise<number>
+      onZoomChanged?: (callback: (factor: number) => void) => () => void
       openOAuthWindow?: (provider: string) => Promise<string>
       fs: {
         readDir: (dirPath: string) => Promise<Array<{ name: string; isDirectory: boolean }>>

@@ -1,3 +1,4 @@
+import { ZoomControl } from '@layout/ZoomControl'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Activity, RefreshCw, ChevronRight, Settings2 } from 'lucide-react'
 import { useAppStore } from '@core/store'
@@ -149,6 +150,7 @@ export function UsageStatusBar({ config, generatedAt }: { config: BackendConfig 
       {generatedAt && (
         <span className="text-[10px] font-mono text-muted-foreground/40 tabular-nums shrink-0 pl-4">{generatedAt}</span>
       )}
+      <ZoomControl />
     </div>
   )
 }
