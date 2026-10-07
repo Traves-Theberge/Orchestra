@@ -27,7 +27,9 @@ gofmt -l ./apps/backend/cmd ./apps/backend/internal             # format check
 
 ### Frontend (`apps/desktop/`)
 ```bash
-cd apps/desktop && npm run dev:linux    # dev server (Linux, or use `make desktop`)
+cd apps/desktop && npm run dev          # builds + runs orchestrad on :4010, Vite and Electron together
+cd apps/desktop && npm run dev:ui       # UI only (bring your own backend); or ORCHESTRA_DEV_BACKEND=0
+cd apps/desktop && npm run dev:linux    # same as dev, with --no-sandbox (Linux)
 cd apps/desktop && npx vitest run       # all tests
 cd apps/desktop && npx vitest run src/lib/validation.test.ts    # single test file
 cd apps/desktop && npx tsc --noEmit     # typecheck
