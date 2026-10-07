@@ -134,8 +134,11 @@ export function UnsandboxTab({
 
   useEffect(() => {
     if (!config) return
-    fetchUnsandboxStatus(config).then(setStatus).catch(() => {})
-    refreshResources()
+    // Only list sessions/services once keys are configured; otherwise they just 503.
+    fetchUnsandboxStatus(config).then(next => {
+      setStatus(next)
+      if (next.configured) void refreshResources()
+    }).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config])
 

@@ -44,7 +44,10 @@ func TestModelsAuthorizationAndReadOnlyFailure(t *testing.T) {
 	if _, e = s.Models(ctx, "missing", "codex"); !errors.Is(e, ErrNotFound) {
 		t.Fatal(e)
 	}
-	if _, e = s.Models(ctx, pid, "claude"); !errors.Is(e, ErrUnsupported) {
+	if claude, e := s.Models(ctx, pid, "claude"); e != nil || len(claude.Models) == 0 {
+		t.Fatal(claude, e)
+	}
+	if _, e = s.Models(ctx, pid, "8gent"); !errors.Is(e, ErrUnsupported) {
 		t.Fatal(e)
 	}
 	r.err = errors.New("catalog read failed")
@@ -65,5 +68,12 @@ func TestModelsAuthorizationAndReadOnlyFailure(t *testing.T) {
 	defer blocked.Close()
 	if _, e = blocked.Models(ctx, pid, "codex"); !errors.Is(e, ErrForbidden) {
 		t.Fatal(e)
+	}
+}
+
+func TestParseOpenCodeModels(t *testing.T) {
+	got := parseOpenCodeModels("opencode/ling-3.1-flash-free\r\nINFO noise line\n\nanthropic/claude-sonnet-5-5\n")
+	if len(got) != 2 || got[0].Model != "opencode/ling-3.1-flash-free" || got[1].Model != "anthropic/claude-sonnet-5-5" {
+		t.Fatal(got)
 	}
 }

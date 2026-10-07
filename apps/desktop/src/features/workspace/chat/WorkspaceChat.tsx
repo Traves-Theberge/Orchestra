@@ -569,6 +569,14 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
         setSessions(previous => [result.session, ...previous.filter(s => s.id !== result.session.id)])
         timer = setTimeout(() => void load(), isWorking(result.session) ? 1000 : 5000)
       } catch (err) {
+        if (!cancelled && (err as { code?: unknown } | null)?.code === 'chat_not_found' && creating.current?.sessionId !== sessionId) {
+          // The remembered conversation was deleted elsewhere: forget it instead of polling a 404 forever.
+          setSessions(previous => previous.filter(s => s.id !== sessionId))
+          setSessionId(''); setSnapshot(null); setObservationError(null)
+          setDraft(drafts.current[''] ?? '')
+          persist('')
+          return
+        }
         if (!cancelled) {
           setObservationError(`${errorText(err)} Rechecking conversation state; no message will be resent.`)
           timer = setTimeout(() => void load(), 5000)

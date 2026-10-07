@@ -188,7 +188,12 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ sessionId, projectId
             if (revealDebounce) clearTimeout(revealDebounce)
             resizeObserver.disconnect()
             intersectionObserver.disconnect()
-            ws.close()
+            ws.onmessage = null
+            ws.onclose = null
+            // Closing a still-connecting socket (React dev double-mount) logs a
+            // browser error; let it finish opening, then close it quietly.
+            if (ws.readyState === WebSocket.CONNECTING) ws.onopen = () => ws.close()
+            else ws.close()
             term.dispose()
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps

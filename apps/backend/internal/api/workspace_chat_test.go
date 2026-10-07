@@ -133,7 +133,7 @@ func TestWorkspaceChatNativeReplyHTTPBoundary(t *testing.T) {
 	if out := modelCall("/api/v1/projects/missing/chat/providers/CODEX/models", true); out.Code != 404 {
 		t.Fatal(out.Code, out.Body.String())
 	}
-	if out := modelCall("/api/v1/projects/"+pid+"/chat/providers/CLAUDE/models", true); out.Code != 422 {
+	if out := modelCall("/api/v1/projects/"+pid+"/chat/providers/8GENT/models", true); out.Code != 422 {
 		t.Fatal(out.Code, out.Body.String())
 	}
 	path := "/api/v1/projects/" + pid + "/chat/sessions/" + sess.ID + "/requests/" + url.PathEscape(d.Requests[0].ID) + "/reply"

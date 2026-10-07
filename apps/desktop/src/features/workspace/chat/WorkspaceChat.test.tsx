@@ -501,7 +501,8 @@ describe('WorkspaceChat', () => {
     await selectConversation()
     fireEvent.click(screen.getByLabelText('Choose harness and model'))
     await screen.findByRole('option', { name: 'Provider Model' })
-    expect(api.fetchWorkspaceChatModels).toHaveBeenCalledExactlyOnceWith(config, 'project-a', 'codex')
+    // The new-conversation composer loads the same catalog before a conversation is chosen.
+    expect(api.fetchWorkspaceChatModels).toHaveBeenLastCalledWith(config, 'project-a', 'codex')
     expect(screen.getByRole('option', { name: /Provider default/ })).toHaveAttribute('aria-selected', 'true')
     expect(screen.queryByRole('option', { name: 'Hidden Model' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('option', { name: 'Provider Model' }))
@@ -530,7 +531,7 @@ describe('WorkspaceChat', () => {
     vi.mocked(api.fetchWorkspaceChatModels).mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve })).mockResolvedValue({ project_id: 'project-a', provider: 'codex', observation: 'provider_catalog', models: [{ id: 'new', model: 'new-model', display_name: 'New Model', is_default: false }] })
     open()
     await selectConversation()
-    await waitFor(() => expect(api.fetchWorkspaceChatModels).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(api.fetchWorkspaceChatModels).toHaveBeenCalled())
     await selectConversation('Other conversation')
     fireEvent.click(screen.getByLabelText('Choose harness and model'))
     await screen.findByRole('option', { name: 'New Model' })

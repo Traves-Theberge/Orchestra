@@ -3,9 +3,13 @@ package workspacechat
 import (
 	"context"
 	"fmt"
-	"github.com/orchestra/orchestra/apps/backend/internal/agents"
+	"os/exec"
 	"regexp"
+	"strings"
+	"sync"
 	"time"
+
+	"github.com/orchestra/orchestra/apps/backend/internal/agents"
 )
 
 var effortName = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
@@ -68,6 +72,13 @@ func (s *Service) modelsForAccount(ctx context.Context, pid, provider, accountID
 				},
 			}, nil
 		}
+		if p == agents.ProviderOpenCode {
+			models, err := openCodeModels(ctx)
+			if err != nil {
+				return ModelCatalog{}, fmt.Errorf("%w: %v", ErrUnsupported, err)
+			}
+			return ModelCatalog{ProjectID: pid, Provider: string(p), Models: models, Observation: "provider_catalog"}, nil
+		}
 		return ModelCatalog{}, ErrUnsupported
 	}
 	s.mu.Lock()
@@ -88,4 +99,48 @@ func (s *Service) modelsForAccount(ctx context.Context, pid, provider, accountID
 		models = []agents.NativeModel{}
 	}
 	return ModelCatalog{ProjectID: pid, Provider: string(p), Models: models, Observation: "provider_catalog"}, nil
+}
+
+var openCodeModelLine = regexp.MustCompile(`^[A-Za-z0-9._-]+/[A-Za-z0-9._:/-]+$`)
+
+// openCodeCatalog caches `opencode models` (provider/model per line); the CLI
+// reads every configured provider, so it is too slow to run on each picker open.
+var openCodeCatalog struct {
+	sync.Mutex
+	at     time.Time
+	models []agents.NativeModel
+}
+
+// runOpenCodeModels is swapped in tests.
+var runOpenCodeModels = func(ctx context.Context) ([]byte, error) {
+	return exec.CommandContext(ctx, "opencode", "models").Output()
+}
+
+func openCodeModels(ctx context.Context) ([]agents.NativeModel, error) {
+	openCodeCatalog.Lock()
+	defer openCodeCatalog.Unlock()
+	if openCodeCatalog.models != nil && time.Since(openCodeCatalog.at) < 5*time.Minute {
+		return openCodeCatalog.models, nil
+	}
+	readCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	out, err := runOpenCodeModels(readCtx)
+	if err != nil {
+		return nil, fmt.Errorf("opencode models: %w", err)
+	}
+	models := parseOpenCodeModels(string(out))
+	openCodeCatalog.at, openCodeCatalog.models = time.Now(), models
+	return models, nil
+}
+
+func parseOpenCodeModels(out string) []agents.NativeModel {
+	models := []agents.NativeModel{}
+	for _, line := range strings.Split(out, "\n") {
+		id := strings.TrimSpace(line)
+		if !openCodeModelLine.MatchString(id) {
+			continue
+		}
+		models = append(models, agents.NativeModel{ID: id, Model: id, DisplayName: id})
+	}
+	return models
 }
