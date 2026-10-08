@@ -296,7 +296,12 @@ func (s *Service) ArchivedDetailAfter(ctx context.Context, projectID, sessionID,
 		return Detail{}, err
 	}
 	sess.Archived = true
-	rows, err := s.db.QueryContext(ctx, `SELECT id,session_id,role,text,status,client_message_id,created_at FROM workspace_chat_messages WHERE session_id=? ORDER BY ordinal`, sessionID)
+	chain, err := s.visibleChain(ctx, sessionID)
+	if err != nil {
+		return Detail{}, err
+	}
+	visible, visibleArgs := chainPredicate(chain)
+	rows, err := s.db.QueryContext(ctx, `SELECT m.id,m.session_id,m.role,m.text,m.status,m.client_message_id,m.created_at FROM workspace_chat_messages m WHERE m.session_id=? AND `+visible+` ORDER BY m.ordinal`, append([]any{sessionID}, visibleArgs...)...)
 	if err != nil {
 		return Detail{}, err
 	}
@@ -317,7 +322,7 @@ func (s *Service) ArchivedDetailAfter(ctx context.Context, projectID, sessionID,
 	if err = s.decorate(ctx, &detail.Session); err != nil {
 		return Detail{}, err
 	}
-	if err = s.loadNative(ctx, &detail, after); err != nil {
+	if err = s.loadNative(ctx, &detail, after, chain); err != nil {
 		return Detail{}, err
 	}
 	return detail, nil

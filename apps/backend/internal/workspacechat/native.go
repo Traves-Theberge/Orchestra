@@ -135,22 +135,28 @@ func (s *Service) decorate(ctx context.Context, v *Session) error {
 	}
 	return err
 }
-func (s *Service) loadNative(ctx context.Context, d *Detail, after int64) error {
+
+// loadNative reads events on the visible branch chain. Cursor stays the
+// session's newest sequence, hidden or not, so incremental polling advances.
+func (s *Service) loadNative(ctx context.Context, d *Detail, after int64, chain []chainLink) error {
 	d.Events = []ChatEvent{}
 	d.Requests = []RuntimeRequest{}
 	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(sequence),0) FROM workspace_chat_events WHERE session_id=?`, d.Session.ID).Scan(&d.Cursor); err != nil {
 		return err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT sequence,event,created_at FROM workspace_chat_events WHERE session_id=? AND sequence>? ORDER BY sequence`, d.Session.ID, after)
+	rows, err := s.db.QueryContext(ctx, `SELECT sequence,event,created_at,COALESCE(NULLIF(branch_id,''),session_id) FROM workspace_chat_events WHERE session_id=? AND sequence>? ORDER BY sequence`, d.Session.ID, after)
 	if err != nil {
 		return err
 	}
 	for rows.Next() {
 		var e ChatEvent
-		var raw string
-		if err = rows.Scan(&e.Sequence, &raw, &e.CreatedAt); err != nil {
+		var raw, branchID string
+		if err = rows.Scan(&e.Sequence, &raw, &e.CreatedAt, &branchID); err != nil {
 			rows.Close()
 			return err
+		}
+		if !eventVisible(chain, branchID, e.CreatedAt) {
+			continue
 		}
 		if err = json.Unmarshal([]byte(raw), &e.NativeEvent); err != nil {
 			rows.Close()
@@ -204,7 +210,11 @@ func (s *Service) recordEvent(id string, e agents.NativeEvent) error {
 			return nil
 		}
 	}
-	if _, err = tx.Exec(`INSERT INTO workspace_chat_events(session_id,event,created_at) VALUES(?,?,?)`, id, string(raw), stamp()); err != nil {
+	branchID, err := activeBranchIn(context.Background(), tx, id)
+	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`INSERT INTO workspace_chat_events(session_id,event,created_at,branch_id) VALUES(?,?,?,?)`, id, string(raw), stamp(), storedBranch(id, branchID)); err != nil {
 		return err
 	}
 	if e.Type == "server_request" {

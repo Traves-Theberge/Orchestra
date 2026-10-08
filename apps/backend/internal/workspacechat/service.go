@@ -120,6 +120,10 @@ type Message struct {
 	AgentID    string `json:"agent_id,omitempty"`
 	AgentName  string `json:"agent_name,omitempty"`
 	AgentColor string `json:"agent_color,omitempty"`
+	// HasCheckpoint marks a user message with a before-turn file snapshot.
+	// Versions lists sibling branches on the first message after a fork point.
+	HasCheckpoint bool         `json:"has_checkpoint,omitempty"`
+	Versions      []VersionRef `json:"versions,omitempty"`
 }
 type Detail struct {
 	Session  Session          `json:"session"`
@@ -172,6 +176,9 @@ func New(database *db.DB, registry Registry, roots []string) (*Service, error) {
 		return nil, err
 	}
 	if err = migrateNative(database); err != nil {
+		return nil, err
+	}
+	if err = migrateBranches(database); err != nil {
 		return nil, err
 	}
 	if err = migrateAgentProfiles(database); err != nil {
@@ -501,17 +508,27 @@ func (s *Service) DetailAfter(ctx context.Context, pid, id string, after int64) 
 	if err = s.validateSessionScope(ctx, &v); err != nil {
 		return Detail{}, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT m.id,m.session_id,m.role,m.text,m.status,m.client_message_id,m.created_at,COALESCE(a.requested_agent_id,''),COALESCE(a.scope,''),COALESCE(a.content_hash,''),COALESCE(a.format,''),COALESCE(mp.provider,''),COALESCE(ma.agent_id,''),COALESCE(ma.agent_name,''),COALESCE(ma.agent_color,'') FROM workspace_chat_messages m LEFT JOIN workspace_chat_submission_agents a ON a.message_id=m.id LEFT JOIN workspace_chat_message_providers mp ON mp.message_id=m.id LEFT JOIN workspace_chat_message_agents ma ON ma.message_id=m.id WHERE m.session_id=? ORDER BY m.ordinal`, id)
+	// Only the active branch's history is shown: its own messages plus each
+	// ancestor's messages up to the fork point.
+	chain, err := s.visibleChain(ctx, id)
+	if err != nil {
+		return Detail{}, err
+	}
+	visible, visibleArgs := chainPredicate(chain)
+	rows, err := s.db.QueryContext(ctx, `SELECT m.ordinal,m.id,m.session_id,m.role,m.text,m.status,m.client_message_id,m.created_at,COALESCE(a.requested_agent_id,''),COALESCE(a.scope,''),COALESCE(a.content_hash,''),COALESCE(a.format,''),COALESCE(mp.provider,''),COALESCE(ma.agent_id,''),COALESCE(ma.agent_name,''),COALESCE(ma.agent_color,'') FROM workspace_chat_messages m LEFT JOIN workspace_chat_submission_agents a ON a.message_id=m.id LEFT JOIN workspace_chat_message_providers mp ON mp.message_id=m.id LEFT JOIN workspace_chat_message_agents ma ON ma.message_id=m.id WHERE m.session_id=? AND `+visible+` ORDER BY m.ordinal`, append([]any{id}, visibleArgs...)...)
 	if err != nil {
 		return Detail{}, err
 	}
 	defer rows.Close()
 	result := Detail{Session: v, Messages: []Message{}}
+	var ordinals []int64
 	for rows.Next() {
 		var m Message
-		if err := rows.Scan(&m.ID, &m.SessionID, &m.Role, &m.Text, &m.Status, &m.ClientMessageID, &m.CreatedAt, &m.RequestedAgentID, &m.RequestedAgentScope, &m.RequestedAgentContentHash, &m.RequestedAgentFormat, &m.Provider, &m.AgentID, &m.AgentName, &m.AgentColor); err != nil {
+		var ordinal int64
+		if err := rows.Scan(&ordinal, &m.ID, &m.SessionID, &m.Role, &m.Text, &m.Status, &m.ClientMessageID, &m.CreatedAt, &m.RequestedAgentID, &m.RequestedAgentScope, &m.RequestedAgentContentHash, &m.RequestedAgentFormat, &m.Provider, &m.AgentID, &m.AgentName, &m.AgentColor); err != nil {
 			return Detail{}, err
 		}
+		ordinals = append(ordinals, ordinal)
 		if m.Provider == "" {
 			m.Provider = v.Provider
 		}
@@ -525,13 +542,16 @@ func (s *Service) DetailAfter(ctx context.Context, pid, id string, after int64) 
 	if err != nil {
 		return Detail{}, err
 	}
+	if err = s.decorateBranches(ctx, id, chain, result.Messages, ordinals); err != nil {
+		return Detail{}, err
+	}
 	if err = s.decorate(ctx, &result.Session); err != nil {
 		return Detail{}, err
 	}
 	if err = decorateLifecycle(ctx, s.db, &result.Session); err != nil {
 		return Detail{}, err
 	}
-	if err = s.loadNative(ctx, &result, after); err != nil {
+	if err = s.loadNative(ctx, &result, after, chain); err != nil {
 		return Detail{}, err
 	}
 	return result, nil
@@ -753,7 +773,11 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_workspaces(session_id,workspace_id,cwd) VALUES(?,?,?) ON CONFLICT(session_id) DO NOTHING`, id, d.Session.WorkspaceID, d.Session.WorkspacePath); err != nil {
 		return Accepted{}, err
 	}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_messages(id,session_id,role,text,status,client_message_id,created_at) VALUES(?,?,?,?,?,?,?)`, m.ID, id, m.Role, m.Text, m.Status, m.ClientMessageID, m.CreatedAt); err != nil {
+	branchID, err := activeBranchIn(ctx, tx, id)
+	if err != nil {
+		return Accepted{}, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_messages(id,session_id,role,text,status,client_message_id,created_at,branch_id) VALUES(?,?,?,?,?,?,?,?)`, m.ID, id, m.Role, m.Text, m.Status, m.ClientMessageID, m.CreatedAt, storedBranch(id, branchID)); err != nil {
 		return Accepted{}, err
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE workspace_chat_sessions SET status='running',updated_at=?,error='' WHERE id=?`, m.CreatedAt, id); err != nil {
@@ -891,8 +915,13 @@ func (s *Service) finish(sess Session, m Message, output, status, msgStatus, err
 		return txErr
 	}
 	if output != "" {
+		// The reply joins the branch its user message was sent on.
+		var branchID string
+		if txErr = tx.QueryRow(`SELECT branch_id FROM workspace_chat_messages WHERE id=?`, m.ID).Scan(&branchID); txErr != nil && !errors.Is(txErr, sql.ErrNoRows) {
+			return txErr
+		}
 		replyID := uuid.NewString()
-		if _, txErr = tx.Exec(`INSERT INTO workspace_chat_messages(id,session_id,role,text,status,created_at) VALUES(?,?,?,?,?,?)`, replyID, sess.ID, "assistant", output, msgStatus, stamp()); txErr != nil {
+		if _, txErr = tx.Exec(`INSERT INTO workspace_chat_messages(id,session_id,role,text,status,created_at,branch_id) VALUES(?,?,?,?,?,?,?)`, replyID, sess.ID, "assistant", output, msgStatus, stamp(), branchID); txErr != nil {
 			return txErr
 		}
 		if _, txErr = tx.Exec(`INSERT INTO workspace_chat_message_providers(message_id,provider) VALUES(?,?)`, replyID, sess.Provider); txErr != nil {
@@ -906,6 +935,10 @@ func (s *Service) finish(sess Session, m Message, output, status, msgStatus, err
 	if msgStatus == "completed" {
 		// The new harness's native thread now holds the replayed context.
 		if _, txErr = tx.Exec(`DELETE FROM workspace_chat_handoffs WHERE session_id=?`, sess.ID); txErr != nil {
+			return txErr
+		}
+		// Likewise a new branch's seeded context has now been delivered.
+		if _, txErr = tx.Exec(`DELETE FROM workspace_chat_branch_seed WHERE session_id=?`, sess.ID); txErr != nil {
 			return txErr
 		}
 	}
