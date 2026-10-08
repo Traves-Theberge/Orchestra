@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter } from '@ui/dialog'
 import type { WorkspaceChatFileChange, WorkspaceChatRewindPreview } from '@core/api/client'
 
 export type RewindMode = 'edit' | 'regenerate' | 'switch'
@@ -76,14 +76,14 @@ export function RewindDialog({ open, mode, preview, previewLoading, previewError
         // Escape belongs to the dialog; it must not reach the chat (where it interrupts a turn).
         onKeyDown={event => { if (event.key === 'Escape') event.stopPropagation() }}>
         <div className="space-y-2">
-          <DialogTitle>{copy.title}</DialogTitle>
+          {/* DialogContent already names the dialog with an sr-only title; this one is visual only. */}
+          <p aria-hidden="true" className="text-lg font-semibold">{copy.title}</p>
           <DialogDescription>{copy.description}</DialogDescription>
         </div>
         <div role="radiogroup" aria-label="What goes back" className="space-y-0.5">
           {choice(false, 'Conversation only', 'Files in the folder stay as they are now.')}
-          {!filesHidden && choice(true, 'Conversation and files', 'Files in the folder go back to how they were before that message.', filesReason)}
+          {!filesHidden && choice(true, 'Conversation and files', mode === 'switch' ? 'Files go back to the state at the end of that version.' : 'Files in the folder go back to how they were before that message.', filesReason)}
         </div>
-        {!filesHidden && mode === 'switch' && <p className="text-xs text-muted-foreground">Files go back to the state at the end of that version.</p>}
         {!filesHidden && previewError && <p className="text-xs text-muted-foreground">Could not check the files: {previewError}</p>}
         {usablePreview && (
           <div className="text-xs text-muted-foreground">
@@ -113,7 +113,7 @@ export function RewindDialog({ open, mode, preview, previewLoading, previewError
         {error && <p role="alert" className="whitespace-pre-wrap break-words text-xs text-destructive">{error}</p>}
         <DialogFooter className="gap-2">
           <button type="button" disabled={busy} onClick={onCancel} className="rounded-md border border-border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50">Cancel</button>
-          <button type="button" disabled={busy || previewLoading} onClick={() => onConfirm(chosenFiles)} className="rounded-md bg-foreground px-3 py-2 text-sm font-medium text-background disabled:opacity-50">{copy.confirm}</button>
+          <button type="button" disabled={busy || (chosenFiles && previewLoading)} onClick={() => onConfirm(chosenFiles)} className="rounded-md bg-foreground px-3 py-2 text-sm font-medium text-background disabled:opacity-50">{copy.confirm}</button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

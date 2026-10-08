@@ -923,7 +923,6 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
     }
     const messageId = crypto.randomUUID()
     const targetId = sessionId || crypto.randomUUID()
-    rewind.clearUndoOffer()
     submitted.current = { sessionId: targetId, messageId, text }
     followRef.current = true
     void mutate(async () => {
@@ -954,6 +953,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
         messages: [...previous.messages.filter(m => m.id !== result.message.id), result.message],
       }))
       setSessions(previous => previous.map(s => s.id === targetId ? result.session : s))
+      rewind.messageAccepted(targetId)
       if (!overriding) {
         setDraft('')
         drafts.current[targetId] = ''
@@ -1180,6 +1180,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
       <footer data-chat-composer-placement={draftHero ? 'centered' : 'docked'} className={`${draftHero ? 'absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2' : 'mx-auto shrink-0'} w-full max-w-[808px] px-4 pb-3 pt-1 sm:px-6`}>
         {draftHero && <div className="relative mb-7 px-1"><div className="pointer-events-none absolute -left-20 -top-20 size-64 rounded-full bg-primary/[0.055] blur-3xl" aria-hidden="true" /><h3 className="relative max-w-[680px] text-[clamp(27px,3vw,38px)] font-semibold leading-[1.16] tracking-[-0.035em] text-foreground">What would you like to build?</h3><p className="relative mt-3 max-w-[550px] text-[14px] leading-6 text-muted-foreground">Describe a goal, ask a question, or make a change. Start wherever you are.</p></div>}
         <div aria-label="Agent decisions" className="mb-2 max-h-[40vh] space-y-2 overflow-auto">{snapshot?.requests?.filter(request => request.status === 'pending').map(request => <RuntimeRequestCard key={`${sessionId}:${request.id}`} request={request} disabled={pending || !working || !!observationError || !!blockedRequests[request.id]} onReply={answer => reply(request, answer)} />)}</div>
+        {rewind.notice && <p role="status" className="mb-2 flex items-center gap-3 px-1 text-xs text-muted-foreground"><span className="min-w-0 flex-1">{rewind.notice.text}</span><button type="button" aria-label="Dismiss notice" title="Dismiss" onClick={rewind.notice.onDismiss} className="shrink-0 rounded p-0.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"><X className="size-3" /></button></p>}
         {rewind.banner && <UndoRestoreBanner {...rewind.banner} />}
         {legacyGeminiSession && <p role="status" className="mb-2 text-xs text-muted-foreground">Gemini conversation history is preserved and read-only. Choose a current harness to start a new conversation.</p>}
         {uncertainSession === sessionId && sessionId && <p role="status" className="mb-2 text-xs text-destructive">Delivery is uncertain. Your draft is retained; inspect the conversation before starting a new turn.</p>}

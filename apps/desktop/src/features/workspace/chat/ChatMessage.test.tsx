@@ -195,7 +195,7 @@ describe('ChatMessage rewind actions', () => {
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
   })
 
-  it('submits the edit with Enter, closes the editor and keeps Shift+Enter as a newline', () => {
+  it('submits the edit with Enter, keeps the editor and its text, and keeps Shift+Enter as a newline', () => {
     const rewind = handlers()
     render(<ChatMessage message={user} provider="codex" projectId="p" rewind={rewind} />)
     fireEvent.click(screen.getByRole('button', { name: 'Edit message' }))
@@ -206,8 +206,8 @@ describe('ChatMessage rewind actions', () => {
     fireEvent.keyDown(editor, { key: 'Enter' })
     expect(rewind.onEdit).toHaveBeenCalledTimes(1)
     expect(rewind.onEdit).toHaveBeenCalledWith(user, 'Fix the other bug')
-    expect(screen.queryByRole('textbox', { name: 'Edit message' })).toBeNull()
-    expect(screen.getByText('Fix the bug')).toBeDefined()
+    // The text stays until the edit lands (the edited message then replaces this one).
+    expect(screen.getByRole('textbox', { name: 'Edit message' })).toHaveValue('Fix the other bug')
   })
 
   it('submits with the Send button and ignores Enter during IME composition', () => {
@@ -241,6 +241,7 @@ describe('ChatMessage rewind actions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Edit message' }))
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(screen.queryByRole('textbox', { name: 'Edit message' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Edit message' })).toHaveFocus()
     expect(rewind.onEdit).not.toHaveBeenCalled()
   })
 

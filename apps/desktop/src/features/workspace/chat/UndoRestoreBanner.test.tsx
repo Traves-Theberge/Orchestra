@@ -8,6 +8,7 @@ it('shows the default line with Undo restore and calls it once per click', () =>
   const onUndo = vi.fn()
   render(<UndoRestoreBanner busy={false} error={null} onUndo={onUndo} onDismiss={vi.fn()} />)
   expect(screen.getByRole('status')).toHaveTextContent('Files were restored to before that message.')
+  expect(screen.getByRole('status')).toHaveTextContent('Undo puts back the files from just before the restore and replaces later changes.')
   fireEvent.click(screen.getByRole('button', { name: 'Undo restore' }))
   expect(onUndo).toHaveBeenCalledTimes(1)
 })

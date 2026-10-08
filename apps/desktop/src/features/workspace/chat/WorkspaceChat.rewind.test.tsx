@@ -94,9 +94,30 @@ describe('WorkspaceChat rewind', () => {
     expect(screen.getByRole('group', { name: 'Message version 2 of 2' })).toBeDefined()
     expect(screen.getByRole('button', { name: 'Undo restore' })).toBeDefined()
     expect(screen.getByRole('textbox', { name: 'Message agent' })).toHaveValue('my unsent draft')
+    // The edited message replaced the original, so its editor is gone.
+    expect(screen.queryByRole('textbox', { name: 'Edit message' })).toBeNull()
   })
 
-  it('uses a fresh client message id for each rewind', async () => {
+  it('keeps the editor and its text when the dialog is cancelled', async () => {
+    open(); await selectConversation()
+    await editTo('Fix the other bug')
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(screen.getByRole('textbox', { name: 'Edit message' })).toHaveValue('Fix the other bug')
+    expect(api.editWorkspaceChatMessage).not.toHaveBeenCalled()
+  })
+
+  it('keeps the editor and its text when the files were restored but the message was not sent', async () => {
+    open(); await selectConversation()
+    await editTo('Fix the other bug')
+    await within(dialog()).findByText('1 file will change')
+    vi.mocked(api.editWorkspaceChatMessage).mockRejectedValue(apiError('files_restored', 'Files were restored but not sent.'))
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Edit and re-run' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(screen.getByRole('textbox', { name: 'Edit message' })).toHaveValue('Fix the other bug')
+  })
+
+  it('reuses one client message id for retries of a request and a new id for a new request', async () => {
     open(); await selectConversation()
     vi.mocked(api.regenerateWorkspaceChatResponse).mockRejectedValue(apiError('chat_busy', 'busy'))
     fireEvent.click(screen.getByRole('button', { name: 'Regenerate response' }))
@@ -105,8 +126,64 @@ describe('WorkspaceChat rewind', () => {
     await within(dialog()).findByRole('alert')
     fireEvent.click(within(dialog()).getByRole('button', { name: 'Regenerate' }))
     await waitFor(() => expect(api.regenerateWorkspaceChatResponse).toHaveBeenCalledTimes(2))
-    const [first, second] = vi.mocked(api.regenerateWorkspaceChatResponse).mock.calls.map(call => call[3].client_message_id)
-    expect(first).not.toBe(second)
+    await waitFor(() => expect(within(dialog()).getByRole('button', { name: 'Regenerate' })).toBeEnabled())
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    fireEvent.click(screen.getByRole('button', { name: 'Regenerate response' }))
+    await within(await screen.findByRole('dialog')).findByText('1 file will change')
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Regenerate' }))
+    await waitFor(() => expect(api.regenerateWorkspaceChatResponse).toHaveBeenCalledTimes(3))
+    const [first, retry, next] = vi.mocked(api.regenerateWorkspaceChatResponse).mock.calls.map(call => call[3].client_message_id)
+    expect(retry).toBe(first)
+    expect(next).not.toBe(first)
+  })
+
+  it.each([
+    ['an aborted request', () => new DOMException('The operation was aborted.', 'AbortError')],
+    ['a gateway timeout', () => apiError('request_failed', '504 Gateway Timeout')],
+  ])('after %s refetches, closes the dialog and says so instead of offering a blind retry', async (_name, failure) => {
+    open(); await selectConversation()
+    await editTo('Fix the other bug')
+    await within(dialog()).findByText('1 file will change')
+    vi.mocked(api.editWorkspaceChatMessage).mockRejectedValue(failure())
+    vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({ session: { ...session, status: 'running' }, messages: [editedPrompt], events: [], requests: [], cursor: 7 })
+    const fetchesBefore = vi.mocked(api.fetchWorkspaceChat).mock.calls.length
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Edit and re-run' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(screen.getByText('The request timed out. The conversation was refreshed; check it before trying again.')).toBeDefined()
+    expect(vi.mocked(api.fetchWorkspaceChat).mock.calls.length).toBeGreaterThan(fetchesBefore)
+    expect(await screen.findByText('Fix the other bug')).toBeDefined()
+  })
+
+  it('ignores a late preview of a request that was replaced', async () => {
+    open(); await selectConversation()
+    let finishFirst: (value: api.WorkspaceChatRewindPreview) => void = () => {}
+    vi.mocked(api.previewWorkspaceChatRewind)
+      .mockImplementationOnce(() => new Promise(resolve => { finishFirst = resolve }))
+      .mockResolvedValueOnce(preview)
+    await editTo('Fix the other bug')
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    fireEvent.click(screen.getByRole('button', { name: 'Regenerate response' }))
+    await within(await screen.findByRole('dialog')).findByText('1 file will change')
+    await act(async () => finishFirst({ ...preview, changes: [preview.changes[0], { path: 'b.ts', kind: 'create' }, { path: 'c.ts', kind: 'create' }] }))
+    expect(within(dialog()).getByText('1 file will change')).toBeDefined()
+    expect(within(dialog()).queryByText('3 files will change')).toBeNull()
+  })
+
+  it('re-checks for a running turn when confirming', async () => {
+    open(); await selectConversation()
+    await editTo('Fix the other bug')
+    await within(dialog()).findByText('1 file will change')
+    // A turn starts while the dialog is open.
+    vi.mocked(api.sendWorkspaceChatMessage).mockResolvedValue({ session: { ...session, status: 'running' }, message: { ...prompt, id: 'u9', text: 'Next' } })
+    vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({ session: { ...session, status: 'running' }, messages: [prompt, reply], events: [], requests: [], cursor: 2 })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Message agent', hidden: true }), { target: { value: 'Next' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send message', hidden: true }))
+    await screen.findByRole('button', { name: 'Stop current turn', hidden: true })
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Edit and re-run' }))
+    expect(await within(dialog()).findByRole('alert')).toHaveTextContent('Wait for the current turn to finish.')
+    expect(api.editWorkspaceChatMessage).not.toHaveBeenCalled()
   })
 
   it('regenerates with Conversation only and refetches without an undo offer', async () => {
@@ -153,13 +230,96 @@ describe('WorkspaceChat rewind', () => {
     expect(await within(dialog()).findByRole('alert')).toHaveTextContent(text)
   })
 
-  it('reports a timed out rewind without claiming it failed', async () => {
+  it('a conversation switch closes the dialog, and an offer stays with its own conversation', async () => {
+    const other: api.WorkspaceChatSession = { ...session, id: 'chat-b', title: 'Other conversation' }
+    vi.mocked(api.listWorkspaceChatSessions).mockResolvedValue({ sessions: [session, other] })
+    vi.mocked(api.fetchWorkspaceChat).mockImplementation(async (_config, _project, id) => id === 'chat-b'
+      ? { session: other, messages: [{ ...prompt, id: 'b-u1', session_id: 'chat-b', text: 'Other prompt' }], events: [], requests: [], cursor: 1 }
+      : { session, messages: [prompt, reply], events: [], requests: [], cursor: 1 })
     open(); await selectConversation()
     await editTo('Fix the other bug')
     await within(dialog()).findByText('1 file will change')
-    vi.mocked(api.editWorkspaceChatMessage).mockRejectedValue(new DOMException('The operation was aborted.', 'AbortError'))
+    vi.mocked(api.editWorkspaceChatMessage).mockRejectedValue(apiError('files_restored', 'Files were restored but not sent.'))
     fireEvent.click(within(dialog()).getByRole('button', { name: 'Edit and re-run' }))
-    expect(await within(dialog()).findByRole('alert')).toHaveTextContent('The request timed out. Check the conversation before retrying; the server may still finish.')
+    await screen.findByRole('button', { name: 'Undo restore' })
+    fireEvent.click(screen.getByRole('button', { name: 'Regenerate response' }))
+    await screen.findByRole('dialog')
+
+    act(() => useAppStore.getState().requestWorkspaceConversation('project-a', 'chat-b'))
+    await screen.findByText('Other prompt')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Undo restore' })).toBeNull()
+
+    act(() => useAppStore.getState().requestWorkspaceConversation('project-a', 'chat-a'))
+    await screen.findByText('Fixed the bug')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Undo restore' })).toBeDefined()
+  })
+
+  it('an offer never shows in, or undoes, another conversation', async () => {
+    const other: api.WorkspaceChatSession = { ...session, id: 'chat-b', title: 'Other conversation' }
+    vi.mocked(api.listWorkspaceChatSessions).mockResolvedValue({ sessions: [session, other] })
+    vi.mocked(api.fetchWorkspaceChat).mockImplementation(async (_config, _project, id) => id === 'chat-b'
+      ? { session: other, messages: [{ ...prompt, id: 'b-u1', session_id: 'chat-b', text: 'Other prompt' }], events: [], requests: [], cursor: 1 }
+      : { session, messages: [prompt, reply], events: [], requests: [], cursor: 1 })
+    let fail: (reason: unknown) => void = () => {}
+    vi.mocked(api.editWorkspaceChatMessage).mockImplementation(() => new Promise((_resolve, reject) => { fail = reject }))
+    open(); await selectConversation()
+    await editTo('Fix the other bug')
+    await within(dialog()).findByText('1 file will change')
+    fireEvent.click(within(dialog()).getByRole('radio', { name: /Conversation and files/ }))
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Edit and re-run' }))
+    await waitFor(() => expect(api.editWorkspaceChatMessage).toHaveBeenCalled())
+    // Asked mid-rewind; the chat switches once the rewind settles and the offer stays with chat-a.
+    act(() => useAppStore.getState().requestWorkspaceConversation('project-a', 'chat-b'))
+    await act(async () => fail(apiError('files_restored', 'Files were restored but not sent.')))
+    await screen.findByText('Other prompt')
+    expect(screen.queryByRole('button', { name: 'Undo restore' })).toBeNull()
+    expect(api.undoWorkspaceChatRestore).not.toHaveBeenCalled()
+  })
+
+  it('clears the offer when a later turn starts', async () => {
+    open(); await selectConversation()
+    await editTo('Fix the other bug')
+    await within(dialog()).findByText('1 file will change')
+    vi.mocked(api.editWorkspaceChatMessage).mockRejectedValue(apiError('files_restored', 'Files were restored but not sent.'))
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Edit and re-run' }))
+    await screen.findByRole('button', { name: 'Undo restore' })
+    // A turn started elsewhere shows up on the next poll (a rename restarts polling).
+    vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({ session: { ...session, status: 'running' }, messages: [prompt, reply], events: [], requests: [], cursor: 5 })
+    vi.mocked(api.renameWorkspaceChatSession).mockResolvedValue({ ...session, title: 'Renamed' })
+    fireEvent.click(screen.getByRole('button', { name: 'Rename conversation: Review changes' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Conversation name' }), { target: { value: 'Renamed' } })
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Conversation name' }), { key: 'Enter' })
+    await screen.findByRole('button', { name: 'Stop current turn' })
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Undo restore' })).toBeNull())
+  })
+
+  it('keeps the offer when the next message is rejected', async () => {
+    open(); await selectConversation()
+    await editTo('Fix the other bug')
+    await within(dialog()).findByText('1 file will change')
+    vi.mocked(api.editWorkspaceChatMessage).mockRejectedValue(apiError('files_restored', 'Files were restored but not sent.'))
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Edit and re-run' }))
+    await screen.findByRole('button', { name: 'Undo restore' })
+    vi.mocked(api.sendWorkspaceChatMessage).mockRejectedValue(apiError('chat_busy', 'busy'))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Message agent' }), { target: { value: 'Next' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
+    await screen.findByText(/Message was not accepted/)
+    expect(screen.getByRole('button', { name: 'Undo restore' })).toBeDefined()
+  })
+
+  it('switching versions with files offers Undo restore', async () => {
+    vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({ session, messages: [editedPrompt, reply], events: [], requests: [], cursor: 1 })
+    vi.mocked(api.activateWorkspaceChatBranch).mockResolvedValue({ session, messages: [prompt], events: [], requests: [] })
+    open(); await selectConversation()
+    fireEvent.click(screen.getByRole('button', { name: 'Previous version' }))
+    await screen.findByRole('dialog')
+    fireEvent.click(within(dialog()).getByRole('radio', { name: /Conversation and files/ }))
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Switch' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(api.activateWorkspaceChatBranch).toHaveBeenCalledWith(config, 'project-a', 'chat-a', 'b1', true)
+    expect(screen.getByRole('button', { name: 'Undo restore' })).toBeDefined()
   })
 
   it('closes the dialog and offers Undo restore when files were restored but the message was not sent; Undo refetches and hides it', async () => {

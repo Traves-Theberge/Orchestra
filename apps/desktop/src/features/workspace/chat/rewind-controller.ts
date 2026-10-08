@@ -9,6 +9,8 @@ import type { RewindMode } from './RewindDialog'
 
 const MAESTRO_PROJECT = '__orchestrator__'
 
+export const REWIND_TIMEOUT_NOTICE = 'The request timed out. The conversation was refreshed; check it before trying again.'
+
 const record = (value: unknown): Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 const textValue = (value: unknown) => typeof value === 'string' ? value : ''
 
@@ -18,23 +20,37 @@ export type RewindSendPreferences = {
   agent_id?: string; agent_scope?: string; agent_content_hash?: string; agent_format?: string
 }
 
-/** Plain words for a failed rewind or undo; never the generic "delivery may be uncertain". */
-export function rewindErrorText(err: unknown): string {
+/** The client gave up (90 s abort) or a proxy did (504); the server may still finish. */
+function timedOut(err: unknown): boolean {
   const failure = record(err)
   const name = textValue(failure.name)
+  const message = err instanceof Error ? err.message : textValue(failure.message)
+  return name === 'AbortError' || name === 'TimeoutError' || (textValue(failure.code) === 'request_failed' && message.startsWith('504'))
+}
+
+/**
+ * Plain words for a failed rewind or undo; never the generic "delivery may be
+ * uncertain". `conversationUntouched` adds that the conversation did not change
+ * (true for edit/regenerate/switch, not for Undo restore).
+ */
+export function rewindErrorText(err: unknown, conversationUntouched = true): string {
+  const failure = record(err)
   const message = err instanceof Error ? err.message : textValue(failure.message) || String(err)
-  if (name === 'AbortError' || name === 'TimeoutError') return 'The request timed out. Check the conversation before retrying; the server may still finish.'
+  if (timedOut(err)) return 'The request timed out. Check the conversation before retrying; the server may still finish.'
   switch (textValue(failure.code)) {
     case 'chat_busy': return 'A turn is running here or another conversation is using this folder. Try again when it finishes.'
     case 'checkpoint_unavailable': return 'There is no file checkpoint for that message. Choose Conversation only.'
-    case 'restore_partial': return `${message} Nothing in the conversation was changed.`
+    case 'restore_partial': return conversationUntouched ? `${message} Nothing in the conversation was changed.` : message
     default: return message
   }
 }
 
-type RewindRequest = { kind: RewindMode; sessionId: string; message?: WorkspaceChatMessage; text?: string; branchId?: string }
+/** One opened dialog. Its client message id is reused by every confirm, so a retry is idempotent. */
+type RewindRequest = { kind: RewindMode; sessionId: string; clientMessageId: string; message?: WorkspaceChatMessage; text?: string; branchId?: string }
 type PreviewState = { request: RewindRequest; data: WorkspaceChatRewindPreview | null; loading: boolean; error: string | null }
-type UndoOffer = { sessionId: string; message?: string }
+/** Belongs to one conversation and shows only there. */
+type UndoOffer = { sessionId: string; message?: string; error: string | null }
+type Notice = { sessionId: string; text: string }
 
 type RewindOptions = {
   config: BackendConfig
@@ -68,35 +84,38 @@ export function useRewind(options: RewindOptions) {
   const [rewindError, setRewindError] = useState<string | null>(null)
   const [undoOffer, setUndoOffer] = useState<UndoOffer | null>(null)
   const [undoBusy, setUndoBusy] = useState(false)
-  const [undoError, setUndoError] = useState<string | null>(null)
-  // Another conversation opened: its dialog and offer do not follow.
+  const [notice, setNotice] = useState<Notice | null>(null)
+  // Another conversation opened: an open dialog does not follow it (and does not come back).
   if (request && request.sessionId !== sessionId) setRequest(null)
-  if (undoOffer && undoOffer.sessionId !== sessionId) { setUndoOffer(null); setUndoError(null) }
   const activeRequest = request?.sessionId === sessionId ? request : null
   const activeOffer = undoOffer?.sessionId === sessionId ? undoOffer : null
+  const activeNotice = notice?.sessionId === sessionId ? notice : null
   const activePreview = preview && preview.request === activeRequest ? preview : null
 
-  // The offer ends when a later turn starts (sending clears it directly too). A
-  // rewind that started a turn keeps its offer through that turn.
+  // The offer ends when a later turn starts (an accepted send clears it directly
+  // too). A rewind that started a turn keeps its offer through that turn.
   const turnPhase = useRef<'waiting' | 'running' | 'finished'>('finished')
   const offerUndo = (targetId: string, startedTurn: boolean, message?: string) => {
+    // A late result for a conversation no longer on screen neither creates an
+    // offer nor replaces the one that conversation shows.
+    if (latest.current.selectedSession.current !== targetId) return
     turnPhase.current = startedTurn ? 'waiting' : 'finished'
-    setUndoOffer({ sessionId: targetId, message })
-    setUndoError(null)
+    setUndoOffer({ sessionId: targetId, message, error: null })
   }
   useEffect(() => {
-    if (!undoOffer) return
+    if (!activeOffer) return
     if (turnPhase.current === 'waiting' && working) turnPhase.current = 'running'
     else if (turnPhase.current === 'running' && !working) turnPhase.current = 'finished'
-    else if (turnPhase.current === 'finished' && working) setUndoOffer(null)
-  }, [working, undoOffer])
+    else if (turnPhase.current === 'finished' && working) setUndoOffer(previous => previous === activeOffer ? null : previous)
+  }, [working, activeOffer])
 
-  const open = useCallback((next: Omit<RewindRequest, 'sessionId'>) => {
+  const open = useCallback((next: Omit<RewindRequest, 'sessionId' | 'clientMessageId'>) => {
     const { config, projectId: project, sessionId: target } = latest.current
     if (!target) return
-    const opened: RewindRequest = { ...next, sessionId: target }
+    const opened: RewindRequest = { ...next, sessionId: target, clientMessageId: crypto.randomUUID() }
     setRequest(opened)
     setRewindError(null)
+    setNotice(null)
     const needsPreview = opened.kind !== 'switch' && project !== MAESTRO_PROJECT && !!opened.message
     setPreview({ request: opened, data: null, loading: needsPreview, error: null })
     if (!needsPreview || !opened.message) return
@@ -137,22 +156,27 @@ export function useRewind(options: RewindOptions) {
     setRewindError(null)
     try {
       if (current.kind === 'edit' && current.message) {
-        await editWorkspaceChatMessage(config, project, target, { message_id: current.message.id, text: current.text ?? '', client_message_id: crypto.randomUUID(), restore_files: files, ...sendPreferences() })
+        await editWorkspaceChatMessage(config, project, target, { message_id: current.message.id, text: current.text ?? '', client_message_id: current.clientMessageId, restore_files: files, ...sendPreferences() })
       } else if (current.kind === 'regenerate' && current.message) {
-        await regenerateWorkspaceChatResponse(config, project, target, { message_id: current.message.id, client_message_id: crypto.randomUUID(), restore_files: files })
+        await regenerateWorkspaceChatResponse(config, project, target, { message_id: current.message.id, client_message_id: current.clientMessageId, restore_files: files })
       } else if (current.kind === 'switch' && current.branchId) {
         await activateWorkspaceChatBranch(config, project, target, current.branchId, files)
       } else return
       if (!mounted.current) return
-      setRequest(null)
+      setRequest(previous => previous === current ? null : previous)
       await refresh(target)
       if (files && mounted.current) offerUndo(target, current.kind !== 'switch')
     } catch (err) {
       if (!mounted.current) return
       const code = textValue(record(err).code)
-      if (code === 'files_restored') {
+      if (timedOut(err)) {
+        // Never leave a blind retry: show what the server did and say so.
+        setRequest(previous => previous === current ? null : previous)
+        setNotice({ sessionId: target, text: REWIND_TIMEOUT_NOTICE })
+        await refresh(target)
+      } else if (code === 'files_restored') {
         // The files did go back; the message did not. Undo restore recovers them.
-        setRequest(null)
+        setRequest(previous => previous === current ? null : previous)
         offerUndo(target, false, err instanceof Error ? err.message : undefined)
         await refresh(target)
       } else {
@@ -174,26 +198,31 @@ export function useRewind(options: RewindOptions) {
     mutationPending.current = true
     setPending(true)
     setUndoBusy(true)
-    setUndoError(null)
+    setUndoOffer(previous => previous === offer ? { ...offer, error: null } : previous)
     try {
       await undoWorkspaceChatRestore(config, project, offer.sessionId)
       if (!mounted.current) return
-      setUndoOffer(previous => previous === offer ? null : previous)
+      setUndoOffer(previous => previous?.sessionId === offer.sessionId ? null : previous)
       await refresh(offer.sessionId)
     } catch (err) {
-      if (mounted.current) setUndoError(rewindErrorText(err))
+      if (mounted.current) setUndoOffer(previous => previous?.sessionId === offer.sessionId ? { ...previous, error: rewindErrorText(err, false) } : previous)
     } finally {
       mutationPending.current = false
       if (mounted.current) { setPending(false); setUndoBusy(false) }
     }
   }
 
-  const clearUndoOffer = useCallback(() => { setUndoOffer(null); setUndoError(null) }, [])
+  /** A message to `targetId` was accepted: its offer and notice are over. */
+  const messageAccepted = useCallback((targetId: string) => {
+    setUndoOffer(previous => previous?.sessionId === targetId ? null : previous)
+    setNotice(previous => previous?.sessionId === targetId ? null : previous)
+  }, [])
 
   return {
     handlers: handlers satisfies Omit<ChatMessageRewind, 'disabledReason'>,
     rewinding,
-    clearUndoOffer,
+    messageAccepted,
+    notice: activeNotice ? { text: activeNotice.text, onDismiss: () => setNotice(null) } : null,
     dialog: {
       open: !!activeRequest,
       mode: activeRequest?.kind ?? 'edit',
@@ -209,9 +238,9 @@ export function useRewind(options: RewindOptions) {
     banner: activeOffer ? {
       message: activeOffer.message,
       busy: undoBusy || working,
-      error: undoError,
+      error: activeOffer.error,
       onUndo: () => { void undo() },
-      onDismiss: clearUndoOffer,
+      onDismiss: () => setUndoOffer(previous => previous === activeOffer ? null : previous),
     } : null,
   }
 }

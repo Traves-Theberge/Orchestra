@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, Copy, Pencil, RotateCcw } from 'lucide-react'
 import { HarnessIcon } from '@ui/HarnessIcon'
 import { MarkdownRenderer } from '@ui/MarkdownRenderer'
@@ -112,13 +112,22 @@ function UserMessage({ message, images, text, rewind }: { message: WorkspaceChat
   const copy = async () => {
     try { await navigator.clipboard.writeText(message.text); setCopied(true); setTimeout(() => setCopied(false), 1200) } catch { /* clipboard unavailable */ }
   }
-  // Only the text is editable; attached images go along unchanged.
+  // Only the text is editable; attached images go along unchanged. The editor
+  // stays open with the text until the edit lands (the edited message then
+  // replaces this one); Cancel or a failure in the dialog keeps the text here.
   const submitEdit = (edited: string) => {
     if (!rewind) return
     const imageMarkdown = images.map(image => `![${image.name}](${image.url})`).join('\n\n')
-    setEditing(false)
     rewind.onEdit(message, imageMarkdown ? `${edited}\n\n${imageMarkdown}` : edited)
   }
+  const editButton = useRef<HTMLButtonElement>(null)
+  const refocusEdit = useRef(false)
+  const cancelEdit = () => { refocusEdit.current = true; setEditing(false) }
+  useEffect(() => {
+    if (editing || !refocusEdit.current) return
+    refocusEdit.current = false
+    editButton.current?.focus()
+  }, [editing])
   const versions = rewind && message.versions && message.versions.length > 1 ? message.versions : undefined
   return (
     <article data-chat-message="user" aria-label="Your message" className={`group/message ml-auto flex min-w-0 flex-col items-end gap-1.5 ${editing ? 'w-full max-w-[92%]' : 'max-w-[82%]'}`}>
@@ -131,7 +140,7 @@ function UserMessage({ message, images, text, rewind }: { message: WorkspaceChat
         </div>
       )}
       {editing && rewind ? (
-        <MessageEditor initial={text} disabledReason={rewind.disabledReason} onSubmit={submitEdit} onCancel={() => setEditing(false)} />
+        <MessageEditor initial={text} disabledReason={rewind.disabledReason} onSubmit={submitEdit} onCancel={cancelEdit} />
       ) : text && (
         <div className={`relative rounded-[20px] rounded-br-md px-4 py-2.5 text-[14px] leading-relaxed text-foreground ${problem ? 'bg-destructive/10' : 'bg-foreground/[0.07]'}`}>
           <p className={`whitespace-pre-wrap break-words ${long && !expanded ? 'line-clamp-[10]' : ''}`}><LinkifiedText text={text} /></p>
@@ -147,7 +156,7 @@ function UserMessage({ message, images, text, rewind }: { message: WorkspaceChat
           {problem && <span className="text-destructive opacity-100">Not delivered</span>}
           {time && <time dateTime={message.created_at}>{time}</time>}
           {rewind && !editing && (
-            <button type="button" onClick={() => setEditing(true)} disabled={!!rewind.disabledReason} aria-label="Edit message"
+            <button ref={editButton} type="button" onClick={() => setEditing(true)} disabled={!!rewind.disabledReason} aria-label="Edit message"
               title={rewind.disabledReason || 'Edit message'} className={ACTION_BUTTON}>
               <Pencil className="size-3.5" />
             </button>

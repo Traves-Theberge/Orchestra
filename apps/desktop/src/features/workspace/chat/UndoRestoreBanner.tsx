@@ -1,6 +1,7 @@
 import { X } from 'lucide-react'
 
 const DEFAULT_MESSAGE = 'Files were restored to before that message.'
+const UNDO_HINT = 'Undo puts back the files from just before the restore and replaces later changes.'
 
 /** One quiet line after a files restore, offering to put the files back. */
 export function UndoRestoreBanner({ message, busy, error, onUndo, onDismiss }: {
@@ -19,6 +20,7 @@ export function UndoRestoreBanner({ message, busy, error, onUndo, onDismiss }: {
           <X className="size-3" />
         </button>
       </div>
+      <p className="mt-0.5 text-[11px] text-muted-foreground/70">{UNDO_HINT}</p>
       {error && <p className="mt-1 text-destructive">{error}</p>}
     </div>
   )

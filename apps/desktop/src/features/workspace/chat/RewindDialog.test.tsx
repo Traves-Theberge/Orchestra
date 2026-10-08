@@ -21,6 +21,7 @@ const conversationChoice = () => screen.getByRole('radio', { name: /Conversation
 describe('RewindDialog', () => {
   it('titles and labels the confirm button by mode', () => {
     const { rerender } = render(<RewindDialog {...base()} />)
+    expect(screen.getAllByRole('heading', { name: 'Edit and re-run from here' })).toHaveLength(1)
     expect(screen.getByRole('dialog', { name: 'Edit and re-run from here' })).toBeDefined()
     expect(screen.getByRole('button', { name: 'Edit and re-run' })).toBeDefined()
     rerender(<RewindDialog {...base({ mode: 'regenerate' })} />)
@@ -29,8 +30,12 @@ describe('RewindDialog', () => {
     rerender(<RewindDialog {...base({ mode: 'switch', preview: null })} />)
     expect(screen.getByRole('dialog', { name: 'Switch version' })).toBeDefined()
     expect(screen.getByRole('button', { name: 'Switch' })).toBeDefined()
-    expect(screen.getByText('Files go back to the state at the end of that version.')).toBeDefined()
+    expect(filesChoice()).toHaveTextContent('Files go back to the state at the end of that version.')
+    expect(filesChoice()).not.toHaveTextContent('before that message')
     expect(filesChoice()).toBeEnabled()
+    rerender(<RewindDialog {...base({ mode: 'regenerate' })} />)
+    expect(filesChoice()).toHaveTextContent('Files in the folder go back to how they were before that message.')
+    expect(screen.queryByText('Files go back to the state at the end of that version.')).toBeNull()
   })
 
   it('offers both choices, defaults to Conversation only and passes the chosen boolean', () => {
@@ -99,10 +104,14 @@ describe('RewindDialog', () => {
     expect(conversationChoice()).toBeDefined()
   })
 
-  it('disables confirm while the preview loads and allows Conversation only after a failed preview', () => {
+  it('allows Conversation only while the preview loads and after a failed preview', () => {
     const onConfirm = vi.fn()
     const { rerender } = render(<RewindDialog {...base({ preview: null, previewLoading: true, onConfirm })} />)
-    expect(screen.getByRole('button', { name: 'Edit and re-run' })).toBeDisabled()
+    expect(filesChoice()).toBeDisabled()
+    expect(screen.getByText('Checking the files…')).toBeDefined()
+    expect(screen.getByRole('button', { name: 'Edit and re-run' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit and re-run' }))
+    expect(onConfirm).toHaveBeenLastCalledWith(false)
     rerender(<RewindDialog {...base({ preview: null, previewError: 'Server unavailable', onConfirm })} />)
     expect(screen.getByText(/Server unavailable/)).toBeDefined()
     expect(filesChoice()).toBeDisabled()
