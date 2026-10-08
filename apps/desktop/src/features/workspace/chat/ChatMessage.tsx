@@ -69,7 +69,15 @@ function UserMessage({ message, images, text }: { message: WorkspaceChatMessage;
       <div className="flex h-4 items-center gap-2 pr-1 text-[10.5px] text-muted-foreground/60 opacity-0 transition-opacity duration-150 group-hover/message:opacity-100 group-focus-within/message:opacity-100">
         {problem && <span className="text-destructive opacity-100">Not delivered</span>}
         {time && <time dateTime={message.created_at}>{time}</time>}
-        <button type="button" onClick={() => void copy()} aria-label="Copy message" className="font-medium transition-colors hover:text-foreground">{copied ? 'Copied' : 'Copy'}</button>
+        <button
+          type="button"
+          onClick={() => void copy()}
+          aria-label="Copy message"
+          title={copied ? 'Copied' : 'Copy message'}
+          className="rounded p-1 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+        </button>
       </div>
     </article>
   )
