@@ -20,6 +20,7 @@ var MODEL_PRICING = map[string]ModelPricing{
 	// Anthropic
 	"claude-opus-4-6":   {InputPerMTok: 5.0, OutputPerMTok: 25.0, CacheReadPerMTok: 0.50, CacheWritePerMTok: 6.25, ThinkingPerMTok: 25.0},
 	"claude-sonnet-4-6": {InputPerMTok: 3.0, OutputPerMTok: 15.0, CacheReadPerMTok: 0.30, CacheWritePerMTok: 3.75, ThinkingPerMTok: 15.0},
+	"claude-haiku-5-5":  {InputPerMTok: 0.10, OutputPerMTok: 0.50, CacheReadPerMTok: 0.01, CacheWritePerMTok: 0.125, ThinkingPerMTok: 0.50},
 	"claude-haiku-4-5":  {InputPerMTok: 1.0, OutputPerMTok: 5.0, CacheReadPerMTok: 0.10, CacheWritePerMTok: 1.25, ThinkingPerMTok: 5.0},
 	"claude-sonnet-4-5": {InputPerMTok: 3.0, OutputPerMTok: 15.0, CacheReadPerMTok: 0.30, CacheWritePerMTok: 3.75, ThinkingPerMTok: 15.0},
 	"claude-opus-4-5":   {InputPerMTok: 5.0, OutputPerMTok: 25.0, CacheReadPerMTok: 0.50, CacheWritePerMTok: 6.25, ThinkingPerMTok: 25.0},

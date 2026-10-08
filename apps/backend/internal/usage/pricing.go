@@ -33,6 +33,7 @@ var pricingByProvider = map[Provider]providerPricing{
 			"claude-opus-4-5":   {Input: 6.15, Output: 30.75, CacheRead: 0.61, CacheWrite: 7.69},
 			"claude-sonnet-4-6": {Input: 3.69, Output: 18.45, CacheRead: 0.37, CacheWrite: 4.61},
 			"claude-sonnet-4-5": {Input: 3.69, Output: 18.45, CacheRead: 0.37, CacheWrite: 4.61},
+			"claude-haiku-5-5":  {Input: 0.123, Output: 0.615, CacheRead: 0.0123, CacheWrite: 0.154},
 			"claude-haiku-4-5":  {Input: 1.23, Output: 6.15, CacheRead: 0.12, CacheWrite: 1.54},
 		},
 	},
@@ -75,7 +76,7 @@ func normalizeClaudeModel(model string) string {
 	for _, key := range []string{
 		"claude-opus-4-7", "claude-opus-4-6", "claude-opus-4-5",
 		"claude-sonnet-4-6", "claude-sonnet-4-5",
-		"claude-haiku-4-5",
+		"claude-haiku-5-5", "claude-haiku-4-5",
 	} {
 		if pricedAlias(m, key) {
 			return key

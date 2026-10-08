@@ -12,6 +12,7 @@ func TestGetModelPricing_ExactMatch(t *testing.T) {
 		{"claude-opus-4-6", 5.0},
 		{"claude-sonnet-4-6", 3.0},
 		{"claude-haiku-4-5", 1.0},
+		{"claude-haiku-5-5", 0.10},
 		{"gpt-5.4", 2.50},
 		{"o3", 10.0},
 		{"gemini-2.5-pro", 1.25},

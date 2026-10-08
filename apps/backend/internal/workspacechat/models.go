@@ -68,7 +68,7 @@ func (s *Service) modelsForAccount(ctx context.Context, pid, provider, accountID
 					{ID: "claude-fable-5-1", Model: "claude-fable-5-1", DisplayName: "Claude Fable 5.1"},
 					{ID: "claude-opus-5-5", Model: "claude-opus-5-5", DisplayName: "Claude Opus 5.5"},
 					{ID: "claude-sonnet-5-5", Model: "claude-sonnet-5-5", DisplayName: "Claude Sonnet 5.5", IsDefault: true},
-					{ID: "claude-haiku-4-5", Model: "claude-haiku-4-5", DisplayName: "Claude Haiku 4.5"},
+					{ID: "claude-haiku-5-5", Model: "claude-haiku-5-5", DisplayName: "Claude Haiku 5.5"},
 				},
 			}, nil
 		}

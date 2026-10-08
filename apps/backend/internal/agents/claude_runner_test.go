@@ -7,7 +7,7 @@ import (
 
 func TestClaudeRequestedModelValidation(t *testing.T) {
 	r := NewClaudeRunner("claude -p {{prompt}} --output-format stream-json --verbose")
-	for _, ok := range []string{"sonnet", "claude-sonnet-5-5", "claude-opus-5-5[1m]", "claude-haiku-4-5-20251001"} {
+	for _, ok := range []string{"sonnet", "claude-sonnet-5-5", "claude-opus-5-5[1m]", "claude-haiku-4-5-20251001", "claude-haiku-5-5"} {
 		if err := validateTurnOptions(context.Background(), ProviderClaude, r, nil, TurnRequest{RuntimeTarget: RuntimeLocal, RequestedModel: ok}); err != nil {
 			t.Fatalf("%s rejected: %v", ok, err)
 		}
