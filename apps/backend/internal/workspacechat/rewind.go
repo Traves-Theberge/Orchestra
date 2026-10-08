@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/orchestra/orchestra/apps/backend/internal/agents"
 	"github.com/orchestra/orchestra/apps/backend/internal/checkpoint"
 )
@@ -20,6 +21,11 @@ import (
 // restore. A files restore always saves a safety snapshot of the folder first
 // and aborts before touching the conversation if any file could not be
 // restored, so nothing is lost silently and Undo restore can always return.
+//
+// The snapshot and restore run without the service lock, so no other
+// conversation waits on them. Meanwhile the conversation and its checkout
+// are marked restoring: every busy check refuses them, so nothing else can
+// start a turn in that folder or change the conversation.
 
 var ErrCheckpointUnavailable = errors.New("no file checkpoint for that message")
 
@@ -46,6 +52,17 @@ func (e *RestoreError) Error() string {
 }
 
 func (e *RestoreError) Unwrap() error { return e.Err }
+
+// FilesRestoredError reports a rewind whose files restore succeeded but whose
+// message was not sent (Err says why), and whose automatic return of the
+// files failed too. The folder is left restored; Undo restore puts it back.
+type FilesRestoredError struct{ Err error }
+
+func (e *FilesRestoredError) Error() string {
+	return fmt.Sprintf("files were restored but the message was not sent (%v); use Undo restore to put the files back", e.Err)
+}
+
+func (e *FilesRestoredError) Unwrap() error { return e.Err }
 
 // RewindPreview describes what rewinding to a message would do, read-only.
 type RewindPreview struct {
@@ -76,6 +93,13 @@ type RegenerateRequest struct {
 	RestoreFiles    bool   `json:"restore_files"`
 }
 
+// restoreMark records a files restore in flight for a conversation.
+type restoreMark struct {
+	projectID   string
+	workspaceID string
+	title       string
+}
+
 const branchHeader = "The user edited an earlier message; your session restarts here. The conversation before that point follows as context. Work only in the selected project.\n"
 
 // branchTranscript seeds a new branch's first native turn with the history
@@ -102,13 +126,24 @@ func (s *Service) Regenerate(ctx context.Context, pid, id string, req Regenerate
 }
 
 // rewind forks the active branch just before the user message being re-run
-// and sends req on the new branch. Validation, the files restore and the fork
-// happen under s.mu; send takes the lock itself. If send fails, the empty
-// branch is removed and the previous branch is active again; a restored
-// folder stays restored (its safety checkpoint remains for Undo restore).
+// and sends req on the new branch. send's own checks run first, before any
+// file changes. Validation and the fork happen under s.mu; the files restore
+// runs without it (the conversation and checkout marked restoring); send
+// takes the lock itself. Between the fork and send the lock is free for a
+// moment: a turn started there (by another conversation of the checkout)
+// makes send fail busy, which is handled like any send failure. If send
+// fails, the empty branch is removed and the previous branch is active
+// again, and restored files are put back from the safety checkpoint; if that
+// is impossible the error is a *FilesRestoredError.
 func (s *Service) rewind(ctx context.Context, pid, id, messageID string, edit, restoreFiles bool, req SendRequest) (Accepted, error) {
 	if strings.TrimSpace(messageID) == "" || strings.TrimSpace(req.ClientMessageID) == "" || len(req.ClientMessageID) > 200 {
 		return Accepted{}, ErrInvalid
+	}
+	if restoreFiles && pid == OrchestratorScope {
+		return Accepted{}, ErrInvalid
+	}
+	if err := s.rewindPreflight(ctx, pid, id, edit, &req); err != nil {
+		return Accepted{}, err
 	}
 	s.mu.Lock()
 	locked := true
@@ -120,9 +155,6 @@ func (s *Service) rewind(ctx context.Context, pid, id, messageID string, edit, r
 	d, err := s.rewindable(ctx, pid, id)
 	if err != nil {
 		return Accepted{}, err
-	}
-	if restoreFiles && pid == OrchestratorScope {
-		return Accepted{}, ErrInvalid
 	}
 	// A retried request returns its first acceptance, on whichever branch.
 	if existing, ok, err := s.submittedMessage(ctx, id, req.ClientMessageID); err != nil || ok {
@@ -146,8 +178,6 @@ func (s *Service) rewind(ctx context.Context, pid, id, messageID string, edit, r
 	}
 	if !edit {
 		req.Text = user.Text
-		req.RequestedAgentID, req.RequestedAgentScope = d.Session.RequestedAgentID, d.Session.RequestedAgentScope
-		req.RequestedAgentContentHash, req.RequestedAgentFormat = d.Session.RequestedAgentContentHash, d.Session.RequestedAgentFormat
 	}
 	previous, err := writeBranchIn(ctx, s.db, id)
 	if err != nil {
@@ -156,6 +186,7 @@ func (s *Service) rewind(ctx context.Context, pid, id, messageID string, edit, r
 	// Past this point the folder or conversation may change: finish the
 	// operation even if the caller goes away.
 	work := context.WithoutCancel(ctx)
+	var safety *Checkpoint
 	if restoreFiles {
 		before, ok, err := s.checkpointFor(ctx, id, user.ID, "before")
 		if err != nil {
@@ -164,8 +195,14 @@ func (s *Service) rewind(ctx context.Context, pid, id, messageID string, edit, r
 		if !ok || s.checkpoints == nil || d.Session.WorkspacePath == "" {
 			return Accepted{}, ErrCheckpointUnavailable
 		}
-		if _, err = s.restoreFolder(work, pid, d.Session, previous, user.ID, before.TreeHash); err != nil {
+		c, err := s.restoreFolder(work, pid, d.Session, previous, user.ID, before.TreeHash)
+		if err != nil {
 			return Accepted{}, err
+		}
+		safety = &c
+		// The lock was free during the restore; make sure nothing moved.
+		if err = s.recheckRewind(work, pid, id, messageID, edit, user.ID, forkOrdinal, previous); err != nil {
+			return Accepted{}, s.revertRestore(work, pid, id, c, err)
 		}
 	}
 	var branch Branch
@@ -175,19 +212,108 @@ func (s *Service) rewind(ctx context.Context, pid, id, messageID string, edit, r
 		return branch.ID, e
 	})
 	if err != nil {
+		if safety != nil {
+			return Accepted{}, s.revertRestore(work, pid, id, *safety, err)
+		}
 		return Accepted{}, err
 	}
+	gap := s.rewindGap
 	s.mu.Unlock()
 	locked = false
 	if native != nil {
 		closeNative(native)
 	}
+	if gap != nil {
+		gap()
+	}
 	accepted, err := s.send(work, pid, id, req, "", "")
 	if err != nil {
 		s.dropEmptyBranch(id, previous, branch.ID)
+		if safety != nil {
+			s.mu.Lock()
+			err = s.revertRestore(work, pid, id, *safety, err)
+			s.mu.Unlock()
+		}
 		return Accepted{}, err
 	}
 	return accepted, nil
+}
+
+// rewindPreflight runs send's checks that change nothing (account, profile,
+// agent, MCP servers, harness options, model and effort) before anything is
+// restored, so a message send would refuse never rewinds the files first.
+// A retried request skips them: it returns its first acceptance. Regenerate
+// re-runs with the conversation's current agent selection.
+func (s *Service) rewindPreflight(ctx context.Context, pid, id string, edit bool, req *SendRequest) error {
+	if _, ok, err := s.submittedMessage(ctx, id, req.ClientMessageID); err != nil || ok {
+		return err
+	}
+	d, err := s.Detail(ctx, pid, id)
+	if err != nil {
+		return err
+	}
+	if !edit {
+		req.RequestedAgentID, req.RequestedAgentScope = d.Session.RequestedAgentID, d.Session.RequestedAgentScope
+		req.RequestedAgentContentHash, req.RequestedAgentFormat = d.Session.RequestedAgentContentHash, d.Session.RequestedAgentFormat
+	}
+	// send fills model and effort defaults itself; check a copy.
+	check := *req
+	agent, err := s.sendChecks(ctx, pid, d.Session, &check)
+	if err != nil {
+		return err
+	}
+	root, err := s.root(ctx, pid)
+	if err != nil {
+		return err
+	}
+	turn, err := s.newTurn(ctx, pid, root, d.Session, check, agent)
+	if err != nil {
+		return err
+	}
+	if err = s.turnShape(d.Session, check); err != nil {
+		return err
+	}
+	if check.RequestedReasoningEffort != "" {
+		if err = s.validateEffort(ctx, pid, d.Session.Provider, d.Session.AccountID, check.RequestedModel, check.RequestedReasoningEffort); err != nil {
+			return err
+		}
+	}
+	if d.Session.ConversationMode != "native_session" {
+		if err = s.registry.ValidateTurnOptions(agents.Provider(d.Session.Provider), turn); err != nil {
+			return fmt.Errorf("%w: %s", ErrUnsupported, err)
+		}
+	}
+	return nil
+}
+
+// recheckRewind confirms, after the unlocked restore, that the rewind still
+// applies: the conversation is idle, its active branch and the re-run message
+// are unchanged. Callers hold s.mu.
+func (s *Service) recheckRewind(ctx context.Context, pid, id, messageID string, edit bool, userID string, forkOrdinal int64, previous string) error {
+	d, err := s.rewindable(ctx, pid, id)
+	if err != nil {
+		return err
+	}
+	if reason, err := s.busyReason(ctx, pid, d.Session); err != nil || reason != "" {
+		if err != nil {
+			return err
+		}
+		return ErrBusy
+	}
+	if current, err := writeBranchIn(ctx, s.db, id); err != nil || current != previous {
+		if err != nil {
+			return err
+		}
+		return ErrConflict
+	}
+	user, ordinal, _, err := s.rewindTarget(ctx, d, messageID, edit)
+	if err != nil {
+		return err
+	}
+	if user.ID != userID || ordinal != forkOrdinal {
+		return ErrConflict
+	}
+	return nil
 }
 
 // ActivateBranch shows another version of the conversation. With
@@ -214,15 +340,8 @@ func (s *Service) ActivateBranch(ctx context.Context, pid, id, branchID string, 
 		}
 		return Detail{}, ErrBusy
 	}
-	if branchID != id {
-		var found int
-		err = s.db.QueryRowContext(ctx, `SELECT 1 FROM workspace_chat_branches WHERE session_id=? AND id=?`, id, branchID).Scan(&found)
-		if errors.Is(err, sql.ErrNoRows) {
-			return Detail{}, ErrNotFound
-		}
-		if err != nil {
-			return Detail{}, err
-		}
+	if err = s.branchExists(ctx, id, branchID); err != nil {
+		return Detail{}, err
 	}
 	if restoreFiles && pid == OrchestratorScope {
 		return Detail{}, ErrInvalid
@@ -232,6 +351,7 @@ func (s *Service) ActivateBranch(ctx context.Context, pid, id, branchID string, 
 		return Detail{}, err
 	}
 	work := context.WithoutCancel(ctx)
+	var safety *Checkpoint
 	if restoreFiles {
 		after, ok, err := s.latestAfter(ctx, id, branchID)
 		if err != nil {
@@ -240,13 +360,22 @@ func (s *Service) ActivateBranch(ctx context.Context, pid, id, branchID string, 
 		if !ok || s.checkpoints == nil || d.Session.WorkspacePath == "" {
 			return Detail{}, ErrCheckpointUnavailable
 		}
-		if _, err = s.restoreFolder(work, pid, d.Session, current, after.MessageID, after.TreeHash); err != nil {
+		c, err := s.restoreFolder(work, pid, d.Session, current, after.MessageID, after.TreeHash)
+		if err != nil {
 			return Detail{}, err
+		}
+		safety = &c
+		// The lock was free during the restore; make sure nothing moved.
+		if err = s.recheckActivate(work, pid, id, branchID, current); err != nil {
+			return Detail{}, s.revertRestore(work, pid, id, c, err)
 		}
 	}
 	if current != branchID {
 		native, err := s.switchBranch(work, pid, d.Session, func(*sql.Tx) (string, error) { return branchID, nil })
 		if err != nil {
+			if safety != nil {
+				return Detail{}, s.revertRestore(work, pid, id, *safety, err)
+			}
 			return Detail{}, err
 		}
 		s.mu.Unlock()
@@ -255,7 +384,44 @@ func (s *Service) ActivateBranch(ctx context.Context, pid, id, branchID string, 
 			closeNative(native)
 		}
 	}
-	return s.Detail(ctx, pid, id)
+	return s.Detail(work, pid, id)
+}
+
+func (s *Service) branchExists(ctx context.Context, sessionID, branchID string) error {
+	if branchID == sessionID {
+		return nil
+	}
+	var found int
+	err := s.db.QueryRowContext(ctx, `SELECT 1 FROM workspace_chat_branches WHERE session_id=? AND id=?`, sessionID, branchID).Scan(&found)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	return err
+}
+
+// recheckActivate confirms, after the unlocked restore, that the switch still
+// applies. Callers hold s.mu.
+func (s *Service) recheckActivate(ctx context.Context, pid, id, branchID, current string) error {
+	d, err := s.rewindable(ctx, pid, id)
+	if err != nil {
+		return err
+	}
+	if reason, err := s.busyReason(ctx, pid, d.Session); err != nil || reason != "" {
+		if err != nil {
+			return err
+		}
+		return ErrBusy
+	}
+	if err = s.branchExists(ctx, id, branchID); err != nil {
+		return err
+	}
+	if now, err := writeBranchIn(ctx, s.db, id); err != nil || now != current {
+		if err != nil {
+			return err
+		}
+		return ErrConflict
+	}
+	return nil
 }
 
 // UndoRestore puts the folder back to the newest safety checkpoint, taken
@@ -288,11 +454,18 @@ func (s *Service) UndoRestore(ctx context.Context, pid, id string) (checkpoint.R
 		return checkpoint.RestoreResult{}, err
 	}
 	work := context.WithoutCancel(ctx)
-	rctx, cancel := context.WithTimeout(work, s.restoreTimeout())
-	defer cancel()
-	res, err := s.checkpoints.Restore(rctx, d.Session.WorkspacePath, safety.TreeHash)
-	if err != nil || len(res.Failed) > 0 {
-		return res, &RestoreError{Failed: res.Failed, Err: err}
+	store, timeout := s.checkpoints, s.restoreTimeout()
+	var res checkpoint.RestoreResult
+	err = s.whileRestoring(pid, d.Session, func() error {
+		var e error
+		res, e = restoreWithin(work, store, d.Session.WorkspacePath, safety.TreeHash, timeout)
+		if e != nil || len(res.Failed) > 0 {
+			return &RestoreError{Failed: res.Failed, Err: e}
+		}
+		return nil
+	})
+	if err != nil {
+		return res, err
 	}
 	if _, err = s.db.ExecContext(work, `DELETE FROM workspace_chat_checkpoints WHERE id=?`, safety.ID); err != nil {
 		return res, err
@@ -381,16 +554,23 @@ func (s *Service) rewindable(ctx context.Context, pid, id string) (Detail, error
 }
 
 // busyReason says why the conversation cannot rewind now, or "". It applies
-// send's occupancy rule: this conversation's turn, or any turn in another
-// conversation of the same checkout (whose files a restore would change, and
-// whose pending approvals must stay answerable). Maestro conversations share
-// no files, so only their own turn counts. Callers hold s.mu.
+// send's occupancy rule: this conversation's turn or files restore, or a turn
+// or files restore in another conversation of the same checkout (whose files
+// a restore would change, and whose pending approvals must stay answerable).
+// Maestro conversations share no files, so only their own state counts.
+// Callers hold s.mu.
 func (s *Service) busyReason(ctx context.Context, pid string, sess Session) (string, error) {
+	if s.restoring[sess.ID] != nil {
+		return "This conversation is restoring files.", nil
+	}
 	if _, ok := s.active[sess.ID]; ok || sess.Status == "running" || sess.Status == "stopping" {
 		return "This conversation has a turn in progress.", nil
 	}
 	if pid == OrchestratorScope {
 		return "", nil
+	}
+	if title, ok := s.restoringCheckout(pid, sess.WorkspaceID, sess.ID); ok {
+		return fmt.Sprintf("Another conversation in this folder is restoring files: %s", title), nil
 	}
 	_, _, primary, err := s.scope(ctx, pid)
 	if err != nil {
@@ -405,6 +585,39 @@ func (s *Service) busyReason(ctx context.Context, pid string, sess Session) (str
 		return "", err
 	}
 	return fmt.Sprintf("Another conversation in this folder is running: %s", title), nil
+}
+
+// restoringCheckout names another conversation restoring files in a
+// checkout. Callers hold s.mu.
+func (s *Service) restoringCheckout(pid, workspaceID, except string) (string, bool) {
+	for id, m := range s.restoring {
+		if id != except && m.projectID == pid && m.workspaceID == workspaceID {
+			return m.title, true
+		}
+	}
+	return "", false
+}
+
+// whileRestoring runs fn without s.mu while the conversation and its checkout
+// are marked restoring. Callers hold s.mu; it is held again when this returns,
+// and the mark is cleared, on every path including a panic in fn. Close waits
+// for fn to finish.
+func (s *Service) whileRestoring(pid string, sess Session, fn func() error) error {
+	if s.closed {
+		return fmt.Errorf("chat service shutting down")
+	}
+	if s.restoring == nil {
+		s.restoring = map[string]*restoreMark{}
+	}
+	s.restoring[sess.ID] = &restoreMark{projectID: pid, workspaceID: sess.WorkspaceID, title: sess.Title}
+	s.wg.Add(1)
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		delete(s.restoring, sess.ID)
+		s.wg.Done()
+	}()
+	return fn()
 }
 
 // rewindTarget resolves the user message to re-run among the visible
@@ -471,35 +684,92 @@ func (s *Service) rejectRemoval(ctx context.Context, pid string, sess Session) e
 	return rejectPendingRemoval(ctx, tx, pid, sess.WorkspaceID, sess.WorkspacePath)
 }
 
-// restoreFolder saves a safety checkpoint of the folder as it is now, then
-// makes the folder equal tree. A failed safety snapshot aborts before any
-// file is touched; a restore that leaves files behind returns *RestoreError
-// and keeps the safety checkpoint. Callers hold s.mu, so no turn can start.
-func (s *Service) restoreFolder(ctx context.Context, pid string, sess Session, branchID, messageID, tree string) (checkpoint.RestoreResult, error) {
-	if err := s.rejectRemoval(ctx, pid, sess); err != nil {
-		return checkpoint.RestoreResult{}, err
-	}
-	store := s.checkpoints
-	sctx, cancel := context.WithTimeout(ctx, s.restoreTimeout())
-	safety, err := snapshotWithin(sctx, store, sess.WorkspacePath)
-	cancel()
-	if err == nil && safety.Hash == "" {
-		err = errors.New("snapshot returned no tree")
-	}
-	if err != nil {
-		return checkpoint.RestoreResult{}, fmt.Errorf("%w: the safety snapshot of the current files failed, so nothing was restored: %v", ErrCheckpointUnavailable, err)
-	}
-	if err = s.saveCheckpoint(ctx, Checkpoint{SessionID: sess.ID, BranchID: branchID, MessageID: messageID, Kind: "safety", TreeHash: safety.Hash, Files: safety.Files, Bytes: safety.Bytes, Skipped: safety.Skipped}); err != nil {
-		return checkpoint.RestoreResult{}, err
-	}
-	rctx, cancel := context.WithTimeout(ctx, s.restoreTimeout())
+// restoreWithin restores within the timeout and reports a panicking store as
+// an error.
+func restoreWithin(ctx context.Context, store checkpointer, worktree, tree string, timeout time.Duration) (res checkpoint.RestoreResult, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("restore panicked: %v", r)
+		}
+	}()
+	rctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	res, err := store.Restore(rctx, sess.WorkspacePath, tree)
-	if err != nil || len(res.Failed) > 0 {
-		log.Printf("workspace chat files restore for session %s incomplete (%d failed): %v", sess.ID, len(res.Failed), err)
-		return res, &RestoreError{Failed: res.Failed, Err: err}
+	return store.Restore(rctx, worktree, tree)
+}
+
+// restoreFolder saves a safety checkpoint of the folder as it is now, then
+// makes the folder equal tree, both without s.mu (see whileRestoring). A
+// failed safety snapshot aborts before any file is touched; a restore that
+// leaves files behind returns *RestoreError and keeps the safety checkpoint.
+// Callers hold s.mu; it is held again on return.
+func (s *Service) restoreFolder(ctx context.Context, pid string, sess Session, branchID, messageID, tree string) (Checkpoint, error) {
+	if err := s.rejectRemoval(ctx, pid, sess); err != nil {
+		return Checkpoint{}, err
 	}
-	return res, nil
+	store, timeout := s.checkpoints, s.restoreTimeout()
+	safety := Checkpoint{ID: uuid.NewString(), SessionID: sess.ID, BranchID: branchID, MessageID: messageID, Kind: "safety"}
+	err := s.whileRestoring(pid, sess, func() error {
+		sctx, cancel := context.WithTimeout(ctx, timeout)
+		snap, err := snapshotWithin(sctx, store, sess.WorkspacePath)
+		cancel()
+		if err == nil && snap.Hash == "" {
+			err = errors.New("snapshot returned no tree")
+		}
+		if err != nil {
+			return fmt.Errorf("%w: the safety snapshot of the current files failed, so nothing was restored: %v", ErrCheckpointUnavailable, err)
+		}
+		safety.TreeHash, safety.Files, safety.Bytes, safety.Skipped = snap.Hash, snap.Files, snap.Bytes, snap.Skipped
+		if err = s.saveCheckpoint(ctx, safety); err != nil {
+			return err
+		}
+		res, err := restoreWithin(ctx, store, sess.WorkspacePath, tree, timeout)
+		if err != nil || len(res.Failed) > 0 {
+			log.Printf("workspace chat files restore for session %s incomplete (%d failed): %v", sess.ID, len(res.Failed), err)
+			return &RestoreError{Failed: res.Failed, Err: err}
+		}
+		return nil
+	})
+	return safety, err
+}
+
+// revertRestore puts a rewind's restored files back from its safety
+// checkpoint after the rewind failed with cause, and consumes the checkpoint.
+// It returns cause, or a *FilesRestoredError when the files stay restored
+// (the conversation is busy again, or the return restore fails). Callers hold
+// s.mu; it is held again on return.
+func (s *Service) revertRestore(ctx context.Context, pid, id string, safety Checkpoint, cause error) error {
+	keep := func(why error) error {
+		log.Printf("workspace chat rewind of session %s failed (%v) and its files stay restored: %v", id, cause, why)
+		return &FilesRestoredError{Err: cause}
+	}
+	d, err := s.rewindable(ctx, pid, id)
+	if err != nil {
+		return keep(err)
+	}
+	if reason, err := s.busyReason(ctx, pid, d.Session); err != nil || reason != "" {
+		if err == nil {
+			err = errors.New(reason)
+		}
+		return keep(err)
+	}
+	store, timeout := s.checkpoints, s.restoreTimeout()
+	if store == nil {
+		return keep(errors.New("checkpoints disabled"))
+	}
+	err = s.whileRestoring(pid, d.Session, func() error {
+		res, e := restoreWithin(ctx, store, d.Session.WorkspacePath, safety.TreeHash, timeout)
+		if e == nil && len(res.Failed) > 0 {
+			e = &RestoreError{Failed: res.Failed}
+		}
+		return e
+	})
+	if err != nil {
+		return keep(err)
+	}
+	if _, err = s.db.ExecContext(ctx, `DELETE FROM workspace_chat_checkpoints WHERE id=?`, safety.ID); err != nil {
+		log.Printf("workspace chat could not remove spent safety checkpoint %s: %v", safety.ID, err)
+	}
+	return cause
 }
 
 // switchBranch makes the branch returned by pick active in one transaction,

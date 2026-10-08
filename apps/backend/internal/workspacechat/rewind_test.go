@@ -27,6 +27,20 @@ type rewindRegistry struct {
 	providers []agents.Provider
 	prompts   []string
 	write     func(dir, prompt string) error
+	// accountErr makes the bound account unusable (send's account check).
+	accountErr error
+}
+
+func (r *rewindRegistry) ValidateAccount(agents.Provider, string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.accountErr
+}
+
+func (r *rewindRegistry) setAccountErr(err error) {
+	r.mu.Lock()
+	r.accountErr = err
+	r.mu.Unlock()
 }
 
 func newRewindRegistry() *rewindRegistry {
@@ -82,6 +96,13 @@ type rewindStore struct {
 	restoreRes  checkpoint.RestoreResult
 	restoreErr  error
 	diffs       map[string][]checkpoint.Change
+	// entered receives a value as each Restore starts; block holds it until
+	// closed; failFrom makes Restore call number failFrom (1-based) and later
+	// leave a file unrestored; panicRestore makes Restore panic.
+	entered      chan struct{}
+	block        chan struct{}
+	failFrom     int
+	panicRestore bool
 }
 
 func (f *rewindStore) Snapshot(context.Context, string) (checkpoint.Tree, error) {
@@ -100,9 +121,29 @@ func (f *rewindStore) Diff(_ context.Context, _, tree string) ([]checkpoint.Chan
 }
 func (f *rewindStore) Restore(_ context.Context, _, tree string) (checkpoint.RestoreResult, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.restores = append(f.restores, tree)
-	return f.restoreRes, f.restoreErr
+	res, err := f.restoreRes, f.restoreErr
+	if f.failFrom > 0 && len(f.restores) >= f.failFrom {
+		res = checkpoint.RestoreResult{Failed: []checkpoint.FileFailure{{Path: "locked.txt", Reason: "in use"}}}
+	}
+	entered, block, panicking := f.entered, f.block, f.panicRestore
+	f.mu.Unlock()
+	if entered != nil {
+		entered <- struct{}{}
+	}
+	if block != nil {
+		<-block
+	}
+	if panicking {
+		panic("store bug")
+	}
+	return res, err
+}
+
+func (f *rewindStore) set(update func(*rewindStore)) {
+	f.mu.Lock()
+	update(f)
+	f.mu.Unlock()
 }
 func (f *rewindStore) restored() []string {
 	f.mu.Lock()
@@ -823,12 +864,15 @@ func TestSendFailureAfterBranchCreationRollsBackTheBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	maxTurns := 3
-	// send rejects max turns only after its own checks, past branch creation.
-	_, err = s.Edit(ctx, pid, sess.ID, EditRequest{MessageID: second.Message.ID, SendRequest: SendRequest{ClientMessageID: "e1", Text: "deux", RequestedMaxTurns: &maxTurns}})
+	// The account becomes unusable after the fork, so send fails past branch
+	// creation.
+	s.rewindGap = func() { r.setAccountErr(errors.New("account removed")) }
+	_, err = s.Edit(ctx, pid, sess.ID, EditRequest{MessageID: second.Message.ID, SendRequest: SendRequest{ClientMessageID: "e1", Text: "deux"}})
 	if !errors.Is(err, ErrUnsupported) {
 		t.Fatalf("send failure should surface: %v", err)
 	}
+	s.rewindGap = nil
+	r.setAccountErr(nil)
 	if n := countRows(t, s, `SELECT COUNT(*) FROM workspace_chat_branches WHERE session_id=?`, sess.ID); n != 0 {
 		t.Fatalf("the empty branch must be removed: %d", n)
 	}
@@ -982,5 +1026,105 @@ func TestBranchTranscriptHeader(t *testing.T) {
 	got := branchTranscript([]Message{{Role: "user", Text: "hi", Status: "completed"}}, "next", maxText)
 	if !strings.HasPrefix(got, "The user edited an earlier message; your session restarts here. The conversation before that point follows as context. Work only in the selected project.\n") || !strings.Contains(got, "[user]\nhi") || !strings.HasSuffix(got, "[user]\nnext") {
 		t.Fatal(got)
+	}
+}
+
+func TestRewindRejectsMessagesFromAnotherBranch(t *testing.T) {
+	r := newRewindRegistry()
+	s, pid, _ := checkpointFixture(t, r)
+	ctx := context.Background()
+	sess, err := s.Create(ctx, pid, "codex", "other branch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	say(t, s, pid, sess.ID, "c1", "one")
+	hidden := say(t, s, pid, sess.ID, "c2", "two")
+	if _, err = s.Edit(ctx, pid, sess.ID, EditRequest{MessageID: hidden.Message.ID, SendRequest: SendRequest{ClientMessageID: "e1", Text: "deux"}}); err != nil {
+		t.Fatal(err)
+	}
+	settled(t, s, pid, sess.ID)
+	// "two" lives only on main now, which is not the active branch.
+	if _, err = s.Edit(ctx, pid, sess.ID, EditRequest{MessageID: hidden.Message.ID, SendRequest: SendRequest{ClientMessageID: "e2", Text: "zwei"}}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("edit of a hidden message: %v", err)
+	}
+	if _, err = s.Regenerate(ctx, pid, sess.ID, RegenerateRequest{MessageID: hidden.Message.ID, ClientMessageID: "r1"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("regenerate of a hidden message: %v", err)
+	}
+	if _, err = s.PreviewRewind(ctx, pid, sess.ID, hidden.Message.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("preview of a hidden message: %v", err)
+	}
+	if n := len(branchIDs(t, s, sess.ID)); n != 1 {
+		t.Fatalf("no branch for rejected requests: %d", n)
+	}
+}
+
+func TestRewindAfterAgentSwitch(t *testing.T) {
+	r := newRewindRegistry()
+	s, pid, project := checkpointFixture(t, r)
+	s.ConfigureAgentCatalog(agentCatalogFixture(t, s.db, project))
+	ctx := context.Background()
+	sess, err := s.Create(ctx, pid, "codex", "agents")
+	if err != nil {
+		t.Fatal(err)
+	}
+	send := func(client, text, agent string) Accepted {
+		t.Helper()
+		accepted, err := s.Send(ctx, pid, sess.ID, SendRequest{ClientMessageID: client, Text: text, RequestedAgentID: agent})
+		if err != nil {
+			t.Fatal(err)
+		}
+		settled(t, s, pid, sess.ID)
+		return accepted
+	}
+	send("c1", "kept-one", "orchestra:global:orchestra:alpha")
+	second := send("c2", "dropped-two", "orchestra:global:orchestra:alpha")
+	accepted, err := s.Edit(ctx, pid, sess.ID, EditRequest{MessageID: second.Message.ID, SendRequest: SendRequest{ClientMessageID: "e1", Text: "edited-two", RequestedAgentID: "orchestra:global:orchestra:beta"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if accepted.Message.AgentName != "beta" {
+		t.Fatalf("the edit runs under the newly chosen agent: %+v", accepted.Message)
+	}
+	settled(t, s, pid, sess.ID)
+	send("c3", "after-edit", "orchestra:global:orchestra:beta")
+	threads, _, prompts := r.snapshot()
+	if len(threads) != 2 || threads[1] != "" {
+		t.Fatalf("one fresh thread for the edit, then resumed: %q", threads)
+	}
+	seeded := prompts[2]
+	if !strings.HasPrefix(seeded, branchHeader) || strings.Contains(seeded, "switched this conversation") || strings.Contains(seeded, "dropped-two") || !strings.Contains(seeded, "[user]\nkept-one") {
+		t.Fatalf("the branch seed replaces the agent handoff: %q", seeded)
+	}
+	if prompts[3] != "after-edit" {
+		t.Fatalf("same agent afterwards resumes without replay: %q", prompts[3])
+	}
+}
+
+func TestBranchSwitchResetsAntigravityTurnCounter(t *testing.T) {
+	r := newRewindRegistry()
+	s, pid, _ := checkpointFixture(t, r)
+	ctx := context.Background()
+	sess, err := s.Create(ctx, pid, "codex", "counter")
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn := say(t, s, pid, sess.ID, "c1", "one")
+	if _, err = s.Edit(ctx, pid, sess.ID, EditRequest{MessageID: turn.Message.ID, SendRequest: SendRequest{ClientMessageID: "e1", Text: "uno"}}); err != nil {
+		t.Fatal(err)
+	}
+	settled(t, s, pid, sess.ID)
+	if _, err = s.db.Exec(`UPDATE workspace_chat_native SET thread_id='agy-conversation',cumulative_turn_count=7 WHERE session_id=?`, sess.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.ActivateBranch(ctx, pid, sess.ID, sess.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	var thread string
+	var counter *int64
+	if err = s.db.QueryRow(`SELECT thread_id,cumulative_turn_count FROM workspace_chat_native WHERE session_id=?`, sess.ID).Scan(&thread, &counter); err != nil {
+		t.Fatal(err)
+	}
+	if thread != "" || counter != nil {
+		t.Fatalf("a branch switch must drop the provider conversation and its turn baseline: %q %v", thread, counter)
 	}
 }

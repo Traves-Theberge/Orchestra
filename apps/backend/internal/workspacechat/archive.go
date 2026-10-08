@@ -144,7 +144,7 @@ func (s *Service) setArchived(ctx context.Context, projectID, sessionID string, 
 	if status != req.ExpectedStatus || lifecycle.version != req.ExpectedVersion || (lifecycle.archivedAt != "") == archive {
 		return Session{}, ErrConflict
 	}
-	if status == "running" || status == "stopping" || status == "unknown" {
+	if status == "running" || status == "stopping" || status == "unknown" || s.restoring[sessionID] != nil {
 		return Session{}, ErrBusy
 	}
 	var unsettled int

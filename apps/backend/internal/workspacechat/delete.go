@@ -25,7 +25,7 @@ func (s *Service) Delete(ctx context.Context, pid, id string) error {
 		s.mu.Unlock()
 		return err
 	}
-	if _, active := s.active[id]; active || sess.Status == "running" || sess.Status == "stopping" {
+	if _, active := s.active[id]; active || s.restoring[id] != nil || sess.Status == "running" || sess.Status == "stopping" {
 		s.mu.Unlock()
 		return ErrBusy
 	}

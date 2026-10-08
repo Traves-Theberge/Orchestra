@@ -484,7 +484,7 @@ func (s *Service) Reply(ctx context.Context, pid, id, requestID string, req Repl
 		return r, nil
 	}
 	native := s.native[id]
-	if r.Status != "pending" || native == nil || d.Session.Status != "running" {
+	if r.Status != "pending" || native == nil || d.Session.Status != "running" || s.restoring[id] != nil {
 		return RuntimeRequest{}, ErrBusy
 	}
 	if err = validateReply(r, req.Answer); err != nil {

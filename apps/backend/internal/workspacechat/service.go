@@ -173,6 +173,12 @@ type Service struct {
 	// turnPhases marks turns in s.active whose harness is not running yet
 	// (preparing) or has ended (settling); guarded by mu.
 	turnPhases map[string]string
+	// restoring marks conversations whose files restore runs without mu;
+	// they and their checkout are busy meanwhile. Guarded by mu.
+	restoring map[string]*restoreMark
+	// rewindGap, when set (tests), runs between a rewind's branch switch and
+	// its send.
+	rewindGap func()
 }
 
 // New recovers incomplete deliveries as unknown; it never resubmits them.
@@ -618,40 +624,11 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 			return Accepted{d.Session, m}, nil
 		}
 	}
-	if accountRegistry, ok := s.registry.(interface {
-		ValidateAccount(agents.Provider, string) error
-	}); ok {
-		if err := accountRegistry.ValidateAccount(agents.Provider(d.Session.Provider), d.Session.AccountID); err != nil {
-			return Accepted{}, fmt.Errorf("%w: bound account is no longer available", ErrUnsupported)
-		}
-	}
-	// A fresh send can choose a different primary profile or return to the
-	// provider default. The accepted message freezes that exact choice below;
-	// replays are checked against the per-message record above.
-	if req.RequestedModel == "" {
-		req.RequestedModel = d.Session.RequestedModel
-	}
-	if req.RequestedReasoningEffort == "" {
-		req.RequestedReasoningEffort = d.Session.RequestedReasoningEffort
-	}
-	if d.Session.Provider == string(agents.ProviderAntigravity) && d.Session.ConversationMode == "native_session" {
-		// AGY pins configuration to its process. Reject a known unsupported
-		// change before recording a submission, rather than labeling an
-		// undispatched message as an uncertain provider delivery.
-		if req.RequestedReasoningEffort != "" || d.Session.ProviderThreadID != "" &&
-			d.Session.EffectiveModel != "" && req.RequestedModel != "" && req.RequestedModel != d.Session.EffectiveModel {
-			return Accepted{}, fmt.Errorf("%w: Antigravity configuration changes require a new conversation", ErrUnsupported)
-		}
-	}
 	var resolvedAgent *agents.ResolvedAgent
-	if req.RequestedAgentID != "" {
-		if resolvedAgent, err = s.resolveAgentIntent(ctx, pid, d.Session.Provider, req.RequestedAgentID, req.RequestedAgentScope, req.RequestedAgentContentHash, req.RequestedAgentFormat); err != nil {
-			return Accepted{}, err
-		}
-	} else if hasAgentIntent(req.RequestedAgentID, req.RequestedAgentScope, req.RequestedAgentContentHash, req.RequestedAgentFormat) {
-		return Accepted{}, ErrInvalid
+	if resolvedAgent, err = s.sendChecks(ctx, pid, d.Session, &req); err != nil {
+		return Accepted{}, err
 	}
-	if _, ok := s.active[id]; ok {
+	if _, ok := s.active[id]; ok || s.restoring[id] != nil {
 		return Accepted{}, ErrBusy
 	}
 	if d.Session.Status == "running" || d.Session.Status == "stopping" {
@@ -676,45 +653,25 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 		if occupied > 0 {
 			return Accepted{}, ErrBusy
 		}
+		// A files restore in progress owns the checkout too.
+		if _, restoring := s.restoringCheckout(pid, d.Session.WorkspaceID, id); restoring {
+			return Accepted{}, ErrBusy
+		}
 	}
 	root, err := s.root(ctx, pid)
 	if err != nil {
 		return Accepted{}, err
 	}
-	turn := agents.TurnRequest{SessionID: uuid.NewString(), ProjectID: pid, Workspace: root, WorkspaceRoot: root, ProjectRootWorkspace: true, Prompt: req.Text, Timeout: turnTimeout(ctx), RuntimeTarget: agents.RuntimeLocal, RequestedModel: req.RequestedModel, RequestedMaxTurns: req.RequestedMaxTurns, RequestedAgentID: req.RequestedAgentID, RequestedAgentScope: req.RequestedAgentScope, RequestedAgentContentHash: req.RequestedAgentContentHash, RequestedAgentFormat: req.RequestedAgentFormat}
-	turn.AccountID = d.Session.AccountID
-	turn.StreamReasoning = true
-	turn.Agent = resolvedAgent
-	if turn.MCPServers, err = s.runMCPServers(ctx, resolvedAgent); err != nil {
+	turn, err := s.newTurn(ctx, pid, root, d.Session, req, resolvedAgent)
+	if err != nil {
 		return Accepted{}, err
 	}
-	if pid == OrchestratorScope {
-		if s.supportsControl(agents.Provider(d.Session.Provider)) {
-			turn.ToolSpecs = s.orchestratorTools
-			turn.ToolExecutor = s.orchestratorExecutor
-		}
-		turn.DeveloperInstructions, err = maestroInstructions(root)
-		if err != nil {
-			return Accepted{}, err
-		}
-	} else {
-		turn.DeveloperInstructions = visualInstructions
-	}
-	if req.RequestedMaxTurns != nil {
-		return Accepted{}, ErrUnsupported
+	if err = s.turnShape(d.Session, req); err != nil {
+		return Accepted{}, err
 	}
 	nativeMode := d.Session.ConversationMode == "native_session"
-	if nativeMode && !s.supportsNative(agents.Provider(d.Session.Provider)) {
-		return Accepted{}, ErrUnsupported
-	}
 	if req.RequestedReasoningEffort != "" {
-		if !nativeMode || len(req.RequestedReasoningEffort) > 32 {
-			return Accepted{}, ErrUnsupported
-		}
 		model := req.RequestedModel
-		if model == "" {
-			return Accepted{}, fmt.Errorf("%w: select a model before choosing reasoning effort", ErrUnsupported)
-		}
 		if validatedRoot != "" {
 			if validatedRoot != root || validatedModel != model {
 				return Accepted{}, ErrBusy
@@ -875,6 +832,90 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 	}
 	return Accepted{d.Session, m}, nil
 }
+
+// sendChecks are send's account, profile and agent checks; they change
+// nothing, so a rewind runs them before restoring files. They fill the model
+// and effort the message will freeze.
+func (s *Service) sendChecks(ctx context.Context, pid string, sess Session, req *SendRequest) (*agents.ResolvedAgent, error) {
+	if accountRegistry, ok := s.registry.(interface {
+		ValidateAccount(agents.Provider, string) error
+	}); ok {
+		if err := accountRegistry.ValidateAccount(agents.Provider(sess.Provider), sess.AccountID); err != nil {
+			return nil, fmt.Errorf("%w: bound account is no longer available", ErrUnsupported)
+		}
+	}
+	// A fresh send can choose a different primary profile or return to the
+	// provider default. The accepted message freezes that exact choice;
+	// replays are checked against the per-message record.
+	if req.RequestedModel == "" {
+		req.RequestedModel = sess.RequestedModel
+	}
+	if req.RequestedReasoningEffort == "" {
+		req.RequestedReasoningEffort = sess.RequestedReasoningEffort
+	}
+	if sess.Provider == string(agents.ProviderAntigravity) && sess.ConversationMode == "native_session" {
+		// AGY pins configuration to its process. Reject a known unsupported
+		// change before recording a submission, rather than labeling an
+		// undispatched message as an uncertain provider delivery.
+		if req.RequestedReasoningEffort != "" || sess.ProviderThreadID != "" &&
+			sess.EffectiveModel != "" && req.RequestedModel != "" && req.RequestedModel != sess.EffectiveModel {
+			return nil, fmt.Errorf("%w: Antigravity configuration changes require a new conversation", ErrUnsupported)
+		}
+	}
+	if req.RequestedAgentID != "" {
+		return s.resolveAgentIntent(ctx, pid, sess.Provider, req.RequestedAgentID, req.RequestedAgentScope, req.RequestedAgentContentHash, req.RequestedAgentFormat)
+	}
+	if hasAgentIntent(req.RequestedAgentID, req.RequestedAgentScope, req.RequestedAgentContentHash, req.RequestedAgentFormat) {
+		return nil, ErrInvalid
+	}
+	return nil, nil
+}
+
+// newTurn builds the provider request for a message (its prompt is the raw
+// text until send applies replay or seeding).
+func (s *Service) newTurn(ctx context.Context, pid, root string, sess Session, req SendRequest, agent *agents.ResolvedAgent) (agents.TurnRequest, error) {
+	turn := agents.TurnRequest{SessionID: uuid.NewString(), ProjectID: pid, Workspace: root, WorkspaceRoot: root, ProjectRootWorkspace: true, Prompt: req.Text, Timeout: turnTimeout(ctx), RuntimeTarget: agents.RuntimeLocal, RequestedModel: req.RequestedModel, RequestedMaxTurns: req.RequestedMaxTurns, RequestedAgentID: req.RequestedAgentID, RequestedAgentScope: req.RequestedAgentScope, RequestedAgentContentHash: req.RequestedAgentContentHash, RequestedAgentFormat: req.RequestedAgentFormat}
+	turn.AccountID = sess.AccountID
+	turn.StreamReasoning = true
+	turn.Agent = agent
+	var err error
+	if turn.MCPServers, err = s.runMCPServers(ctx, agent); err != nil {
+		return agents.TurnRequest{}, err
+	}
+	if pid == OrchestratorScope {
+		if s.supportsControl(agents.Provider(sess.Provider)) {
+			turn.ToolSpecs = s.orchestratorTools
+			turn.ToolExecutor = s.orchestratorExecutor
+		}
+		if turn.DeveloperInstructions, err = maestroInstructions(root); err != nil {
+			return agents.TurnRequest{}, err
+		}
+	} else {
+		turn.DeveloperInstructions = visualInstructions
+	}
+	return turn, nil
+}
+
+// turnShape rejects options the conversation's harness mode cannot take.
+func (s *Service) turnShape(sess Session, req SendRequest) error {
+	if req.RequestedMaxTurns != nil {
+		return ErrUnsupported
+	}
+	nativeMode := sess.ConversationMode == "native_session"
+	if nativeMode && !s.supportsNative(agents.Provider(sess.Provider)) {
+		return ErrUnsupported
+	}
+	if req.RequestedReasoningEffort != "" {
+		if !nativeMode || len(req.RequestedReasoningEffort) > 32 {
+			return ErrUnsupported
+		}
+		if req.RequestedModel == "" {
+			return fmt.Errorf("%w: select a model before choosing reasoning effort", ErrUnsupported)
+		}
+	}
+	return nil
+}
+
 func (s *Service) run(ctx context.Context, cancel context.CancelFunc, sess Session, m Message, turn agents.TurnRequest) {
 	defer s.wg.Done()
 	defer cancel()
@@ -1035,6 +1076,12 @@ func (s *Service) Stop(ctx context.Context, pid, id string) (Session, error) {
 	if err != nil {
 		s.mu.Unlock()
 		return Session{}, err
+	}
+	if s.restoring[id] != nil {
+		// A files restore is not a turn and cannot be interrupted; it ends
+		// within its time bound.
+		s.mu.Unlock()
+		return Session{}, ErrBusy
 	}
 	if cancel, ok := s.active[id]; ok {
 		tx, txErr := s.db.BeginTx(ctx, nil)
