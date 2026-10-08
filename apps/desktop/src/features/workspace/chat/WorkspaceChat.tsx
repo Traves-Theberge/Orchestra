@@ -405,7 +405,7 @@ function AgentWorkingStatus({
       className="my-2.5 flex items-center justify-between py-1 text-xs text-muted-foreground animate-in fade-in-0 duration-150 select-none motion-reduce:animate-none"
     >
       <div className="flex items-center gap-2.5 text-[12px]">
-        <ConductorBaton tempo={activityTempo(label, isStopping)} className="-my-1.5 h-[26px] w-[37px] shrink-0" />
+        <ConductorBaton tempo={activityTempo(label, isStopping)} width={37} className="-my-1.5" />
         <span className={`font-medium ${isStopping ? 'text-muted-foreground' : 'activity-shimmer'}`}>{label}</span>
         <span className="tabular-nums text-[11px] text-muted-foreground/50" aria-label="Elapsed">{formatElapsed(now - start)}</span>
       </div>
