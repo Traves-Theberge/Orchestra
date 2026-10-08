@@ -914,7 +914,7 @@ func BenchmarkSnapshotIgnoredTree(b *testing.B) {
 		}
 		defer done()
 		for i := 0; i < b.N; i++ {
-			if _, err := findRuleFiles(ctx, g); err != nil {
+			if _, _, err := findRuleFiles(ctx, g); err != nil {
 				b.Fatal(err)
 			}
 		}

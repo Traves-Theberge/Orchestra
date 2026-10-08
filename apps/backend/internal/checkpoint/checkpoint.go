@@ -98,15 +98,17 @@ func (s *Store) shadowDir(worktree string) string {
 
 type gitRun struct {
 	shadow, worktree, index string
-	noLiteral               bool // check-ignore rejects GIT_LITERAL_PATHSPECS
 }
 
-// exec runs git and returns stdout, the exit code and stderr. A non-zero exit
-// code is not an error; err is set only when git could not be run at all.
-func (g gitRun) exec(ctx context.Context, stdin []byte, args ...string) ([]byte, int, string, error) {
+// command builds a git command with the shadow-repo environment. extraEnv is
+// appended last (later entries win).
+func (g gitRun) command(ctx context.Context, extraEnv []string, args ...string) (*exec.Cmd, error) {
 	gitPath, err := exec.LookPath("git")
 	if err != nil {
-		return nil, -1, "", fmt.Errorf("%w: git not found: %v", ErrUnavailable, err)
+		return nil, fmt.Errorf("%w: git not found: %v", ErrUnavailable, err)
+	}
+	if onGitSpawn != nil {
+		onGitSpawn(args)
 	}
 	full := append(append([]string{}, gitConfigArgs...), args...)
 	cmd := exec.CommandContext(ctx, gitPath, full...)
@@ -130,10 +132,22 @@ func (g gitRun) exec(ctx context.Context, stdin []byte, args ...string) ([]byte,
 	} else {
 		env = append(env, "GIT_INDEX_FILE="+filepath.Join(g.shadow, "index"))
 	}
-	if g.noLiteral {
-		env = append(env, "GIT_LITERAL_PATHSPECS=0")
+	cmd.Env = append(env, extraEnv...)
+	return cmd, nil
+}
+
+// exec runs git and returns stdout, the exit code and stderr. A non-zero exit
+// code is not an error; err is set only when git could not be run at all.
+func (g gitRun) exec(ctx context.Context, stdin []byte, args ...string) ([]byte, int, string, error) {
+	return g.execEnv(ctx, nil, stdin, args...)
+}
+
+// execEnv is exec with extra environment entries.
+func (g gitRun) execEnv(ctx context.Context, extraEnv []string, stdin []byte, args ...string) ([]byte, int, string, error) {
+	cmd, err := g.command(ctx, extraEnv, args...)
+	if err != nil {
+		return nil, -1, "", err
 	}
-	cmd.Env = env
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)
 	}
@@ -266,16 +280,59 @@ func isProjectGit(p string) bool {
 	return p == ".git" || strings.HasPrefix(p, ".git/")
 }
 
+// maxExcludeArgBytes bounds the size of -x arguments passed to ls-files;
+// beyond it the patterns go through a temporary --exclude-from file.
+const maxExcludeArgBytes = 16 << 10
+
+// listOthers lists the worktree's non-ignored files, never descending into
+// the given directory links (git would otherwise follow Windows junctions).
+func listOthers(ctx context.Context, g gitRun, dirLinks []string) ([]byte, error) {
+	args := []string{"ls-files", "-z", "--others", "--exclude-standard"}
+	size := 0
+	var pats []string
+	for _, l := range dirLinks {
+		p := excludePattern(l)
+		pats = append(pats, p)
+		size += len(p)
+	}
+	if size <= maxExcludeArgBytes {
+		for _, p := range pats {
+			args = append(args, "--exclude="+p)
+		}
+	} else {
+		f, err := os.CreateTemp("", "checkpoint-exclude-*")
+		if err != nil {
+			return nil, err
+		}
+		defer os.Remove(f.Name())
+		_, werr := f.WriteString(strings.Join(pats, "\n") + "\n")
+		if cerr := f.Close(); werr == nil {
+			werr = cerr
+		}
+		if werr != nil {
+			return nil, werr
+		}
+		args = append(args, "--exclude-from="+f.Name())
+	}
+	return g.run(ctx, nil, args...)
+}
+
 // snapshot writes the current folder state into the shadow object store and
 // returns the tree plus the paths it excluded for reasons other than ignore
-// rules (over-cap files, nested repository roots).
+// rules (over-cap files, nested repository roots). Nothing behind a symlink
+// or junction is recorded.
 func (s *Store) snapshot(ctx context.Context, g gitRun) (Tree, []string, map[string]bool, error) {
-	out, err := g.run(ctx, nil, "ls-files", "-z", "--others", "--exclude-standard")
+	found, dirLinks, err := findRuleFiles(ctx, g)
+	if err != nil {
+		return Tree{}, nil, nil, err
+	}
+	out, err := listOthers(ctx, g, dirLinks)
 	if err != nil {
 		return Tree{}, nil, nil, err
 	}
 	var tree Tree
 	var keep, protected []string
+	links := linkCache{}
 	for _, p := range splitNul(out) {
 		if strings.HasSuffix(p, "/") {
 			// Nested repository: protect its root so Restore never deletes it.
@@ -284,7 +341,7 @@ func (s *Store) snapshot(ctx context.Context, g gitRun) (Tree, []string, map[str
 			}
 			continue
 		}
-		if isProjectGit(p) {
+		if isProjectGit(p) || links.blocked(g.worktree, p) != "" {
 			continue
 		}
 		st, err := os.Lstat(filepath.Join(g.worktree, filepath.FromSlash(p)))
@@ -309,10 +366,6 @@ func (s *Store) snapshot(ctx context.Context, g gitRun) (Tree, []string, map[str
 	listed := map[string]bool{}
 	for _, p := range keep {
 		listed[p] = true
-	}
-	found, err := findRuleFiles(ctx, g)
-	if err != nil {
-		return Tree{}, nil, nil, err
 	}
 	rules := map[string]bool{}
 	for _, p := range found {
@@ -419,16 +472,19 @@ func ignoredUnderTarget(ctx context.Context, g gitRun, treeHash string, paths []
 			return nil, err
 		}
 	}
-	tg := gitRun{shadow: g.shadow, worktree: tmp, index: g.index, noLiteral: true}
-	out, code, stderr, err := tg.exec(ctx, joinNul(paths), "check-ignore", "--no-index", "-z", "--stdin")
+	chk, err := startIgnoreChecker(ctx, gitRun{shadow: g.shadow, worktree: tmp, index: g.index})
 	if err != nil {
 		return nil, err
 	}
-	if code != 0 && code != 1 { // 1 means nothing ignored
-		return nil, fmt.Errorf("git check-ignore: exit status %d: %s", code, stderr)
+	defer chk.close()
+	flags, err := chk.check(paths)
+	if err != nil {
+		return nil, err
 	}
-	for _, p := range splitNul(out) {
-		ignored[p] = true
+	for i, p := range paths {
+		if flags[i] {
+			ignored[p] = true
+		}
 	}
 	return ignored, nil
 }
@@ -452,26 +508,28 @@ func (s *Store) Snapshot(ctx context.Context, worktree string) (Tree, error) {
 
 // plan computes what Restore(treeHash) will do. Deletions of paths that were
 // excluded at checkpoint time (protected manifest) or that are ignored under
-// the restored ignore rules are dropped.
-func (s *Store) plan(ctx context.Context, g gitRun, treeHash string) ([]Change, error) {
+// the restored ignore rules are dropped. Paths that go through a symlink or
+// junction (or are themselves a link to a directory) are returned separately
+// as blocked: Restore reports them as failures and never touches them.
+func (s *Store) plan(ctx context.Context, g gitRun, treeHash string) ([]Change, []FileFailure, error) {
 	if err := checkTree(ctx, g, treeHash); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	cur, _, rules, err := s.snapshot(ctx, g)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if cur.Hash == treeHash {
-		return nil, nil
+		return nil, nil, nil
 	}
 	// Direction cur -> target: what Restore has to do.
 	out, err := g.run(ctx, nil, "diff-tree", "-r", "-z", "--no-renames", "--name-status", cur.Hash, treeHash)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	protected, err := loadProtected(ctx, g, treeHash)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	parts := splitNul(out)
 	var all []Change
@@ -493,21 +551,29 @@ func (s *Store) plan(ctx context.Context, g gitRun, treeHash string) ([]Change, 
 	}
 	ignored, err := ignoredUnderTarget(ctx, g, treeHash, delPaths)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	changes := make([]Change, 0, len(all))
+	var blocked []FileFailure
+	links := linkCache{}
 	for _, c := range all {
 		if c.Kind == ChangeDelete && (isProtected(c.Path, protected) || ignored[c.Path] || rules[c.Path]) {
+			continue
+		}
+		if why := links.blocked(g.worktree, c.Path); why != "" {
+			blocked = append(blocked, FileFailure{Path: c.Path, Reason: why})
 			continue
 		}
 		changes = append(changes, c)
 	}
 	sort.Slice(changes, func(i, j int) bool { return changes[i].Path < changes[j].Path })
-	return changes, nil
+	sort.Slice(blocked, func(i, j int) bool { return blocked[i].Path < blocked[j].Path })
+	return changes, blocked, nil
 }
 
 // Diff reports what Restore(treeHash) would do to the folder. It records no
-// checkpoint and does not modify the folder.
+// checkpoint and does not modify the folder. Paths Restore refuses to touch
+// because they go through a symlink or junction are not listed.
 func (s *Store) Diff(ctx context.Context, worktree, treeHash string) ([]Change, error) {
 	if !treeHashRe.MatchString(treeHash) {
 		return nil, fmt.Errorf("invalid tree hash %q", treeHash)
@@ -517,7 +583,8 @@ func (s *Store) Diff(ctx context.Context, worktree, treeHash string) ([]Change, 
 		return nil, err
 	}
 	defer done()
-	return s.plan(ctx, g, treeHash)
+	changes, _, err := s.plan(ctx, g, treeHash)
+	return changes, err
 }
 
 const batchSize = 200
@@ -570,10 +637,11 @@ func (s *Store) Restore(ctx context.Context, worktree, treeHash string) (Restore
 		return res, err
 	}
 	defer done()
-	changes, err := s.plan(ctx, g, treeHash)
+	changes, blocked, err := s.plan(ctx, g, treeHash)
 	if err != nil {
 		return res, err
 	}
+	res.Failed = append(res.Failed, blocked...)
 	if len(changes) == 0 {
 		return res, nil
 	}
@@ -590,8 +658,15 @@ func (s *Store) Restore(ctx context.Context, worktree, treeHash string) (Restore
 		}
 	}
 
+	// Re-check links right before touching anything, so a link created after
+	// plan ran is still never followed.
+	links := linkCache{}
 	var dirs []string
 	for _, p := range deletes {
+		if why := links.blocked(g.worktree, p); why != "" {
+			res.Failed = append(res.Failed, FileFailure{Path: p, Reason: why})
+			continue
+		}
 		full := filepath.Join(g.worktree, filepath.FromSlash(p))
 		if err := os.Remove(full); err != nil && !os.IsNotExist(err) {
 			res.Failed = append(res.Failed, FileFailure{Path: p, Reason: err.Error()})
@@ -602,8 +677,13 @@ func (s *Store) Restore(ctx context.Context, worktree, treeHash string) (Restore
 	}
 	pruneEmptyDirs(g.worktree, dirs)
 
+	links = linkCache{} // deletions and pruning changed the folder
 	safe := make([]string, 0, len(writes))
 	for _, p := range writes {
+		if why := links.blocked(g.worktree, p); why != "" {
+			res.Failed = append(res.Failed, FileFailure{Path: p, Reason: why})
+			continue
+		}
 		full := filepath.Join(g.worktree, filepath.FromSlash(p))
 		if st, err := os.Lstat(full); err == nil && st.IsDir() {
 			if entries, err := os.ReadDir(full); err != nil || len(entries) > 0 {
@@ -630,6 +710,9 @@ func pruneEmptyDirs(root string, starts []string) {
 	for _, d := range starts {
 		for d != root && strings.HasPrefix(d, root+string(filepath.Separator)) && !seen[d] {
 			seen[d] = true
+			if fi, err := os.Lstat(d); err != nil || isLink(d, fi.Mode()) {
+				break // never remove a link (or anything above it)
+			}
 			if os.Remove(d) != nil { // fails when not empty
 				break
 			}
@@ -641,13 +724,20 @@ func pruneEmptyDirs(root string, starts []string) {
 // readDir is swapped in tests to prove ignored trees are never walked.
 var readDir = os.ReadDir
 
+// onGitSpawn, when set (tests only), is called with the arguments of every
+// git process started.
+var onGitSpawn func(args []string)
+
 // findRuleFiles returns the .gitignore files in directories that are not
-// themselves ignored by rules from their ancestors. It walks level by level
-// and prunes ignored directories (one check-ignore call per level), so
-// ignored trees such as node_modules are never enumerated.
-func findRuleFiles(ctx context.Context, g gitRun) ([]string, error) {
-	ig := gitRun{shadow: g.shadow, worktree: g.worktree, index: g.index, noLiteral: true}
-	var found []string
+// themselves ignored by rules from their ancestors, plus the directory links
+// (symlinks to directories, junctions) found in those directories. It walks
+// level by level and prunes ignored directories, so ignored trees such as
+// node_modules are never enumerated; links are never followed. Each level is
+// checked in one batch by a single long-lived check-ignore process, so the
+// whole walk starts at most one git process however deep the folder is.
+func findRuleFiles(ctx context.Context, g gitRun) (found, dirLinks []string, err error) {
+	var chk *ignoreChecker
+	defer func() { chk.close() }()
 	level := []string{""}
 	for len(level) > 0 {
 		var cands []string
@@ -661,10 +751,15 @@ func findRuleFiles(ctx context.Context, g gitRun) ([]string, error) {
 				if dir != "" {
 					rel = dir + "/" + e.Name()
 				}
+				full := filepath.Join(g.worktree, filepath.FromSlash(rel))
 				switch {
 				case e.Name() == ".git":
+				case isLink(full, e.Type()):
+					if isDirLink(full, e.Type()) {
+						dirLinks = append(dirLinks, rel)
+					}
 				case e.IsDir():
-					if _, err := os.Lstat(filepath.Join(g.worktree, filepath.FromSlash(rel), ".git")); err != nil {
+					if _, err := os.Lstat(filepath.Join(full, ".git")); err != nil {
 						cands = append(cands, rel) // not a nested repository
 					}
 				case e.Name() == ".gitignore" && e.Type().IsRegular():
@@ -676,22 +771,20 @@ func findRuleFiles(ctx context.Context, g gitRun) ([]string, error) {
 		if len(cands) == 0 {
 			break
 		}
-		out, code, stderr, err := ig.exec(ctx, joinNul(cands), "check-ignore", "--no-index", "-z", "--stdin")
+		if chk == nil {
+			if chk, err = startIgnoreChecker(ctx, g); err != nil {
+				return nil, nil, err
+			}
+		}
+		ignored, err := chk.check(cands)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		if code != 0 && code != 1 {
-			return nil, fmt.Errorf("git check-ignore: exit status %d: %s", code, stderr)
-		}
-		ignored := map[string]bool{}
-		for _, p := range splitNul(out) {
-			ignored[p] = true
-		}
-		for _, c := range cands {
-			if !ignored[c] {
+		for i, c := range cands {
+			if !ignored[i] {
 				level = append(level, c)
 			}
 		}
 	}
-	return found, nil
+	return found, dirLinks, nil
 }
