@@ -62,6 +62,13 @@ function TerminalPane({ projectId, tabId, paneId, size, focused, showHeader }: {
   const terminal = useAppStore(s => s.openTerminals.find(t => t.id === paneId))
   const config = useAppStore(s => s.config)
   const focus = () => useAppStore.getState().focusTerminalPane(projectId, tabId, paneId)
+  const split = () => { useAppStore.getState().splitTerminalTab(projectId, tabId) }
+  const cyclePane = (direction: 'next' | 'previous') => {
+    const panes = useAppStore.getState().projectCenterTabs[projectId]?.terminalSplits?.[tabId]?.panes ?? []
+    const at = panes.indexOf(paneId)
+    if (at < 0 || panes.length < 2) return
+    useAppStore.getState().focusTerminalPane(projectId, tabId, panes[(at + (direction === 'next' ? 1 : -1) + panes.length) % panes.length])
+  }
   const title = terminal?.title || 'Shell'
 
   return (
@@ -98,6 +105,9 @@ function TerminalPane({ projectId, tabId, paneId, size, focused, showHeader }: {
             baseUrl={config.baseUrl}
             apiToken={config.apiToken}
             initialCommand={terminal.initialCommand}
+            autoFocus={!showHeader || focused}
+            onSplit={split}
+            onFocusPane={cyclePane}
           />
         )}
       </div>

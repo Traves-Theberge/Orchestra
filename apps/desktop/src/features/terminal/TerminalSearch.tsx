@@ -1,6 +1,14 @@
 import { useState, useRef, useEffect } from 'react'
 import { X, ChevronUp, ChevronDown, CaseSensitive, Regex } from 'lucide-react'
-import type { SearchAddon } from '@xterm/addon-search'
+import type { ISearchOptions, SearchAddon } from '@xterm/addon-search'
+
+// xterm requires #RRGGBB decoration colors.
+const DECORATIONS: ISearchOptions['decorations'] = {
+  matchBackground: '#3f3f46',
+  matchOverviewRuler: '#a1a1aa',
+  activeMatchBackground: '#10b981',
+  activeMatchColorOverviewRuler: '#10b981',
+}
 
 interface TerminalSearchProps {
   searchAddon: SearchAddon | null
@@ -11,29 +19,42 @@ export function TerminalSearch({ searchAddon, onClose }: TerminalSearchProps) {
   const [query, setQuery] = useState('')
   const [caseSensitive, setCaseSensitive] = useState(false)
   const [regex, setRegex] = useState(false)
-  const [matchCount, setMatchCount] = useState<string>('')
+  const [results, setResults] = useState<{ index: number; count: number } | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const options: ISearchOptions = { caseSensitive, regex, decorations: DECORATIONS }
 
   useEffect(() => {
     inputRef.current?.focus()
   }, [])
 
   useEffect(() => {
-    if (!searchAddon || !query) return
+    if (!searchAddon) return
+    const sub = searchAddon.onDidChangeResults(r => setResults({ index: r.resultIndex, count: r.resultCount }))
+    return () => {
+      sub.dispose()
+      searchAddon.clearDecorations()
+    }
+  }, [searchAddon])
+
+  useEffect(() => {
+    if (!searchAddon) return
+    if (!query) {
+      searchAddon.clearDecorations()
+      return
+    }
     // Debounce typing so searching a large terminal buffer does not block each keystroke.
     const timer = window.setTimeout(() => {
-      const found = searchAddon.findNext(query, { caseSensitive, regex })
-      setMatchCount(found ? 'Match found' : 'No matches')
+      searchAddon.findNext(query, { caseSensitive, regex, decorations: DECORATIONS, incremental: true })
     }, 50)
     return () => window.clearTimeout(timer)
   }, [query, caseSensitive, regex, searchAddon])
 
-  const findNext = () => searchAddon?.findNext(query, { caseSensitive, regex })
-  const findPrevious = () => searchAddon?.findPrevious(query, { caseSensitive, regex })
+  const findNext = () => searchAddon?.findNext(query, options)
+  const findPrevious = () => searchAddon?.findPrevious(query, options)
+  const status = !query ? '' : !results || results.count === 0 ? 'No matches' : results.index >= 0 ? `${results.index + 1} of ${results.count}` : `${results.count}+ matches`
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
-      searchAddon?.clearDecorations()
       onClose()
     } else if (e.key === 'Enter') {
       if (e.shiftKey) findPrevious()
@@ -53,7 +74,7 @@ export function TerminalSearch({ searchAddon, onClose }: TerminalSearchProps) {
         className="bg-transparent text-sm text-foreground outline-none w-48 placeholder:text-muted-foreground"
       />
       <span className="text-[10px] text-muted-foreground min-w-[70px] text-right">
-        {query && searchAddon ? matchCount : ''}
+        {status}
       </span>
       <button
         onClick={() => setCaseSensitive(!caseSensitive)}

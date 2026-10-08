@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Mosaic, MosaicWindow, MosaicNode, MosaicSplitNode } from 'react-mosaic-component'
-import { TerminalView, clearInitialCommandTracking } from './TerminalView'
+import { TerminalView } from './TerminalView'
+import { clearInitialCommandTracking } from './terminal-session'
 import { Plus, X, Terminal as TerminalIcon, Columns2, Square, Zap, Folder, FolderTree } from 'lucide-react'
 import { ProjectSelector } from '@layout/shared/controls'
 
