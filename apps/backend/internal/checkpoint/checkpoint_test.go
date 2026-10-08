@@ -920,3 +920,114 @@ func BenchmarkSnapshotIgnoredTree(b *testing.B) {
 		}
 	})
 }
+
+// A file in the checkpoint that later grew past the cap is not in the current
+// snapshot, so the diff sees it as a create. Restore must leave it alone (and
+// Diff must say so) rather than overwrite content no snapshot holds.
+func TestRestoreKeepsAFileThatGrewPastTheCap(t *testing.T) {
+	wt := newWorktree(t)
+	s := newStore(t, 100)
+	ctx := context.Background()
+	writeFile(t, wt, "a.txt", "alpha")
+	writeFile(t, wt, "data.bin", "small")
+	tr, err := s.Snapshot(ctx, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	big := strings.Repeat("y", 500)
+	writeFile(t, wt, "data.bin", big)
+	writeFile(t, wt, "a.txt", "changed")
+	changes, err := s.Diff(ctx, wt, tr.Hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Change{{Path: "a.txt", Kind: ChangeModify}, {Path: "data.bin", Kind: ChangeKeep}}
+	if !reflect.DeepEqual(changes, want) {
+		t.Fatalf("diff got %v want %v", changes, want)
+	}
+	res, err := s.Restore(ctx, wt, tr.Hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Written != 1 || len(res.Failed) != 0 {
+		t.Fatalf("restore %+v does not match diff", res)
+	}
+	if got := mustRead(t, wt, "data.bin"); got != big {
+		t.Fatalf("data.bin overwritten: %d bytes", len(got))
+	}
+	if got := mustRead(t, wt, "a.txt"); got != "alpha" {
+		t.Fatalf("a.txt = %q", got)
+	}
+}
+
+// A tracked file that became ignored and changed is not in the current
+// snapshot either; Restore must not overwrite it with the old content.
+func TestRestoreKeepsANewlyIgnoredChangedFile(t *testing.T) {
+	wt := newWorktree(t)
+	s := newStore(t, 0)
+	ctx := context.Background()
+	writeFile(t, wt, "a.txt", "alpha")
+	writeFile(t, wt, ".env", "OLD=1")
+	tr, err := s.Snapshot(ctx, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, wt, ".gitignore", ".env\n")
+	writeFile(t, wt, ".env", "SECRET=new")
+	changes, err := s.Diff(ctx, wt, tr.Hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Change{{Path: ".env", Kind: ChangeKeep}, {Path: ".gitignore", Kind: ChangeDelete}}
+	if !reflect.DeepEqual(changes, want) {
+		t.Fatalf("diff got %v want %v", changes, want)
+	}
+	res, err := s.Restore(ctx, wt, tr.Hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Written != 0 || res.Deleted != 1 || len(res.Failed) != 0 {
+		t.Fatalf("restore %+v does not match diff", res)
+	}
+	if got := mustRead(t, wt, ".env"); got != "SECRET=new" {
+		t.Fatalf(".env overwritten: %q", got)
+	}
+}
+
+// Restore then restore of the safety snapshot (Undo) puts the folder back,
+// including files neither snapshot holds.
+func TestUndoRoundTripKeepsUncheckpointedFiles(t *testing.T) {
+	wt := newWorktree(t)
+	s := newStore(t, 100)
+	ctx := context.Background()
+	writeFile(t, wt, "a.txt", "alpha")
+	writeFile(t, wt, "data.bin", "small")
+	writeFile(t, wt, ".env", "OLD=1")
+	tr, err := s.Snapshot(ctx, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, wt, "data.bin", strings.Repeat("y", 500))
+	writeFile(t, wt, ".gitignore", ".env\n")
+	writeFile(t, wt, ".env", "SECRET=new")
+	writeFile(t, wt, "a.txt", "changed")
+	writeFile(t, wt, "b.txt", "new")
+	before := readAll(t, wt)
+	safety, err := s.Snapshot(ctx, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Restore(ctx, wt, tr.Hash); err != nil {
+		t.Fatal(err)
+	}
+	if mustRead(t, wt, "a.txt") != "alpha" {
+		t.Fatal("restore did not run")
+	}
+	res, err := s.Restore(ctx, wt, safety.Hash)
+	if err != nil || len(res.Failed) != 0 {
+		t.Fatalf("undo: %+v %v", res, err)
+	}
+	if got := readAll(t, wt); !reflect.DeepEqual(got, before) {
+		t.Fatalf("undo did not put the folder back:\n got %v\nwant %v", got, before)
+	}
+}

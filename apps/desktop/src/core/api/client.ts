@@ -451,7 +451,7 @@ export function stopWorkspaceChatTurn(config: BackendConfig, projectId: string, 
   return requestJSON<{ session: WorkspaceChatSession }>(config,
     `${workspaceChatPath(projectId)}/sessions/${encodeURIComponent(sessionId)}/stop`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
 }
-export type WorkspaceChatFileChange = { path: string; kind: 'create' | 'modify' | 'delete' }
+export type WorkspaceChatFileChange = { path: string; kind: 'create' | 'modify' | 'delete' | 'keep' }
 export type WorkspaceChatRewindPreview = {
   message_id: string; has_checkpoint: boolean; files_available: boolean; busy_reason?: string
   changes: WorkspaceChatFileChange[]; changed_since_turn: string[]; skipped: number

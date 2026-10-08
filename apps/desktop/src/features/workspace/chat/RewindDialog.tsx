@@ -12,7 +12,7 @@ const COPY: Record<RewindMode, { title: string; description: string; confirm: st
   switch: { title: 'Switch version', description: 'The conversation shows the other version of this message and continues from there.', confirm: 'Switch' },
 }
 
-const CHANGE_WORDS: Record<WorkspaceChatFileChange['kind'], string> = { create: 'restored', modify: 'changed back', delete: 'removed' }
+const CHANGE_WORDS: Record<WorkspaceChatFileChange['kind'], string> = { create: 'restored', modify: 'changed back', delete: 'removed', keep: 'left as is (not in any checkpoint)' }
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`
 
@@ -51,7 +51,11 @@ export function RewindDialog({ open, mode, preview, previewLoading, previewError
   const chosenFiles = restoreFiles && filesEnabled
   const usablePreview = mode !== 'switch' && filesEnabled && preview ? preview : null
   const since = new Set(usablePreview?.changed_since_turn ?? [])
-  const changeCount = usablePreview?.changes.length ?? 0
+  // Kept files (ignored or over the cap now, so no snapshot holds them) are
+  // listed but never touched.
+  const listed = usablePreview?.changes.length ?? 0
+  const keptCount = usablePreview?.changes.filter(change => change.kind === 'keep').length ?? 0
+  const changeCount = listed - keptCount
 
   const radios = useRef<Record<'conversation' | 'files', HTMLButtonElement | null>>({ conversation: null, files: null })
   // Arrow keys move between the enabled choices, like native radios.
@@ -101,7 +105,7 @@ export function RewindDialog({ open, mode, preview, previewLoading, previewError
           <div className="text-xs text-muted-foreground">
             <div className="flex items-center gap-2">
               <span>{changeCount ? `${plural(changeCount, 'file', 'files')} will change` : 'No files will change'}</span>
-              {changeCount > 0 && (
+              {listed > 0 && (
                 <button type="button" aria-expanded={showFiles} onClick={() => setShowFiles(value => !value)} className="text-foreground/70 transition-colors hover:text-foreground">
                   {showFiles ? 'Hide files' : 'Show files'}
                 </button>
@@ -118,6 +122,7 @@ export function RewindDialog({ open, mode, preview, previewLoading, previewError
                 ))}
               </ul>
             )}
+            {keptCount > 0 && <p className="mt-1">{keptCount === 1 ? '1 file is left as is' : `${keptCount} files are left as is`}</p>}
             {usablePreview.skipped > 0 && <p className="mt-1">{usablePreview.skipped === 1 ? '1 large file is not included' : `${usablePreview.skipped} large files are not included`}</p>}
           </div>
         )}

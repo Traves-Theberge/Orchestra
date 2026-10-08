@@ -41,6 +41,10 @@ const (
 	ChangeCreate ChangeKind = "create"
 	ChangeModify ChangeKind = "modify"
 	ChangeDelete ChangeKind = "delete"
+	// ChangeKeep is a path the checkpoint has but the folder holds a file
+	// that no current snapshot records (ignored now, or now over the size
+	// cap). Restore leaves it as is: overwriting it could not be undone.
+	ChangeKeep ChangeKind = "keep"
 )
 
 // Change is one path Restore would touch. Path is slash-separated and
@@ -556,6 +560,14 @@ func (s *Store) plan(ctx context.Context, g gitRun, treeHash string) ([]Change, 
 	changes := make([]Change, 0, len(all))
 	var blocked []FileFailure
 	links := linkCache{}
+	// Deletions that will run, case-folded: on a case-insensitive file system
+	// a create may find the old-case file of a case-only rename on disk.
+	deleting := map[string]bool{}
+	for _, c := range all {
+		if c.Kind == ChangeDelete && !isProtected(c.Path, protected) && !ignored[c.Path] && !rules[c.Path] {
+			deleting[strings.ToLower(c.Path)] = true
+		}
+	}
 	for _, c := range all {
 		if c.Kind == ChangeDelete && (isProtected(c.Path, protected) || ignored[c.Path] || rules[c.Path]) {
 			continue
@@ -563,6 +575,14 @@ func (s *Store) plan(ctx context.Context, g gitRun, treeHash string) ([]Change, 
 		if why := links.blocked(g.worktree, c.Path); why != "" {
 			blocked = append(blocked, FileFailure{Path: c.Path, Reason: why})
 			continue
+		}
+		// A create whose path already holds a file means the current snapshot
+		// excluded it (ignored now, or now over the cap). No snapshot holds
+		// that content, so overwriting it could not be undone: keep it.
+		if c.Kind == ChangeCreate && !deleting[strings.ToLower(c.Path)] {
+			if st, err := os.Lstat(filepath.Join(g.worktree, filepath.FromSlash(c.Path))); err == nil && !st.IsDir() {
+				c.Kind = ChangeKeep
+			}
 		}
 		changes = append(changes, c)
 	}
@@ -572,8 +592,10 @@ func (s *Store) plan(ctx context.Context, g gitRun, treeHash string) ([]Change, 
 }
 
 // Diff reports what Restore(treeHash) would do to the folder. It records no
-// checkpoint and does not modify the folder. Paths Restore refuses to touch
-// because they go through a symlink or junction are not listed.
+// checkpoint and does not modify the folder. Files Restore leaves as is
+// because no snapshot holds them are listed as ChangeKeep. Paths Restore
+// refuses to touch because they go through a symlink or junction are not
+// listed.
 func (s *Store) Diff(ctx context.Context, worktree, treeHash string) ([]Change, error) {
 	if !treeHashRe.MatchString(treeHash) {
 		return nil, fmt.Errorf("invalid tree hash %q", treeHash)
@@ -651,6 +673,9 @@ func (s *Store) Restore(ctx context.Context, worktree, treeHash string) (Restore
 
 	var writes, deletes []string
 	for _, c := range changes {
+		if c.Kind == ChangeKeep {
+			continue
+		}
 		if c.Kind == ChangeDelete {
 			deletes = append(deletes, c.Path)
 		} else {

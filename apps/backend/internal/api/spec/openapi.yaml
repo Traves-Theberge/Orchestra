@@ -974,7 +974,7 @@ components:
       required: [path, kind]
       properties:
         path: { type: string, description: Slash-separated, relative to the checkout. }
-        kind: { type: string, enum: [create, modify, delete] }
+        kind: { type: string, enum: [create, modify, delete, keep], description: "keep: the folder holds a file the checkpoint has, but no snapshot records it now (ignored or over the size cap); restore leaves it as is." }
 
     WorkspaceChatRewindPreview:
       type: object

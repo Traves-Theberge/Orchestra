@@ -105,6 +105,14 @@ describe('RewindDialog', () => {
     expect(screen.queryByText('src/a.ts')).toBeNull()
   })
 
+  it('lists files left as is apart from the files that will change', () => {
+    render(<RewindDialog {...base({ preview: { ...preview, changes: [preview.changes[0], { path: '.env', kind: 'keep' }] } })} />)
+    expect(screen.getByText('1 file will change')).toBeDefined()
+    expect(screen.getByText('1 file is left as is')).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: 'Show files' }))
+    expect(screen.getByText('.env').closest('li')).toHaveTextContent('left as is (not in any checkpoint)')
+  })
+
   it('says when no files will change and uses singular wording', () => {
     const { rerender } = render(<RewindDialog {...base({ preview: { ...preview, changes: [], changed_since_turn: [] } })} />)
     expect(screen.getByText('No files will change')).toBeDefined()
