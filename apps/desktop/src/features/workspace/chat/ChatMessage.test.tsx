@@ -16,7 +16,7 @@ describe('ChatMessage', () => {
 
     render(<ChatMessage message={message} provider="antigravity" projectId="proj-1" />)
     expect(screen.getByText('Render some insights from the database')).toBeDefined()
-    expect(screen.getByText('You')).toBeDefined()
+    expect(screen.getByLabelText('Your message')).toBeDefined()
     expect(screen.queryByTestId('html-render-frame')).toBeNull()
   })
 
@@ -162,5 +162,17 @@ The top 10% of installs send 65% of turns.
     const copyButton = screen.getByRole('button', { name: 'Copy response' })
     expect(copyButton).toBeDefined()
     expect(copyButton.parentElement?.className).toContain('justify-end')
+  })
+
+  it('links URLs in user messages and folds long ones behind Show more', () => {
+    const text = 'See https://github.com/obra/superpowers please
+' + Array.from({ length: 14 }, (_, i) => `line ${i}`).join('
+')
+    const message: WorkspaceChatMessage = { id: 'u-long', session_id: 's', role: 'user', text, status: 'unknown', created_at: new Date().toISOString() }
+    render(<ChatMessage message={message} provider="codex" projectId="p" />)
+    expect(screen.getByRole('link', { name: 'https://github.com/obra/superpowers' })).toHaveAttribute('href', 'https://github.com/obra/superpowers')
+    expect(screen.queryByText('unknown')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Show more' }))
+    expect(screen.getByRole('button', { name: 'Show less' })).toBeDefined()
   })
 })

@@ -21,6 +21,60 @@ function extractUserImages(text: string): { images: { name: string; url: string 
   }).trim()
   return { images, cleanedText: cleaned }
 }
+const URL_PATTERN = /(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/g
+
+/** Plain text with bare URLs turned into links. */
+function LinkifiedText({ text }: { text: string }) {
+  const parts = text.split(URL_PATTERN)
+  if (parts.length === 1) return <>{text}</>
+  return <>{parts.map((part, index) => index % 2 === 1
+    ? <a key={index} href={part} target="_blank" rel="noreferrer" className="break-all underline decoration-foreground/25 underline-offset-[3px] transition-colors hover:decoration-foreground/70">{part}</a>
+    : part)}</>
+}
+
+function messageTime(value: string): string {
+  const time = Date.parse(value)
+  return Number.isFinite(time) ? new Date(time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''
+}
+
+function UserMessage({ message, images, text }: { message: WorkspaceChatMessage; images: { name: string; url: string }[]; text: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const long = text.length > 700 || text.split('\n').length > 10
+  const time = messageTime(message.created_at)
+  const problem = message.status === 'failed' || message.status === 'cancelled'
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(message.text); setCopied(true); setTimeout(() => setCopied(false), 1200) } catch { /* clipboard unavailable */ }
+  }
+  return (
+    <article data-chat-message="user" aria-label="Your message" className="group/message ml-auto flex min-w-0 max-w-[82%] flex-col items-end gap-1.5">
+      {images.length > 0 && (
+        <div className="flex flex-wrap justify-end gap-2">
+          {images.map((img, idx) => (
+            <img key={`${img.name}-${idx}`} src={img.url} alt={img.name} loading="lazy" title={img.name !== 'Image' ? img.name : undefined}
+              className="max-h-64 max-w-full rounded-2xl object-contain shadow-sm shadow-black/10" />
+          ))}
+        </div>
+      )}
+      {text && (
+        <div className={`relative rounded-[20px] rounded-br-md px-4 py-2.5 text-[14px] leading-relaxed text-foreground ${problem ? 'bg-destructive/10' : 'bg-foreground/[0.07]'}`}>
+          <p className={`whitespace-pre-wrap break-words ${long && !expanded ? 'line-clamp-[10]' : ''}`}><LinkifiedText text={text} /></p>
+          {long && (
+            <button type="button" onClick={() => setExpanded(value => !value)} className="mt-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground">
+              {expanded ? 'Show less' : 'Show more'}
+            </button>
+          )}
+        </div>
+      )}
+      <div className="flex h-4 items-center gap-2 pr-1 text-[10.5px] text-muted-foreground/60 opacity-0 transition-opacity duration-150 group-hover/message:opacity-100 group-focus-within/message:opacity-100">
+        {problem && <span className="text-destructive opacity-100">Not delivered</span>}
+        {time && <time dateTime={message.created_at}>{time}</time>}
+        <button type="button" onClick={() => void copy()} aria-label="Copy message" className="font-medium transition-colors hover:text-foreground">{copied ? 'Copied' : 'Copy'}</button>
+      </div>
+    </article>
+  )
+}
+
 export function ChatMessage({
   message,
   provider,
@@ -64,6 +118,8 @@ export function ChatMessage({
       setCopyState('failed')
     }
   }
+
+  if (user && userPayload) return <UserMessage message={message} images={userPayload.images} text={userPayload.cleanedText || (userPayload.images.length ? '' : message.text)} />
 
   return (
     <article
