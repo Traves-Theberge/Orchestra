@@ -214,7 +214,7 @@ func NewRouterWithPubSub(
 	r.Use(RateLimit(20, 60)) // 20 req/s sustained, 60 burst
 	r.Use(securityHeaders)
 	r.Use(contentTypeGuard)
-	r.Use(middleware.Timeout(30 * time.Second))
+	r.Use(globalRequestTimeout)
 	r.MethodNotAllowed(server.methodNotAllowed)
 	r.NotFound(server.notFound)
 
@@ -484,6 +484,13 @@ func NewRouterWithPubSub(
 	protected.Patch("/api/v1/orchestrator/chat/sessions/{session_id}/provider", orchestratorChatScope(server.PatchWorkspaceChatProvider))
 	protected.Post("/api/v1/orchestrator/chat/sessions/{session_id}/messages", orchestratorChatScope(server.PostWorkspaceChatMessage))
 	protected.Post("/api/v1/orchestrator/chat/sessions/{session_id}/stop", orchestratorChatScope(server.PostWorkspaceChatStop))
+	// Rewind routes may restore files, so they get a longer timeout (see globalRequestTimeout).
+	rewind := protected.With(middleware.Timeout(rewindRequestTimeout))
+	rewind.Post("/api/v1/orchestrator/chat/sessions/{session_id}/rewind/preview", orchestratorChatScope(server.PostWorkspaceChatRewindPreview))
+	rewind.Post("/api/v1/orchestrator/chat/sessions/{session_id}/edit", orchestratorChatScope(server.PostWorkspaceChatEdit))
+	rewind.Post("/api/v1/orchestrator/chat/sessions/{session_id}/regenerate", orchestratorChatScope(server.PostWorkspaceChatRegenerate))
+	rewind.Post("/api/v1/orchestrator/chat/sessions/{session_id}/branches/{branch_id}/activate", orchestratorChatScope(server.PostWorkspaceChatActivateBranch))
+	rewind.Post("/api/v1/orchestrator/chat/sessions/{session_id}/restore/undo", orchestratorChatScope(server.PostWorkspaceChatUndoRestore))
 	protected.Post("/api/v1/orchestrator/chat/sessions/{session_id}/requests/{request_id}/reply", orchestratorChatScope(server.PostWorkspaceChatReply))
 	protected.Post("/api/v1/orchestrator/control", server.PostOrchestratorControl)
 	protected.Get("/api/v1/projects/{project_id}/agent-catalog", server.GetAgentCatalog)
@@ -505,6 +512,11 @@ func NewRouterWithPubSub(
 	protected.Get("/api/v1/projects/{project_id}/chat/sessions/{session_id}/history", server.GetWorkspaceChatArchiveHistory)
 	protected.Post("/api/v1/projects/{project_id}/chat/sessions/{session_id}/messages", server.PostWorkspaceChatMessage)
 	protected.Post("/api/v1/projects/{project_id}/chat/sessions/{session_id}/stop", server.PostWorkspaceChatStop)
+	rewind.Post("/api/v1/projects/{project_id}/chat/sessions/{session_id}/rewind/preview", server.PostWorkspaceChatRewindPreview)
+	rewind.Post("/api/v1/projects/{project_id}/chat/sessions/{session_id}/edit", server.PostWorkspaceChatEdit)
+	rewind.Post("/api/v1/projects/{project_id}/chat/sessions/{session_id}/regenerate", server.PostWorkspaceChatRegenerate)
+	rewind.Post("/api/v1/projects/{project_id}/chat/sessions/{session_id}/branches/{branch_id}/activate", server.PostWorkspaceChatActivateBranch)
+	rewind.Post("/api/v1/projects/{project_id}/chat/sessions/{session_id}/restore/undo", server.PostWorkspaceChatUndoRestore)
 	protected.Post("/api/v1/projects/{project_id}/chat/sessions/{session_id}/requests/{request_id}/reply", server.PostWorkspaceChatReply)
 	// Task Authoring Studio
 	protected.Post("/api/v1/studio/sessions", server.PostStudioSession)

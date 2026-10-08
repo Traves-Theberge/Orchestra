@@ -946,6 +946,16 @@ components:
         requested_agent_format: { type: string }
         effective_agent_id: { type: string }
         agent_observation: { type: string }
+        has_checkpoint: { type: boolean, description: A user message with a before-turn file snapshot. }
+        versions:
+          type: array
+          description: Sibling versions at a fork point (on the first message after the fork).
+          items:
+            type: object
+            required: [branch_id, active]
+            properties:
+              branch_id: { type: string }
+              active: { type: boolean }
 
     WorkspaceChatArchiveRequest:
       type: object
@@ -962,6 +972,85 @@ components:
       required: [session]
       properties:
         session: { $ref: '#/components/schemas/WorkspaceChatSession' }
+
+    WorkspaceChatRewindPreviewRequest:
+      type: object
+      required: [message_id]
+      properties:
+        message_id: { type: string }
+
+    WorkspaceChatFileChange:
+      type: object
+      required: [path, kind]
+      properties:
+        path: { type: string, description: Slash-separated, relative to the checkout. }
+        kind: { type: string, enum: [create, modify, delete] }
+
+    WorkspaceChatRewindPreview:
+      type: object
+      required: [message_id, has_checkpoint, files_available, changes, changed_since_turn, skipped]
+      properties:
+        message_id: { type: string }
+        has_checkpoint: { type: boolean }
+        files_available: { type: boolean, description: True when a files restore can be offered. }
+        busy_reason: { type: string, description: Why the conversation cannot rewind now; omitted when it can. }
+        changes:
+          type: array
+          items: { $ref: '#/components/schemas/WorkspaceChatFileChange' }
+        changed_since_turn:
+          type: array
+          description: Paths that differ from what the turn left (edited since it finished).
+          items: { type: string }
+        skipped: { type: integer, description: Files the checkpoint did not capture. }
+
+    WorkspaceChatEditRequest:
+      type: object
+      required: [message_id, client_message_id, text]
+      properties:
+        message_id: { type: string, description: The user message to edit. }
+        restore_files: { type: boolean }
+        client_message_id: { type: string, maxLength: 200 }
+        text: { type: string }
+        requested_model: { type: string }
+        requested_max_turns: { type: integer }
+        requested_reasoning_effort: { type: string }
+        agent_id: { type: string }
+        agent_scope: { type: string }
+
+    WorkspaceChatRegenerateRequest:
+      type: object
+      required: [message_id, client_message_id]
+      properties:
+        message_id: { type: string, description: The user message, or a reply to it. }
+        client_message_id: { type: string, maxLength: 200 }
+        restore_files: { type: boolean }
+
+    WorkspaceChatActivateBranchRequest:
+      type: object
+      properties:
+        restore_files: { type: boolean }
+
+    WorkspaceChatAccepted:
+      type: object
+      required: [session, message]
+      properties:
+        session: { $ref: '#/components/schemas/WorkspaceChatSession' }
+        message: { $ref: '#/components/schemas/WorkspaceChatMessage' }
+
+    WorkspaceChatRestoreResult:
+      type: object
+      required: [written, deleted, failed]
+      properties:
+        written: { type: integer }
+        deleted: { type: integer }
+        failed:
+          type: array
+          items:
+            type: object
+            required: [path, reason]
+            properties:
+              path: { type: string }
+              reason: { type: string }
 
     WorkspaceChatArchiveList:
       type: object
@@ -1374,6 +1463,122 @@ paths:
               schema: { $ref: '#/components/schemas/WorkspaceChatSessionResponse' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /api/v1/projects/{project_id}/chat/sessions/{session_id}/rewind/preview:
+    post:
+      tags: [Workspace]
+      summary: Preview rewinding a chat to a message
+      description: Read-only. Reports whether the message has a file checkpoint and which files a files restore would change. The same operation exists for Maestro conversations at /api/v1/orchestrator/chat/sessions/{session_id}/rewind/preview (conversation-only; never files). This route has a 90-second timeout.
+      parameters:
+        - { name: project_id, in: path, required: true, schema: { type: string } }
+        - { name: session_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkspaceChatRewindPreviewRequest' }
+      responses:
+        '200':
+          description: What rewinding would do.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceChatRewindPreview' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /api/v1/projects/{project_id}/chat/sessions/{session_id}/edit:
+    post:
+      tags: [Workspace]
+      summary: Edit an earlier user message on a new branch
+      description: Re-runs a user message with new text on a new conversation branch, optionally after restoring the folder to how it was before that message's turn (a safety checkpoint is saved first; Undo restore returns it). Idempotent on client_message_id. restore_files is rejected for Maestro conversations (/api/v1/orchestrator/chat/sessions/{session_id}/edit). This route has a 90-second timeout. Errors - chat_busy, checkpoint_unavailable (no file checkpoint for that message), restore_partial (not all files restored; nothing else changed), files_restored (files restored but the message was not sent; use Undo restore).
+      parameters:
+        - { name: project_id, in: path, required: true, schema: { type: string } }
+        - { name: session_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkspaceChatEditRequest' }
+      responses:
+        '202':
+          description: The edited message was accepted on the new branch.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceChatAccepted' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /api/v1/projects/{project_id}/chat/sessions/{session_id}/regenerate:
+    post:
+      tags: [Workspace]
+      summary: Re-run a message's prompt on a new branch
+      description: Re-runs the user prompt of a message (the message may be the user message or a reply to it) unchanged on a new branch, optionally after a files restore. Same errors, idempotency and Maestro rule as edit (/api/v1/orchestrator/chat/sessions/{session_id}/regenerate). This route has a 90-second timeout.
+      parameters:
+        - { name: project_id, in: path, required: true, schema: { type: string } }
+        - { name: session_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkspaceChatRegenerateRequest' }
+      responses:
+        '202':
+          description: The re-run message was accepted on the new branch.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceChatAccepted' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /api/v1/projects/{project_id}/chat/sessions/{session_id}/branches/{branch_id}/activate:
+    post:
+      tags: [Workspace]
+      summary: Switch the conversation to another version
+      description: Makes a branch the active one, optionally restoring the folder to what that version's latest turn left behind (after a safety checkpoint). Maestro equivalent - /api/v1/orchestrator/chat/sessions/{session_id}/branches/{branch_id}/activate (no restore_files). This route has a 90-second timeout.
+      parameters:
+        - { name: project_id, in: path, required: true, schema: { type: string } }
+        - { name: session_id, in: path, required: true, schema: { type: string } }
+        - { name: branch_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkspaceChatActivateBranchRequest' }
+      responses:
+        '200':
+          description: The conversation as now viewed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceChatHistory' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /api/v1/projects/{project_id}/chat/sessions/{session_id}/restore/undo:
+    post:
+      tags: [Workspace]
+      summary: Undo the last files restore
+      description: Puts the folder back to the newest safety checkpoint taken just before the last files restore, and consumes it. A partial undo keeps the checkpoint so it can be retried (restore_partial). No request body. Maestro conversations have no file checkpoints, so /api/v1/orchestrator/chat/sessions/{session_id}/restore/undo always answers checkpoint_unavailable. This route has a 90-second timeout.
+      parameters:
+        - { name: project_id, in: path, required: true, schema: { type: string } }
+        - { name: session_id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: What the undo wrote and deleted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceChatRestoreResult' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }

@@ -32,6 +32,16 @@ type route struct {
 var allRoutes = []route{
 	{"PATCH", "/api/v1/projects/x/chat/sessions/x/title", false},
 	{"PATCH", "/api/v1/orchestrator/chat/sessions/x/title", false},
+	{"POST", "/api/v1/projects/x/chat/sessions/x/rewind/preview", false},
+	{"POST", "/api/v1/projects/x/chat/sessions/x/edit", false},
+	{"POST", "/api/v1/projects/x/chat/sessions/x/regenerate", false},
+	{"POST", "/api/v1/projects/x/chat/sessions/x/branches/x/activate", false},
+	{"POST", "/api/v1/projects/x/chat/sessions/x/restore/undo", false},
+	{"POST", "/api/v1/orchestrator/chat/sessions/x/rewind/preview", false},
+	{"POST", "/api/v1/orchestrator/chat/sessions/x/edit", false},
+	{"POST", "/api/v1/orchestrator/chat/sessions/x/regenerate", false},
+	{"POST", "/api/v1/orchestrator/chat/sessions/x/branches/x/activate", false},
+	{"POST", "/api/v1/orchestrator/chat/sessions/x/restore/undo", false},
 	// Public — no bearer token required
 	{"GET", "/", true},
 	{"GET", "/healthz", true},
@@ -311,7 +321,7 @@ func authMatrixConfig(root string) *config.Config {
 // sync with router.go. If routes are added or removed and the table
 // isn't updated, this test fails so the gap is loud.
 func TestAuthMatrixCoversAllRoutes(t *testing.T) {
-	const expectedRoutes = 205
+	const expectedRoutes = 215
 	if got := len(allRoutes); got != expectedRoutes {
 		t.Fatalf("auth matrix has %d routes, want %d — keep allRoutes in sync with router.go", got, expectedRoutes)
 	}

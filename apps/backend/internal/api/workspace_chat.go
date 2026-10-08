@@ -20,6 +20,10 @@ func chatContext(r *http.Request) context.Context {
 func (s *Server) chatError(w http.ResponseWriter, err error) {
 	code, status := "workspace_chat_failed", http.StatusInternalServerError
 	message := "Workspace chat operation failed"
+	if c, st, m, ok := rewindError(err); ok {
+		writeJSONError(w, st, c, m)
+		return
+	}
 	switch {
 	case errors.Is(err, workspacechat.ErrNotFound):
 		code, status, message = "chat_not_found", 404, err.Error()
