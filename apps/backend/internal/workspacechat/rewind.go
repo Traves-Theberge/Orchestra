@@ -483,9 +483,10 @@ func (s *Service) UndoRestore(ctx context.Context, pid, id string) (checkpoint.R
 		return checkpoint.RestoreResult{}, err
 	}
 	// The folder as it is now is snapshotted first (kind undo, never popped
-	// by Undo), so undoing is itself recoverable. An undo snapshot left by a
-	// failed earlier Undo of this same restore is reused.
-	pre, reuse, err := s.queryCheckpoint(ctx, `WHERE session_id=? AND kind='undo' AND rowid>(SELECT rowid FROM workspace_chat_checkpoints WHERE id=?) ORDER BY rowid DESC LIMIT 1`, id, safety.ID)
+	// by Undo), so undoing is itself recoverable. An undo snapshot left by an
+	// unfinished earlier Undo of this same target (partial, no other safety
+	// row since the target) is reused; any other Undo snapshots afresh.
+	pre, reuse, err := s.queryCheckpoint(ctx, `WHERE session_id=? AND kind='undo' AND partial=1 AND rowid>(SELECT rowid FROM workspace_chat_checkpoints WHERE id=?) AND NOT EXISTS (SELECT 1 FROM workspace_chat_checkpoints n WHERE n.session_id=workspace_chat_checkpoints.session_id AND n.kind='safety' AND n.rowid>(SELECT rowid FROM workspace_chat_checkpoints WHERE id=?) AND n.rowid<workspace_chat_checkpoints.rowid) ORDER BY rowid DESC LIMIT 1`, id, safety.ID, safety.ID)
 	if err != nil {
 		return checkpoint.RestoreResult{}, err
 	}
@@ -513,7 +514,11 @@ func (s *Service) UndoRestore(ctx context.Context, pid, id string) (checkpoint.R
 		}
 		var e error
 		res, e = restoreWithin(work, store, d.Session.WorkspacePath, safety.TreeHash, timeout)
-		if e != nil || len(res.Failed) > 0 {
+		partial := e != nil || len(res.Failed) > 0
+		if _, ue := s.db.ExecContext(work, `UPDATE workspace_chat_checkpoints SET partial=? WHERE id=?`, partial, pre.ID); ue != nil {
+			log.Printf("workspace chat could not mark undo checkpoint %s: %v", pre.ID, ue)
+		}
+		if partial {
 			return &RestoreError{Failed: res.Failed, Err: e}
 		}
 		return nil
@@ -787,6 +792,15 @@ func (s *Service) restoreFolder(ctx context.Context, pid string, sess Session, b
 	safety, reuse, err := s.queryCheckpoint(ctx, `WHERE session_id=? AND kind='safety' AND partial=1 AND NOT EXISTS (SELECT 1 FROM workspace_chat_checkpoints n WHERE n.session_id=workspace_chat_checkpoints.session_id AND n.rowid>workspace_chat_checkpoints.rowid AND n.kind IN ('before','after','safety')) ORDER BY rowid DESC LIMIT 1`, sess.ID)
 	if err != nil {
 		return Checkpoint{}, err
+	}
+	if reuse {
+		// Another conversation of the checkout ran since: its files are in
+		// the folder now and only a fresh snapshot keeps them for Undo.
+		overtaken, err := s.undoOvertaken(ctx, pid, sess, safety.ID)
+		if err != nil {
+			return Checkpoint{}, err
+		}
+		reuse = !overtaken
 	}
 	if !reuse {
 		safety = Checkpoint{ID: uuid.NewString(), SessionID: sess.ID, BranchID: branchID, MessageID: messageID, Kind: "safety"}

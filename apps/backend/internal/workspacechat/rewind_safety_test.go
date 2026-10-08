@@ -140,3 +140,114 @@ func TestUndoRestoreRefusedAfterAnotherConversationsTurn(t *testing.T) {
 		t.Fatalf("nothing may be restored: %v", got)
 	}
 }
+
+// A partial restore's safety row is not reused once another conversation of
+// the checkout has run since: that turn's files would be lost to Undo.
+func TestRetryAfterPartialRestoreSnapshotsAgainAfterAnotherConversationsTurn(t *testing.T) {
+	r := newRewindRegistry()
+	s, pid, _ := checkpointFixture(t, r)
+	store := &rewindStore{restoreRes: checkpoint.RestoreResult{Written: 1, Failed: []checkpoint.FileFailure{{Path: "locked.txt", Reason: "in use"}}}}
+	s.SetCheckpointStore(store)
+	ctx := context.Background()
+	a, err := s.Create(ctx, pid, "codex", "A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn := say(t, s, pid, a.ID, "a1", "one")
+	edit := EditRequest{MessageID: turn.Message.ID, RestoreFiles: true, SendRequest: SendRequest{ClientMessageID: "e1", Text: "uno"}}
+	if _, err = s.Edit(ctx, pid, a.ID, edit); err == nil {
+		t.Fatal("first try should be partial")
+	}
+	first := safetyTrees(t, s, a.ID, "safety")
+	b, err := s.Create(ctx, pid, "codex", "B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	say(t, s, pid, b.ID, "b1", "work in B")
+	store.set(func(f *rewindStore) { f.restoreRes = checkpoint.RestoreResult{Written: 2} })
+	if _, err = s.Edit(ctx, pid, a.ID, edit); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	settled(t, s, pid, a.ID)
+	got := safetyTrees(t, s, a.ID, "safety")
+	if len(first) != 1 || len(got) != 2 || got[1] == first[0] {
+		t.Fatalf("the retry must take a fresh safety snapshot: first %v, now %v", first, got)
+	}
+}
+
+// Stacked restores S1 < S2: the first Undo (to S2) leaves an undo row; the
+// second Undo (to S1) must snapshot the folder again, not reuse that row.
+func TestSecondUndoOfStackedRestoresSnapshotsAgain(t *testing.T) {
+	r := newRewindRegistry()
+	s, pid, _ := checkpointFixture(t, r)
+	store := &rewindStore{}
+	s.SetCheckpointStore(store)
+	ctx := context.Background()
+	sess, err := s.Create(ctx, pid, "codex", "stacked")
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn := say(t, s, pid, sess.ID, "c1", "one")
+	first, err := s.Edit(ctx, pid, sess.ID, EditRequest{MessageID: turn.Message.ID, RestoreFiles: true, SendRequest: SendRequest{ClientMessageID: "e1", Text: "uno"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	settled(t, s, pid, sess.ID)
+	if _, err = s.Edit(ctx, pid, sess.ID, EditRequest{MessageID: first.Message.ID, RestoreFiles: true, SendRequest: SendRequest{ClientMessageID: "e2", Text: "eins"}}); err != nil {
+		t.Fatal(err)
+	}
+	settled(t, s, pid, sess.ID)
+	if got := safetyTrees(t, s, sess.ID, "safety"); len(got) != 2 {
+		t.Fatalf("two stacked safety rows expected: %v", got)
+	}
+	if _, err = s.UndoRestore(ctx, pid, sess.ID); err != nil {
+		t.Fatal(err)
+	}
+	store.mu.Lock()
+	snaps := store.snapshots
+	store.mu.Unlock()
+	if _, err = s.UndoRestore(ctx, pid, sess.ID); err != nil {
+		t.Fatal(err)
+	}
+	store.mu.Lock()
+	taken := store.snapshots - snaps
+	store.mu.Unlock()
+	if taken != 1 {
+		t.Fatalf("the second undo must snapshot the folder, took %d", taken)
+	}
+	if got := safetyTrees(t, s, sess.ID, "undo"); len(got) != 2 {
+		t.Fatalf("each undo keeps its own snapshot: %v", got)
+	}
+}
+
+// A failed Undo keeps its snapshot and a retried Undo reuses it, so the
+// half-undone folder never replaces the pre-undo state.
+func TestRetriedUndoReusesItsSnapshot(t *testing.T) {
+	r := newRewindRegistry()
+	s, pid, _ := checkpointFixture(t, r)
+	store := &rewindStore{}
+	s.SetCheckpointStore(store)
+	ctx := context.Background()
+	sess, err := s.Create(ctx, pid, "codex", "retried undo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn := say(t, s, pid, sess.ID, "c1", "one")
+	if _, err = s.Edit(ctx, pid, sess.ID, EditRequest{MessageID: turn.Message.ID, RestoreFiles: true, SendRequest: SendRequest{ClientMessageID: "e1", Text: "uno"}}); err != nil {
+		t.Fatal(err)
+	}
+	settled(t, s, pid, sess.ID)
+	store.set(func(f *rewindStore) {
+		f.restoreRes = checkpoint.RestoreResult{Failed: []checkpoint.FileFailure{{Path: "locked.txt", Reason: "in use"}}}
+	})
+	if _, err = s.UndoRestore(ctx, pid, sess.ID); err == nil {
+		t.Fatal("undo should be partial")
+	}
+	store.set(func(f *rewindStore) { f.restoreRes = checkpoint.RestoreResult{} })
+	if _, err = s.UndoRestore(ctx, pid, sess.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := safetyTrees(t, s, sess.ID, "undo"); len(got) != 1 {
+		t.Fatalf("the retried undo must reuse its snapshot: %v", got)
+	}
+}
