@@ -7,10 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/orchestra/orchestra/apps/backend/internal/backgroundcommand"
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"sort"
 	"strings"
 	"sync"
@@ -254,7 +254,7 @@ func probeLocal(ctx context.Context, s Server) (string, string) {
 	if s.Command == "" {
 		return StatusFailed, "no command configured"
 	}
-	cmd := exec.CommandContext(ctx, s.Command, s.Args...)
+	cmd := backgroundcommand.CommandContext(ctx, s.Command, s.Args...)
 	cmd.Env = os.Environ()
 	for k, v := range s.Env {
 		cmd.Env = append(cmd.Env, k+"="+v)

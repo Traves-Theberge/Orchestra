@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/orchestra/orchestra/apps/backend/internal/backgroundcommand"
 )
 
 // OMPNativeSession drives `omp --mode rpc`: JSON commands on stdin, one JSON
@@ -134,7 +135,7 @@ func newOMPNativeSession(ctx context.Context, command string, prefixArgs []strin
 		args = append(args, "--resume", sessionID)
 	}
 	childCtx, cancel := context.WithCancel(ctx)
-	cmd := exec.CommandContext(childCtx, binary, append(append([]string(nil), prefixArgs...), args...)...)
+	cmd := backgroundcommand.CommandContext(childCtx, binary, append(append([]string(nil), prefixArgs...), args...)...)
 	cmd.Dir = request.Workspace
 	cmd.Env = append(safeSubprocessEnv(request.SessionID, ProviderOMP), extraEnv...)
 	stderr := &boundedTail{limit: 4096}

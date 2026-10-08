@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"os/exec"
+	"github.com/orchestra/orchestra/apps/backend/internal/backgroundcommand"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -113,7 +113,7 @@ func AnalyzeSessionOutput(worktreePath string, baseBranch string) (GitMetrics, e
 
 // runGit executes a git command in the given directory and returns stdout.
 func runGit(ctx context.Context, dir string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := backgroundcommand.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {

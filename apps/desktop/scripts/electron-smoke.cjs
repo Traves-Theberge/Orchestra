@@ -26,6 +26,8 @@ for (const [key, directory] of Object.entries({ APPDATA: 'appdata', LOCALAPPDATA
 const workspaceAudit = process.argv.includes('--workspace-controls')
 const backlogOnlyAudit = process.argv.includes('--backlog-only')
 const prVisualAudit = process.argv.includes('--pr-visual-fixture')
+const diagnosticsAudit = process.argv.includes('--diagnostics')
+const externalRequests = []
 if (workspaceAudit) {
   const projectsRoot = path.join(fixture, 'projects')
   fs.mkdirSync(projectsRoot, { recursive: true })
@@ -65,6 +67,12 @@ function finish(error) {
 
 app.on('browser-window-created', (_, win) => {
   win.hide()
+  if (diagnosticsAudit) win.webContents.session.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*'] }, (details, callback) => {
+    const hostname = new URL(details.url).hostname
+    const external = hostname !== 'localhost' && hostname !== '127.0.0.1'
+    if (external) externalRequests.push(new URL(details.url).origin)
+    callback({ cancel: external })
+  })
   win.webContents.setBackgroundThrottling(false)
   win.webContents.on('render-process-gone', (_, details) => finish(new Error(details.reason)))
   win.webContents.on('did-fail-load', (_, code, description) => finish(new Error(`${code}: ${description}`)))
@@ -75,10 +83,10 @@ app.on('browser-window-created', (_, win) => {
     try {
       const result = await win.webContents.executeJavaScript(`(async () => {
         const deadline = Date.now() + 15000
-        while (!document.querySelector('[data-testid="sidebar-nav-ISSUES"], [data-testid="sidebar-back"], [aria-label="Back to navigation"]') && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100))
+        while (!document.querySelector('[data-testid="sidebar-nav-ISSUES"], [aria-label="Orchestra main navigation"]') && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100))
         // Fresh profiles open the Console workspace drilldown. Exercise its back
         // action before requiring primary navigation; neither view is a boot failure.
-        document.querySelector('[data-testid="sidebar-back"], [aria-label="Back to navigation"]')?.click()
+        document.querySelector('[aria-label="Orchestra main navigation"]')?.click()
         while (!document.querySelector('[data-testid="sidebar-nav-ISSUES"]') && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100))
         if (!document.querySelector('[data-testid="sidebar-nav-ISSUES"]')) throw new Error('Renderer did not mount')
         const config = await window.orchestraDesktop.getBackendConfig()
@@ -90,6 +98,43 @@ app.on('browser-window-created', (_, win) => {
         return { bridge: true, state: Boolean(state.counts), title: document.title }
       })()`)
       if (!result.bridge || !result.state) throw new Error('Missing bridge or state')
+      if (diagnosticsAudit) {
+        if (process.argv.includes('--require-packaged') && !app.isPackaged) throw new Error('Expected an actual packaged Electron runtime')
+        const diagnosticsResult = await win.webContents.executeJavaScript(`(async () => {
+          const wait = async (predicate, label) => {
+            const deadline = Date.now() + 15000
+            while (!predicate() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 75))
+            if (!predicate()) throw new Error('Diagnostics audit timed out: ' + label)
+          }
+          document.querySelector('[data-testid="sidebar-nav-DIAGNOSTICS"]').click()
+          await wait(() => document.querySelector('section[aria-label="Diagnostics"] h1'), 'bundled diagnostics section')
+          const config = await window.orchestraDesktop.getBackendConfig()
+          const headers = { Authorization: 'Bearer ' + config.apiToken }
+          const settings = await fetch(config.baseUrl + '/api/v1/diagnostics/settings', { headers })
+          if (!settings.ok || !(await settings.json()).enabled) throw new Error('Managed local diagnostics unavailable')
+          await wait(() => document.body.textContent.includes('Recorded traces'), 'local overview')
+          if (document.body.textContent.includes('Backend diagnostics unavailable:')) throw new Error('Diagnostics overview failed')
+          await fetch(config.baseUrl + '/api/v1/state', { headers })
+          let evidence
+          const deadline = Date.now() + 15000
+          while (!evidence && Date.now() < deadline) {
+            const logs = await fetch(config.baseUrl + '/api/v1/diagnostics/logs?limit=100', { headers })
+            if (!logs.ok) throw new Error('Diagnostic logs unavailable')
+            evidence = (await logs.json()).items?.find(log => log.http_method === 'GET' && log.http_route === '/api/v1/state' && log.http_status_code === 200 && Number.isFinite(log.duration_ms) && log.description)
+            if (!evidence) await new Promise(resolve => setTimeout(resolve, 100))
+          }
+          if (!evidence) throw new Error('Descriptive HTTP diagnostic evidence missing')
+          const buttons = name => [...document.querySelector('nav[aria-label="Diagnostic views"]').querySelectorAll('button')].find(button => button.textContent.trim() === name)
+          buttons('Settings').click()
+          await wait(() => [...document.querySelectorAll('button')].some(button => button.textContent.trim() === 'Save diagnostics settings'), 'settings controls')
+          return { localSettings: true, bundledUI: true, httpEvidence: { method: evidence.http_method, route: evidence.http_route, status: evidence.http_status_code, duration_ms: evidence.duration_ms } }
+        })()`)
+        if (!diagnosticsResult.localSettings || !diagnosticsResult.bundledUI) throw new Error('Incomplete diagnostics audit')
+        if (externalRequests.length) throw new Error('Bundled diagnostics requested external resources: ' + externalRequests.join(', '))
+        console.log('DIAGNOSTICS_SMOKE_RESULT', JSON.stringify({ ...diagnosticsResult, packaged: app.isPackaged, externalRequests: externalRequests.length }))
+        const image = await win.webContents.capturePage()
+        fs.writeFileSync(path.join(fixture, 'diagnostics-electron.png'), image.toPNG())
+      }
       if (prVisualAudit) await require('./pr-visual-audit.cjs').installPRVisualFixture(win)
       if (workspaceAudit && !backlogOnlyAudit) {
         const workspaceResult = await win.webContents.executeJavaScript(`(async () => {
@@ -222,7 +267,7 @@ app.on('browser-window-created', (_, win) => {
       const screenshot = await win.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })
       if (screenshot.isEmpty()) throw new Error('Electron returned an empty launch screenshot')
       fs.writeFileSync(path.join(fixture, 'launch.png'), screenshot.toPNG())
-      const reports = path.join(__dirname, '..', 'reports')
+      const reports = app.isPackaged ? path.join(fixture, 'reports') : path.join(__dirname, '..', 'reports')
       fs.mkdirSync(reports, { recursive: true })
       fs.writeFileSync(path.join(reports, 'electron-smoke-launch.png'), screenshot.toPNG())
       if (errors.length) throw new Error('Renderer logged errors')

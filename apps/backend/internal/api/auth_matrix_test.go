@@ -30,6 +30,14 @@ type route struct {
 // silent drift fails CI loudly. Path params are substituted with the
 // `pathParam(...)` placeholder so the chi mux actually matches.
 var allRoutes = []route{
+	{"GET", "/api/v1/diagnostics/traces", false},
+	{"GET", "/api/v1/diagnostics/traces/01234567890123456789012345678901", false},
+	{"GET", "/api/v1/diagnostics/logs", false},
+	{"GET", "/api/v1/diagnostics/overview", false},
+	{"GET", "/api/v1/diagnostics/settings", false},
+	{"PUT", "/api/v1/diagnostics/settings", false},
+	{"DELETE", "/api/v1/diagnostics/history", false},
+	{"GET", "/api/v1/diagnostics/export", false},
 	{"PATCH", "/api/v1/projects/x/chat/sessions/x/title", false},
 	{"PATCH", "/api/v1/orchestrator/chat/sessions/x/title", false},
 	// Public — no bearer token required
@@ -311,7 +319,7 @@ func authMatrixConfig(root string) *config.Config {
 // sync with router.go. If routes are added or removed and the table
 // isn't updated, this test fails so the gap is loud.
 func TestAuthMatrixCoversAllRoutes(t *testing.T) {
-	const expectedRoutes = 205
+	const expectedRoutes = 213
 	if got := len(allRoutes); got != expectedRoutes {
 		t.Fatalf("auth matrix has %d routes, want %d — keep allRoutes in sync with router.go", got, expectedRoutes)
 	}
@@ -355,6 +363,10 @@ func TestAuthMatrixWithBearerAvoids401(t *testing.T) {
 	for i, r := range allRoutes {
 		t.Run(r.method+" "+r.path, func(t *testing.T) {
 			req := httptest.NewRequest(r.method, r.path, nil)
+			// Auth coverage needs one frame, not a persistent subscription.
+			if r.path == "/api/v1/events" {
+				req.URL.RawQuery = "once=1"
+			}
 			req.Header.Set("Authorization", "Bearer test-token")
 			req.RemoteAddr = uniqueIPForIndex(i+1000) + ":12345"
 			if needsJSONBody(r.method) {

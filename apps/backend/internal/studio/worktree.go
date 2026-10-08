@@ -2,8 +2,8 @@ package studio
 
 import (
 	"fmt"
+	"github.com/orchestra/orchestra/apps/backend/internal/backgroundcommand"
 	"os"
-	"os/exec"
 	"path/filepath"
 )
 
@@ -22,14 +22,14 @@ func CreateReadOnlyWorktree(repoPath string) (*ScratchWorktree, error) {
 		return nil, fmt.Errorf("mkdir tmp: %w", err)
 	}
 	wtPath := filepath.Join(tmp, "wt")
-	cmd := exec.Command("git", "worktree", "add", "--detach", wtPath)
+	cmd := backgroundcommand.Command("git", "worktree", "add", "--detach", wtPath)
 	cmd.Dir = repoPath
 	if out, err := cmd.CombinedOutput(); err != nil {
 		_ = os.RemoveAll(tmp)
 		return nil, fmt.Errorf("git worktree add: %w: %s", err, string(out))
 	}
 	if err := setReadOnly(wtPath); err != nil {
-		_ = exec.Command("git", "-C", repoPath, "worktree", "remove", "--force", wtPath).Run()
+		_ = backgroundcommand.Command("git", "-C", repoPath, "worktree", "remove", "--force", wtPath).Run()
 		_ = os.RemoveAll(tmp)
 		return nil, err
 	}
@@ -50,7 +50,7 @@ func (w *ScratchWorktree) Cleanup() error {
 		}
 		return nil
 	})
-	out, err := exec.Command("git", "-C", w.RepoPath, "worktree", "remove", "--force", w.Path).CombinedOutput()
+	out, err := backgroundcommand.Command("git", "-C", w.RepoPath, "worktree", "remove", "--force", w.Path).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("worktree remove: %w: %s", err, string(out))
 	}

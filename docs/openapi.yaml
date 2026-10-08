@@ -1030,7 +1030,936 @@ components:
           items: { $ref: '#/components/schemas/WorkspaceChatRuntimeRequest' }
         cursor: { type: integer, format: int64 }
 
+    DiagnosticSpan:
+      type: "object"
+      required: ["project_id","task_id","run_id","session_id","provider","model","attempt","trace_id","span_id","parent_span_id","name","start_time","duration_ms","status"]
+      properties:
+        label:
+          type: "string"
+          description: "Human-readable label derived from a registered operation or observed HTTP method and route template."
+        description:
+          type: "string"
+          description: "Content-free explanation. Unknown historical protocol metadata is not inferred."
+        http_method:
+          type: "string"
+          description: "Observed standard HTTP method; absent when unavailable."
+        http_route:
+          type: "string"
+          description: "Registered chi route template only; excludes raw request paths, query parameters and concrete resource IDs. Absent for unmatched or unavailable routes."
+        http_status_code:
+          type: "integer"
+          minimum: 100
+          maximum: 599
+          description: "Observed response status; absent when unavailable. Independent of span cancellation status and event severity."
+        project_id:
+          type: "string"
+        task_id:
+          type: "string"
+        run_id:
+          type: "string"
+        session_id:
+          type: "string"
+        provider:
+          type: "string"
+        model:
+          type: "string"
+        attempt:
+          type: "integer"
+        trace_id:
+          type: "string"
+          pattern: "^[0-9a-f]{32}$"
+        span_id:
+          type: "string"
+        parent_span_id:
+          type: "string"
+        name:
+          type: "string"
+        start_time:
+          type: "string"
+          format: "date-time"
+        end_time:
+          type: "string"
+          format: "date-time"
+        duration_ms:
+          type: "number"
+        status:
+          type: "string"
+          enum: ["running","ok","error","cancelled","unknown"]
+        input_tokens:
+          type: "integer"
+        output_tokens:
+          type: "integer"
+
+    DiagnosticTraceSummary:
+      type: "object"
+      required: ["project_id","task_id","run_id","session_id","provider","model","attempt","trace_id","span_id","parent_span_id","name","start_time","duration_ms","status","span_count"]
+      properties:
+        label:
+          type: "string"
+          description: "Human-readable label derived from a registered operation or observed HTTP method and route template."
+        description:
+          type: "string"
+          description: "Content-free explanation. Unknown historical protocol metadata is not inferred."
+        http_method:
+          type: "string"
+          description: "Observed standard HTTP method; absent when unavailable."
+        http_route:
+          type: "string"
+          description: "Registered chi route template only; excludes raw request paths, query parameters and concrete resource IDs. Absent for unmatched or unavailable routes."
+        http_status_code:
+          type: "integer"
+          minimum: 100
+          maximum: 599
+          description: "Observed response status; absent when unavailable. Independent of span cancellation status and event severity."
+        project_id:
+          type: "string"
+        task_id:
+          type: "string"
+        run_id:
+          type: "string"
+        session_id:
+          type: "string"
+        provider:
+          type: "string"
+        model:
+          type: "string"
+        attempt:
+          type: "integer"
+        trace_id:
+          type: "string"
+          pattern: "^[0-9a-f]{32}$"
+        span_id:
+          type: "string"
+        parent_span_id:
+          type: "string"
+        name:
+          type: "string"
+        start_time:
+          type: "string"
+          format: "date-time"
+        end_time:
+          type: "string"
+          format: "date-time"
+        duration_ms:
+          type: "number"
+        status:
+          type: "string"
+          enum: ["running","ok","error","cancelled","unknown"]
+        input_tokens:
+          type: "integer"
+        output_tokens:
+          type: "integer"
+        span_count:
+          type: "integer"
+
+    DiagnosticLog:
+      type: "object"
+      required: ["project_id","task_id","run_id","session_id","provider","model","attempt","id","trace_id","span_id","timestamp","name","severity"]
+      properties:
+        label:
+          type: "string"
+          description: "Human-readable label derived from a registered operation or observed HTTP method and route template."
+        description:
+          type: "string"
+          description: "Content-free explanation. Unknown historical protocol metadata is not inferred."
+        http_method:
+          type: "string"
+          description: "Observed standard HTTP method; absent when unavailable."
+        http_route:
+          type: "string"
+          description: "Registered chi route template only; excludes raw request paths, query parameters and concrete resource IDs. Absent for unmatched or unavailable routes."
+        http_status_code:
+          type: "integer"
+          minimum: 100
+          maximum: 599
+          description: "Observed response status; absent when unavailable. Independent of span cancellation status and event severity."
+        duration_ms:
+          type: "number"
+          minimum: 0
+          description: "Elapsed HTTP request time observed when http.completed was emitted; absent for other events and historical unknown durations."
+        project_id:
+          type: "string"
+        task_id:
+          type: "string"
+        run_id:
+          type: "string"
+        session_id:
+          type: "string"
+        provider:
+          type: "string"
+        model:
+          type: "string"
+        attempt:
+          type: "integer"
+        id:
+          type: "integer"
+        trace_id:
+          type: "string"
+        span_id:
+          type: "string"
+        timestamp:
+          type: "string"
+          format: "date-time"
+        name:
+          type: "string"
+        severity:
+          type: "string"
+          enum: ["debug","info","warn","error"]
+
+    DiagnosticTracePage:
+      type: "object"
+      required: ["items","total","limit","offset"]
+      properties:
+        items:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/DiagnosticTraceSummary"
+        total:
+          type: "integer"
+        limit:
+          type: "integer"
+        offset:
+          type: "integer"
+
+    DiagnosticLogPage:
+      type: "object"
+      required: ["items","total","limit","offset"]
+      properties:
+        items:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/DiagnosticLog"
+        total:
+          type: "integer"
+        limit:
+          type: "integer"
+        offset:
+          type: "integer"
+
+    DiagnosticTraceDetail:
+      type: "object"
+      required: ["trace","spans","logs","partial"]
+      properties:
+        trace:
+          "$ref": "#/components/schemas/DiagnosticTraceSummary"
+        spans:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/DiagnosticSpan"
+        logs:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/DiagnosticLog"
+        partial:
+          type: "boolean"
+
+    DiagnosticSettings:
+      type: "object"
+      required: ["enabled","retention_days","metrics_retention_days","max_storage_mb"]
+      properties:
+        enabled:
+          type: "boolean"
+        retention_days:
+          type: "integer"
+          minimum: 1
+          maximum: 365
+          default: 7
+        metrics_retention_days:
+          type: "integer"
+          minimum: 1
+          maximum: 3650
+          default: 30
+          description: "Must be greater than or equal to retention_days."
+        max_storage_mb:
+          type: "integer"
+          minimum: 1
+          maximum: 10240
+          default: 250
+
+    DiagnosticExport:
+      type: "object"
+      required: ["schema_version","exported_at","traces","spans","logs","truncated"]
+      properties:
+        schema_version:
+          type: "integer"
+        exported_at:
+          type: "string"
+          format: "date-time"
+        traces:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/DiagnosticTraceSummary"
+        spans:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/DiagnosticSpan"
+        logs:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/DiagnosticLog"
+        truncated:
+          type: "boolean"
+
+    DiagnosticPoint:
+      type: "object"
+      required: ["time","operations","errors","duration_ms"]
+      properties:
+        time:
+          type: "string"
+          format: "date-time"
+        operations:
+          type: "integer"
+        errors:
+          type: "integer"
+        duration_ms:
+          type: "number"
+        input_tokens:
+          type: "integer"
+        output_tokens:
+          type: "integer"
+
+    DiagnosticOverview:
+      type: "object"
+      required: ["detailed_scope","total_traces","failed_traces","active_traces","dropped_records","storage_bytes","queue_depth","points","operations","usage","features","runtime","settings"]
+      properties:
+        detailed_scope:
+          type: "boolean"
+        total_traces:
+          type: "integer"
+        failed_traces:
+          type: "integer"
+        active_traces:
+          type: "integer"
+        dropped_records:
+          type: "integer"
+        storage_bytes:
+          type: "integer"
+        queue_depth:
+          type: "integer"
+        points:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/DiagnosticPoint"
+        operations:
+          type: "array"
+          items:
+            type: "object"
+            required: ["name","count","errors","average_duration_ms"]
+            properties:
+              name:
+                type: "string"
+              count:
+                type: "integer"
+              errors:
+                type: "integer"
+              average_duration_ms:
+                type: "number"
+        usage:
+          type: "array"
+          items:
+            type: "object"
+            required: ["provider","model","input_tokens","output_tokens","known_runs"]
+            properties:
+              provider:
+                type: "string"
+              model:
+                type: "string"
+              input_tokens:
+                type: "integer"
+              output_tokens:
+                type: "integer"
+              known_runs:
+                type: "integer"
+        features:
+          type: "array"
+          items:
+            type: "object"
+            required: ["name","count"]
+            properties:
+              name:
+                type: "string"
+              count:
+                type: "integer"
+        runtime:
+          type: "object"
+          required: ["goroutines","heap_bytes"]
+          properties:
+            goroutines:
+              type: "integer"
+            heap_bytes:
+              type: "integer"
+        settings:
+          "$ref": "#/components/schemas/DiagnosticSettings"
+
 paths:
+  /api/v1/diagnostics/traces:
+    get:
+      tags: ["Diagnostics"]
+      summary: "Read local diagnostic traces"
+      description: "Local metadata only. Prompts, responses, credentials, tool content and raw paths are excluded. No external telemetry service is used."
+      security:
+        -
+          BearerAuth: []
+      responses:
+        "200":
+          description: "Local diagnostic metadata."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/DiagnosticTracePage"
+        "400":
+          description: "Invalid query or settings."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "401":
+          description: "Missing or invalid bearer token."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "503":
+          description: "Local diagnostic store unavailable."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+      parameters:
+        -
+          name: "project_id"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            maxLength: 200
+        -
+          name: "task_id"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            maxLength: 200
+        -
+          name: "provider"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            maxLength: 200
+        -
+          name: "status"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            enum: ["running","ok","error","cancelled","unknown"]
+        -
+          name: "severity"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            enum: ["debug","info","warn","error"]
+        -
+          name: "q"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            maxLength: 200
+        -
+          name: "since"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            format: "date-time"
+        -
+          name: "until"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            format: "date-time"
+        -
+          name: "limit"
+          in: "query"
+          required: false
+          schema:
+            type: "integer"
+            minimum: 1
+            maximum: 500
+            default: 100
+        -
+          name: "offset"
+          in: "query"
+          required: false
+          schema:
+            type: "integer"
+            minimum: 0
+            maximum: 1000000
+            default: 0
+  /api/v1/diagnostics/traces/{trace_id}:
+    get:
+      tags: ["Diagnostics"]
+      summary: "Read local diagnostic traces/{trace_id}"
+      description: "Local metadata only. Prompts, responses, credentials, tool content and raw paths are excluded. No external telemetry service is used."
+      security:
+        -
+          BearerAuth: []
+      responses:
+        "200":
+          description: "Local diagnostic metadata."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/DiagnosticTraceDetail"
+        "400":
+          description: "Invalid query or settings."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "401":
+          description: "Missing or invalid bearer token."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "404":
+          description: "Trace not found."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "503":
+          description: "Local diagnostic store unavailable."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+      parameters:
+        -
+          name: "trace_id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            pattern: "^[0-9a-f]{32}$"
+  /api/v1/diagnostics/logs:
+    get:
+      tags: ["Diagnostics"]
+      summary: "Read local diagnostic logs"
+      description: "Local metadata only. Prompts, responses, credentials, tool content and raw paths are excluded. No external telemetry service is used."
+      security:
+        -
+          BearerAuth: []
+      responses:
+        "200":
+          description: "Local diagnostic metadata."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/DiagnosticLogPage"
+        "400":
+          description: "Invalid query or settings."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "401":
+          description: "Missing or invalid bearer token."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "503":
+          description: "Local diagnostic store unavailable."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+      parameters:
+        -
+          name: "project_id"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            maxLength: 200
+        -
+          name: "task_id"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            maxLength: 200
+        -
+          name: "provider"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            maxLength: 200
+        -
+          name: "status"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            enum: ["running","ok","error","cancelled","unknown"]
+        -
+          name: "severity"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            enum: ["debug","info","warn","error"]
+        -
+          name: "q"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            maxLength: 200
+        -
+          name: "since"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            format: "date-time"
+        -
+          name: "until"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            format: "date-time"
+        -
+          name: "limit"
+          in: "query"
+          required: false
+          schema:
+            type: "integer"
+            minimum: 1
+            maximum: 500
+            default: 100
+        -
+          name: "offset"
+          in: "query"
+          required: false
+          schema:
+            type: "integer"
+            minimum: 0
+            maximum: 1000000
+            default: 0
+  /api/v1/diagnostics/overview:
+    get:
+      tags: ["Diagnostics"]
+      summary: "Read local diagnostic overview"
+      description: "Local metadata only. Prompts, responses, credentials, tool content and raw paths are excluded. No external telemetry service is used."
+      security:
+        -
+          BearerAuth: []
+      responses:
+        "200":
+          description: "Local diagnostic metadata."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/DiagnosticOverview"
+        "400":
+          description: "Invalid query or settings."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "401":
+          description: "Missing or invalid bearer token."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "503":
+          description: "Local diagnostic store unavailable."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+      parameters:
+        -
+          name: "project_id"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            maxLength: 200
+        -
+          name: "task_id"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            maxLength: 200
+        -
+          name: "provider"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            maxLength: 200
+        -
+          name: "status"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            enum: ["running","ok","error","cancelled","unknown"]
+        -
+          name: "severity"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            enum: ["debug","info","warn","error"]
+        -
+          name: "q"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            maxLength: 200
+        -
+          name: "since"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            format: "date-time"
+        -
+          name: "until"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            format: "date-time"
+        -
+          name: "limit"
+          in: "query"
+          required: false
+          schema:
+            type: "integer"
+            minimum: 1
+            maximum: 500
+            default: 100
+        -
+          name: "offset"
+          in: "query"
+          required: false
+          schema:
+            type: "integer"
+            minimum: 0
+            maximum: 1000000
+            default: 0
+  /api/v1/diagnostics/settings:
+    get:
+      tags: ["Diagnostics"]
+      summary: "Read local diagnostic settings"
+      description: "Local metadata only. Prompts, responses, credentials, tool content and raw paths are excluded. No external telemetry service is used."
+      security:
+        -
+          BearerAuth: []
+      responses:
+        "200":
+          description: "Local diagnostic metadata."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/DiagnosticSettings"
+        "401":
+          description: "Missing or invalid bearer token."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "503":
+          description: "Local diagnostic store unavailable."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+    put:
+      tags: ["Diagnostics"]
+      summary: "Update persisted local diagnostic settings"
+      description: "Local metadata only. Prompts, responses, credentials, tool content and raw paths are excluded. No external telemetry service is used."
+      security:
+        -
+          BearerAuth: []
+      responses:
+        "200":
+          description: "Local diagnostic metadata."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/DiagnosticSettings"
+        "400":
+          description: "Invalid query or settings."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "401":
+          description: "Missing or invalid bearer token."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "503":
+          description: "Local diagnostic store unavailable."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/DiagnosticSettings"
+  /api/v1/diagnostics/history:
+    delete:
+      tags: ["Diagnostics"]
+      summary: "Clear local diagnostic history"
+      description: "Local metadata only. Prompts, responses, credentials, tool content and raw paths are excluded. No external telemetry service is used."
+      security:
+        -
+          BearerAuth: []
+      responses:
+        "204":
+          description: "Diagnostic history cleared; active collection is fenced."
+        "401":
+          description: "Missing or invalid bearer token."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "503":
+          description: "Local diagnostic store unavailable."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+  /api/v1/diagnostics/export:
+    get:
+      tags: ["Diagnostics"]
+      summary: "Read local diagnostic export"
+      description: "Local metadata only. Prompts, responses, credentials, tool content and raw paths are excluded. No external telemetry service is used. Export is bounded and reports truncation; filename is orchestra-diagnostics.json."
+      security:
+        -
+          BearerAuth: []
+      responses:
+        "200":
+          description: "Local diagnostic metadata."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/DiagnosticExport"
+        "400":
+          description: "Invalid query or settings."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "401":
+          description: "Missing or invalid bearer token."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "503":
+          description: "Local diagnostic store unavailable."
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+      parameters:
+        -
+          name: "project_id"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            maxLength: 200
+        -
+          name: "task_id"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            maxLength: 200
+        -
+          name: "provider"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            maxLength: 200
+        -
+          name: "status"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            enum: ["running","ok","error","cancelled","unknown"]
+        -
+          name: "severity"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            enum: ["debug","info","warn","error"]
+        -
+          name: "q"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            maxLength: 200
+        -
+          name: "since"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            format: "date-time"
+        -
+          name: "until"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            format: "date-time"
+        -
+          name: "limit"
+          in: "query"
+          required: false
+          schema:
+            type: "integer"
+            minimum: 1
+            maximum: 500
+            default: 100
+        -
+          name: "offset"
+          in: "query"
+          required: false
+          schema:
+            type: "integer"
+            minimum: 0
+            maximum: 1000000
+            default: 0
+
   # ─── Health ───────────────────────────────────────────────────────────────
   /healthz:
     get:

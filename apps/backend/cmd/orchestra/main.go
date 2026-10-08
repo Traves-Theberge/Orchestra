@@ -21,7 +21,7 @@ type cliRunner struct {
 
 func runCLI(args []string, stdout io.Writer, stderr io.Writer, runner cliRunner) int {
 	if len(args) < 2 {
-		fmt.Fprintln(stderr, "usage: orchestra <start|check|check-pr-body|status|project|task|control|agent|skill>")
+		fmt.Fprintln(stderr, "usage: orchestra <start|check|check-pr-body|status|project|task|control|agent|skill|diagnostics>")
 		return 2
 	}
 
@@ -29,7 +29,7 @@ func runCLI(args []string, stdout io.Writer, stderr io.Writer, runner cliRunner)
 	case "help", "--help", "-h":
 		fmt.Fprintln(stdout, cli.Help)
 		return 0
-	case "status", "project", "task", "control", "agent", "skill":
+	case "status", "project", "task", "control", "agent", "skill", "diagnostics":
 		if runner.observe != nil {
 			return runner.observe(args[1:], stdout, stderr)
 		}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/orchestra/orchestra/apps/backend/internal/backgroundcommand"
 	"io"
 	"net/http"
 	"os"
@@ -841,7 +842,7 @@ func (s *Server) GetProjectGitStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cmd := exec.CommandContext(r.Context(), "git", "status", "--porcelain", "--branch")
+	cmd := backgroundcommand.CommandContext(r.Context(), "git", "status", "--porcelain", "--branch")
 	cmd.Dir = project.RootPath
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -908,7 +909,7 @@ func (s *Server) GetProjectGitStats(w http.ResponseWriter, r *http.Request) {
 	if branch := r.URL.Query().Get("branch"); branch != "" {
 		gitLogArgs = append(gitLogArgs, branch)
 	}
-	cmd := exec.CommandContext(r.Context(), "git", gitLogArgs...)
+	cmd := backgroundcommand.CommandContext(r.Context(), "git", gitLogArgs...)
 	cmd.Dir = project.RootPath
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -959,7 +960,7 @@ func (s *Server) GetProjectGitDiff(w http.ResponseWriter, r *http.Request) {
 	var cmd *exec.Cmd
 	if hash != "" {
 		// Show diff for specific commit
-		cmd = exec.CommandContext(r.Context(), "git", "show", hash)
+		cmd = backgroundcommand.CommandContext(r.Context(), "git", "show", hash)
 	} else {
 		// Show uncommitted changes with optional file and staged filters
 		file := r.URL.Query().Get("file")
@@ -972,7 +973,7 @@ func (s *Server) GetProjectGitDiff(w http.ResponseWriter, r *http.Request) {
 		if file != "" {
 			args = append(args, "--", file)
 		}
-		cmd = exec.CommandContext(r.Context(), "git", args...)
+		cmd = backgroundcommand.CommandContext(r.Context(), "git", args...)
 	}
 	cmd.Dir = project.RootPath
 	out, err := cmd.CombinedOutput()
@@ -987,7 +988,7 @@ func (s *Server) GetProjectGitDiff(w http.ResponseWriter, r *http.Request) {
 	// fall back to git diff --no-index /dev/null <file>
 	file := r.URL.Query().Get("file")
 	if len(out) == 0 && file != "" && hash == "" {
-		fallback := exec.CommandContext(r.Context(), "git", "diff", "--no-index", "/dev/null", file)
+		fallback := backgroundcommand.CommandContext(r.Context(), "git", "diff", "--no-index", "/dev/null", file)
 		fallback.Dir = project.RootPath
 		fallbackOut, _ := fallback.CombinedOutput()
 		if len(fallbackOut) > 0 {
@@ -1059,7 +1060,7 @@ func (s *Server) GetProjectGitBranches(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get current branch
-	currentCmd := exec.CommandContext(r.Context(), "git", "rev-parse", "--abbrev-ref", "HEAD")
+	currentCmd := backgroundcommand.CommandContext(r.Context(), "git", "rev-parse", "--abbrev-ref", "HEAD")
 	currentCmd.Dir = project.RootPath
 	currentOut, err := currentCmd.Output()
 	if err != nil {
@@ -1070,7 +1071,7 @@ func (s *Server) GetProjectGitBranches(w http.ResponseWriter, r *http.Request) {
 	current := strings.TrimSpace(string(currentOut))
 
 	// Get all branches
-	branchCmd := exec.CommandContext(r.Context(), "git", "branch", "--list", "--format=%(refname:short)")
+	branchCmd := backgroundcommand.CommandContext(r.Context(), "git", "branch", "--list", "--format=%(refname:short)")
 	branchCmd.Dir = project.RootPath
 	branchOut, err := branchCmd.Output()
 	if err != nil {
@@ -1088,7 +1089,7 @@ func (s *Server) GetProjectGitBranches(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get remote branches
-	remoteCmd := exec.CommandContext(r.Context(), "git", "for-each-ref", "--format=%(refname:short)%09%(symref)", "refs/remotes/")
+	remoteCmd := backgroundcommand.CommandContext(r.Context(), "git", "for-each-ref", "--format=%(refname:short)%09%(symref)", "refs/remotes/")
 	remoteCmd.Dir = project.RootPath
 	remoteOut, err := remoteCmd.Output()
 	if err != nil {
@@ -1695,7 +1696,7 @@ func (s *Server) GetGitConflicts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check for unmerged files via git status --porcelain
-	cmd := exec.CommandContext(r.Context(), "git", "status", "--porcelain")
+	cmd := backgroundcommand.CommandContext(r.Context(), "git", "status", "--porcelain")
 	cmd.Dir = project.RootPath
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -1746,7 +1747,7 @@ func (s *Server) PostGitMergeAbort(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cmd := exec.CommandContext(r.Context(), "git", "merge", "--abort")
+	cmd := backgroundcommand.CommandContext(r.Context(), "git", "merge", "--abort")
 	cmd.Dir = project.RootPath
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -1785,7 +1786,7 @@ func (s *Server) PostGitConflictResolve(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	cmd := exec.CommandContext(r.Context(), "git", "add", req.File)
+	cmd := backgroundcommand.CommandContext(r.Context(), "git", "add", req.File)
 	cmd.Dir = project.RootPath
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -2023,11 +2024,11 @@ func (s *Server) PostCreateGitHubRepo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set remote origin on the local git repo
-	addCmd := exec.CommandContext(r.Context(), "git", "remote", "add", "origin", repo.CloneURL)
+	addCmd := backgroundcommand.CommandContext(r.Context(), "git", "remote", "add", "origin", repo.CloneURL)
 	addCmd.Dir = project.RootPath
 	if err := addCmd.Run(); err != nil {
 		// Remote may already exist, try set-url instead
-		setCmd := exec.CommandContext(r.Context(), "git", "remote", "set-url", "origin", repo.CloneURL)
+		setCmd := backgroundcommand.CommandContext(r.Context(), "git", "remote", "set-url", "origin", repo.CloneURL)
 		setCmd.Dir = project.RootPath
 		if setErr := setCmd.Run(); setErr != nil {
 			s.logger.Error().Err(setErr).Str("project_id", projectID).Msg("failed to set git remote")
@@ -2052,7 +2053,7 @@ func (s *Server) PostCreateGitHubRepo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Initial push
-	pushCmd := exec.CommandContext(r.Context(), "git", "push", "-u", "origin", "HEAD")
+	pushCmd := backgroundcommand.CommandContext(r.Context(), "git", "push", "-u", "origin", "HEAD")
 	pushCmd.Dir = project.RootPath
 	if pushOut, err := pushCmd.CombinedOutput(); err != nil {
 		s.logger.Warn().Err(err).Str("output", string(pushOut)).Str("project_id", projectID).Msg("initial git push failed (non-fatal)")

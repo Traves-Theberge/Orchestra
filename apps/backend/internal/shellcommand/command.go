@@ -4,6 +4,7 @@ package shellcommand
 import (
 	"context"
 	"fmt"
+	"github.com/orchestra/orchestra/apps/backend/internal/backgroundcommand"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,7 +42,7 @@ func CommandContext(ctx context.Context, script string) (*exec.Cmd, error) {
 	if info, err := os.Stat(script); err == nil && !info.IsDir() && filepath.IsAbs(script) {
 		script = "'" + strings.ReplaceAll(filepath.ToSlash(script), "'", "'\"'\"'") + "'"
 	}
-	cmd := exec.CommandContext(ctx, path, "-lc", script)
+	cmd := backgroundcommand.CommandContext(ctx, path, "-lc", script)
 	cmd.WaitDelay = 2 * time.Second
 	configureCancellation(cmd)
 	return cmd, nil

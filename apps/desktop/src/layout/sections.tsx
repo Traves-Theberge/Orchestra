@@ -1,5 +1,6 @@
 import {
   CalendarClock,
+  Activity,
   Cpu,
   FileText,
   FolderTree,
@@ -15,12 +16,14 @@ export const sidebarItems: SidebarItem[] = [
   { id: 'ISSUES', label: 'Tasks', description: 'Task board and inspector', icon: ListTodo },
   { id: 'AUTOMATIONS', label: 'Automations', description: 'Scheduled agent runs', icon: CalendarClock },
   { id: 'AGENTS', label: 'Agents', description: 'Global agent configurations', icon: Cpu },
+  { id: 'DIAGNOSTICS', label: 'Diagnostics', description: 'Local runs, timing, logs and collection health', icon: Activity },
   { id: 'DOCS', label: 'Documentation', description: 'User & engineering guides', icon: FileText },
   { id: 'SETTINGS', label: 'Settings', description: 'Backend profiles, integrations, notifications, and shortcuts', icon: Settings2 },
 ]
 
 export type SectionID =
   | 'ORCHESTRATOR'
+  | 'DIAGNOSTICS'
   | 'ISSUES'
   | 'AUTOMATIONS'
   | 'PROJECTS'
@@ -33,6 +36,7 @@ export type SectionID =
 
 const SECTION_IDS: readonly SectionID[] = [
   'ORCHESTRATOR',
+  'DIAGNOSTICS',
   'ISSUES',
   'AUTOMATIONS',
   'PROJECTS',
@@ -50,6 +54,7 @@ export function isSectionID(value: string): value is SectionID {
 
 export type SectionVisibility = {
   showOrchestrator: boolean
+  showDiagnostics: boolean
   showIssueBoard: boolean
   showAutomations: boolean
   showProjects: boolean
@@ -63,6 +68,7 @@ export type SectionVisibility = {
 
 const sectionMeta: Record<SectionID, { label: string; title: string }> = {
   ORCHESTRATOR: { label: 'Control', title: 'Orchestrator' },
+  DIAGNOSTICS: { label: 'System', title: 'Diagnostics' },
   ISSUES: { label: 'Tracker', title: 'Tasks' },
   AUTOMATIONS: { label: 'Schedule', title: 'Automations' },
   PROJECTS: { label: 'Workspace', title: 'Projects' },
@@ -77,6 +83,7 @@ const sectionMeta: Record<SectionID, { label: string; title: string }> = {
 export function getSectionVisibility(activeSection: SectionID): SectionVisibility {
   return {
     showOrchestrator: activeSection === 'ORCHESTRATOR',
+    showDiagnostics: activeSection === 'DIAGNOSTICS',
     showIssueBoard: activeSection === 'ISSUES',
     showAutomations: activeSection === 'AUTOMATIONS',
     showProjects: false,

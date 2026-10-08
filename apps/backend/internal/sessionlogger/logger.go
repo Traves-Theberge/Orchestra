@@ -7,8 +7,8 @@ package sessionlogger
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/orchestra/orchestra/apps/backend/internal/backgroundcommand"
 	"os"
-	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strings"
@@ -572,7 +572,7 @@ func utcnow() string {
 }
 
 func detectGitBranch() string {
-	out, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
+	out, err := backgroundcommand.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
 	if err != nil {
 		return ""
 	}

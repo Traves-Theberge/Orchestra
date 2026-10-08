@@ -267,6 +267,11 @@ func (s *Service) recoverTurn(sess Session, m Message) {
 
 func (s *Service) runNative(ctx context.Context, cancel context.CancelFunc, sess Session, m Message, turn agents.TurnRequest) {
 	defer s.wg.Done()
+	current := s.beginDiagnosticTurn(ctx, sess, turn)
+	ctx = current.ctx
+	outcome := "unknown"
+	defer func() { s.endDiagnosticTurn(sess.ID, current, outcome) }()
+	turn.ToolExecutor = s.diagnosticToolExecutor(sess.ID, turn.ToolExecutor)
 	defer cancel()
 	defer s.recoverTurn(sess, m)
 	s.nativeFailures.Delete(sess.ID)
@@ -275,6 +280,7 @@ func (s *Service) runNative(ctx context.Context, cancel context.CancelFunc, sess
 		if e.RequestID != "" {
 			e.RequestID = prefix + e.RequestID
 		}
+		s.diagnosticNativeEvent(sess.ID, e)
 		if err := s.recordEvent(sess.ID, e); err != nil {
 			s.nativeFailures.Store(sess.ID, err)
 			go func() {
@@ -321,7 +327,13 @@ func (s *Service) runNative(ctx context.Context, cancel context.CancelFunc, sess
 		}
 	}
 	if native == nil && err == nil {
+		_, startupSpan := s.diagnostics.Start(ctx, "provider.startup", current.fields)
 		native, err = s.registry.(nativeRegistry).StartNativeSession(context.Background(), agents.Provider(sess.Provider), turn, sess.ProviderThreadID, onEvent)
+		startupStatus := "ok"
+		if err != nil {
+			startupStatus = "error"
+		}
+		startupSpan.End(startupStatus)
 		if err != nil && turn.Agent != nil {
 			s.recordAgentReceipt(sess.ID, "", notApplied(err))
 		}
@@ -417,6 +429,15 @@ func (s *Service) runNative(ctx context.Context, cancel context.CancelFunc, sess
 	if e := s.finish(sess, m, result.Text, status, msgStatus, errorText); e != nil {
 		_, _ = s.db.Exec(`UPDATE workspace_chat_messages SET status='unknown' WHERE id=?`, m.ID)
 		_, _ = s.db.Exec(`UPDATE workspace_chat_sessions SET status='interrupted',error='Chat persistence failed; outcome unknown.' WHERE id=?`, sess.ID)
+	} else {
+		// Conversation delivery remains unknown after a provider failure, but
+		// the observed invocation failure is a diagnostic error. Do not discard
+		// that evidence by using the message's conservative delivery status.
+		if status == "failed" {
+			outcome = diagnosticOutcome(ctx, "failed")
+		} else {
+			outcome = diagnosticOutcome(ctx, msgStatus)
+		}
 	}
 	_, _ = s.db.Exec(`UPDATE workspace_chat_requests SET status='stale' WHERE session_id=? AND status='pending'`, sess.ID)
 }
@@ -473,8 +494,14 @@ func (s *Service) Reply(ctx context.Context, pid, id, requestID string, req Repl
 		r.Status = "unknown"
 	}
 	if _, e := s.db.Exec(`UPDATE workspace_chat_requests SET status=? WHERE session_id=? AND id=?`, r.Status, id, requestID); e != nil {
+		s.diagnosticApprovalAnswered(id, requestID, "unknown")
 		return RuntimeRequest{}, e
 	}
+	approvalStatus := "ok"
+	if err != nil {
+		approvalStatus = "unknown"
+	}
+	s.diagnosticApprovalAnswered(id, requestID, approvalStatus)
 	// A failed write is a durable unknown receipt, never an invitation to retry.
 	return r, nil
 }

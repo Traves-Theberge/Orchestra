@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/orchestra/orchestra/apps/backend/internal/backgroundcommand"
 )
 
 // runOMPUsage is swapped in tests. `omp usage --json --redact` queries every
@@ -17,7 +19,7 @@ var runOMPUsage = func(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return exec.CommandContext(ctx, path, "usage", "--json", "--redact").Output()
+	return backgroundcommand.CommandContext(ctx, path, "usage", "--json", "--redact").Output()
 }
 
 func fetchOMPRateLimits(ctx context.Context) *ProviderRateLimits {

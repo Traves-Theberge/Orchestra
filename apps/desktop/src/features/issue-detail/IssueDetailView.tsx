@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState, type Reducer } from 'react'
-import { CheckCircle2, FileText, GitPullRequest, Github, Info, Loader2, Pencil, Terminal, X } from 'lucide-react'
+import { Activity, CheckCircle2, FileText, GitPullRequest, Github, Info, Loader2, Pencil, Terminal, X } from 'lucide-react'
+import { TaskTimeline } from '@features/diagnostics/TaskTimeline'
 import { MarkdownRenderer } from '@ui/MarkdownRenderer'
 
 import type { BackendConfig, IssueUpdatePayload, GitHubPR } from '@core/api/client'
@@ -134,7 +135,7 @@ const workflowReducer: Reducer<WorkflowState, WorkflowAction> = (state, action) 
 }
 
 type UIState = {
-  bottomTab: 'details' | 'plan' | 'output' | 'changes'
+  bottomTab: 'details' | 'plan' | 'output' | 'changes' | 'timeline'
   showStopConfirm: boolean
   showFeedback: boolean
   prDialogOpen: boolean
@@ -537,6 +538,7 @@ export function IssueDetailView({
     { id: 'plan' as const, label: 'Plan', icon: CheckCircle2, count: planItems.length > 0 ? planItems.length : undefined },
     { id: 'output' as const, label: 'Session', icon: Terminal, count: undefined },
     { id: 'changes' as const, label: 'Changes', icon: FileText, count: diffFiles.length > 0 ? diffFiles.length : undefined },
+    { id: 'timeline' as const, label: 'Timeline', icon: Activity, count: undefined },
   ]
 
   return (
@@ -614,6 +616,7 @@ export function IssueDetailView({
 
       {/* ── Tab content (fills remaining space) ── */}
       <div className="flex-1 min-h-0 overflow-auto overflow-x-hidden custom-scrollbar">
+        {bottomTab === 'timeline' && <TaskTimeline config={config} taskId={issueId} projectId={projectId} />}
 
         {/* Details */}
         {bottomTab === 'details' && (

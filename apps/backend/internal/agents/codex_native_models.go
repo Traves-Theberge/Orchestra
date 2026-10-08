@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os/exec"
+	"github.com/orchestra/orchestra/apps/backend/internal/backgroundcommand"
 	"strings"
 	"time"
 )
@@ -119,7 +119,7 @@ func probeAntigravityModels(ctx context.Context, command string) ([]NativeModel,
 	if err == nil && binary != "" {
 		probeCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 		defer cancel()
-		cmd := exec.CommandContext(probeCtx, binary, "models")
+		cmd := backgroundcommand.CommandContext(probeCtx, binary, "models")
 		if out, err := cmd.Output(); err == nil {
 			var models []NativeModel
 			for _, line := range strings.Split(string(out), "\n") {

@@ -5,8 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/orchestra/orchestra/apps/backend/internal/backgroundcommand"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -78,7 +78,7 @@ func ListGitWorktrees(ctx context.Context, projectRoot string, allowedRoots []st
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, "git", "worktree", "list", "--porcelain", "-z")
+	command := backgroundcommand.CommandContext(ctx, "git", "worktree", "list", "--porcelain", "-z")
 	command.Dir = projectRoot
 	output, err := command.Output()
 	if err != nil {
