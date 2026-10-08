@@ -92,7 +92,7 @@ describe('WorkspaceChat rewind', () => {
     expect(await screen.findByText('Fix the other bug')).toBeDefined()
     expect(screen.queryByText('Fixed the bug')).toBeNull()
     expect(screen.getByRole('group', { name: 'Message version 2 of 2' })).toBeDefined()
-    expect(screen.getByRole('button', { name: 'Undo restore' })).toBeDefined()
+    expect(screen.getByRole('button', { name: 'Undo restore' }).closest('[role="status"]')).toHaveTextContent('Files were restored to before that message.')
     expect(screen.getByRole('textbox', { name: 'Message agent' })).toHaveValue('my unsent draft')
     // The edited message replaced the original, so its editor is gone.
     expect(screen.queryByRole('textbox', { name: 'Edit message' })).toBeNull()
@@ -319,7 +319,22 @@ describe('WorkspaceChat rewind', () => {
     fireEvent.click(within(dialog()).getByRole('button', { name: 'Switch' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(api.activateWorkspaceChatBranch).toHaveBeenCalledWith(config, 'project-a', 'chat-a', 'b1', true)
-    expect(screen.getByRole('button', { name: 'Undo restore' })).toBeDefined()
+    const banner = screen.getByRole('button', { name: 'Undo restore' }).closest('[role="status"]')!
+    expect(banner).toHaveTextContent('Files were restored to that version.')
+    expect(banner).not.toHaveTextContent('before that message')
+  })
+
+  it('shows the backend text when Undo restore has nothing to undo', async () => {
+    open(); await selectConversation()
+    await editTo('Fix the other bug')
+    await within(dialog()).findByText('1 file will change')
+    vi.mocked(api.editWorkspaceChatMessage).mockRejectedValue(apiError('files_restored', 'Files were restored but not sent.'))
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Edit and re-run' }))
+    await screen.findByRole('button', { name: 'Undo restore' })
+    vi.mocked(api.undoWorkspaceChatRestore).mockRejectedValue(apiError('checkpoint_unavailable', 'There is nothing to undo.'))
+    fireEvent.click(screen.getByRole('button', { name: 'Undo restore' }))
+    expect(await screen.findByText('There is nothing to undo.')).toBeDefined()
+    expect(screen.queryByText(/Choose Conversation only/)).toBeNull()
   })
 
   it('closes the dialog and offers Undo restore when files were restored but the message was not sent; Undo refetches and hides it', async () => {

@@ -30,19 +30,25 @@ function timedOut(err: unknown): boolean {
 
 /**
  * Plain words for a failed rewind or undo; never the generic "delivery may be
- * uncertain". `conversationUntouched` adds that the conversation did not change
- * (true for edit/regenerate/switch, not for Undo restore).
+ * uncertain". The dialog wording (checkpoint advice, "Nothing in the
+ * conversation was changed.") applies to a rewind only; Undo restore shows the
+ * backend's own text for those (e.g. "There is nothing to undo.").
  */
-export function rewindErrorText(err: unknown, conversationUntouched = true): string {
+export function rewindErrorText(err: unknown, action: 'rewind' | 'undo' = 'rewind'): string {
   const failure = record(err)
   const message = err instanceof Error ? err.message : textValue(failure.message) || String(err)
   if (timedOut(err)) return 'The request timed out. Check the conversation before retrying; the server may still finish.'
   switch (textValue(failure.code)) {
     case 'chat_busy': return 'A turn is running here or another conversation is using this folder. Try again when it finishes.'
-    case 'checkpoint_unavailable': return 'There is no file checkpoint for that message. Choose Conversation only.'
-    case 'restore_partial': return conversationUntouched ? `${message} Nothing in the conversation was changed.` : message
+    case 'checkpoint_unavailable': return action === 'rewind' ? 'There is no file checkpoint for that message. Choose Conversation only.' : message
+    case 'restore_partial': return action === 'rewind' ? `${message} Nothing in the conversation was changed.` : message
     default: return message
   }
+}
+
+/** The Undo banner's line after a successful files restore. */
+export function restoredFilesText(kind: RewindMode): string {
+  return kind === 'switch' ? 'Files were restored to that version.' : 'Files were restored to before that message.'
 }
 
 /** One opened dialog. Its client message id is reused by every confirm, so a retry is idempotent. */
@@ -165,7 +171,7 @@ export function useRewind(options: RewindOptions) {
       if (!mounted.current) return
       setRequest(previous => previous === current ? null : previous)
       await refresh(target)
-      if (files && mounted.current) offerUndo(target, current.kind !== 'switch')
+      if (files && mounted.current) offerUndo(target, current.kind !== 'switch', restoredFilesText(current.kind))
     } catch (err) {
       if (!mounted.current) return
       const code = textValue(record(err).code)
@@ -205,7 +211,7 @@ export function useRewind(options: RewindOptions) {
       setUndoOffer(previous => previous?.sessionId === offer.sessionId ? null : previous)
       await refresh(offer.sessionId)
     } catch (err) {
-      if (mounted.current) setUndoOffer(previous => previous?.sessionId === offer.sessionId ? { ...previous, error: rewindErrorText(err, false) } : previous)
+      if (mounted.current) setUndoOffer(previous => previous?.sessionId === offer.sessionId ? { ...previous, error: rewindErrorText(err, 'undo') } : previous)
     } finally {
       mutationPending.current = false
       if (mounted.current) { setPending(false); setUndoBusy(false) }

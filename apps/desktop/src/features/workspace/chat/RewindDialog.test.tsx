@@ -51,6 +51,36 @@ describe('RewindDialog', () => {
     expect(onConfirm).toHaveBeenLastCalledWith(true)
   })
 
+  it('moves between enabled choices with the arrow keys and keeps one tab stop', () => {
+    render(<RewindDialog {...base()} />)
+    expect(screen.getByRole('radiogroup', { name: 'What goes back' })).toBeDefined()
+    expect(conversationChoice()).toHaveAttribute('tabindex', '0')
+    expect(filesChoice()).toHaveAttribute('tabindex', '-1')
+    fireEvent.keyDown(conversationChoice(), { key: 'ArrowDown' })
+    expect(filesChoice()).toHaveAttribute('aria-checked', 'true')
+    expect(filesChoice()).toHaveFocus()
+    expect(filesChoice()).toHaveAttribute('tabindex', '0')
+    fireEvent.keyDown(filesChoice(), { key: 'ArrowUp' })
+    expect(conversationChoice()).toHaveAttribute('aria-checked', 'true')
+    expect(conversationChoice()).toHaveFocus()
+  })
+
+  it('does not move to a disabled files choice with the arrow keys', () => {
+    render(<RewindDialog {...base({ preview: { ...preview, has_checkpoint: false, files_available: false } })} />)
+    fireEvent.keyDown(conversationChoice(), { key: 'ArrowDown' })
+    expect(conversationChoice()).toHaveAttribute('aria-checked', 'true')
+    expect(filesChoice()).toHaveAttribute('aria-checked', 'false')
+  })
+
+  it('draws a visible ring for an unselected choice and a dot for the selected one', () => {
+    render(<RewindDialog {...base()} />)
+    const indicator = (radio: HTMLElement) => radio.querySelector('[data-radio-indicator]')!
+    expect(indicator(conversationChoice()).className).toContain('border-foreground')
+    expect(indicator(conversationChoice()).children).toHaveLength(1)
+    expect(indicator(filesChoice()).className).toMatch(/border-muted-foreground(\s|$)/)
+    expect(indicator(filesChoice()).children).toHaveLength(0)
+  })
+
   it('always shows the standing note exactly', () => {
     expect(REWIND_STANDING_NOTE).toBe('Does not undo commits, pushes, installs, network actions or ignored files.')
     const { rerender } = render(<RewindDialog {...base()} />)

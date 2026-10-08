@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState, type KeyboardEvent } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogFooter } from '@ui/dialog'
 import type { WorkspaceChatFileChange, WorkspaceChatRewindPreview } from '@core/api/client'
 
@@ -53,16 +53,28 @@ export function RewindDialog({ open, mode, preview, previewLoading, previewError
   const since = new Set(usablePreview?.changed_since_turn ?? [])
   const changeCount = usablePreview?.changes.length ?? 0
 
+  const radios = useRef<Record<'conversation' | 'files', HTMLButtonElement | null>>({ conversation: null, files: null })
+  // Arrow keys move between the enabled choices, like native radios.
+  const moveChoice = (event: KeyboardEvent) => {
+    if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(event.key) || !filesEnabled) return
+    event.preventDefault()
+    const next = !chosenFiles
+    setRestoreFiles(next)
+    radios.current[next ? 'files' : 'conversation']?.focus()
+  }
   const choice = (value: boolean, label: string, detail: string, disabledReason?: string) => {
     const selected = chosenFiles === value
     return (
-      <button type="button" role="radio" aria-checked={selected} disabled={!!disabledReason} onClick={() => setRestoreFiles(value)}
-        className={`flex w-full flex-col items-start rounded-lg px-3 py-2 text-left transition-colors disabled:cursor-not-allowed ${selected ? 'bg-foreground/[0.07]' : 'hover:bg-foreground/[0.04]'}`}>
+      <button ref={element => { radios.current[value ? 'files' : 'conversation'] = element }} type="button" role="radio" aria-checked={selected}
+        tabIndex={selected ? 0 : -1} disabled={!!disabledReason} onClick={() => setRestoreFiles(value)}
+        className={`flex w-full flex-col items-start rounded-lg px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed ${selected ? 'bg-foreground/[0.07]' : 'hover:bg-foreground/[0.04]'}`}>
         <span className="flex items-center gap-2 text-sm">
-          <span aria-hidden="true" className={`size-3 rounded-full ${selected ? 'border-[3.5px] border-foreground/80' : 'border border-muted-foreground/50'}`} />
+          <span aria-hidden="true" data-radio-indicator className={`flex size-3.5 shrink-0 items-center justify-center rounded-full border-[1.5px] ${selected ? 'border-foreground' : disabledReason ? 'border-muted-foreground/50' : 'border-muted-foreground'}`}>
+            {selected && <span className="size-1.5 rounded-full bg-foreground" />}
+          </span>
           <span className={disabledReason ? 'text-muted-foreground' : 'text-foreground'}>{label}</span>
         </span>
-        <span className="pl-5 text-xs text-muted-foreground">{disabledReason || detail}</span>
+        <span className="pl-5.5 text-xs text-muted-foreground">{disabledReason || detail}</span>
       </button>
     )
   }
@@ -80,7 +92,7 @@ export function RewindDialog({ open, mode, preview, previewLoading, previewError
           <p aria-hidden="true" className="text-lg font-semibold">{copy.title}</p>
           <DialogDescription>{copy.description}</DialogDescription>
         </div>
-        <div role="radiogroup" aria-label="What goes back" className="space-y-0.5">
+        <div role="radiogroup" aria-label="What goes back" onKeyDown={moveChoice} className="space-y-0.5">
           {choice(false, 'Conversation only', 'Files in the folder stay as they are now.')}
           {!filesHidden && choice(true, 'Conversation and files', mode === 'switch' ? 'Files go back to the state at the end of that version.' : 'Files in the folder go back to how they were before that message.', filesReason)}
         </div>
