@@ -263,27 +263,29 @@ func (s *Service) recordEvent(id string, e agents.NativeEvent) error {
 }
 
 // recoverTurn keeps a bug inside one turn from taking the whole backend down:
-// it logs the panic with its stack and marks this conversation failed. It then
-// still takes the after checkpoint: the harness may have changed files before
-// the bug fired, and the after row records what that version left behind.
-// checkpointTurn recovers its own panics, so it cannot escape this handler.
+// it logs the panic with its stack and marks this conversation failed. Before
+// that it still takes the after checkpoint, while the turn owns the session:
+// the harness may have changed files before the bug fired, and the after row
+// records what that version left behind. checkpointTurn recovers its own
+// panics, so it cannot escape this handler.
 func (s *Service) recoverTurn(sess Session, m Message) {
 	recovered := recover()
 	if recovered == nil {
 		return
 	}
 	log.Printf("workspace chat turn for session %s panicked: %v\n%s", sess.ID, recovered, debug.Stack())
+	s.settleTurn(sess, m)
 	func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		delete(s.active, sess.ID)
+		s.setTurnPhase(sess.ID, "")
 		delete(s.native, sess.ID)
 		delete(s.nativePrefixes, sess.ID)
 		if err := s.finish(sess, m, "", "failed", "unknown", "The agent turn hit an internal error and was stopped. Details are in the backend log; you can send again."); err != nil {
 			_, _ = s.db.Exec(`UPDATE workspace_chat_sessions SET status='failed',error='The agent turn hit an internal error and was stopped.' WHERE id=?`, sess.ID)
 		}
 	}()
-	s.checkpointTurn(sess, "", m.ID, "after")
 }
 
 func (s *Service) runNative(ctx context.Context, cancel context.CancelFunc, sess Session, m Message, turn agents.TurnRequest) {
@@ -291,8 +293,14 @@ func (s *Service) runNative(ctx context.Context, cancel context.CancelFunc, sess
 	defer cancel()
 	defer s.recoverTurn(sess, m)
 	// The message is durably accepted; record the folder before the harness
-	// (a new or a resumed provider process) sees the turn.
-	s.checkpointTurn(sess, "", m.ID, "before")
+	// (a new or a resumed provider process) sees the turn. Until beginDispatch,
+	// Stop cancels ctx instead of interrupting the provider, which has no turn
+	// yet; the cancel also cuts the snapshot short.
+	s.checkpointTurnCtx(ctx, sess, "", m.ID, "before")
+	if !s.beginDispatch(ctx, sess.ID) {
+		s.settleUndispatched(sess, m)
+		return
+	}
 	s.nativeFailures.Delete(sess.ID)
 	prefix := uuid.NewString() + ":"
 	onEvent := func(e agents.NativeEvent) {
@@ -431,10 +439,12 @@ func (s *Service) runNative(ctx context.Context, cancel context.CancelFunc, sess
 	if err != nil && native != nil {
 		closeNative(native)
 	}
+	s.settleTurn(sess, m)
 	func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		defer delete(s.active, sess.ID)
+		s.setTurnPhase(sess.ID, "")
 		if err != nil {
 			delete(s.native, sess.ID)
 			delete(s.nativePrefixes, sess.ID)
@@ -445,8 +455,6 @@ func (s *Service) runNative(ctx context.Context, cancel context.CancelFunc, sess
 		}
 		_, _ = s.db.Exec(`UPDATE workspace_chat_requests SET status='stale' WHERE session_id=? AND status='pending'`, sess.ID)
 	}()
-	// Outside the mutex: the turn has ended whatever its outcome.
-	s.checkpointTurn(sess, "", m.ID, "after")
 }
 func (s *Service) Reply(ctx context.Context, pid, id, requestID string, req ReplyRequest) (RuntimeRequest, error) {
 	if req.ClientResponseID == "" || len(req.ClientResponseID) > 200 || len(req.Answer) == 0 || len(req.Answer) > maxText || !json.Valid(req.Answer) {

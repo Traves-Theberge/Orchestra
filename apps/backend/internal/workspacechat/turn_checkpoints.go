@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"path/filepath"
 	"time"
 
 	"github.com/orchestra/orchestra/apps/backend/internal/checkpoint"
@@ -23,6 +22,16 @@ type checkpointer interface {
 // defaultSnapshotTimeout bounds one snapshot; past it the turn goes on without.
 const defaultSnapshotTimeout = 20 * time.Second
 
+// Turn phases outside the harness. A turn in s.active with no phase has
+// dispatched its harness, so Stop must interrupt the provider; a preparing
+// turn has not, so Stop cancels it; a settling turn's harness is done.
+const (
+	phasePreparing = "preparing"
+	phaseSettling  = "settling"
+)
+
+const notDispatchedError = "Turn stopped before it was sent to the agent. Workspace files were not changed by this turn."
+
 // SetCheckpointStore enables per-turn file checkpoints. Nil (including a nil
 // *checkpoint.Store) disables them.
 func (s *Service) SetCheckpointStore(c checkpointer) {
@@ -37,13 +46,72 @@ func (s *Service) SetCheckpointStore(c checkpointer) {
 	s.mu.Unlock()
 }
 
+// setTurnPhase records a turn's phase; callers hold s.mu. Empty clears it.
+func (s *Service) setTurnPhase(id, phase string) {
+	if phase == "" {
+		delete(s.turnPhases, id)
+		return
+	}
+	if s.turnPhases == nil {
+		s.turnPhases = map[string]string{}
+	}
+	s.turnPhases[id] = phase
+}
+
+// beginDispatch ends the preparing phase. It reports false when the turn was
+// cancelled or Stop was requested while preparing (the before snapshot); the
+// caller then settles the turn as interrupted without running the harness.
+// Holding s.mu makes the check atomic with Stop.
+func (s *Service) beginDispatch(ctx context.Context, id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.setTurnPhase(id, "")
+	if ctx.Err() != nil {
+		return false
+	}
+	var status string
+	if err := s.db.QueryRow(`SELECT status FROM workspace_chat_sessions WHERE id=?`, id).Scan(&status); err == nil && status == "stopping" {
+		return false
+	}
+	return true
+}
+
+// settleUndispatched finishes a turn whose harness never ran.
+func (s *Service) settleUndispatched(sess Session, m Message) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.active, sess.ID)
+	if err := s.finish(sess, m, "", "interrupted", "cancelled", notDispatchedError); err != nil {
+		log.Printf("workspace chat finalization failed for session %s: %v", sess.ID, err)
+		_, _ = s.db.Exec(`UPDATE workspace_chat_sessions SET status='interrupted',error='Chat history persistence failed; delivery outcome unknown. Inspect before sending again.' WHERE id=?`, sess.ID)
+		_, _ = s.db.Exec(`UPDATE workspace_chat_messages SET status='unknown' WHERE id=?`, m.ID)
+	}
+}
+
+// settleTurn takes the after snapshot while the turn still owns the session
+// (running and in s.active), so no new turn or Delete can start until it is
+// recorded. The cost: the session reads "running" for up to the snapshot
+// timeout after the harness finished.
+func (s *Service) settleTurn(sess Session, m Message) {
+	s.mu.Lock()
+	s.setTurnPhase(sess.ID, phaseSettling)
+	s.mu.Unlock()
+	s.checkpointTurn(sess, "", m.ID, "after")
+}
+
 // checkpointTurn snapshots the conversation's folder and records it against a
-// user message: "before" just before the turn is dispatched, "after" once it
-// has ended. It is best-effort: a missing store, Maestro scope or unbound
-// folder skips it; a failure or timeout is logged and leaves the message
-// without a checkpoint; it never waits longer than the snapshot timeout and
-// never panics. An empty branchID means the message's own branch.
+// user message: "before" just before the turn is dispatched, "after" once the
+// harness has ended. It is best-effort: a missing store, Maestro scope or
+// unbound folder skips it; a failure or timeout is logged and leaves the
+// message without a checkpoint; it never waits longer than the snapshot
+// timeout and never panics. An empty branchID means the message's own branch.
 func (s *Service) checkpointTurn(sess Session, branchID, messageID, kind string) {
+	s.checkpointTurnCtx(context.Background(), sess, branchID, messageID, kind)
+}
+
+// checkpointTurnCtx is checkpointTurn bounded also by parent, so a turn that
+// is stopped cuts its before snapshot short.
+func (s *Service) checkpointTurnCtx(parent context.Context, sess Session, branchID, messageID, kind string) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("workspace chat %s checkpoint for message %s panicked: %v", kind, messageID, r)
@@ -58,7 +126,7 @@ func (s *Service) checkpointTurn(sess Session, branchID, messageID, kind string)
 	if timeout <= 0 {
 		timeout = defaultSnapshotTimeout
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	if branchID == "" {
 		var err error
@@ -77,11 +145,18 @@ func (s *Service) checkpointTurn(sess Session, branchID, messageID, kind string)
 			return
 		}
 	}
-	tree, err := s.snapshot(ctx, store, sess.WorkspacePath)
+	tree, err := snapshotWithin(ctx, store, sess.WorkspacePath)
 	if err == nil && tree.Hash == "" {
 		err = errors.New("snapshot returned no tree")
 	}
 	if err != nil {
+		if errors.Is(err, checkpoint.ErrUnavailable) {
+			// Git missing or the store unusable: say so once, not twice a turn.
+			if s.unavailableLogged.CompareAndSwap(false, true) {
+				log.Printf("workspace chat file checkpoints unavailable; turns run without them: %v", err)
+			}
+			return
+		}
 		log.Printf("workspace chat %s checkpoint for message %s skipped: %v", kind, messageID, err)
 		return
 	}
@@ -100,11 +175,12 @@ func (s *Service) checkpointTurn(sess Session, branchID, messageID, kind string)
 	}
 }
 
-// snapshot runs one snapshot, returning when it finishes or ctx ends, even if
-// the store ignores ctx (its late result is then discarded). Snapshots of one
-// folder are serialized, so a turn's after snapshot finishes before the next
-// turn's before snapshot starts and that turn's harness is dispatched.
-func (s *Service) snapshot(ctx context.Context, store checkpointer, worktree string) (checkpoint.Tree, error) {
+// snapshotWithin returns when the snapshot finishes or ctx ends, even if the
+// store ignores ctx (its late result is then discarded). Snapshots of one
+// folder never overlap a harness: before and after both run while the turn
+// owns the session, and Send serializes turns per checkout (Maestro, which
+// does not, is never checkpointed).
+func snapshotWithin(ctx context.Context, store checkpointer, worktree string) (checkpoint.Tree, error) {
 	type outcome struct {
 		tree checkpoint.Tree
 		err  error
@@ -113,21 +189,9 @@ func (s *Service) snapshot(ctx context.Context, store checkpointer, worktree str
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				select {
-				case done <- outcome{err: fmt.Errorf("snapshot panicked: %v", r)}:
-				default:
-				}
+				done <- outcome{err: fmt.Errorf("snapshot panicked: %v", r)}
 			}
 		}()
-		lock, _ := s.worktreeLocks.LoadOrStore(filepath.Clean(worktree), make(chan struct{}, 1))
-		slot := lock.(chan struct{})
-		select {
-		case slot <- struct{}{}:
-		case <-ctx.Done():
-			done <- outcome{err: ctx.Err()}
-			return
-		}
-		defer func() { <-slot }()
 		tree, err := store.Snapshot(ctx, worktree)
 		done <- outcome{tree, err}
 	}()
@@ -135,7 +199,7 @@ func (s *Service) snapshot(ctx context.Context, store checkpointer, worktree str
 	case res := <-done:
 		return res.tree, res.err
 	case <-ctx.Done():
-		return checkpoint.Tree{}, fmt.Errorf("snapshot timed out: %w", ctx.Err())
+		return checkpoint.Tree{}, fmt.Errorf("snapshot did not finish: %w", ctx.Err())
 	}
 }
 

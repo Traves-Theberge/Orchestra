@@ -1,11 +1,15 @@
 package workspacechat
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -16,11 +20,15 @@ import (
 )
 
 // fakeCheckpointer records snapshot calls. With release set it blocks until
-// release closes, ignoring its context, as a wedged store would.
+// release closes, ignoring its context, as a wedged store would: every call,
+// or only call number blockCall (1-based) when that is set. entered, if set,
+// receives each call number as the call starts.
 type fakeCheckpointer struct {
 	mu        sync.Mutex
 	worktrees []string
 	release   chan struct{}
+	blockCall int
+	entered   chan int
 	err       error
 }
 
@@ -29,7 +37,10 @@ func (f *fakeCheckpointer) Snapshot(ctx context.Context, worktree string) (check
 	f.worktrees = append(f.worktrees, worktree)
 	n := len(f.worktrees)
 	f.mu.Unlock()
-	if f.release != nil {
+	if f.entered != nil {
+		f.entered <- n
+	}
+	if f.release != nil && (f.blockCall == 0 || f.blockCall == n) {
 		<-f.release
 	}
 	if f.err != nil {
@@ -55,13 +66,19 @@ type writingRegistry struct {
 	*fakeNativeRegistry
 	mu      sync.Mutex
 	started []time.Time
+	sends   int
 }
 
 func (r *writingRegistry) StartNativeSession(_ context.Context, _ agents.Provider, req agents.TurnRequest, _ string, h agents.NativeEventHandler) (agents.NativeSession, error) {
 	r.mu.Lock()
 	r.started = append(r.started, time.Now())
 	r.mu.Unlock()
-	return &writingNative{fakeNative: &fakeNative{handler: h}, dir: req.Workspace}, nil
+	return &writingNative{fakeNative: &fakeNative{handler: h}, dir: req.Workspace, registry: r}, nil
+}
+func (r *writingRegistry) sendCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.sends
 }
 func (r *writingRegistry) firstStart() time.Time {
 	r.mu.Lock()
@@ -74,13 +91,17 @@ func (r *writingRegistry) firstStart() time.Time {
 
 type writingNative struct {
 	*fakeNative
-	dir string
+	dir      string
+	registry *writingRegistry
 }
 
 func (n *writingNative) SendTurnWithOptions(ctx context.Context, text string, _ agents.NativeTurnOptions) (agents.NativeTurnResult, error) {
 	return n.SendTurn(ctx, text, "")
 }
 func (n *writingNative) SendTurn(ctx context.Context, text, model string) (agents.NativeTurnResult, error) {
+	n.registry.mu.Lock()
+	n.registry.sends++
+	n.registry.mu.Unlock()
 	if err := os.WriteFile(filepath.Join(n.dir, "out.txt"), []byte("made by the turn\n"), 0o644); err != nil {
 		return agents.NativeTurnResult{}, err
 	}
@@ -173,6 +194,10 @@ func sendAndSettle(t *testing.T, s *Service, pid, sessionID string) (Accepted, D
 	}
 	return accepted, d
 }
+
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
 
 func requireGit(t *testing.T) {
 	t.Helper()
@@ -290,6 +315,8 @@ func TestSnapshotTimeoutDoesNotDelayTheTurn(t *testing.T) {
 	}
 	if wait := started.Sub(sent); wait > time.Second {
 		t.Fatalf("a hung snapshot delayed dispatch by %v (timeout 50ms)", wait)
+	} else if wait < 50*time.Millisecond {
+		t.Fatalf("dispatch after %v: the before snapshot did not wait for its timeout", wait)
 	}
 	settled := make(chan struct{})
 	go func() {
@@ -303,6 +330,172 @@ func TestSnapshotTimeoutDoesNotDelayTheTurn(t *testing.T) {
 	}
 	if rows := checkpointRows(t, s, sess.ID); len(rows) != 0 {
 		t.Fatalf("timed-out snapshots must not be recorded: %+v", rows)
+	}
+	// Both the before and the after snapshot reached the (hung) store.
+	if calls := store.calls(); len(calls) != 2 {
+		t.Fatalf("expected the before and after snapshots to reach the store: %v", calls)
+	}
+}
+
+// awaitEntered waits for the fake store to start snapshot call number want.
+func awaitEntered(t *testing.T, entered chan int, want int) {
+	t.Helper()
+	timeout := time.After(10 * time.Second)
+	for {
+		select {
+		case n := <-entered:
+			if n == want {
+				return
+			}
+		case <-timeout:
+			t.Fatalf("snapshot call %d never started", want)
+		}
+	}
+}
+
+// awaitSettled waits for the session to leave running/stopping.
+func awaitSettled(t *testing.T, s *Service, pid, id string, within time.Duration) Detail {
+	t.Helper()
+	deadline := time.Now().Add(within)
+	for time.Now().Before(deadline) {
+		d, err := s.Detail(context.Background(), pid, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d.Session.Status != "running" && d.Session.Status != "stopping" {
+			return d
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("session did not settle within %v", within)
+	return Detail{}
+}
+
+// Stop while a resumed native turn is still taking its before snapshot: the
+// provider has no turn yet, so Stop must cancel rather than interrupt it, and
+// the harness must never receive the message.
+func TestStopDuringBeforeSnapshotNeverDispatchesNativeTurn(t *testing.T) {
+	registry := &writingRegistry{fakeNativeRegistry: &fakeNativeRegistry{}}
+	s, pid, _ := checkpointFixture(t, registry)
+	ctx := context.Background()
+	sess, err := s.Create(ctx, pid, "codex", "stop native")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The first turn leaves a live provider process, as in real use.
+	if _, err = s.Send(ctx, pid, sess.ID, SendRequest{ClientMessageID: "c-1", Text: "first"}); err != nil {
+		t.Fatal(err)
+	}
+	awaitSettled(t, s, pid, sess.ID, 10*time.Second)
+	if registry.sendCount() != 1 {
+		t.Fatalf("first turn should have been dispatched once: %d", registry.sendCount())
+	}
+	store := &fakeCheckpointer{release: make(chan struct{}), entered: make(chan int, 8)}
+	t.Cleanup(func() { close(store.release) })
+	s.SetCheckpointStore(store)
+	if _, err = s.Send(ctx, pid, sess.ID, SendRequest{ClientMessageID: "c-2", Text: "second"}); err != nil {
+		t.Fatal(err)
+	}
+	awaitEntered(t, store.entered, 1)
+	stopped := time.Now()
+	if _, err = s.Stop(ctx, pid, sess.ID); err != nil {
+		t.Fatalf("Stop during the before snapshot failed: %v", err)
+	}
+	d := awaitSettled(t, s, pid, sess.ID, 5*time.Second)
+	if time.Since(stopped) > 3*time.Second {
+		t.Fatal("Stop waited for the snapshot timeout")
+	}
+	if d.Session.Status != "interrupted" {
+		t.Fatalf("stopped turn should be interrupted: %+v", d.Session)
+	}
+	if last := d.Messages[len(d.Messages)-1]; last.Text != "second" || last.Status != "cancelled" {
+		t.Fatalf("stopped message should be cancelled: %+v", last)
+	}
+	if registry.sendCount() != 1 {
+		t.Fatalf("the stopped turn reached the harness: %d sends", registry.sendCount())
+	}
+}
+
+func TestStopDuringBeforeSnapshotNeverDispatchesReplayTurn(t *testing.T) {
+	r := &recordingRunner{output: `{"result":"done"}`}
+	s, _, pid, _ := fixture(t, r)
+	store := &fakeCheckpointer{release: make(chan struct{}), entered: make(chan int, 8)}
+	t.Cleanup(func() { close(store.release) })
+	s.SetCheckpointStore(store)
+	ctx := context.Background()
+	sess, err := s.Create(ctx, pid, "CODEX", "stop replay")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Send(ctx, pid, sess.ID, SendRequest{ClientMessageID: "c-1", Text: "go"}); err != nil {
+		t.Fatal(err)
+	}
+	awaitEntered(t, store.entered, 1)
+	if _, err = s.Stop(ctx, pid, sess.ID); err != nil {
+		t.Fatalf("Stop during the before snapshot failed: %v", err)
+	}
+	d := awaitSettled(t, s, pid, sess.ID, 3*time.Second)
+	if d.Session.Status != "interrupted" || d.Messages[0].Status != "cancelled" {
+		t.Fatalf("stopped turn should be interrupted: %+v", d)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.calls) != 0 {
+		t.Fatalf("the stopped turn reached the harness: %d calls", len(r.calls))
+	}
+}
+
+// The after snapshot runs while the turn still owns the session: sends and
+// deletes are refused until it is recorded, and the row exists before idle.
+func TestAfterSnapshotHoldsTheSession(t *testing.T) {
+	r := &recordingRunner{output: `{"result":"done"}`}
+	s, _, pid, _ := fixture(t, r)
+	store := &fakeCheckpointer{release: make(chan struct{}), blockCall: 2, entered: make(chan int, 8)}
+	released := false
+	t.Cleanup(func() {
+		if !released {
+			close(store.release)
+		}
+	})
+	s.SetCheckpointStore(store)
+	ctx := context.Background()
+	sess, err := s.Create(ctx, pid, "CODEX", "after holds")
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted, err := s.Send(ctx, pid, sess.ID, SendRequest{ClientMessageID: "c-1", Text: "go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	awaitEntered(t, store.entered, 2)
+	d, err := s.Detail(ctx, pid, sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Session.Status != "running" {
+		t.Fatalf("session should still be running during the after snapshot: %+v", d.Session)
+	}
+	if _, err = s.Send(ctx, pid, sess.ID, SendRequest{ClientMessageID: "c-2", Text: "too soon"}); !errors.Is(err, ErrBusy) {
+		t.Fatalf("send during the after snapshot should be busy: %v", err)
+	}
+	if err = s.Delete(ctx, pid, sess.ID); !errors.Is(err, ErrBusy) {
+		t.Fatalf("delete during the after snapshot should be busy: %v", err)
+	}
+	close(store.release)
+	released = true
+	d = awaitSettled(t, s, pid, sess.ID, 5*time.Second)
+	if d.Session.Status != "idle" {
+		t.Fatalf("turn should complete: %+v", d.Session)
+	}
+	// Read immediately at idle: the after row must already be there.
+	if _, ok, err := s.checkpointFor(ctx, sess.ID, accepted.Message.ID, "after"); err != nil || !ok {
+		t.Fatalf("after row missing when the session reported idle: %v %v", ok, err)
+	}
+	if err = s.Delete(ctx, pid, sess.ID); err != nil {
+		t.Fatal(err)
+	}
+	if rows := checkpointRows(t, s, sess.ID); len(rows) != 0 {
+		t.Fatalf("delete left orphan checkpoint rows: %+v", rows)
 	}
 }
 
@@ -380,9 +573,23 @@ func TestNoGitMeansNoCheckpointButTurnRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var logs bytes.Buffer
+	var logMu sync.Mutex
+	log.SetOutput(writerFunc(func(p []byte) (int, error) {
+		logMu.Lock()
+		defer logMu.Unlock()
+		return logs.Write(p)
+	}))
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
 	_, d := sendAndSettle(t, s, pid, sess.ID)
 	if d.Session.Status != "idle" || len(d.Messages) != 2 || d.Messages[0].HasCheckpoint {
 		t.Fatalf("turn should run without a checkpoint: %+v", d)
+	}
+	logMu.Lock()
+	text := logs.String()
+	logMu.Unlock()
+	if n := strings.Count(text, "file checkpoints unavailable"); n != 1 {
+		t.Fatalf("missing git should be logged once, got %d:\n%s", n, text)
 	}
 	if rows := checkpointRows(t, s, sess.ID); len(rows) != 0 {
 		t.Fatalf("no git means no rows: %+v", rows)

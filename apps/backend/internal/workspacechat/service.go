@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -166,9 +167,12 @@ type Service struct {
 	nativeAgents         map[string]string
 	// checkpoints snapshots a conversation's folder around each turn; nil
 	// disables checkpoints. snapshotTimeout bounds each snapshot.
-	checkpoints     checkpointer
-	snapshotTimeout time.Duration
-	worktreeLocks   sync.Map
+	checkpoints       checkpointer
+	snapshotTimeout   time.Duration
+	unavailableLogged atomic.Bool
+	// turnPhases marks turns in s.active whose harness is not running yet
+	// (preparing) or has ended (settling); guarded by mu.
+	turnPhases map[string]string
 }
 
 // New recovers incomplete deliveries as unknown; it never resubmits them.
@@ -834,6 +838,7 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 	}
 	runCtx, cancel := context.WithTimeout(context.Background(), turn.Timeout)
 	s.active[id] = cancel
+	s.setTurnPhase(id, phasePreparing)
 	s.wg.Add(1)
 	d.Session.Status = "running"
 	d.Session.Error = ""
@@ -866,8 +871,13 @@ func (s *Service) run(ctx context.Context, cancel context.CancelFunc, sess Sessi
 	defer s.wg.Done()
 	defer cancel()
 	defer s.recoverTurn(sess, m)
-	// The message is durably accepted; record the folder before the harness runs.
-	s.checkpointTurn(sess, "", m.ID, "before")
+	// The message is durably accepted; record the folder before the harness
+	// runs. A Stop meanwhile cancels ctx, which cuts the snapshot short.
+	s.checkpointTurnCtx(ctx, sess, "", m.ID, "before")
+	if !s.beginDispatch(ctx, sess.ID) {
+		s.settleUndispatched(sess, m)
+		return
+	}
 	reasoning := newReasoningStream(turn.SessionID)
 	result, err := s.registry.RunTurn(ctx, agents.Provider(sess.Provider), turn, func(e agents.Event) {
 		for _, ne := range reasoning.events(e) {
@@ -901,10 +911,12 @@ func (s *Service) run(ctx context.Context, cancel context.CancelFunc, sess Sessi
 		errorText = "Turn interrupted. Workspace files were retained; inspect changes before retrying."
 	}
 	output := assistantText(result.Output)
+	s.settleTurn(sess, m)
 	func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		defer delete(s.active, sess.ID)
+		s.setTurnPhase(sess.ID, "")
 		if err := s.finish(sess, m, output, status, msgStatus, errorText); err != nil {
 			log.Printf("workspace chat finalization failed for session %s: %v", sess.ID, err)
 			// Best effort recovery. If SQLite is unavailable, persisted running/stopping
@@ -913,8 +925,6 @@ func (s *Service) run(ctx context.Context, cancel context.CancelFunc, sess Sessi
 			_, _ = s.db.Exec(`UPDATE workspace_chat_messages SET status='unknown' WHERE id=?`, m.ID)
 		}
 	}()
-	// Outside the mutex: the turn has ended whatever its outcome.
-	s.checkpointTurn(sess, "", m.ID, "after")
 }
 func (s *Service) finish(sess Session, m Message, output, status, msgStatus, errorText string) error {
 	tx, txErr := s.db.Begin()
@@ -1040,6 +1050,19 @@ func (s *Service) Stop(ctx context.Context, pid, id string) (Session, error) {
 			return Session{}, err
 		}
 		d.Session.Status = "stopping"
+		switch s.turnPhases[id] {
+		case phasePreparing:
+			// The harness has not been given the turn yet (the before snapshot
+			// is running): cancel so the turn settles without dispatching.
+			cancel()
+			s.mu.Unlock()
+			return d.Session, nil
+		case phaseSettling:
+			// The harness has finished; the turn is only recording its after
+			// snapshot and settles with its own outcome.
+			s.mu.Unlock()
+			return d.Session, nil
+		}
 		if native := s.native[id]; native != nil {
 			s.mu.Unlock()
 			if err = native.Interrupt(ctx); err != nil {
