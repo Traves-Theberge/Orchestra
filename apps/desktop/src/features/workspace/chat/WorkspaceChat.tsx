@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { ArrowDown, ArrowUp, ChevronRight, Paperclip, ShieldCheck, Square, X } from 'lucide-react'
 import { MarkdownRenderer } from '@ui/MarkdownRenderer'
@@ -40,9 +40,27 @@ import {
   createWorkspaceChatSession, renameWorkspaceChatSession, switchWorkspaceChatProvider, fetchWorkspaceChat, fetchWorkspaceChatProviders, fetchWorkspaceChatModels,
   listWorkspaceChatSessions, sendWorkspaceChatMessage, stopWorkspaceChatTurn, replyWorkspaceChatRequest,
   type BackendConfig, type WorkspaceChatProvider, type WorkspaceChatSession,
-  type WorkspaceChatSnapshot, type WorkspaceChatRequest, type WorkspaceChatEvent, type WorkspaceChatModelCatalog,
+  type WorkspaceChatSnapshot, type WorkspaceChatRequest, type WorkspaceChatEvent, type WorkspaceChatMessage, type WorkspaceChatModelCatalog,
 } from '@core/api/client'
 
+const NO_EVENTS: WorkspaceChatEvent[] = []
+const NO_MESSAGES: WorkspaceChatMessage[] = []
+
+/** Session fields the UI shows; equal sessions keep their identity so nothing re-renders. */
+const sameSession = (a: WorkspaceChatSession | undefined, b: WorkspaceChatSession) => !!a && a.id === b.id && a.status === b.status
+  && a.updated_at === b.updated_at && a.title === b.title && a.provider === b.provider && a.error === b.error
+  && a.pending_requests === b.pending_requests && a.effective_agent_id === b.effective_agent_id && a.agent_observation === b.agent_observation
+/** A poll that brought nothing new keeps the previous snapshot, so the conversation doesn't re-render. */
+function sameSnapshot(a: WorkspaceChatSnapshot | null, b: WorkspaceChatSnapshot): boolean {
+  if (!a || a.cursor !== b.cursor || !sameSession(a.session, b.session)) return false
+  if (a.messages.length !== b.messages.length || (a.events?.length ?? 0) !== (b.events?.length ?? 0)) return false
+  const lastA = a.messages[a.messages.length - 1]
+  const lastB = b.messages[b.messages.length - 1]
+  if (lastA && lastB && (lastA.id !== lastB.id || lastA.status !== lastB.status || lastA.text !== lastB.text)) return false
+  const requestsA = a.requests ?? []
+  const requestsB = b.requests ?? []
+  return requestsA.length === requestsB.length && requestsA.every((r, i) => r.id === requestsB[i].id && r.status === requestsB[i].status)
+}
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error)
 const isWorking = (session?: WorkspaceChatSession) => session?.status === 'running' || session?.status === 'stopping'
 const record = (value: unknown): Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
@@ -576,15 +594,14 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
   const effortModel = selectedModel ? catalog?.models.find(m => m.model === selectedModel) : undefined
   const effortOptions = effortModel?.supported_reasoning_efforts ?? []
   const selectedEffort = effortSelection.key === catalogKey && effortSelection.model === (effortModel?.model ?? '') && effortOptions.some(e => e.reasoning_effort === effortSelection.effort) ? effortSelection.effort : ''
-  const messages = snapshot?.messages ?? []
+  const messages = snapshot?.messages ?? NO_MESSAGES
   const draftHero = !messages.length && !working
-  const events = snapshot?.events ?? []
+  const events = snapshot?.events ?? NO_EVENTS
   const turnStartedAt = (() => {
     for (let i = messages.length - 1; i >= 0; i--) if (messages[i].role === 'user') { const at = Date.parse(messages[i].created_at); return Number.isFinite(at) ? at : undefined }
     return undefined
   })()
   const datedTimeline = messages.length > 0 && messages.every((m, index) => Number.isFinite(Date.parse(m.created_at)) && (index === 0 || Date.parse(m.created_at) >= Date.parse(messages[index - 1].created_at)))
-  const eventsBetween = (start: number, end: number) => events.filter(e => { const timestamp = Date.parse(e.created_at); return Number.isFinite(timestamp) && timestamp > start && timestamp <= end })
   /** Agent and applied receipt for an assistant message: its own fields, then its prompt's, then the session's for the latest turn. */
   const messageAgent = (index: number) => {
     const message = messages[index]
@@ -678,7 +695,15 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
     }).catch(() => { if (!cancelled) { setStorageWarning('Draft storage is unavailable. Keep this tab open to retain unsent drafts and recovery identities.'); setStorageReady(true) } })
     return () => { cancelled = true }
   }, [storageBaseUrl, storageApiToken, projectId, config.workspaceId])
-  useEffect(() => { if (storageReady) persist() })
+  // Persist drafts at most every 200ms instead of after every render (every keystroke).
+  const persistRef = useRef(persist)
+  useLayoutEffect(() => { persistRef.current = persist })
+  const persistTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => {
+    if (!storageReady || persistTimer.current) return
+    persistTimer.current = setTimeout(() => { persistTimer.current = undefined; persistRef.current() }, 200)
+  })
+  useEffect(() => () => { if (persistTimer.current) { clearTimeout(persistTimer.current); persistRef.current() } }, [])
 
   useEffect(() => {
     if (!active || !catalogKey) return
@@ -728,7 +753,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
         if (result.session.project_id !== projectId || result.session.id !== sessionId || (config.workspaceId && result.session.workspace_id !== config.workspaceId)) {
           throw new Error('Chat response belongs to another workspace.')
         }
-        setSnapshot(result)
+        setSnapshot(previous => sameSnapshot(previous, result) ? previous : result)
         if (creating.current?.sessionId === sessionId && creating.current.uncertain) {
           if (result.session.provider !== creating.current.provider) throw new Error('Created conversation belongs to another provider.')
           creating.current = null
@@ -751,7 +776,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
           submittedReply.current = null
         }
         setObservationError(null)
-        setSessions(previous => [result.session, ...previous.filter(s => s.id !== result.session.id)])
+        setSessions(previous => sameSession(previous.find(s => s.id === result.session.id), result.session) ? previous : [result.session, ...previous.filter(s => s.id !== result.session.id)])
         timer = setTimeout(() => void load(), isWorking(result.session) ? 1000 : 5000)
       } catch (err) {
         if (!cancelled && (err as { code?: unknown } | null)?.code === 'chat_not_found' && creating.current?.sessionId !== sessionId) {
@@ -1021,6 +1046,72 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
     {(working || observationError) && <span className="shrink-0 text-[10px] text-muted-foreground">{observationError ? 'Disconnected' : 'Working'}</span>}
   </>
 
+  // Event buckets per message in one pass: events in (previous message, this message].
+  const turnBuckets = useMemo(() => {
+    if (!datedTimeline) return []
+    const times = messages.map(m => Date.parse(m.created_at))
+    const buckets = messages.map(() => [] as WorkspaceChatEvent[])
+    for (const event of events) {
+      const at = Date.parse(event.created_at)
+      if (!Number.isFinite(at)) continue
+      let lo = 0
+      let hi = times.length
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (times[mid] < at) lo = mid + 1; else hi = mid }
+      if (lo < times.length) buckets[lo].push(event)
+    }
+    return buckets
+  }, [messages, events, datedTimeline])
+  // Stable handles keep the memoized timeline from re-rendering on every keystroke.
+  const actions = useRef({ regenerateVariant, implementVariant, retryLastPrompt, interrupt })
+  useLayoutEffect(() => { actions.current = { regenerateVariant, implementVariant, retryLastPrompt, interrupt } })
+  const stableActions = useMemo(() => ({
+    regenerate: (index: number, render: HtmlRenderReference) => actions.current.regenerateVariant(index, render),
+    implement: (index: number, render: HtmlRenderReference) => actions.current.implementVariant(index, render),
+    retry: () => actions.current.retryLastPrompt(),
+    interrupt: () => actions.current.interrupt(),
+  }), [])
+  // The conversation only re-renders when what it shows changes: never for typing in the composer.
+  const timelineContent = useMemo(() => (
+    <>
+      {messages.map((message, index) => {
+        const turnEvents = turnBuckets[index] ?? NO_EVENTS
+        const htmlRenders = extractHtmlRendersFromEvents(turnEvents)
+        return (
+          <Fragment key={message.id}>
+            {datedTimeline && <AgentActivity events={turnEvents} />}
+            <div data-rail-message-id={message.id}>
+              {index > 0 && message.provider && messages[index - 1].provider && message.provider !== messages[index - 1].provider && <HarnessDivider provider={message.provider} />}
+              {(() => { const change = agentSwitch(index); return change ? <AgentDivider {...change} /> : null })()}
+              <ChatMessage message={message} provider={message.provider || snapshot?.session.provider || ''} projectId={projectId} htmlRenders={htmlRenders} onRegenerateVariant={stableActions.regenerate} onImplementVariant={stableActions.implement} variantActionsDisabled={variantActionsDisabled} {...messageAgent(index)} />
+            </div>
+          </Fragment>
+        )
+      })}
+      {(() => {
+        // Events after the last message belong to the turn in flight (undated ones only while it runs).
+        const after = datedTimeline ? Date.parse(messages[messages.length - 1].created_at) : -Infinity
+        const trailing = datedTimeline ? events.filter(e => { const at = Date.parse(e.created_at); return Number.isFinite(at) ? at > after : working }) : events
+        return working ? <LiveTurn events={trailing} projectId={projectId} /> : <AgentActivity events={trailing} />
+      })()}
+      <ResolvedRequests requests={(snapshot?.requests ?? []).filter(request => request.status !== 'pending' && (!messages.length || !Number.isFinite(Date.parse(request.created_at)) ? working : Date.parse(request.created_at) > Date.parse(messages[messages.length - 1].created_at)))} />
+      {!working && (snapshot?.session.status === 'failed' || snapshot?.session.status === 'interrupted') && snapshot.session.id === sessionId && (
+        <TurnNotice status={snapshot.session.status} error={snapshot.session.error} onRetry={stableActions.retry} />
+      )}
+      {working && (
+        <AgentWorkingStatus
+          key={sessionId}
+          status={snapshot?.session.status}
+          provider={snapshot?.session.provider || provider}
+          activity={workingActivityLabel(turnStartedAt === undefined ? events : events.filter(e => { const at = Date.parse(e.created_at); return !Number.isFinite(at) || at >= turnStartedAt }))}
+          startedAt={turnStartedAt}
+          onInterrupt={stableActions.interrupt}
+        />
+      )}
+    </>
+  // messageAgent/agentSwitch read only messages, the session and the agent directory, all listed here.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ), [messages, events, working, datedTimeline, turnBuckets, snapshot?.requests, snapshot?.session, sessionId, projectId, provider, variantActionsDisabled, agentDirectory, turnStartedAt, stableActions])
+
   return (
     <section aria-label={`${projectName} workspace chat`} onKeyDown={e => {
       if (e.defaultPrevented || e.key !== 'Escape' || e.nativeEvent.isComposing) return
@@ -1044,42 +1135,9 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
       {creating.current?.uncertain && creating.current.sessionId === sessionId && <div className="px-5 py-2"><button disabled={pending} onClick={retryCreate} className="rounded-md border border-border px-3 py-1.5 text-xs disabled:opacity-40">Retry creating chat</button><p className="mt-1 text-[10px] text-muted-foreground">Reuses the same conversation identity. Your message stays unsent.</p></div>}
       <div className="relative min-h-0 flex-1">
       <MessageRail messages={messages} timelineRef={timelineRef} />
-      <div ref={timelineRef} aria-label="Chat timeline" onScroll={e => { const el = e.currentTarget; followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120; setShowJump(!followRef.current) }} className="h-full overflow-y-auto px-4 py-6 sm:px-6">
+      <div ref={timelineRef} aria-label="Chat timeline" onScroll={e => { const el = e.currentTarget; followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120; setShowJump(!followRef.current) }} className="h-full overflow-y-auto px-4 py-6 [contain:layout_paint] sm:px-6">
         <div role="log" aria-label="Conversation messages" className="mx-auto max-w-[760px] space-y-5 pb-4" style={{ zoom: chatZoom }}>
-          {messages.map((message, index) => {
-            const turnEvents = datedTimeline ? eventsBetween(index === 0 ? -Infinity : Date.parse(messages[index - 1].created_at), Date.parse(message.created_at)) : []
-            const htmlRenders = extractHtmlRendersFromEvents(turnEvents)
-            return (
-              <Fragment key={message.id}>
-                {datedTimeline && <AgentActivity events={turnEvents} />}
-                <div data-rail-message-id={message.id}>
-                  {index > 0 && message.provider && messages[index - 1].provider && message.provider !== messages[index - 1].provider && <HarnessDivider provider={message.provider} />}
-                  {(() => { const change = agentSwitch(index); return change ? <AgentDivider {...change} /> : null })()}
-                  <ChatMessage message={message} provider={message.provider || snapshot?.session.provider || ''} projectId={projectId} htmlRenders={htmlRenders} onRegenerateVariant={regenerateVariant} onImplementVariant={implementVariant} variantActionsDisabled={variantActionsDisabled} {...messageAgent(index)} />
-                </div>
-              </Fragment>
-            )
-          })}
-          {(() => {
-            // Events after the last message belong to the turn in flight (undated ones only while it runs).
-            const after = datedTimeline ? Date.parse(messages[messages.length - 1].created_at) : -Infinity
-            const trailing = datedTimeline ? events.filter(e => { const at = Date.parse(e.created_at); return Number.isFinite(at) ? at > after : working }) : events
-            return working ? <LiveTurn events={trailing} projectId={projectId} /> : <AgentActivity events={trailing} />
-          })()}
-          <ResolvedRequests requests={(snapshot?.requests ?? []).filter(request => request.status !== 'pending' && (!messages.length || !Number.isFinite(Date.parse(request.created_at)) ? working : Date.parse(request.created_at) > Date.parse(messages[messages.length - 1].created_at)))} />
-          {!working && (snapshot?.session.status === 'failed' || snapshot?.session.status === 'interrupted') && snapshot.session.id === sessionId && (
-            <TurnNotice status={snapshot.session.status} error={snapshot.session.error} onRetry={retryLastPrompt} />
-          )}
-          {working && (
-            <AgentWorkingStatus
-              key={sessionId}
-              status={snapshot?.session.status}
-              provider={snapshot?.session.provider || provider}
-              activity={workingActivityLabel(turnStartedAt === undefined ? events : events.filter(e => { const at = Date.parse(e.created_at); return !Number.isFinite(at) || at >= turnStartedAt }))}
-              startedAt={turnStartedAt}
-              onInterrupt={interrupt}
-            />
-          )}
+          {timelineContent}
           <div ref={endRef} />
         </div>
       </div>

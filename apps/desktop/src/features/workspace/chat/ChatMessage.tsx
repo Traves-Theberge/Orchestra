@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import { AlertTriangle, Check, Copy } from 'lucide-react'
 import { HarnessIcon } from '@ui/HarnessIcon'
 import { MarkdownRenderer } from '@ui/MarkdownRenderer'
@@ -75,7 +75,7 @@ function UserMessage({ message, images, text }: { message: WorkspaceChatMessage;
   )
 }
 
-export function ChatMessage({
+function ChatMessageView({
   message,
   provider,
   projectId,
@@ -224,3 +224,14 @@ export function ChatMessage({
     </article>
   )
 }
+
+type ChatMessageProps = Parameters<typeof ChatMessageView>[0]
+/** Messages re-render only when their content or display inputs change, not on every timeline update. */
+export const ChatMessage = memo(ChatMessageView, (a: ChatMessageProps, b: ChatMessageProps) =>
+  a.message === b.message && a.provider === b.provider && a.projectId === b.projectId
+  && a.variantActionsDisabled === b.variantActionsDisabled
+  && a.onRegenerateVariant === b.onRegenerateVariant && a.onImplementVariant === b.onImplementVariant
+  && (a.htmlRenders ?? NO_RENDERS).length === (b.htmlRenders ?? NO_RENDERS).length
+  && (a.htmlRenders ?? NO_RENDERS).every((render, i) => render === (b.htmlRenders ?? NO_RENDERS)[i] || JSON.stringify(render) === JSON.stringify((b.htmlRenders ?? NO_RENDERS)[i]))
+  && a.agent?.name === b.agent?.name && a.agent?.color === b.agent?.color
+  && a.agentObservation?.kind === b.agentObservation?.kind && a.agentObservation?.detail === b.agentObservation?.detail)
