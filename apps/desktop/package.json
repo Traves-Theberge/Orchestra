@@ -44,7 +44,7 @@
     "@huggingface/transformers": "^4.3.0",
     "@json-render/core": "^0.14.1",
     "@json-render/react": "^0.14.1",
-    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@modelcontextprotocol/sdk": "^1.32.0",
     "@monaco-editor/react": "^4.7.0",
     "@radix-ui/react-dialog": "^1.1.4",
     "@radix-ui/react-slot": "^1.1.1",
