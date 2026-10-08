@@ -78,10 +78,17 @@ function activityDuration(events: WorkspaceChatEvent[]): string {
   return ms >= 1000 ? formatElapsed(ms) : ''
 }
 
-function AgentActivity({ events }: { events: WorkspaceChatEvent[] }) {
+type OrderedStep = { key: string; step: ActivityStep; first: number }
+
+/** Activity steps in the order they first appeared (index into events). */
+function collectActivitySteps(events: WorkspaceChatEvent[]): OrderedStep[] {
   const items = new Map<string, ActivityStep>()
+  const firstSeen = new Map<string, number>()
+  let position = 0
+  const put = (key: string, step: ActivityStep) => { if (!firstSeen.has(key)) firstSeen.set(key, position); items.set(key, step) }
   const reasoningParts = new Map<string, Record<string, string>>()
-  for (const event of events) {
+  for (const [index, event] of events.entries()) {
+    position = index
     const payload = record(event.payload)
     const item = record(payload.item)
     const kind = textValue(item.type)
@@ -91,25 +98,25 @@ function AgentActivity({ events }: { events: WorkspaceChatEvent[] }) {
       if (kind === 'reasoning') {
         // The completed item is authoritative; streamed deltas fill in until then. Never show raw JSON for reasoning.
         const text = reasoningText(item) || items.get(key)?.text || ''
-        if (text || event.type !== 'item/completed') items.set(key, { label: 'Reasoning', summary: '', text, status })
-        else items.delete(key)
+        if (text || event.type !== 'item/completed') put(key, { label: 'Reasoning', summary: '', text, status })
+        else { items.delete(key); firstSeen.delete(key) }
         continue
       }
       if (kind === 'commandExecution') {
         const command = textValue(item.command)
         const output = textValue(item.aggregatedOutput)
-        items.set(key, { label: 'Command', summary: firstLine(command), text: [`$ ${command}`, output].filter(Boolean).join('\n'), status })
+        put(key, { label: 'Command', summary: firstLine(command), text: [`$ ${command}`, output].filter(Boolean).join('\n'), status })
       } else if (kind === 'fileChange') {
         const changes = Array.isArray(item.changes) ? item.changes.map(change => record(change)) : []
         const paths = changes.map(c => textValue(c.path)).filter(Boolean)
         const text = changes.map(c => [textValue(c.path), textValue(record(c.kind).type), textValue(c.diff)].filter(Boolean).join('\n')).join('\n\n')
-        items.set(key, { label: paths.length > 1 ? `Edited ${paths.length} files` : 'Edited', summary: paths.join(', '), text: text || JSON.stringify(item, null, 2), status })
+        put(key, { label: paths.length > 1 ? `Edited ${paths.length} files` : 'Edited', summary: paths.join(', '), text: text || JSON.stringify(item, null, 2), status })
       } else if (kind === 'mcpToolCall') {
         const name = [textValue(item.server), textValue(item.tool) || textValue(item.name)].filter(Boolean).join(' · ')
-        items.set(key, { label: 'Tool', summary: name, text: JSON.stringify(item, null, 2), status })
+        put(key, { label: 'Tool', summary: name, text: JSON.stringify(item, null, 2), status })
       } else {
         const query = textValue(item.query) || textValue(item.text)
-        items.set(key, { label: 'Search', summary: firstLine(query), text: query || JSON.stringify(item, null, 2), status })
+        put(key, { label: 'Search', summary: firstLine(query), text: query || JSON.stringify(item, null, 2), status })
       }
     } else if (event.type === 'item/reasoning/summaryTextDelta' || event.type === 'item/reasoning/textDelta') {
       if (items.get(key)?.status === 'completed') continue
@@ -120,28 +127,33 @@ function AgentActivity({ events }: { events: WorkspaceChatEvent[] }) {
       // Prefer the summary stream; fall back to raw reasoning text when the model produced no summary.
       const ordered = (prefix: string) => Object.keys(parts).filter(k => k.startsWith(prefix)).sort((a, b) => Number(a.slice(1)) - Number(b.slice(1))).map(k => parts[k])
       const summaries = ordered('s')
-      items.set(key, { label: 'Reasoning', summary: '', text: (summaries.length ? summaries : ordered('c')).filter(Boolean).join('\n\n'), status: 'running' })
+      put(key, { label: 'Reasoning', summary: '', text: (summaries.length ? summaries : ordered('c')).filter(Boolean).join('\n\n'), status: 'running' })
     } else if (event.type === 'item/commandExecution/outputDelta' && items.has(key)) {
       const previous = items.get(key)!
-      items.set(key, { ...previous, text: previous.text + (event.delta || textValue(payload.delta)) })
+      put(key, { ...previous, text: previous.text + (event.delta || textValue(payload.delta)) })
     } else if (event.type === 'orchestra/tool/started') {
       const operation = textValue(record(payload.arguments).operation) || textValue(payload.tool)
-      items.set(key, { label: 'Orchestra control', summary: operation, text: operation, status: 'running' })
+      put(key, { label: 'Orchestra control', summary: operation, text: operation, status: 'running' })
     } else if (event.type === 'orchestra/tool/completed') {
-      items.set(key, { label: 'Orchestra control', summary: items.get(key)?.summary || textValue(record(payload.arguments).operation), text: JSON.stringify(payload, null, 2), status: payload.success === false ? 'failed' : 'completed' })
+      put(key, { label: 'Orchestra control', summary: items.get(key)?.summary || textValue(record(payload.arguments).operation), text: JSON.stringify(payload, null, 2), status: payload.success === false ? 'failed' : 'completed' })
     } else if (event.type === 'turn/plan/updated') {
       const steps = Array.isArray(payload.plan) ? payload.plan.map(step => record(step)) : []
       const done = steps.filter(s => textValue(s.status) === 'completed').length
-      items.set(`plan:${event.turn_id}`, { label: 'Plan', summary: steps.length ? `${done} of ${steps.length} done` : firstLine(textValue(payload.explanation)), text: textValue(payload.explanation) + '\n' + steps.map(s => `${textValue(s.status)}: ${textValue(s.step)}`).join('\n'), status: 'updated' })
+      put(`plan:${event.turn_id}`, { label: 'Plan', summary: steps.length ? `${done} of ${steps.length} done` : firstLine(textValue(payload.explanation)), text: textValue(payload.explanation) + '\n' + steps.map(s => `${textValue(s.status)}: ${textValue(s.step)}`).join('\n'), status: 'updated' })
     } else if (event.type === 'error') {
       const message = textValue(record(payload.error).message) || textValue(payload.message) || JSON.stringify(payload)
-      items.set(key, { label: 'Provider error', summary: firstLine(message), text: message, status: 'failed' })
+      put(key, { label: 'Provider error', summary: firstLine(message), text: message, status: 'failed' })
     }
   }
   // Reasoning with no text yet is noise; show it once a summary arrives.
   for (const [key, item] of items) if (item.label === 'Reasoning' && !item.text.trim()) items.delete(key)
-  if (!items.size) return null
-  const steps = [...items]
+  return [...items].map(([key, step]) => ({ key, step, first: firstSeen.get(key) ?? 0 }))
+}
+
+function AgentActivity({ events }: { events: WorkspaceChatEvent[] }) {
+  const ordered = collectActivitySteps(events)
+  if (!ordered.length) return null
+  const steps = ordered.map(({ key, step }) => [key, step] as const)
   const running = steps.some(([, step]) => step.status === 'running')
   const failed = steps.filter(([, step]) => step.status === 'failed').length
   const duration = activityDuration(events)
@@ -211,15 +223,47 @@ function AgentDivider({ name, color }: { name: string; color?: string }) {
   return <div role="separator" aria-label={`Switched to ${name}`} className="mb-5 flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground/60"><span className="h-px flex-1 bg-border/60" />{color ? <span aria-hidden="true" className="size-1.5 rounded-full" style={{ backgroundColor: color }} /> : null}<span>Switched to {name}</span><span className="h-px flex-1 bg-border/60" /></div>
 }
 
-function StreamingAssistant({ events, projectId, provider }: { events: WorkspaceChatEvent[]; projectId: string; provider?: string }) {
+/**
+ * The running turn as one chronological stream: what the agent wrote and what it
+ * did, interleaved in the order it happened, so new steps never jump above text
+ * already written. Once the turn completes it folds into AgentActivity + the reply.
+ */
+function LiveTurn({ events, projectId }: { events: WorkspaceChatEvent[]; projectId: string }) {
   const completed = new Set(events.filter(e => e.type === 'turn/completed').map(e => e.turn_id))
-  const items = new Map<string, string>()
-  for (const event of events) {
-    if (event.type !== 'item/agentMessage/delta' || completed.has(event.turn_id)) continue
+  const live = events.filter(e => !e.turn_id || !completed.has(e.turn_id))
+  const texts = new Map<string, { text: string; first: number }>()
+  live.forEach((event, index) => {
+    if (event.type !== 'item/agentMessage/delta') return
     const key = `${event.turn_id}:${event.item_id}`
-    items.set(key, (items.get(key) ?? '') + (event.delta ?? ''))
+    const previous = texts.get(key)
+    texts.set(key, { text: (previous?.text ?? '') + (event.delta ?? ''), first: previous?.first ?? index })
+  })
+  type Segment = { kind: 'step'; key: string; first: number; step: ActivityStep } | { kind: 'text'; key: string; first: number; text: string }
+  const segments: Segment[] = [
+    ...collectActivitySteps(live).map(({ key, step, first }) => ({ kind: 'step' as const, key, first, step })),
+    ...[...texts].filter(([, value]) => value.text.trim()).map(([key, value]) => ({ kind: 'text' as const, key, first: value.first, text: value.text })),
+  ].sort((a, b) => a.first - b.first)
+  if (!segments.length) return null
+  // Consecutive steps share one rail; text breaks it.
+  const groups: ({ kind: 'steps'; key: string; items: Extract<Segment, { kind: 'step' }>[] } | Extract<Segment, { kind: 'text' }>)[] = []
+  for (const segment of segments) {
+    const last = groups[groups.length - 1]
+    if (segment.kind === 'step') {
+      if (last?.kind === 'steps') last.items.push(segment)
+      else groups.push({ kind: 'steps', key: segment.key, items: [segment] })
+    } else groups.push(segment)
   }
-  return <>{[...items].map(([id, text]) => <article key={id} className="py-2"><div className="mb-2 flex items-center gap-2 text-[11px] text-muted-foreground"><HarnessIcon id={provider || 'agent'} size={14} /><span>{provider ? harnessDisplayName(provider) : 'Agent'}</span> · streaming</div><MarkdownRenderer content={text} enableMermaid={false} isStreaming={true} linkProjectId={projectId} className="break-words text-[13px] leading-7 [&_pre]:overflow-auto [&_pre]:rounded-xl [&_pre]:bg-muted/30" /></article>)}</>
+  return (
+    <section aria-label="Live turn" className="space-y-3 animate-in fade-in duration-200">
+      {groups.map(group => group.kind === 'steps' ? (
+        <ol key={group.key} className="relative ml-[3px] border-l border-border/50 pl-4">
+          {group.items.map(item => <ActivityStepRow key={item.key} step={item.step} />)}
+        </ol>
+      ) : (
+        <MarkdownRenderer key={group.key} content={group.text} enableMermaid={false} isStreaming={true} linkProjectId={projectId} className="break-words text-[15px] leading-7 [&_p]:my-3 [&_pre]:overflow-auto [&_pre]:rounded-xl [&_pre]:bg-muted/30" />
+      ))}
+    </section>
+  )
 }
 
 /** Live label for the running turn, from the latest provider event; "Thinking…" before any event arrives. */
@@ -947,8 +991,12 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
               </Fragment>
             )
           })}
-          <AgentActivity events={datedTimeline ? events.filter(e => !Number.isFinite(Date.parse(e.created_at)) || Date.parse(e.created_at) > Date.parse(messages[messages.length - 1].created_at)) : events} />
-          <StreamingAssistant events={working ? events : []} projectId={projectId} provider={snapshot?.session.provider || provider} />
+          {(() => {
+            // Events after the last message belong to the turn in flight (undated ones only while it runs).
+            const after = datedTimeline ? Date.parse(messages[messages.length - 1].created_at) : -Infinity
+            const trailing = datedTimeline ? events.filter(e => { const at = Date.parse(e.created_at); return Number.isFinite(at) ? at > after : working }) : events
+            return working ? <LiveTurn events={trailing} projectId={projectId} /> : <AgentActivity events={trailing} />
+          })()}
           {snapshot?.requests?.filter(request => request.status !== 'pending').map(request => <p key={request.id} role="status" className="text-[11px] text-muted-foreground">Agent request {request.status}</p>)}
           {working && (
             <AgentWorkingStatus
@@ -979,7 +1027,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
         </button>
       )}
       </div>
-      <footer data-chat-composer-placement={draftHero ? 'centered' : 'docked'} className={`${draftHero ? 'absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2' : 'mx-auto shrink-0'} w-full max-w-[808px] px-4 pb-3 pt-1 sm:px-6`} style={{ zoom: chatZoom }}>
+      <footer data-chat-composer-placement={draftHero ? 'centered' : 'docked'} className={`${draftHero ? 'absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2' : 'mx-auto shrink-0'} w-full max-w-[808px] px-4 pb-3 pt-1 sm:px-6`}>
         {draftHero && <div className="relative mb-7 px-1"><div className="pointer-events-none absolute -left-20 -top-20 size-64 rounded-full bg-primary/[0.055] blur-3xl" aria-hidden="true" /><h3 className="relative max-w-[680px] text-[clamp(27px,3vw,38px)] font-semibold leading-[1.16] tracking-[-0.035em] text-foreground">What would you like to build?</h3><p className="relative mt-3 max-w-[550px] text-[14px] leading-6 text-muted-foreground">Describe a goal, ask a question, or make a change. Start wherever you are.</p></div>}
         <div aria-label="Agent decisions" className="mb-2 max-h-[40vh] space-y-2 overflow-auto">{snapshot?.requests?.filter(request => request.status === 'pending').map(request => <RuntimeRequestCard key={`${sessionId}:${request.id}`} request={request} disabled={pending || !working || !!observationError || !!blockedRequests[request.id]} onReply={answer => reply(request, answer)} />)}</div>
         {legacyGeminiSession && <p role="status" className="mb-2 text-xs text-muted-foreground">Gemini conversation history is preserved and read-only. Choose a current harness to start a new conversation.</p>}

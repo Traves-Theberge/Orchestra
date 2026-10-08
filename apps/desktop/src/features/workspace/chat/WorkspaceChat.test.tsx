@@ -618,6 +618,24 @@ describe('WorkspaceChat', () => {
     fireEvent.click(screen.getByLabelText('Scroll to latest message'))
     expect(screen.queryByLabelText('Scroll to latest message')).not.toBeInTheDocument()
   })
+  it('streams a running turn in the order things happened: text, then tools, then more text', async () => {
+    vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({
+      session: { ...session, status: 'running', conversation_mode: 'native_session' },
+      messages: [], events: [
+        { sequence: 1, type: 'item/agentMessage/delta', turn_id: 't', item_id: 'm1', delta: 'Looking at the repo first.', created_at: '' },
+        { sequence: 2, type: 'item/started', turn_id: 't', item_id: 'cmd', payload: { item: { id: 'cmd', type: 'commandExecution', command: 'git log -1' } }, created_at: '' },
+        { sequence: 3, type: 'item/agentMessage/delta', turn_id: 't', item_id: 'm2', delta: 'Found the latest commit.', created_at: '' },
+      ], cursor: 3,
+    })
+    open()
+    await selectConversation()
+    const first = await screen.findByText('Looking at the repo first.')
+    const command = screen.getByText('git log -1')
+    const second = screen.getByText('Found the latest commit.')
+    expect(first.compareDocumentPosition(command) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(command.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.queryByText(/· streaming/)).not.toBeInTheDocument()
+  })
   it('places dated tool activity before its completed assistant response', async () => {
     vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({ session, messages: [
       { ...message, text: 'Inspect repository', created_at: '2026-10-04T10:00:00Z' },
