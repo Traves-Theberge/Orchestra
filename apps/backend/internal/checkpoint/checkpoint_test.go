@@ -618,3 +618,159 @@ func TestShadowStoreInsideWorktreeIsRejected(t *testing.T) {
 		t.Fatalf("worktree in store: %v", err)
 	}
 }
+
+func caseInsensitive(t *testing.T) bool {
+	t.Helper()
+	d := t.TempDir()
+	writeFile(t, d, "x", "1")
+	_, err := os.Stat(filepath.Join(d, "X"))
+	return err == nil
+}
+
+func TestRestoreCaseOnlyRenameRestoresTheOriginalName(t *testing.T) {
+	if !caseInsensitive(t) {
+		t.Skip("case-sensitive file system")
+	}
+	wt := newWorktree(t)
+	s := newStore(t, 0)
+	ctx := context.Background()
+	writeFile(t, wt, "Readme.md", "hello")
+	tr, err := s.Snapshot(ctx, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(filepath.Join(wt, "Readme.md"), filepath.Join(wt, "README.md")); err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.Restore(ctx, wt, tr.Hash)
+	if err != nil || len(res.Failed) != 0 {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	entries, _ := os.ReadDir(wt)
+	if len(entries) != 1 || entries[0].Name() != "Readme.md" {
+		t.Fatalf("entries=%v", entries)
+	}
+	if got := mustRead(t, wt, "Readme.md"); got != "hello" {
+		t.Fatalf("content %q", got)
+	}
+}
+
+func TestRestoreKeepsFilesUnderASelfIgnoringGitignoreDirectory(t *testing.T) {
+	wt := newWorktree(t)
+	s := newStore(t, 0)
+	ctx := context.Background()
+	writeFile(t, wt, "a.txt", "alpha")
+	writeFile(t, wt, ".venv/.gitignore", "*\n")
+	writeFile(t, wt, ".venv/lib/site.py", "site")
+	tr, err := s.Snapshot(ctx, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tr.Files != 1 {
+		t.Fatalf("ignored files must not be counted: %+v", tr)
+	}
+	if err := os.Remove(filepath.Join(wt, ".venv", ".gitignore")); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, wt, "a.txt", "changed")
+	changes, err := s.Diff(ctx, wt, tr.Hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range changes {
+		if c.Kind == ChangeDelete {
+			t.Fatalf("Diff claims a delete: %v", changes)
+		}
+	}
+	if _, err := s.Restore(ctx, wt, tr.Hash); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustRead(t, wt, ".venv/lib/site.py"); got != "site" {
+		t.Fatalf("site.py lost: %q", got)
+	}
+	if got := mustRead(t, wt, ".venv/.gitignore"); got != "*\n" {
+		t.Fatalf(".venv/.gitignore not recreated: %q", got)
+	}
+	if got := mustRead(t, wt, "a.txt"); got != "alpha" {
+		t.Fatalf("a.txt = %q", got)
+	}
+}
+
+func TestRestoreFileDirectorySwapKeepsIgnoredAndProtectedFiles(t *testing.T) {
+	cases := []struct {
+		name string
+		kept string
+		prep func(t *testing.T, wt string)
+	}{
+		{"ignored", "out/keep.log", func(t *testing.T, wt string) { writeFile(t, wt, "out/keep.log", "log") }},
+		{"overcap", "out/big.bin", func(t *testing.T, wt string) { writeFile(t, wt, "out/big.bin", strings.Repeat("x", 200)) }},
+		{"nestedrepo", "out/sub/f.txt", func(t *testing.T, wt string) {
+			writeFile(t, wt, "out/sub/f.txt", "nested")
+			gitIn(t, filepath.Join(wt, "out", "sub"), "init", "-q")
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			wt := newWorktree(t)
+			s := newStore(t, 100)
+			ctx := context.Background()
+			writeFile(t, wt, ".gitignore", "*.log\n")
+			writeFile(t, wt, "out", "i am a file")
+			tr, err := s.Snapshot(ctx, wt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Remove(filepath.Join(wt, "out")); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, wt, "out/a.txt", "a")
+			tc.prep(t, wt)
+			want := mustRead(t, wt, tc.kept)
+
+			changes, err := s.Diff(ctx, wt, tr.Hash)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, c := range changes {
+				if c.Kind == ChangeDelete && c.Path == tc.kept {
+					t.Fatalf("Diff claims to delete %s", tc.kept)
+				}
+			}
+			res, err := s.Restore(ctx, wt, tr.Hash)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := mustRead(t, wt, tc.kept); got != want {
+				t.Fatalf("%s lost: %q", tc.kept, got)
+			}
+			if len(res.Failed) != 1 || res.Failed[0].Path != "out" || res.Failed[0].Reason == "" {
+				t.Fatalf("expected out reported as failed: %+v", res)
+			}
+		})
+	}
+}
+
+func TestDiffReportsTheSameSwapFailureAsRestore(t *testing.T) {
+	// Diff lists the swap as create+delete of the tracked paths only; it never
+	// claims to delete the ignored file that blocks the write.
+	wt := newWorktree(t)
+	s := newStore(t, 0)
+	ctx := context.Background()
+	writeFile(t, wt, ".gitignore", "*.log\n")
+	writeFile(t, wt, "out", "file")
+	tr, err := s.Snapshot(ctx, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Remove(filepath.Join(wt, "out"))
+	writeFile(t, wt, "out/a.txt", "a")
+	writeFile(t, wt, "out/keep.log", "log")
+	got, err := s.Diff(ctx, wt, tr.Hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Change{{Path: "out", Kind: ChangeCreate}, {Path: "out/a.txt", Kind: ChangeDelete}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+}
