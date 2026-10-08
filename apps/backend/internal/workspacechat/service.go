@@ -748,7 +748,15 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 			return Accepted{}, e
 		}
 		agentSwitch = d.Session.ProviderThreadID != "" && threadKey != agentKey(resolvedAgent)
-		if pending {
+		seeded, e := s.branchSeedPending(ctx, id)
+		if e != nil {
+			return Accepted{}, e
+		}
+		if seeded {
+			// A new branch's provider thread starts from its visible history,
+			// which already covers any pending harness or agent handoff.
+			turn.Prompt = branchTranscript(d.Messages, req.Text, maxText)
+		} else if pending {
 			turn.Prompt = handoffTranscript(d.Messages, from, d.Session.Provider, req.Text, maxText)
 		} else if agentSwitch {
 			turn.Prompt = agentHandoffTranscript(d.Messages, resolvedAgent, req.Text, maxText)
