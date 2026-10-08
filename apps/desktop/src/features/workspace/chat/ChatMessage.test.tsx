@@ -165,9 +165,7 @@ The top 10% of installs send 65% of turns.
   })
 
   it('links URLs in user messages and folds long ones behind Show more', () => {
-    const text = 'See https://github.com/obra/superpowers please
-' + Array.from({ length: 14 }, (_, i) => `line ${i}`).join('
-')
+    const text = 'See https://github.com/obra/superpowers please\n' + Array.from({ length: 14 }, (_, i) => `line ${i}`).join('\n')
     const message: WorkspaceChatMessage = { id: 'u-long', session_id: 's', role: 'user', text, status: 'unknown', created_at: new Date().toISOString() }
     render(<ChatMessage message={message} provider="codex" projectId="p" />)
     expect(screen.getByRole('link', { name: 'https://github.com/obra/superpowers' })).toHaveAttribute('href', 'https://github.com/obra/superpowers')
