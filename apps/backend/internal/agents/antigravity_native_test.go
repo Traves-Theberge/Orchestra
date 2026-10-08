@@ -19,6 +19,7 @@ func TestAntigravityStreamFixtureProcess(t *testing.T) {
 	if os.Getenv("ORCHESTRA_AGY_FIXTURE") != "1" {
 		return
 	}
+	verifyNativeFixtureConsole()
 	threadID := os.Getenv("ORCHESTRA_AGY_FIXTURE_THREAD")
 	if threadID == "" {
 		threadID = "agy-fixture-conversation"

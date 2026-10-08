@@ -21,6 +21,7 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/agentcatalog"
 	"github.com/orchestra/orchestra/apps/backend/internal/agents"
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
+	"github.com/orchestra/orchestra/apps/backend/internal/diagnostics"
 	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
 )
 
@@ -144,6 +145,8 @@ type Accepted struct {
 	Message Message `json:"message"`
 }
 type Service struct {
+	diagnostics          *diagnostics.Service
+	diagnosticTurns      sync.Map
 	db                   *db.DB
 	registry             Registry
 	roots                []string
@@ -161,6 +164,9 @@ type Service struct {
 	mcpSource            MCPSource
 	nativeAgents         map[string]string
 }
+
+// ConfigureDiagnostics installs an optional recorder before accepting turns.
+func (s *Service) ConfigureDiagnostics(recorder *diagnostics.Service) { s.diagnostics = recorder }
 
 // New recovers incomplete deliveries as unknown; it never resubmits them.
 func New(database *db.DB, registry Registry, roots []string) (*Service, error) {
@@ -803,7 +809,7 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 	if err = tx.Commit(); err != nil {
 		return Accepted{}, err
 	}
-	runCtx, cancel := context.WithTimeout(context.Background(), turn.Timeout)
+	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), turn.Timeout)
 	s.active[id] = cancel
 	s.wg.Add(1)
 	d.Session.Status = "running"
@@ -835,10 +841,21 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 }
 func (s *Service) run(ctx context.Context, cancel context.CancelFunc, sess Session, m Message, turn agents.TurnRequest) {
 	defer s.wg.Done()
+	current := s.beginDiagnosticTurn(ctx, sess, turn)
+	ctx = current.ctx
+	outcome := "unknown"
+	defer func() { s.endDiagnosticTurn(sess.ID, current, outcome) }()
+	turn.ToolExecutor = s.diagnosticToolExecutor(sess.ID, turn.ToolExecutor)
 	defer cancel()
 	defer s.recoverTurn(sess, m)
 	reasoning := newReasoningStream(turn.SessionID)
 	result, err := s.registry.RunTurn(ctx, agents.Provider(sess.Provider), turn, func(e agents.Event) {
+		if e.Kind == "usage" || e.Usage.TotalTokens > 0 || e.Usage.InputTokens > 0 || e.Usage.OutputTokens > 0 {
+			current.mu.Lock()
+			usage := e.Usage
+			current.usage = &usage
+			current.mu.Unlock()
+		}
 		for _, ne := range reasoning.events(e) {
 			if err := s.recordEvent(sess.ID, ne); err != nil {
 				log.Printf("workspace chat reasoning event for session %s: %v", sess.ID, err)
@@ -870,6 +887,12 @@ func (s *Service) run(ctx context.Context, cancel context.CancelFunc, sess Sessi
 		errorText = "Turn interrupted. Workspace files were retained; inspect changes before retrying."
 	}
 	output := assistantText(result.Output)
+	if result.Usage.TotalTokens > 0 || result.Usage.InputTokens > 0 || result.Usage.OutputTokens > 0 {
+		current.mu.Lock()
+		usage := result.Usage
+		current.usage = &usage
+		current.mu.Unlock()
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	defer delete(s.active, sess.ID)
@@ -879,6 +902,8 @@ func (s *Service) run(ctx context.Context, cancel context.CancelFunc, sess Sessi
 		// remains blocked by Send; restarting marks those deliveries unknown.
 		_, _ = s.db.Exec(`UPDATE workspace_chat_sessions SET status='interrupted',error='Chat history persistence failed; delivery outcome unknown. Inspect before sending again.' WHERE id=?`, sess.ID)
 		_, _ = s.db.Exec(`UPDATE workspace_chat_messages SET status='unknown' WHERE id=?`, m.ID)
+	} else {
+		outcome = diagnosticOutcome(ctx, msgStatus)
 	}
 }
 func (s *Service) finish(sess Session, m Message, output, status, msgStatus, errorText string) error {

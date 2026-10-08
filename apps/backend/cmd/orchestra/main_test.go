@@ -21,6 +21,21 @@ func TestRunCLIRequiresCommand(t *testing.T) {
 	}
 }
 
+func TestRunCLIDiagnosticsUsesObservationRunner(t *testing.T) {
+	var out, err bytes.Buffer
+	called := false
+	code := runCLI([]string{"orchestra", "diagnostics", "check", "--json"}, &out, &err, cliRunner{observe: func(args []string, stdout, stderr io.Writer) int {
+		called = true
+		if strings.Join(args, " ") != "diagnostics check --json" {
+			t.Fatalf("unexpected args: %v", args)
+		}
+		return 0
+	}})
+	if !called || code != 0 {
+		t.Fatalf("diagnostics not routed: code=%d stderr=%s", code, err.String())
+	}
+}
+
 func TestRunCLIUnknownCommand(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}

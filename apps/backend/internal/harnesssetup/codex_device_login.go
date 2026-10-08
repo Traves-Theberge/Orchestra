@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/orchestra/orchestra/apps/backend/internal/backgroundcommand"
 	"github.com/orchestra/orchestra/apps/backend/internal/harnessaccounts"
 	"io"
 	"net/url"
@@ -93,7 +94,7 @@ func (m *DeviceLoginManager) StartInHome(ctx context.Context, executable, home, 
 	m.current = attempt
 	m.mu.Unlock()
 
-	command := exec.CommandContext(runCtx, executable, "app-server")
+	command := backgroundcommand.CommandContext(runCtx, executable, "app-server")
 	if home != "" {
 		command.Env = harnessaccounts.CodexProcessEnv(home)
 	}

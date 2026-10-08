@@ -5,9 +5,9 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"github.com/orchestra/orchestra/apps/backend/internal/backgroundcommand"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -120,12 +120,12 @@ func (s *Service) GetDiff(issueIdentifier string, provider string) (string, erro
 		return "", nil
 	}
 
-	cmd := exec.Command("git", "diff", "HEAD")
+	cmd := backgroundcommand.Command("git", "diff", "HEAD")
 	cmd.Dir = path
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		// If HEAD doesn't exist yet (new repo), try just git diff
-		cmd = exec.Command("git", "diff")
+		cmd = backgroundcommand.Command("git", "diff")
 		cmd.Dir = path
 		out, err = cmd.CombinedOutput()
 		if err != nil {

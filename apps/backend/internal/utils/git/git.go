@@ -6,7 +6,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os/exec"
+	"github.com/orchestra/orchestra/apps/backend/internal/backgroundcommand"
 	"strconv"
 	"strings"
 	"time"
@@ -19,7 +19,7 @@ func ProjectInfo(ctx context.Context, dir string) (rootPath string, remoteURL st
 	defer cancel()
 
 	// 1. Get Top Level Path
-	cmdRoot := exec.CommandContext(ctx, "git", "rev-parse", "--show-toplevel")
+	cmdRoot := backgroundcommand.CommandContext(ctx, "git", "rev-parse", "--show-toplevel")
 	cmdRoot.Dir = dir
 	var outRoot, errRoot bytes.Buffer
 	cmdRoot.Stdout = &outRoot
@@ -31,7 +31,7 @@ func ProjectInfo(ctx context.Context, dir string) (rootPath string, remoteURL st
 	rootPath = strings.TrimSpace(outRoot.String())
 
 	// 2. Get Remote Origin URL
-	cmdRemote := exec.CommandContext(ctx, "git", "remote", "get-url", "origin")
+	cmdRemote := backgroundcommand.CommandContext(ctx, "git", "remote", "get-url", "origin")
 	cmdRemote.Dir = rootPath
 	var outRemote, errRemote bytes.Buffer
 	cmdRemote.Stdout = &outRemote
@@ -49,7 +49,7 @@ func ProjectInfo(ctx context.Context, dir string) (rootPath string, remoteURL st
 
 // CurrentBranch returns the name of the currently checked-out branch in the given directory.
 func CurrentBranch(ctx context.Context, dir string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", "branch", "--show-current")
+	cmd := backgroundcommand.CommandContext(ctx, "git", "branch", "--show-current")
 	cmd.Dir = dir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -63,12 +63,12 @@ func CurrentBranch(ctx context.Context, dir string) (string, error) {
 // Commit stages all changes (git add -A) and creates a new commit with the given message.
 func Commit(ctx context.Context, dir, message string) error {
 	// Stage all changes first
-	addCmd := exec.CommandContext(ctx, "git", "add", "-A")
+	addCmd := backgroundcommand.CommandContext(ctx, "git", "add", "-A")
 	addCmd.Dir = dir
 	if err := addCmd.Run(); err != nil {
 		return fmt.Errorf("git add failed: %v", err)
 	}
-	cmd := exec.CommandContext(ctx, "git", "commit", "-m", message)
+	cmd := backgroundcommand.CommandContext(ctx, "git", "commit", "-m", message)
 	cmd.Dir = dir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -80,7 +80,7 @@ func Commit(ctx context.Context, dir, message string) error {
 
 // Push pushes the specified branch to the given remote.
 func Push(ctx context.Context, dir, remote, branch string) error {
-	cmd := exec.CommandContext(ctx, "git", "push", remote, branch)
+	cmd := backgroundcommand.CommandContext(ctx, "git", "push", remote, branch)
 	cmd.Dir = dir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -92,7 +92,7 @@ func Push(ctx context.Context, dir, remote, branch string) error {
 
 // Pull fetches and merges the specified branch from the given remote.
 func Pull(ctx context.Context, dir, remote, branch string) error {
-	cmd := exec.CommandContext(ctx, "git", "pull", remote, branch)
+	cmd := backgroundcommand.CommandContext(ctx, "git", "pull", remote, branch)
 	cmd.Dir = dir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -104,7 +104,7 @@ func Pull(ctx context.Context, dir, remote, branch string) error {
 
 // Fetch retrieves objects and refs from all remotes, pruning deleted remote branches.
 func Fetch(ctx context.Context, dir string) error {
-	cmd := exec.CommandContext(ctx, "git", "fetch", "--all", "--prune")
+	cmd := backgroundcommand.CommandContext(ctx, "git", "fetch", "--all", "--prune")
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -129,7 +129,7 @@ func CreateBranchFrom(ctx context.Context, dir, name, startPoint string) error {
 		args = append(args, startPoint)
 	}
 	args = append(args, "--")
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := backgroundcommand.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -141,7 +141,7 @@ func CreateBranchFrom(ctx context.Context, dir, name, startPoint string) error {
 
 // Checkout switches the working tree to the specified branch.
 func Checkout(ctx context.Context, dir, branch string) error {
-	cmd := exec.CommandContext(ctx, "git", "checkout", branch)
+	cmd := backgroundcommand.CommandContext(ctx, "git", "checkout", branch)
 	cmd.Dir = dir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -154,7 +154,7 @@ func Checkout(ctx context.Context, dir, branch string) error {
 // DeleteBranch deletes the specified local branch. Uses -D (force) to handle
 // branches with unmerged changes — the branch manager UI already confirms with the user.
 func DeleteBranch(ctx context.Context, dir, name string) error {
-	cmd := exec.CommandContext(ctx, "git", "branch", "-D", name)
+	cmd := backgroundcommand.CommandContext(ctx, "git", "branch", "-D", name)
 	cmd.Dir = dir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -167,7 +167,7 @@ func DeleteBranch(ctx context.Context, dir, name string) error {
 // Stage adds the specified files to the git index.
 func Stage(ctx context.Context, dir string, files []string) error {
 	args := append([]string{"add"}, files...)
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := backgroundcommand.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -180,7 +180,7 @@ func Stage(ctx context.Context, dir string, files []string) error {
 // Unstage removes the specified files from the git index without discarding changes.
 func Unstage(ctx context.Context, dir string, files []string) error {
 	args := append([]string{"reset", "HEAD", "--"}, files...)
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := backgroundcommand.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -192,7 +192,7 @@ func Unstage(ctx context.Context, dir string, files []string) error {
 
 // Stash saves uncommitted changes to the stash stack.
 func Stash(ctx context.Context, dir string) error {
-	cmd := exec.CommandContext(ctx, "git", "stash")
+	cmd := backgroundcommand.CommandContext(ctx, "git", "stash")
 	cmd.Dir = dir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -204,7 +204,7 @@ func Stash(ctx context.Context, dir string) error {
 
 // StashPop applies and removes the most recent stash entry.
 func StashPop(ctx context.Context, dir string) error {
-	cmd := exec.CommandContext(ctx, "git", "stash", "pop")
+	cmd := backgroundcommand.CommandContext(ctx, "git", "stash", "pop")
 	cmd.Dir = dir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -216,7 +216,7 @@ func StashPop(ctx context.Context, dir string) error {
 
 // StashList returns a list of stash entries with ref and message fields.
 func StashList(ctx context.Context, dir string) ([]map[string]string, error) {
-	cmd := exec.CommandContext(ctx, "git", "stash", "list", "--format=%gd|%s")
+	cmd := backgroundcommand.CommandContext(ctx, "git", "stash", "list", "--format=%gd|%s")
 	cmd.Dir = dir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -243,7 +243,7 @@ func StashList(ctx context.Context, dir string) ([]map[string]string, error) {
 
 // StashApply applies the specified stash entry without removing it.
 func StashApply(ctx context.Context, dir, ref string) error {
-	cmd := exec.CommandContext(ctx, "git", "stash", "apply", ref)
+	cmd := backgroundcommand.CommandContext(ctx, "git", "stash", "apply", ref)
 	cmd.Dir = dir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -255,7 +255,7 @@ func StashApply(ctx context.Context, dir, ref string) error {
 
 // StashDrop removes the specified stash entry.
 func StashDrop(ctx context.Context, dir, ref string) error {
-	cmd := exec.CommandContext(ctx, "git", "stash", "drop", ref)
+	cmd := backgroundcommand.CommandContext(ctx, "git", "stash", "drop", ref)
 	cmd.Dir = dir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -268,7 +268,7 @@ func StashDrop(ctx context.Context, dir, ref string) error {
 // DefaultBranch detects the default branch for the remote origin (e.g. "main" or "master").
 // Returns "main" if detection fails.
 func DefaultBranch(ctx context.Context, dir string) string {
-	cmd := exec.CommandContext(ctx, "git", "symbolic-ref", "refs/remotes/origin/HEAD")
+	cmd := backgroundcommand.CommandContext(ctx, "git", "symbolic-ref", "refs/remotes/origin/HEAD")
 	cmd.Dir = dir
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
@@ -284,7 +284,7 @@ func DefaultBranch(ctx context.Context, dir string) string {
 
 // Merge merges the specified branch into the current branch using --no-ff.
 func Merge(ctx context.Context, dir, branch string) error {
-	cmd := exec.CommandContext(ctx, "git", "merge", branch, "--no-ff", "-m",
+	cmd := backgroundcommand.CommandContext(ctx, "git", "merge", branch, "--no-ff", "-m",
 		fmt.Sprintf("Merge branch '%s'", branch))
 	cmd.Dir = dir
 	var stderr bytes.Buffer
@@ -325,7 +325,7 @@ func BranchesDetail(ctx context.Context, dir string) (string, []BranchInfo, erro
 	defaultBranch := DefaultBranch(ctx, dir)
 
 	// 3. Local branches
-	localCmd := exec.CommandContext(ctx, "git", "branch", "--format=%(refname:short)")
+	localCmd := backgroundcommand.CommandContext(ctx, "git", "branch", "--format=%(refname:short)")
 	localCmd.Dir = dir
 	var localOut, localErr bytes.Buffer
 	localCmd.Stdout = &localOut
@@ -335,7 +335,7 @@ func BranchesDetail(ctx context.Context, dir string) (string, []BranchInfo, erro
 	}
 
 	// 4. Remote branches
-	remoteCmd := exec.CommandContext(ctx, "git", "branch", "-r", "--format=%(refname:short)")
+	remoteCmd := backgroundcommand.CommandContext(ctx, "git", "branch", "-r", "--format=%(refname:short)")
 	remoteCmd.Dir = dir
 	var remoteOut, remoteErr bytes.Buffer
 	remoteCmd.Stdout = &remoteOut
@@ -387,7 +387,7 @@ func BranchesDetail(ctx context.Context, dir string) (string, []BranchInfo, erro
 
 // fillCommitInfo populates the last commit fields of a BranchInfo.
 func fillCommitInfo(ctx context.Context, dir, ref string, info *BranchInfo) {
-	cmd := exec.CommandContext(ctx, "git", "log", "-1", "--format=%H|%s|%aI|%an", ref)
+	cmd := backgroundcommand.CommandContext(ctx, "git", "log", "-1", "--format=%H|%s|%aI|%an", ref)
 	cmd.Dir = dir
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
@@ -414,7 +414,7 @@ func fillAheadBehind(ctx context.Context, dir, defaultBranch, branch string, inf
 	if branch == defaultBranch {
 		return
 	}
-	cmd := exec.CommandContext(ctx, "git", "rev-list", "--count", "--left-right",
+	cmd := backgroundcommand.CommandContext(ctx, "git", "rev-list", "--count", "--left-right",
 		defaultBranch+"..."+branch)
 	cmd.Dir = dir
 	var stdout bytes.Buffer

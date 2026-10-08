@@ -10,8 +10,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/orchestra/orchestra/apps/backend/internal/backgroundcommand"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -232,7 +232,7 @@ func (s *Service) Get(ctx context.Context, pid, rid string) (Job, error) {
 }
 
 func command(ctx context.Context, dir string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := backgroundcommand.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	data, err := cmd.CombinedOutput()

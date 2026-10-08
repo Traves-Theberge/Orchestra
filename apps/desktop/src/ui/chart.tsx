@@ -51,10 +51,11 @@ function useChart() {
 type ChartContainerProps = React.ComponentProps<"div"> & {
   config: ChartConfig
   children: React.ComponentProps<typeof RechartsPrimitive.ResponsiveContainer>["children"]
+  initialDimension?: React.ComponentProps<typeof RechartsPrimitive.ResponsiveContainer>["initialDimension"]
   ref?: React.Ref<HTMLDivElement>
 }
 
-const ChartContainer = ({ id, className, children, config, ref, ...props }: ChartContainerProps) => {
+const ChartContainer = ({ id, className, children, config, ref, initialDimension, ...props }: ChartContainerProps) => {
   const uniqueId = React.useId()
   const chartId = `chart-${id || uniqueId.replace(/:/g, "")}`
 
@@ -71,7 +72,7 @@ const ChartContainer = ({ id, className, children, config, ref, ...props }: Char
       >
         <ChartStyle id={chartId} config={config} />
         <React.Suspense fallback={null}>
-          <ResponsiveContainer>
+          <ResponsiveContainer initialDimension={initialDimension}>
             {children}
           </ResponsiveContainer>
         </React.Suspense>

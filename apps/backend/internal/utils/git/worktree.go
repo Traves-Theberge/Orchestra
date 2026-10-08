@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/orchestra/orchestra/apps/backend/internal/backgroundcommand"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -20,7 +20,7 @@ func WorktreeAdd(ctx context.Context, repoDir, wtDir, branch string, newBranch b
 		args = append(args, wtDir, branch)
 	}
 
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := backgroundcommand.CommandContext(ctx, "git", args...)
 	cmd.Dir = repoDir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -38,7 +38,7 @@ func WorktreeRemove(ctx context.Context, repoDir, wtDir string) error {
 		return nil
 	}
 
-	cmd := exec.CommandContext(ctx, "git", "worktree", "remove", "--force", wtDir)
+	cmd := backgroundcommand.CommandContext(ctx, "git", "worktree", "remove", "--force", wtDir)
 	cmd.Dir = repoDir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -50,7 +50,7 @@ func WorktreeRemove(ctx context.Context, repoDir, wtDir string) error {
 
 // WorktreePrune removes stale worktree references.
 func WorktreePrune(ctx context.Context, repoDir string) error {
-	cmd := exec.CommandContext(ctx, "git", "worktree", "prune")
+	cmd := backgroundcommand.CommandContext(ctx, "git", "worktree", "prune")
 	cmd.Dir = repoDir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -62,7 +62,7 @@ func WorktreePrune(ctx context.Context, repoDir string) error {
 
 // WorktreeList returns paths of all worktrees for the given repo.
 func WorktreeList(ctx context.Context, repoDir string) ([]string, error) {
-	cmd := exec.CommandContext(ctx, "git", "worktree", "list", "--porcelain")
+	cmd := backgroundcommand.CommandContext(ctx, "git", "worktree", "list", "--porcelain")
 	cmd.Dir = repoDir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -82,7 +82,7 @@ func WorktreeList(ctx context.Context, repoDir string) ([]string, error) {
 
 // HeadSHA returns the HEAD commit SHA for the given directory.
 func HeadSHA(ctx context.Context, dir string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", "rev-parse", "HEAD")
+	cmd := backgroundcommand.CommandContext(ctx, "git", "rev-parse", "HEAD")
 	cmd.Dir = dir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -95,7 +95,7 @@ func HeadSHA(ctx context.Context, dir string) (string, error) {
 
 // BranchDiff returns the three-dot diff between baseSHA and branch.
 func BranchDiff(ctx context.Context, repoDir, baseSHA, branch string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", "diff", baseSHA+"..."+branch)
+	cmd := backgroundcommand.CommandContext(ctx, "git", "diff", baseSHA+"..."+branch)
 	cmd.Dir = repoDir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -108,7 +108,7 @@ func BranchDiff(ctx context.Context, repoDir, baseSHA, branch string) (string, e
 
 // WorktreeDiff returns all uncommitted changes (staged + unstaged) via "git diff HEAD".
 func WorktreeDiff(ctx context.Context, wtDir string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", "diff", "HEAD")
+	cmd := backgroundcommand.CommandContext(ctx, "git", "diff", "HEAD")
 	cmd.Dir = wtDir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -121,7 +121,7 @@ func WorktreeDiff(ctx context.Context, wtDir string) (string, error) {
 
 // MergeBase returns the merge-base (common ancestor) of two refs.
 func MergeBase(ctx context.Context, dir, ref1, ref2 string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", "merge-base", ref1, ref2)
+	cmd := backgroundcommand.CommandContext(ctx, "git", "merge-base", ref1, ref2)
 	cmd.Dir = dir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

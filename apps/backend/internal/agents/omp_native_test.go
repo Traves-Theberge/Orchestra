@@ -19,6 +19,7 @@ func TestOMPRPCFixtureProcess(t *testing.T) {
 	if os.Getenv("ORCHESTRA_OMP_FIXTURE") != "1" {
 		return
 	}
+	verifyNativeFixtureConsole()
 	args := strings.Join(os.Args, " ")
 	if !strings.Contains(args, "--mode rpc") {
 		os.Exit(2)

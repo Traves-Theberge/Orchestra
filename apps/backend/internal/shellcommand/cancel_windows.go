@@ -1,6 +1,8 @@
 package shellcommand
 
 import (
+	"context"
+	"github.com/orchestra/orchestra/apps/backend/internal/backgroundcommand"
 	"golang.org/x/sys/windows"
 	"os/exec"
 	"strconv"
@@ -8,10 +10,9 @@ import (
 )
 
 func configureCancellation(cmd *exec.Cmd) {
-	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NEW_PROCESS_GROUP, HideWindow: true}
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.CREATE_NO_WINDOW, HideWindow: true}
 	cmd.Cancel = func() error {
-		kill := exec.Command("taskkill", "/T", "/F", "/PID", strconv.Itoa(cmd.Process.Pid))
-		kill.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		kill := backgroundcommand.CommandContext(context.Background(), "taskkill", "/T", "/F", "/PID", strconv.Itoa(cmd.Process.Pid))
 		if err := kill.Run(); err != nil {
 			return cmd.Process.Kill()
 		}

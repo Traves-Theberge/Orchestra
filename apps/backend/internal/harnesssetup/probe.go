@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/orchestra/orchestra/apps/backend/internal/backgroundcommand"
 	"github.com/orchestra/orchestra/apps/backend/internal/harnessaccounts"
 	"io"
 	"os/exec"
@@ -109,7 +110,7 @@ func Observe(ctx context.Context, registered []string, commands map[string]strin
 func ProbeOpenCodeCredentialCatalog(ctx context.Context, path string) (int, error) {
 	bounded, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	command := exec.CommandContext(bounded, path, "auth", "list", "--format", "json")
+	command := backgroundcommand.CommandContext(bounded, path, "auth", "list", "--format", "json")
 	var output limitedOutput
 	command.Stdout, command.Stderr = &output, io.Discard
 	if err := command.Run(); err != nil {
@@ -138,7 +139,7 @@ func classifyOpenCodeCredentialCatalog(data []byte) (int, error) {
 func ProbeClaudeAuth(ctx context.Context, path string) (Observation, error) {
 	bounded, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	command := exec.CommandContext(bounded, path, "auth", "status")
+	command := backgroundcommand.CommandContext(bounded, path, "auth", "status")
 	var stdout limitedOutput
 	command.Stdout, command.Stderr = &stdout, io.Discard
 	err := command.Run()
@@ -204,7 +205,7 @@ func ProbeCodexAuth(ctx context.Context, path string) (Observation, error) {
 func ProbeCodexAuthInHome(ctx context.Context, path, home string) (Observation, error) {
 	bounded, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	command := exec.CommandContext(bounded, path, "login", "status")
+	command := backgroundcommand.CommandContext(bounded, path, "login", "status")
 	if home != "" {
 		command.Env = harnessaccounts.CodexProcessEnv(home)
 	}
@@ -246,7 +247,7 @@ func (output *limitedOutput) Write(p []byte) (int, error) {
 func ProbeOMPVersion(ctx context.Context, path string) string {
 	bounded, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	command := exec.CommandContext(bounded, path, "--version")
+	command := backgroundcommand.CommandContext(bounded, path, "--version")
 	var output limitedOutput
 	command.Stdout, command.Stderr = &output, io.Discard
 	if err := command.Run(); err != nil {

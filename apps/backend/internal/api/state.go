@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/orchestra/orchestra/apps/backend/internal/backgroundcommand"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -138,7 +138,7 @@ func (s *Server) CreateGitHubPR(w http.ResponseWriter, r *http.Request) {
 
 	// NEW: Fallback to GitHub CLI token if still missing
 	if body.Token == "" {
-		cmd := exec.Command("gh", "auth", "token")
+		cmd := backgroundcommand.Command("gh", "auth", "token")
 		if out, err := cmd.Output(); err == nil {
 			token := strings.TrimSpace(string(out))
 			if token != "" {
@@ -171,7 +171,7 @@ func (s *Server) CreateGitHubPR(w http.ResponseWriter, r *http.Request) {
 					pushDir = wtPath
 				}
 			}
-			pushCmd := exec.CommandContext(r.Context(), "git", "push", "-u", "origin", body.Head)
+			pushCmd := backgroundcommand.CommandContext(r.Context(), "git", "push", "-u", "origin", body.Head)
 			pushCmd.Dir = pushDir
 			if pushOut, pushErr := pushCmd.CombinedOutput(); pushErr != nil {
 				s.logger.Warn().Err(pushErr).Str("output", string(pushOut)).Str("branch", body.Head).Msg("branch push failed; PR creation stopped")
@@ -1046,14 +1046,14 @@ func (s *Server) legacyDiff(r *http.Request, rootPath string) []byte {
 	var allDiff []byte
 
 	// Staged changes
-	cmd := exec.CommandContext(r.Context(), "git", "diff", "--cached")
+	cmd := backgroundcommand.CommandContext(r.Context(), "git", "diff", "--cached")
 	cmd.Dir = rootPath
 	if staged, _ := cmd.CombinedOutput(); len(staged) > 0 {
 		allDiff = append(allDiff, staged...)
 	}
 
 	// Unstaged changes
-	cmd2 := exec.CommandContext(r.Context(), "git", "diff")
+	cmd2 := backgroundcommand.CommandContext(r.Context(), "git", "diff")
 	cmd2.Dir = rootPath
 	if unstaged, _ := cmd2.CombinedOutput(); len(unstaged) > 0 {
 		allDiff = append(allDiff, unstaged...)
@@ -1061,7 +1061,7 @@ func (s *Server) legacyDiff(r *http.Request, rootPath string) []byte {
 
 	// If no uncommitted changes, show the most recent commit's diff
 	if len(allDiff) == 0 {
-		cmd3 := exec.CommandContext(r.Context(), "git", "diff", "HEAD~1..HEAD")
+		cmd3 := backgroundcommand.CommandContext(r.Context(), "git", "diff", "HEAD~1..HEAD")
 		cmd3.Dir = rootPath
 		if committed, _ := cmd3.CombinedOutput(); len(committed) > 0 {
 			allDiff = append(allDiff, committed...)
@@ -1069,7 +1069,7 @@ func (s *Server) legacyDiff(r *http.Request, rootPath string) []byte {
 	}
 
 	// Include untracked (new) files
-	cmd3 := exec.CommandContext(r.Context(), "git", "ls-files", "--others", "--exclude-standard")
+	cmd3 := backgroundcommand.CommandContext(r.Context(), "git", "ls-files", "--others", "--exclude-standard")
 	cmd3.Dir = rootPath
 	untrackedList, _ := cmd3.Output()
 	for _, fname := range strings.Split(strings.TrimSpace(string(untrackedList)), "\n") {
@@ -1077,7 +1077,7 @@ func (s *Server) legacyDiff(r *http.Request, rootPath string) []byte {
 		if fname == "" {
 			continue
 		}
-		cmd4 := exec.CommandContext(r.Context(), "git", "diff", "--no-index", "/dev/null", fname)
+		cmd4 := backgroundcommand.CommandContext(r.Context(), "git", "diff", "--no-index", "/dev/null", fname)
 		cmd4.Dir = rootPath
 		if out4, err := cmd4.CombinedOutput(); err != nil || len(out4) > 0 {
 			allDiff = append(allDiff, out4...)
@@ -1228,10 +1228,10 @@ func (s *Server) DeleteIssue(w http.ResponseWriter, r *http.Request) {
 				s.logger.Warn().Err(err).Str("path", wtPath).Msg("failed to remove worktree directory")
 			}
 			// Prune and delete branch
-			pruneCmd := exec.CommandContext(r.Context(), "git", "worktree", "prune")
+			pruneCmd := backgroundcommand.CommandContext(r.Context(), "git", "worktree", "prune")
 			pruneCmd.Dir = project.RootPath
 			_ = pruneCmd.Run()
-			delCmd := exec.CommandContext(r.Context(), "git", "branch", "-D", issue.BranchName)
+			delCmd := backgroundcommand.CommandContext(r.Context(), "git", "branch", "-D", issue.BranchName)
 			delCmd.Dir = project.RootPath
 			_ = delCmd.Run()
 			s.logger.Info().Str("branch", issue.BranchName).Str("worktree", wtPath).Msg("cleaned up worktree and branch on delete")

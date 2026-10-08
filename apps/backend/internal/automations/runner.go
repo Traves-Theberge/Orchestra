@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os/exec"
+	"github.com/orchestra/orchestra/apps/backend/internal/backgroundcommand"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -82,7 +82,7 @@ func slug(name string, max int) string {
 }
 
 func gitRefExists(ctx context.Context, root, ref string) bool {
-	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--verify", "--quiet", "--end-of-options", ref+"^{commit}")
+	cmd := backgroundcommand.CommandContext(ctx, "git", "rev-parse", "--verify", "--quiet", "--end-of-options", ref+"^{commit}")
 	cmd.Dir = root
 	return cmd.Run() == nil
 }

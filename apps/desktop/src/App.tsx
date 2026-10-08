@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import {
   searchIssues,
   toDisplayError,
@@ -39,6 +39,7 @@ import { useAppStore } from '@core/store'
 
 // Lazy-loaded heavy sections
 const AgentsDashboard = lazy(() => import('@features/agents/AgentsDashboard').then(m => ({ default: m.AgentsDashboard })))
+const DiagnosticsPage = lazy(() => import('@features/diagnostics/DiagnosticsPage').then(m => ({ default: m.DiagnosticsPage })))
 const DocsDashboard = lazy(() => import('@features/docs/DocsDashboard').then(m => ({ default: m.DocsDashboard })))
 const ApiDocsDashboard = lazy(() => import('@features/docs/ApiDocsDashboard').then(m => ({ default: m.ApiDocsDashboard })))
 const SettingsPage = lazy(() => import('@layout/panels').then(m => ({ default: m.SettingsPage })))
@@ -392,6 +393,8 @@ export default function App() {
   }
 
   const sectionVisibility = getSectionVisibility(activeSection)
+  const [diagnosticsVisited, setDiagnosticsVisited] = useState(false)
+  if (sectionVisibility.showDiagnostics && !diagnosticsVisited) setDiagnosticsVisited(true)
   const currentSectionMeta = getCurrentSectionMeta(activeSection)
 
   return (
@@ -423,6 +426,7 @@ export default function App() {
               </section>
             </SectionErrorBoundary>
           ) : null}
+          {(diagnosticsVisited || sectionVisibility.showDiagnostics) && <section className={`flex-1 flex flex-col min-h-0 ${sectionVisibility.showDiagnostics ? '' : 'hidden'}`}><SectionErrorBoundary name="Diagnostics"><Suspense fallback={<SectionLoader />}><DiagnosticsPage config={config} active={sectionVisibility.showDiagnostics} /></Suspense></SectionErrorBoundary></section>}
 
 
           {sectionVisibility.showIssueBoard ? (

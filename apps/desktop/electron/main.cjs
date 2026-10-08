@@ -110,6 +110,7 @@ async function startManagedBackend() {
   await fs.mkdir(workspaceRoot, { recursive: true })
 
   const child = spawn(backendBin, ['start'], {
+    windowsHide: true,
     cwd: path.dirname(backendBin),
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {

@@ -41,12 +41,20 @@ const Help = `usage: orchestra <command>
   agent|skill show --project <project-id> --harness <harness> --scope <scope> [--workspace <workspace-id>] --id <exact-native-id> --json
   agent|skill create|update|delete --project <project-id> --harness <harness> --scope <project|global> [--workspace <workspace-id>] --id <exact-native-id> --request-id <uuid> [--expected-hash <sha256>] [--format <native-format>] [--content-file <path>]
   agent|skill receipt --project <project-id> --request-id <uuid> --json
+  diagnostics overview [--project <id>] [--task <id>] [--provider <harness>] [--status <outcome>] [--search <text>] [--since <RFC3339>] [--until <RFC3339>] [--json]
+  diagnostics traces|logs [--project <id>] [--task <id>] [--provider <harness>] [--status <outcome>] [--search <text>] [--since <RFC3339>] [--until <RFC3339>] [--limit <1..500>] [--offset <0..1000000>] [--json]
+  diagnostics logs [--severity <debug|info|warn|error>] [--json]
+  diagnostics trace <32-lowercase-hex-trace-id> [--json]
+  diagnostics settings|check [--json]
+  diagnostics export [--project <id>] [--task <id>] [--provider <harness>] [--status <outcome>] [--search <text>] [--since <RFC3339>] [--until <RFC3339>] [--json]
 
 Observation commands accept --base-url <origin>, or ORCHESTRA_BASE_URL.
 ORCHESTRA_API_TOKEN must be set in the environment; there is no token flag.
 Only HTTPS or loopback HTTP origins are accepted. Requests time out after 10 seconds.
-Task list/show/assign and control tasks print human-readable rows by default; use --json for the versioned JSON envelope. Other successful commands print that envelope. Failures print a JSON error on stderr and return nonzero.
+Task list/show/assign, control tasks and diagnostics print human-readable output by default; use --json for the versioned JSON envelope. Other successful commands print that envelope. Failures print a JSON error on stderr and return nonzero.
 Task show returns the tracked task, not a guessed worktree, run or provider session.
+Diagnostics commands are read-only and print descriptive summaries by default. --json preserves raw records in the versioned envelope. Filters use retained diagnostic identity, without tracker lookup. Project/task/search values are bounded to 128 bytes and provider to 96 bytes; since/until require timezone-qualified RFC3339 timestamps. Trace statuses: running, ok, error, cancelled, unknown. Only logs accepts severity. Only traces/logs accept paging; defaults are limit 100 and offset 0.
+Diagnostics check reads settings and overview only: disabled collection and historical dropped records are explicit observations, not proof of an execution failure or end-to-end success. Diagnostics export is bounded to 500 traces and 5000 spans/logs; inspect truncated and use --json for raw export. No diagnostics settings writes, clearing or live provider requests are exposed.
 Create makes a Backlog task. Queue requests Todo admission, not an observed agent/worktree.
 Planning remains in Todo until an explicit approve-plan request accepts the exact current plan hash. Replan retains feedback and returns an inactive task to Todo; it does not approve execution. Maestro may approve only when explicitly instructed by the human.
 Task assignment changes the explicit assignee on an unassigned local SQLite Backlog task and may set an explicitly requested provider. It never infers a provider or queues the task; hosted assignment is unavailable. Use --unassigned or --assignee on task list to filter the tracker inventory. Human task output prints a stored PR URL or says none; it does not verify the PR externally.
@@ -105,6 +113,9 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	}
 	if isResourceCommand(args) {
 		return runResource(ctx, args, stdout, stderr, getenv)
+	}
+	if len(args) > 0 && args[0] == "diagnostics" {
+		return runDiagnostics(ctx, args, stdout, stderr, getenv)
 	}
 	c, err := parse(args)
 	if err != nil {

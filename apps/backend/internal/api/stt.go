@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/orchestra/orchestra/apps/backend/internal/backgroundcommand"
 	"io"
 	"net/http"
 	"os"
@@ -110,7 +111,7 @@ func (s *Server) PostSTTTranscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	start := time.Now()
-	cmd := exec.CommandContext(ctx, binaryPath, args...)
+	cmd := backgroundcommand.CommandContext(ctx, binaryPath, args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

@@ -9,8 +9,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/orchestra/orchestra/apps/backend/internal/backgroundcommand"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -182,7 +182,7 @@ func (s *Service) Remove(ctx context.Context, projectID, workspaceID, requestID 
 
 	// A caller disconnect must not cancel an already accepted filesystem mutation.
 	commandCtx := context.WithoutCancel(ctx)
-	cmd := exec.CommandContext(commandCtx, "git", "worktree", "remove", "--", effectTarget.Path)
+	cmd := backgroundcommand.CommandContext(commandCtx, "git", "worktree", "remove", "--", effectTarget.Path)
 	cmd.Dir = effectProject.RootPath
 	output, runErr := cmd.CombinedOutput()
 	if runErr != nil {
@@ -242,7 +242,7 @@ func (s *Service) reconcileUnknown(ctx context.Context, receipt Receipt) Receipt
 		if !validBranch(receipt.Branch) {
 			return receipt
 		}
-		cmd := exec.CommandContext(ctx, "git", "rev-parse", "--verify", "refs/heads/"+receipt.Branch)
+		cmd := backgroundcommand.CommandContext(ctx, "git", "rev-parse", "--verify", "refs/heads/"+receipt.Branch)
 		cmd.Dir = project.RootPath
 		head, runErr := cmd.Output()
 		if runErr != nil || strings.TrimSpace(string(head)) != receipt.Head {
@@ -311,7 +311,7 @@ func (s *Service) save(ctx context.Context, receipt Receipt) error {
 }
 
 func assertClean(ctx context.Context, path string) error {
-	cmd := exec.CommandContext(ctx, "git", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=matching", "--ignore-submodules=none")
+	cmd := backgroundcommand.CommandContext(ctx, "git", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=matching", "--ignore-submodules=none")
 	cmd.Dir = path
 	output, err := cmd.Output()
 	if err != nil {

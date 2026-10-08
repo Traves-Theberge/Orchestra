@@ -43,6 +43,28 @@ JSON observation output has `schema_version`, `command`, `scope` and `data`. Res
 
 Read [the task-system contract](references/task-system.md) when interpreting task states, configuration, worktree/run information, or requests to mutate tasks.
 
+## Inspect local diagnostics
+
+Use these read-only commands only when the selected executable advertises them:
+
+```text
+orchestra diagnostics overview
+orchestra diagnostics traces --project <project-id> --task <task-id> --limit 100 --json
+orchestra diagnostics trace <32-lowercase-hex-trace-id> --json
+orchestra diagnostics logs --severity error --search <operation-name> --limit 100
+orchestra diagnostics settings --json
+orchestra diagnostics check --json
+orchestra diagnostics export --project <project-id> --json
+```
+
+Use the same explicitly selected backend origin and environment API token as other observations. Human output describes the activity, outcome, API method/route/status where recorded, measured duration, and correlation ID. `--json` preserves raw diagnostic fields in the existing `schema_version`, `command`, `scope`, `data` envelope, including optional HTTP metadata and labels. API activity without a task identity is backend activity; it must not be presented as an unknown task or provider execution.
+
+`overview`, `traces`, `logs`, and `export` accept `--project`, `--task`, `--provider`, `--status`, `--search`, `--since`, and `--until`. Project/task/search values have a 128-byte bound, provider 96 bytes. Status is `running`, `ok`, `error`, `cancelled`, or `unknown`. Times require RFC3339 with a timezone and since must not follow until. Only `logs` accepts `--severity debug|info|warn|error`. Only `traces` and `logs` accept `--limit 1..500` and `--offset 0..1000000` (defaults 100 and 0). `trace`, `settings`, and `check` accept only connection/output flags. Exact trace IDs are 32 lowercase hexadecimal characters, as returned by the API. Diagnostic identity filters query retained local metadata directly; they do not require a currently registered project or external tracker lookup.
+
+`check` makes GET settings and GET overview requests. Its JSON reports `available`, `collection_state`, `history_gaps`, `queue_depth`, `storage_bytes`, `dropped_records`, warnings and both snapshots; `execution_verified` is always false. Disabled collection is intentional configuration, not an unavailable API. Drops indicate historical gaps in the current backend process, not necessarily current failure; queued records in a snapshot are pending persistence, not proof of a stalled queue. Storage at or above the configured budget is reported explicitly. These two separate snapshots do not certify task execution, live model inference or end-to-end reliability. Warnings return success when both reads are available; missing diagnostics routes, rejected authentication, unavailable stores, malformed data and transport failures return nonzero structured errors. A missing route is an old/incompatible backend, not empty history.
+
+`export` is a bounded sanitized snapshot (up to 500 traces and 5000 spans/logs); inspect `truncated`. Use `--json` to preserve its complete raw payload and write it to an explicitly chosen file. Human export output is a summary. There are no CLI settings writes, clear operations, collection probes or provider calls. Retention expiry and disabled intervals can leave unobserved history even when the drop counter is zero.
+
 ## Keep observations truthful
 
 - A local SQLite task is not automatically a GitHub issue. A task without project/source linkage is unlinked; do not fabricate a repository or hosted URL.

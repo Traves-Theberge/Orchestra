@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/orchestra/orchestra/apps/backend/internal/backgroundcommand"
 	"io"
 	"os"
 	"os/exec"
@@ -128,7 +129,7 @@ func newAntigravityNativeSessionWithArgs(ctx context.Context, command string, pr
 	}
 	childCtx, cancel := context.WithCancel(ctx)
 	processArgs := append(append([]string(nil), prefixArgs...), args...)
-	cmd := exec.CommandContext(childCtx, binary, processArgs...)
+	cmd := backgroundcommand.CommandContext(childCtx, binary, processArgs...)
 	cmd.Dir = request.Workspace
 	cmd.Env = safeSubprocessEnv(request.SessionID, ProviderAntigravity)
 	cmd.Env = append(cmd.Env, extraEnv...)

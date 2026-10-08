@@ -3,13 +3,13 @@ package workspacechat
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/orchestra/orchestra/apps/backend/internal/agents"
+	"github.com/orchestra/orchestra/apps/backend/internal/backgroundcommand"
 )
 
 var effortName = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
@@ -113,7 +113,7 @@ var openCodeCatalog struct {
 
 // runOpenCodeModels is swapped in tests.
 var runOpenCodeModels = func(ctx context.Context) ([]byte, error) {
-	return exec.CommandContext(ctx, "opencode", "models").Output()
+	return backgroundcommand.CommandContext(ctx, "opencode", "models").Output()
 }
 
 func openCodeModels(ctx context.Context) ([]agents.NativeModel, error) {

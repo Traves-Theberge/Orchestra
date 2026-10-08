@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os/exec"
+	"github.com/orchestra/orchestra/apps/backend/internal/backgroundcommand"
 	"strings"
 	"sync"
 	"time"
@@ -23,7 +23,7 @@ var ompCatalog struct {
 
 // runOMPModels is swapped in tests.
 var runOMPModels = func(ctx context.Context, binary string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, binary, "models", "--json")
+	cmd := backgroundcommand.CommandContext(ctx, binary, "models", "--json")
 	cmd.Env = safeSubprocessEnv("", ProviderOMP)
 	return cmd.Output()
 }

@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/orchestra/orchestra/apps/backend/internal/backgroundcommand"
 	"net/http"
-	"os/exec"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -36,7 +36,7 @@ func (s *Server) HandleGitHubLogin(w http.ResponseWriter, r *http.Request) {
 
 	// NEW: Local-First Discovery
 	// Try to grab the token from the GitHub CLI if it exists on the system
-	cmd := exec.Command("gh", "auth", "token")
+	cmd := backgroundcommand.Command("gh", "auth", "token")
 	if out, err := cmd.Output(); err == nil {
 		token := strings.TrimSpace(string(out))
 		if token != "" {
@@ -181,7 +181,7 @@ func (s *Server) HandleGitHubAutoConnect(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusOK, map[string]any{"connected": true, "source": "existing"})
 		return
 	}
-	out, err := exec.CommandContext(r.Context(), "gh", "auth", "token").Output()
+	out, err := backgroundcommand.CommandContext(r.Context(), "gh", "auth", "token").Output()
 	token := strings.TrimSpace(string(out))
 	if err != nil || token == "" {
 		writeJSON(w, http.StatusOK, map[string]any{"connected": false, "reason": "GitHub CLI is not installed or not logged in (run `gh auth login`)."})

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"github.com/orchestra/orchestra/apps/backend/internal/backgroundcommand"
 	"net/url"
 	"os"
 	"os/exec"
@@ -61,7 +62,7 @@ func prepareProjectSource(ctx context.Context, source, parent, name, remote stri
 	commandCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	run := func(args ...string) error {
-		command := exec.CommandContext(commandCtx, "git", args...)
+		command := backgroundcommand.CommandContext(commandCtx, "git", args...)
 		command.Dir = destination
 		command.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 		if _, err := command.CombinedOutput(); err != nil {

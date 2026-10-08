@@ -21,6 +21,7 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/config"
 	"github.com/orchestra/orchestra/apps/backend/internal/control"
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
+	"github.com/orchestra/orchestra/apps/backend/internal/diagnostics"
 	"github.com/orchestra/orchestra/apps/backend/internal/harnessaccounts"
 	"github.com/orchestra/orchestra/apps/backend/internal/harnesssetup"
 	"github.com/orchestra/orchestra/apps/backend/internal/observability"
@@ -41,6 +42,7 @@ import (
 // Server holds shared dependencies for all HTTP handlers, including the
 // logger, orchestrator service, database, pub/sub bus, and configuration.
 type Server struct {
+	diagnostics         *diagnostics.Service
 	logger              zerolog.Logger
 	orchestrator        *orchestrator.Service
 	workspaceRoot       string
@@ -117,6 +119,8 @@ func NewRouterWithPubSub(
 	}
 	for _, extra := range extras {
 		switch value := extra.(type) {
+		case *diagnostics.Service:
+			server.diagnostics = value
 		case *workspacechat.Service:
 			server.workspaceChat = value
 		case *harnessaccounts.Store:
@@ -124,6 +128,9 @@ func NewRouterWithPubSub(
 		case *automations.Service:
 			server.automations = value
 		}
+	}
+	if server.workspaceChat != nil {
+		server.workspaceChat.ConfigureDiagnostics(server.diagnostics)
 	}
 	if server.workspaceChat != nil && warehouseDB != nil {
 		server.workspaceChat.ConfigureMCP(server.orchestraMCPServers)
@@ -199,6 +206,7 @@ func NewRouterWithPubSub(
 	allowedOrigins := corsAllowedOrigins(cfg.Host)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recoverer)
+	r.Use(server.diagnosticsHTTP)
 	r.Use(RequestLogger(logger))
 	// CORS runs before the rate limiter and other short-circuiting middleware so
 	// that preflights are answered without consuming rate-limit tokens and every
@@ -214,7 +222,7 @@ func NewRouterWithPubSub(
 	r.Use(RateLimit(20, 60)) // 20 req/s sustained, 60 burst
 	r.Use(securityHeaders)
 	r.Use(contentTypeGuard)
-	r.Use(middleware.Timeout(30 * time.Second))
+	r.Use(restRequestTimeout)
 	r.MethodNotAllowed(server.methodNotAllowed)
 	r.NotFound(server.notFound)
 
@@ -223,6 +231,14 @@ func NewRouterWithPubSub(
 	if requiresAuth {
 		protected = r.With(requireBearerToken(cfg.APIToken))
 	}
+	for _, kind := range []string{"traces", "logs", "overview", "export"} {
+		kind := kind
+		protected.Get("/api/v1/diagnostics/"+kind, func(w http.ResponseWriter, r *http.Request) { server.diagnosticsRead(w, r, kind) })
+	}
+	protected.Get("/api/v1/diagnostics/traces/{trace_id}", server.diagnosticsTrace)
+	protected.Get("/api/v1/diagnostics/settings", server.diagnosticsSettings)
+	protected.Put("/api/v1/diagnostics/settings", server.diagnosticsSettings)
+	protected.Delete("/api/v1/diagnostics/history", server.diagnosticsClear)
 
 	r.Get("/", server.GetDashboard)
 	r.Get("/healthz", Healthz)

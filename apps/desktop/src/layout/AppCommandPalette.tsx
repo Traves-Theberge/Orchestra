@@ -23,6 +23,7 @@ export function AppCommandPalette({ onCreateIssue, onTogglePolling }: AppCommand
     { id: 'AUTOMATIONS', label: 'Go to Automations', icon: CalendarClock },
     { id: 'PROJECTS', label: 'Go to Projects', icon: FolderTree },
     { id: 'AGENTS', label: 'Go to Agents', icon: Cpu },
+    { id: 'DIAGNOSTICS', label: 'Go to Diagnostics', icon: Activity },
     { id: 'SETTINGS', label: 'Go to Settings', icon: Settings2 },
     { id: 'DOCS', label: 'Go to Documentation', icon: FileText },
   ]

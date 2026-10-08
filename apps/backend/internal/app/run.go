@@ -8,11 +8,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/orchestra/orchestra/apps/backend/internal/backgroundcommand"
 	"hash/fnv"
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
@@ -26,6 +26,7 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/automations"
 	"github.com/orchestra/orchestra/apps/backend/internal/config"
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
+	"github.com/orchestra/orchestra/apps/backend/internal/diagnostics"
 	"github.com/orchestra/orchestra/apps/backend/internal/harnessaccounts"
 	"github.com/orchestra/orchestra/apps/backend/internal/logfile"
 	"github.com/orchestra/orchestra/apps/backend/internal/mcp"
@@ -80,6 +81,14 @@ func Run(logger zerolog.Logger) error {
 		return fmt.Errorf("connect to warehouse db: %w", err)
 	}
 	defer warehouseDB.Close()
+	// Diagnostics is an optional, separate local database. Its failure must not
+	// prevent task execution or conversation recovery.
+	recorder, diagnosticErr := diagnostics.Open(filepath.Join(cfg.WorkspaceRoot, ".orchestra", "diagnostics.db"), diagnostics.Options{})
+	if diagnosticErr != nil {
+		logger.Warn().Msg("local diagnostics unavailable")
+	} else {
+		defer recorder.Close()
+	}
 
 	orchestratorService := orchestrator.NewService()
 	orchestratorService.SetTrackerWorkerAssigneeIDs(cfg.TrackerWorkerAssigneeIDs)
@@ -252,6 +261,7 @@ func Run(logger zerolog.Logger) error {
 		return fmt.Errorf("workspace chat: %w", chatErr)
 	}
 	defer chatService.Close()
+	chatService.ConfigureDiagnostics(recorder)
 	automationService, autoErr := automations.New(warehouseDB, automations.Options{
 		Chat:        chatService,
 		MaestroRoot: filepath.Join(cfg.WorkspaceRoot, ".orchestra", "orchestrator"),
@@ -271,7 +281,7 @@ func Run(logger zerolog.Logger) error {
 	// Deferred after chatService.Close so it runs first: the scheduler stops
 	// and in-flight runs are abandoned before chat turns are closed.
 	defer automationService.Close()
-	router := api.NewRouterWithPubSub(logger, orchestratorService, &cfg, pubsub, warehouseDB, termManager, usageService, trackerRegistry, studioMgr, studioTpls, chatService, accounts, automationService)
+	router := api.NewRouterWithPubSub(logger, orchestratorService, &cfg, pubsub, warehouseDB, termManager, usageService, trackerRegistry, studioMgr, studioTpls, chatService, accounts, automationService, recorder)
 	automationService.Start()
 
 	observeRetainedTerminalWorkspaces(orchestratorService, trackerClient, logger)
@@ -295,7 +305,12 @@ func Run(logger zerolog.Logger) error {
 	}
 
 	toolExecutor := tools.NewLinearToolExecutor(trackerClient)
-	go startExecutionWorker(orchestratorService, agentRegistry, cfg.WorkspaceRoot, cfg.WorkflowFile, cfg.AgentMaxTurns, toolExecutor.Execute, tools.TrackerToolSpecs(), cfg.WorkspaceHooks, pubsub, warehouseDB, sessionLog, termManager, &cfg, trackerRegistry, logger)
+	workerDone := make(chan struct{})
+	go func() {
+		defer close(workerDone)
+		startExecutionWorker(orchestratorService, agentRegistry, cfg.WorkspaceRoot, cfg.WorkflowFile, cfg.AgentMaxTurns, toolExecutor.Execute, tools.TrackerToolSpecs(), cfg.WorkspaceHooks, pubsub, warehouseDB, sessionLog, termManager, &cfg, trackerRegistry, logger, recorder)
+	}()
+	defer func() { cancelStages(); <-workerDone }()
 
 	logger.Info().Str("addr", addr).Str("service_id", runtime.ServiceOrchestrator).Msg("starting orchestrad")
 
@@ -333,7 +348,7 @@ func Run(logger zerolog.Logger) error {
 // unclean restarts. Best-effort: errors are logged and ignored.
 func killStaleOrchestrad(port string, logger zerolog.Logger) {
 	// fuser is available on Linux and most Unix systems.
-	if err := exec.Command("fuser", "-k", port+"/tcp").Run(); err != nil {
+	if err := backgroundcommand.Command("fuser", "-k", port+"/tcp").Run(); err != nil {
 		// fuser exits non-zero when no process is found — that's the normal case.
 		return
 	}
@@ -482,15 +497,21 @@ func startExecutionWorker(
 	cfg *config.Config,
 	trackerReg *trackerregistry.Registry,
 	logger zerolog.Logger,
+	recorders ...*diagnostics.Service,
 ) {
 	workspaceService := workspace.Service{Root: workspaceRoot}
 	ticker := time.NewTicker(300 * time.Millisecond)
 	defer ticker.Stop()
 
-	for range ticker.C {
+	for {
+		select {
+		case <-service.StageContext().Done():
+			return
+		case <-ticker.C:
+		}
 		_, providerName := service.GetAgentConfig()
 		provider := canonicalDispatchProvider(providerName)
-		processExecutionTick(service, workspaceService, registry, provider, providerName, workspaceRoot, workflowFile, agentMaxTurns, toolExecutor, toolSpecs, workspaceHooks, pubsub, warehouseDB, sessionLog, termManager, cfg, trackerReg, logger)
+		processExecutionTick(service, workspaceService, registry, provider, providerName, workspaceRoot, workflowFile, agentMaxTurns, toolExecutor, toolSpecs, workspaceHooks, pubsub, warehouseDB, sessionLog, termManager, cfg, trackerReg, logger, recorders...)
 	}
 }
 
@@ -516,6 +537,7 @@ func processExecutionTick(
 	cfg *config.Config,
 	trackerReg *trackerregistry.Registry,
 	logger zerolog.Logger,
+	recorders ...*diagnostics.Service,
 ) {
 	entry, ok := service.ClaimNextRunnable()
 	if !ok {
@@ -537,6 +559,27 @@ func processExecutionTick(
 			}
 		}
 	}
+
+	var recorder *diagnostics.Service
+	if len(recorders) > 0 {
+		recorder = recorders[0]
+	}
+	sessionID := fmt.Sprintf("%s-%d", entry.IssueIdentifier, time.Now().UnixNano())
+	fields := diagnostics.Fields{ProjectID: entry.ProjectID, TaskID: entry.IssueID, RunID: uuid.NewString(), SessionID: sessionID, Provider: entry.Provider, Attempt: int(entry.TurnCount + 1)}
+	if fields.Provider == "" {
+		fields.Provider = string(provider)
+	}
+	diagnosticCtx, taskSpan := recorder.Start(service.StageContext(), "task.attempt", fields)
+	_, preparationSpan := recorder.Start(diagnosticCtx, "task.prepare", fields)
+	diagnosticStatus := "unknown"
+	defer func() {
+		if service.StageContext().Err() != nil {
+			diagnosticStatus = "cancelled"
+		}
+		preparationSpan.End(diagnosticStatus)
+		taskSpan.End(diagnosticStatus)
+	}()
+	taskSpan.Event("feature.task.dispatch", "info")
 
 	// An explicit task selection must never silently execute on the default provider.
 	activeProvider, selectionErr := resolveDispatchProvider(registry, provider, entry)
@@ -582,6 +625,11 @@ func processExecutionTick(
 				"provider": activeProviderName, "attempt": attempt, "due_at": dueAt.UTC().Format(time.RFC3339), "cause": selectionCause,
 			})
 		}
+		diagnosticStatus = "error"
+		taskSpan.Event("task.failed", "error")
+		if service.ShouldRetryAttempt(entry.TurnCount + 1) {
+			taskSpan.Event("task.retry.scheduled", "info")
+		}
 		service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, attempt, dueAt, selectionErr)
 		logger.Error().Err(selectionErr).Str("issue_id", entry.IssueID).Msg("provider selection rejected before workspace preparation")
 		publishSnapshot(pubsub, service)
@@ -611,6 +659,11 @@ func processExecutionTick(
 
 	if entry.ProjectID == "" || warehouseDB == nil {
 		logger.Error().Str("issue_id", entry.IssueID).Str("project_id", entry.ProjectID).Bool("db_nil", warehouseDB == nil).Msg("issue has no project or db is nil; cannot dispatch")
+		diagnosticStatus = "error"
+		taskSpan.Event("task.failed", "error")
+		if service.ShouldRetryAttempt(entry.TurnCount + 1) {
+			taskSpan.Event("task.retry.scheduled", "info")
+		}
 		service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, entry.TurnCount+1, service.NextRetryDue(entry.IssueID, entry.TurnCount+1), fmt.Errorf("no project or database"))
 		publishSnapshot(pubsub, service)
 		return
@@ -619,6 +672,11 @@ func processExecutionTick(
 	project, projErr := warehouseDB.GetProjectByID(context.Background(), entry.ProjectID)
 	if projErr != nil {
 		logger.Error().Err(projErr).Str("issue_id", entry.IssueID).Str("project_id", entry.ProjectID).Msg("failed to lookup project for workspace")
+		diagnosticStatus = "error"
+		taskSpan.Event("task.failed", "error")
+		if service.ShouldRetryAttempt(entry.TurnCount + 1) {
+			taskSpan.Event("task.retry.scheduled", "info")
+		}
 		service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, entry.TurnCount+1, service.NextRetryDue(entry.IssueID, entry.TurnCount+1), projErr)
 		publishSnapshot(pubsub, service)
 		return
@@ -636,6 +694,11 @@ func processExecutionTick(
 	if project.RootPath == "" || !filepath.IsAbs(project.RootPath) {
 		errMsg := fmt.Errorf("project root path is empty or not absolute: %q", project.RootPath)
 		logger.Error().Str("issue_id", entry.IssueID).Str("root_path", project.RootPath).Msg(errMsg.Error())
+		diagnosticStatus = "error"
+		taskSpan.Event("task.failed", "error")
+		if service.ShouldRetryAttempt(entry.TurnCount + 1) {
+			taskSpan.Event("task.retry.scheduled", "info")
+		}
 		service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, entry.TurnCount+1, service.NextRetryDue(entry.IssueID, entry.TurnCount+1), errMsg)
 		publishSnapshot(pubsub, service)
 		return
@@ -643,6 +706,11 @@ func processExecutionTick(
 	if info, statErr := os.Stat(project.RootPath); statErr != nil || !info.IsDir() {
 		errMsg := fmt.Errorf("project root path does not exist or is not a directory: %s", project.RootPath)
 		logger.Error().Str("issue_id", entry.IssueID).Str("root_path", project.RootPath).Msg(errMsg.Error())
+		diagnosticStatus = "error"
+		taskSpan.Event("task.failed", "error")
+		if service.ShouldRetryAttempt(entry.TurnCount + 1) {
+			taskSpan.Event("task.retry.scheduled", "info")
+		}
 		service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, entry.TurnCount+1, service.NextRetryDue(entry.IssueID, entry.TurnCount+1), errMsg)
 		publishSnapshot(pubsub, service)
 		return
@@ -650,6 +718,11 @@ func processExecutionTick(
 	if !gitutil.IsGitRepo(project.RootPath) {
 		errMsg := fmt.Errorf("project root is not a git repository: %s", project.RootPath)
 		logger.Error().Str("issue_id", entry.IssueID).Str("root_path", project.RootPath).Msg(errMsg.Error())
+		diagnosticStatus = "error"
+		taskSpan.Event("task.failed", "error")
+		if service.ShouldRetryAttempt(entry.TurnCount + 1) {
+			taskSpan.Event("task.retry.scheduled", "info")
+		}
 		service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, entry.TurnCount+1, service.NextRetryDue(entry.IssueID, entry.TurnCount+1), errMsg)
 		publishSnapshot(pubsub, service)
 		return
@@ -670,6 +743,11 @@ func processExecutionTick(
 		worktreeExists, statErr := classifyPlanningCheckoutStat(plannedInfo, readErr)
 		if statErr != nil {
 			logger.Error().Err(statErr).Str("issue_id", entry.IssueID).Str("worktree", plannedPath).Msg("could not inspect planning checkout")
+			diagnosticStatus = "error"
+			taskSpan.Event("task.failed", "error")
+			if service.ShouldRetryAttempt(entry.TurnCount + 1) {
+				taskSpan.Event("task.retry.scheduled", "info")
+			}
 			service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, entry.TurnCount+1, service.NextRetryDue(entry.IssueID, entry.TurnCount+1), statErr)
 			publishSnapshot(pubsub, service)
 			return
@@ -678,12 +756,22 @@ func processExecutionTick(
 			identityPath := planningAfterCreateIdentityPath(workspaceService.Root, project.ID, entry.IssueID, branchName)
 			if mkdirErr := os.MkdirAll(filepath.Dir(identityPath), 0o700); mkdirErr != nil {
 				logger.Error().Err(mkdirErr).Str("issue_id", entry.IssueID).Msg("could not record planning hook configuration")
+				diagnosticStatus = "error"
+				taskSpan.Event("task.failed", "error")
+				if service.ShouldRetryAttempt(entry.TurnCount + 1) {
+					taskSpan.Event("task.retry.scheduled", "info")
+				}
 				service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, entry.TurnCount+1, service.NextRetryDue(entry.IssueID, entry.TurnCount+1), mkdirErr)
 				publishSnapshot(pubsub, service)
 				return
 			}
 			if identityErr := recordPlanningAfterCreateIdentity(identityPath, workspaceHooks.AfterCreate); identityErr != nil {
 				logger.Error().Err(identityErr).Str("issue_id", entry.IssueID).Msg("could not record planning hook configuration")
+				diagnosticStatus = "error"
+				taskSpan.Event("task.failed", "error")
+				if service.ShouldRetryAttempt(entry.TurnCount + 1) {
+					taskSpan.Event("task.retry.scheduled", "info")
+				}
 				service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, entry.TurnCount+1, service.NextRetryDue(entry.IssueID, entry.TurnCount+1), identityErr)
 				publishSnapshot(pubsub, service)
 				return
@@ -692,6 +780,11 @@ func processExecutionTick(
 				pendingPath, _, _, _ := afterCreateReceiptPaths(workspaceService.Root, project.ID, branchName, workspaceHooks.AfterCreate)
 				if mkdirErr := os.MkdirAll(filepath.Dir(pendingPath), 0o700); mkdirErr != nil {
 					logger.Error().Err(mkdirErr).Str("issue_id", entry.IssueID).Msg("could not record deferred after_create hook")
+					diagnosticStatus = "error"
+					taskSpan.Event("task.failed", "error")
+					if service.ShouldRetryAttempt(entry.TurnCount + 1) {
+						taskSpan.Event("task.retry.scheduled", "info")
+					}
 					service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, entry.TurnCount+1, service.NextRetryDue(entry.IssueID, entry.TurnCount+1), mkdirErr)
 					publishSnapshot(pubsub, service)
 					return
@@ -699,6 +792,11 @@ func processExecutionTick(
 				receipt, receiptErr := os.OpenFile(pendingPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 				if receiptErr != nil && !os.IsExist(receiptErr) {
 					logger.Error().Err(receiptErr).Str("issue_id", entry.IssueID).Msg("could not record deferred after_create hook")
+					diagnosticStatus = "error"
+					taskSpan.Event("task.failed", "error")
+					if service.ShouldRetryAttempt(entry.TurnCount + 1) {
+						taskSpan.Event("task.retry.scheduled", "info")
+					}
 					service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, entry.TurnCount+1, service.NextRetryDue(entry.IssueID, entry.TurnCount+1), receiptErr)
 					publishSnapshot(pubsub, service)
 					return
@@ -717,6 +815,11 @@ func processExecutionTick(
 			if string(plannedIdentity) != afterCreateHookIdentity(workspaceHooks.AfterCreate) {
 				blockErr := fmt.Errorf("after_create hook configuration changed after planning; inspect the planned setup receipt before retrying")
 				publishLifecycleEvent(pubsub, "HOOK_FAILED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create", "error": blockErr.Error()})
+				diagnosticStatus = "error"
+				taskSpan.Event("task.failed", "error")
+				if service.ShouldRetryAttempt(entry.TurnCount + 1) {
+					taskSpan.Event("task.retry.scheduled", "info")
+				}
 				service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, entry.TurnCount+1, service.NextRetryDue(entry.IssueID, entry.TurnCount+1), blockErr)
 				publishSnapshot(pubsub, service)
 				return
@@ -724,6 +827,11 @@ func processExecutionTick(
 		} else if !os.IsNotExist(identityErr) {
 			blockErr := fmt.Errorf("after_create planning receipt could not be read; execution is held for inspection: %w", identityErr)
 			publishLifecycleEvent(pubsub, "HOOK_FAILED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create", "error": blockErr.Error()})
+			diagnosticStatus = "error"
+			taskSpan.Event("task.failed", "error")
+			if service.ShouldRetryAttempt(entry.TurnCount + 1) {
+				taskSpan.Event("task.retry.scheduled", "info")
+			}
 			service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, entry.TurnCount+1, service.NextRetryDue(entry.IssueID, entry.TurnCount+1), blockErr)
 			publishSnapshot(pubsub, service)
 			return
@@ -734,7 +842,7 @@ func processExecutionTick(
 	}
 
 	// Clean up stale worktree refs and branches before creating
-	pruneCmd := exec.CommandContext(context.Background(), "git", "worktree", "prune")
+	pruneCmd := backgroundcommand.CommandContext(context.Background(), "git", "worktree", "prune")
 	pruneCmd.Dir = project.RootPath
 	_ = pruneCmd.Run()
 
@@ -776,6 +884,11 @@ func processExecutionTick(
 				"cause":            "workspace_prepare_failed",
 			})
 		}
+		diagnosticStatus = "error"
+		taskSpan.Event("task.failed", "error")
+		if service.ShouldRetryAttempt(entry.TurnCount + 1) {
+			taskSpan.Event("task.retry.scheduled", "info")
+		}
 		service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, attempt, dueAt, err)
 		logger.Error().Err(err).Str("issue_id", entry.IssueID).Str("provider", activeProviderName).Msg("workspace preparation failed")
 		publishSnapshot(pubsub, service)
@@ -792,6 +905,11 @@ func processExecutionTick(
 				if staleErr != nil {
 					blockErr := fmt.Errorf("after_create hook configuration changed after planning; inspect deferred setup receipts before retrying: %w", staleErr)
 					publishLifecycleEvent(pubsub, "HOOK_FAILED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create", "error": blockErr.Error()})
+					diagnosticStatus = "error"
+					taskSpan.Event("task.failed", "error")
+					if service.ShouldRetryAttempt(entry.TurnCount + 1) {
+						taskSpan.Event("task.retry.scheduled", "info")
+					}
 					service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, entry.TurnCount+1, service.NextRetryDue(entry.IssueID, entry.TurnCount+1), blockErr)
 					publishSnapshot(pubsub, service)
 					return
@@ -800,6 +918,11 @@ func processExecutionTick(
 				if claimErr != nil {
 					blockErr := fmt.Errorf("after_create hook outcome is unknown; inspect receipt %s before retrying: %w", claimedPath, claimErr)
 					publishLifecycleEvent(pubsub, "HOOK_FAILED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create", "error": blockErr.Error()})
+					diagnosticStatus = "error"
+					taskSpan.Event("task.failed", "error")
+					if service.ShouldRetryAttempt(entry.TurnCount + 1) {
+						taskSpan.Event("task.retry.scheduled", "info")
+					}
 					service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, entry.TurnCount+1, service.NextRetryDue(entry.IssueID, entry.TurnCount+1), blockErr)
 					publishSnapshot(pubsub, service)
 					return
@@ -811,6 +934,11 @@ func processExecutionTick(
 						_ = os.Rename(claimedPath, unknownPath)
 						blockErr := fmt.Errorf("after_create hook failed with an uncertain workspace outcome: %w", hookErr)
 						publishLifecycleEvent(pubsub, "HOOK_FAILED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create", "error": blockErr.Error(), "output": res.Output})
+						diagnosticStatus = "error"
+						taskSpan.Event("task.failed", "error")
+						if service.ShouldRetryAttempt(entry.TurnCount + 1) {
+							taskSpan.Event("task.retry.scheduled", "info")
+						}
 						service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, entry.TurnCount+1, service.NextRetryDue(entry.IssueID, entry.TurnCount+1), blockErr)
 						publishSnapshot(pubsub, service)
 						return
@@ -818,6 +946,11 @@ func processExecutionTick(
 					if err := os.Rename(claimedPath, completedPath); err != nil {
 						blockErr := fmt.Errorf("after_create completed but its receipt could not be finalized; inspect receipt %s before retrying: %w", claimedPath, err)
 						publishLifecycleEvent(pubsub, "HOOK_FAILED", map[string]any{"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier, "hook_type": "after_create", "error": blockErr.Error(), "output": res.Output})
+						diagnosticStatus = "error"
+						taskSpan.Event("task.failed", "error")
+						if service.ShouldRetryAttempt(entry.TurnCount + 1) {
+							taskSpan.Event("task.retry.scheduled", "info")
+						}
 						service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, entry.TurnCount+1, service.NextRetryDue(entry.IssueID, entry.TurnCount+1), blockErr)
 						publishSnapshot(pubsub, service)
 						return
@@ -873,6 +1006,11 @@ func processExecutionTick(
 					"cause":            "before_run_hook_failed",
 				})
 			}
+			diagnosticStatus = "error"
+			taskSpan.Event("task.failed", "error")
+			if service.ShouldRetryAttempt(entry.TurnCount + 1) {
+				taskSpan.Event("task.retry.scheduled", "info")
+			}
 			service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, attempt, dueAt, err)
 			logger.Error().Err(err).Str("issue_id", entry.IssueID).Str("provider", activeProviderName).Msg("workspace before_run hook failed")
 			publishSnapshot(pubsub, service)
@@ -914,7 +1052,7 @@ func processExecutionTick(
 		}
 	}
 
-	runCtx, cancel := context.WithCancel(service.StageContext())
+	runCtx, cancel := context.WithCancel(diagnosticCtx)
 	defer cancel()
 	service.RegisterCancel(entry.IssueID, activeProviderName, cancel)
 	defer service.DeregisterCancel(entry.IssueID, activeProviderName)
@@ -945,6 +1083,11 @@ func processExecutionTick(
 		if issueErr != nil || planningIssue == nil || planningIssue.ProjectID != entry.ProjectID {
 			planErr := fmt.Errorf("exact task context unavailable for read-only planning")
 			dueAt := service.NextRetryDue(entry.IssueID, attempt)
+			diagnosticStatus = "error"
+			taskSpan.Event("task.failed", "error")
+			if service.ShouldRetryAttempt(entry.TurnCount + 1) {
+				taskSpan.Event("task.retry.scheduled", "info")
+			}
 			service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, attempt, dueAt, planErr)
 			logger.Error().Err(planErr).Str("issue_id", entry.IssueID).Msg("planning rejected before provider execution")
 			publishSnapshot(pubsub, service)
@@ -966,7 +1109,6 @@ func processExecutionTick(
 		mcpAwareExecutor = nil
 	}
 
-	sessionID := fmt.Sprintf("%s-%d", entry.IssueIdentifier, time.Now().UnixNano())
 	_ = logfile.ResetLatestLog(workspaceRoot, entry.IssueIdentifier, sessionID)
 	sessionLogPath := filepath.Join(workspaceRoot, "_logs", logfile.Sanitize(entry.IssueIdentifier), "latest.log")
 	service.RecordRunArtifact(entry.IssueID, activeProviderName, sessionID, sessionLogPath)
@@ -1003,7 +1145,10 @@ func processExecutionTick(
 	if !planOnly && agents.NormalizeRuntimeTarget(entry.RuntimeTarget) == agents.RuntimeLocal && taskMCPServers != nil {
 		runMCPServers = taskMCPServers(runCtx)
 	}
-	result, runErr := registry.RunTurn(runCtx, activeProvider, agents.TurnRequest{
+	preparationSpan.End("ok")
+	providerCtx, providerSpan := recorder.Start(runCtx, "provider.turn", fields)
+	mcpAwareExecutor = diagnosticTaskToolExecutor(recorder, providerCtx, fields, mcpAwareExecutor)
+	result, runErr := registry.RunTurn(providerCtx, activeProvider, agents.TurnRequest{
 		MCPServers:        runMCPServers,
 		AccountID:         entry.AccountID,
 		RequestedModel:    requestedOptions.RequestedModel,
@@ -1069,10 +1214,35 @@ func processExecutionTick(
 				Msg(event.Message)
 		}
 	})
+	providerStatus := "ok"
+	if runErr != nil || result.ExitCode != 0 {
+		providerStatus = "error"
+	}
+	if runCtx.Err() != nil {
+		providerStatus = "cancelled"
+	}
+	// A zero-valued TurnResult does not prove that a provider reported usage.
+	if result.Usage.TotalTokens > 0 || result.Usage.InputTokens > 0 || result.Usage.OutputTokens > 0 {
+		providerSpan.Usage(result.Usage.InputTokens, result.Usage.OutputTokens)
+	}
+	providerSpan.End(providerStatus)
+	diagnosticStatus = providerStatus
+	_, finalizationSpan := recorder.Start(runCtx, "task.finalize", fields)
+	defer func() {
+		if runCtx.Err() != nil {
+			diagnosticStatus = "cancelled"
+		}
+		finalizationSpan.End(diagnosticStatus)
+	}()
 	// A stop can race with a provider that returns success after cancellation.
 	// Settle the claimed runtime entry, but never let that late result proceed to
 	// plan persistence, task advancement, or Git side effects.
 	discardLateTurn := func(reason string) {
+		diagnosticStatus = "unknown"
+		if runCtx.Err() != nil {
+			diagnosticStatus = "cancelled"
+		}
+		taskSpan.Event("task.result.discarded", "warn")
 		service.RecordRunSuccess(entry.IssueID, activeProviderName)
 		if sessionLog != nil {
 			_ = sessionLog.CloseSession(sessionID, &sessionlogger.Usage{
@@ -1112,6 +1282,11 @@ func processExecutionTick(
 				"due_at":           dueAt.UTC().Format(time.RFC3339),
 				"cause":            "agent_run_failed",
 			})
+		}
+		diagnosticStatus = "error"
+		taskSpan.Event("task.failed", "error")
+		if service.ShouldRetryAttempt(entry.TurnCount + 1) {
+			taskSpan.Event("task.retry.scheduled", "info")
 		}
 		service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, attempt, dueAt, runErr)
 		logger.Error().Err(runErr).Str("issue_id", entry.IssueID).Str("provider", activeProviderName).Msg("agent run failed")
@@ -1156,6 +1331,11 @@ func processExecutionTick(
 				"due_at":           dueAt.UTC().Format(time.RFC3339),
 				"cause":            "continuation_check_failed",
 			})
+		}
+		diagnosticStatus = "error"
+		taskSpan.Event("task.failed", "error")
+		if service.ShouldRetryAttempt(entry.TurnCount + 1) {
+			taskSpan.Event("task.retry.scheduled", "info")
 		}
 		service.RecordRunFailure(entry.IssueID, activeProviderName, entry.IssueIdentifier, attempt, dueAt, checkErr)
 		logger.Error().Err(checkErr).Str("issue_id", entry.IssueID).Msg("failed to check turn continuation")
@@ -1209,6 +1389,8 @@ func processExecutionTick(
 	}
 	liveIssue, liveErr := service.FetchIssueByID(context.Background(), entry.IssueID)
 	if liveErr != nil || liveIssue == nil || liveIssue.ProjectID != entry.ProjectID || !strings.EqualFold(strings.TrimSpace(liveIssue.State), strings.TrimSpace(entry.State)) {
+		diagnosticStatus = "unknown"
+		finalizationSpan.Event("task.result.discarded", "warn")
 		logger.Warn().Str("issue_id", entry.IssueID).Str("identifier", entry.IssueIdentifier).Msg("task stage changed or task disappeared after run — skipping post-run actions")
 		publishLifecycleEvent(pubsub, "RUN_DISCARDED", map[string]any{
 			"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier,
@@ -1232,6 +1414,8 @@ func processExecutionTick(
 			return
 		}
 		if commitErr := gitutil.Commit(runCtx, workspacePath, commitMsg); commitErr != nil {
+			diagnosticStatus = "error"
+			finalizationSpan.Event("task.commit.failed", "error")
 			logger.Warn().Err(commitErr).Str("issue_id", entry.IssueID).Msg("auto-commit failed (may have no changes)")
 		} else {
 			logger.Info().Str("issue_id", entry.IssueID).Msg("auto-committed agent work")
@@ -1249,6 +1433,8 @@ func processExecutionTick(
 			return
 		}
 		if pushErr := gitutil.Push(runCtx, workspacePath, "origin", branchName); pushErr != nil {
+			diagnosticStatus = "error"
+			finalizationSpan.Event("task.push.failed", "error")
 			logger.Warn().Err(pushErr).Msg("auto-push failed (remote may not be configured)")
 		} else {
 			logger.Info().Str("branch", branchName).Msg("auto-pushed task branch")
@@ -1272,6 +1458,8 @@ func processExecutionTick(
 	}
 	latestIssue, latestIssueErr := service.FetchIssueByID(context.Background(), entry.IssueID)
 	if latestIssueErr != nil || latestIssue == nil || latestIssue.ProjectID != entry.ProjectID || !strings.EqualFold(strings.TrimSpace(latestIssue.State), strings.TrimSpace(entry.State)) {
+		diagnosticStatus = "unknown"
+		finalizationSpan.Event("task.result.discarded", "warn")
 		publishLifecycleEvent(pubsub, "RUN_DISCARDED", map[string]any{
 			"issue_id": entry.IssueID, "issue_identifier": entry.IssueIdentifier,
 			"provider": activeProviderName, "reason": "task_stage_changed_before_task_finalization",
@@ -1294,6 +1482,8 @@ func processExecutionTick(
 			plan = extractOriginalPlan(warehouseDB, entry.IssueID)
 		}
 		if err := service.RecordPlanResult(runCtx, entry.ProjectID, entry.IssueID, plan, expectedPlanFingerprint); err != nil {
+			diagnosticStatus = "error"
+			finalizationSpan.Event("task.plan.persist.failed", "error")
 			logger.Error().Err(err).Str("issue_id", entry.IssueID).Msg("failed to persist plan gate result")
 		} else if plan != "" {
 			logger.Info().Str("issue_id", entry.IssueID).Int("plan_length", len(plan)).Msg("plan is ready for human approval; task remains in Todo")
@@ -1327,6 +1517,8 @@ func processExecutionTick(
 			return
 		}
 		if _, err := service.UpdateIssue(runCtx, entry.IssueIdentifier, updateFields); err != nil {
+			diagnosticStatus = "error"
+			finalizationSpan.Event("task.state.update.failed", "error")
 			logger.Error().Err(err).Str("issue_id", entry.IssueID).Msg("FAILED to auto-advance to Review")
 		}
 
@@ -1336,9 +1528,11 @@ func processExecutionTick(
 			if branchName == "" {
 				branchName = strings.ToLower(strings.ReplaceAll(entry.IssueIdentifier, " ", "-"))
 			}
-			pushCmd := exec.CommandContext(runCtx, "git", "push", "--force-with-lease", "-u", "origin", branchName)
+			pushCmd := backgroundcommand.CommandContext(runCtx, "git", "push", "--force-with-lease", "-u", "origin", branchName)
 			pushCmd.Dir = workspacePath
 			if pushOut, pushErr := pushCmd.CombinedOutput(); pushErr != nil {
+				diagnosticStatus = "error"
+				finalizationSpan.Event("task.push.failed", "error")
 				logger.Warn().Err(pushErr).Str("output", string(pushOut)).Str("branch", branchName).Msg("failed to push branch after feedback cycle")
 			} else {
 				logger.Info().Str("issue_id", entry.IssueID).Str("branch", branchName).Msg("pushed branch to update existing PR")
@@ -1376,7 +1570,7 @@ func processExecutionTick(
 
 				diffStats := ""
 				if diffDir != "" {
-					cmd := exec.Command("git", "-C", diffDir, "diff", "--stat", "HEAD")
+					cmd := backgroundcommand.Command("git", "-C", diffDir, "diff", "--stat", "HEAD")
 					if out, err := cmd.Output(); err == nil && len(out) > 0 {
 						diffStats = string(out)
 					}
@@ -1384,11 +1578,11 @@ func processExecutionTick(
 
 				changedFiles := ""
 				if diffDir != "" {
-					cmd := exec.Command("git", "-C", diffDir, "diff", "--name-only", "HEAD")
+					cmd := backgroundcommand.Command("git", "-C", diffDir, "diff", "--name-only", "HEAD")
 					if out, err := cmd.Output(); err == nil && len(out) > 0 {
 						changedFiles = strings.TrimSpace(string(out))
 					}
-					cmd2 := exec.Command("git", "-C", diffDir, "ls-files", "--others", "--exclude-standard")
+					cmd2 := backgroundcommand.Command("git", "-C", diffDir, "ls-files", "--others", "--exclude-standard")
 					if out2, err := cmd2.Output(); err == nil && len(out2) > 0 {
 						if changedFiles != "" {
 							changedFiles += "\n"

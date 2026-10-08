@@ -1,5 +1,66 @@
 # 3.9 Telemetry & Log Watching
 
+## Built-in Diagnostics
+
+Orchestra also records operational metadata in a separate backend-owned
+`.orchestra/diagnostics.db`. Open **Diagnostics** from the main navigation for
+Overview, Runs, Logs, Usage, and Settings. Task details include a **Timeline**
+tab using the same waterfall and span inspector. In a remote-backend connection,
+the history resides on that backend.
+
+The recorder owns an OpenTelemetry Go tracer provider and bounded asynchronous
+write queue. W3C `traceparent`/`tracestate` propagation connects incoming HTTP
+operations to owned work. No external collector, dashboard, database server,
+outbound exporter, or runtime chart CDN is required. EvilCharts grid-bar shapes
+are adapted to the existing Recharts components; their MIT license ships with
+the renderer.
+
+Only fixed operation/event names, timestamps, outcomes, opaque correlation IDs,
+provider/model identity, attempt numbers, and provider-reported token counts are
+stored, plus typed HTTP method, route template, response status, and measured
+completion duration. Route templates come from the router; raw request paths,
+query strings, and headers are excluded. Prompts, responses, credentials, paths, commands, tool arguments, and
+tool results are excluded. Diagnostic logs are lifecycle metadata rather than
+copies of conversation content or provider log files. Export downloads a bounded,
+sanitized JSON bundle locally and identifies truncation; it performs no upload.
+
+Default limits are seven days of detailed spans/logs, thirty days of metric
+aggregates, and 250 MiB of storage. Settings persist across restarts. Clearing
+history affects only diagnostics. Queue overflow, budget evictions, and storage
+faults increment dropped-record health counters. Lost completion evidence becomes
+unknown without a fabricated end timestamp; restart similarly recovers unfinished
+spans as unknown. Clear/disable generation fences reject delayed writes.
+
+Queries default to 100 records per page with a 500-record maximum. Trace detail
+is bounded to 1,000 spans and explicitly marks partial evidence. The waterfall
+supports nested/concurrent spans, collapse, zoom, keyboard selection, linked
+events, and virtualized large traces. Polling runs only for visible active views
+and can be paused; Refresh also updates paused lists and selected detail.
+
+Operation aggregates retain hourly buckets with daily chart display. Scoped
+project/task/search aggregates use retained detail and disclose that boundary.
+Usage counts only reported operation usage, grouped by provider/model; missing
+usage stays unknown. Costs are unavailable until a versioned local rate policy
+is implemented. Metrics do not use task/run IDs as dimensions and do not claim
+percentiles from averages.
+
+Authenticated routes are under `/api/v1/diagnostics`: `GET traces`,
+`GET traces/{trace_id}`, `GET logs`, `GET overview`, `GET/PUT settings`,
+`DELETE history`, and `GET export`. Diagnostic reads do not trace themselves.
+Spans and logs include shared `label` and `description` fields derived from fixed
+operation names and recorded HTTP metadata. Historical records keep missing
+protocol fields absent; descriptions do not reconstruct unobserved evidence.
+The inspector shows HTTP fields for API requests and omits unrelated provider
+and token fields. API activity without task identity is labeled accordingly.
+
+The read-only CLI supports `orchestra diagnostics overview|traces|trace <trace-id>|logs|settings|export|check`.
+Use `--json` for versioned structured output and the same authenticated backend
+connection as other CLI observations. `check` reports collection availability,
+enabled state, and history gaps; it does not certify successful task execution.
+See [implementation and verification plan](../superpowers/plans/2026-10-07-local-diagnostics.md)
+for contracts and verification gates. The provider log watcher described below
+remains a separate subsystem.
+
 > **Source files:**
 > - `apps/backend/internal/telemetry/watcher.go`
 
