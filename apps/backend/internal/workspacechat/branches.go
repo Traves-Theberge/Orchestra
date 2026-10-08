@@ -68,6 +68,11 @@ func migrateBranches(d *db.DB) error {
 	 CREATE TABLE IF NOT EXISTS workspace_chat_branch_seed(session_id TEXT PRIMARY KEY, created_at TEXT NOT NULL);`); err != nil {
 		return err
 	}
+	// partial marks a safety checkpoint whose restore did not finish: a retry
+	// reuses it instead of snapshotting the half-restored folder.
+	if _, err := d.Exec(`ALTER TABLE workspace_chat_checkpoints ADD COLUMN partial INTEGER NOT NULL DEFAULT 0`); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		return err
+	}
 	// Existing rows keep branch_id '' and so stay on the main branch.
 	for _, table := range []string{"workspace_chat_messages", "workspace_chat_events", "workspace_chat_requests"} {
 		if _, err := d.Exec(`ALTER TABLE ` + table + ` ADD COLUMN branch_id TEXT NOT NULL DEFAULT ''`); err != nil && !strings.Contains(err.Error(), "duplicate column") {

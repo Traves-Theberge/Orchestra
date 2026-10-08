@@ -43,6 +43,7 @@ var (
 	errMessageNotShown = &shownError{"That message is not on the version you are viewing.", ErrNotFound}
 	errForeignVersion  = &shownError{"That version does not belong to this conversation.", ErrNotFound}
 	errNothingToUndo   = &shownError{"There is nothing to undo.", ErrCheckpointUnavailable}
+	errUndoOvertaken   = &shownError{"Another conversation in this folder has run since the restore, so Undo restore would overwrite its work.", ErrCheckpointUnavailable}
 )
 
 // RestoreError reports a files restore that left some paths unrestored (or
@@ -446,7 +447,9 @@ func (s *Service) recheckActivate(ctx context.Context, pid, id, branchID, curren
 
 // UndoRestore puts the folder back to the newest safety checkpoint, taken
 // just before the last files restore, and consumes it. A restore that leaves
-// files behind keeps the checkpoint so Undo can be retried.
+// files behind keeps the checkpoint so Undo can be retried. Undo is refused
+// once another conversation of the same checkout has run a turn since the
+// restore, since it would overwrite that turn's files.
 func (s *Service) UndoRestore(ctx context.Context, pid, id string) (checkpoint.RestoreResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -473,10 +476,41 @@ func (s *Service) UndoRestore(ctx context.Context, pid, id string) (checkpoint.R
 	if err = s.rejectRemoval(ctx, pid, d.Session); err != nil {
 		return checkpoint.RestoreResult{}, err
 	}
+	if overtaken, err := s.undoOvertaken(ctx, pid, d.Session, safety.ID); err != nil || overtaken {
+		if err == nil {
+			err = errUndoOvertaken
+		}
+		return checkpoint.RestoreResult{}, err
+	}
+	// The folder as it is now is snapshotted first (kind undo, never popped
+	// by Undo), so undoing is itself recoverable. An undo snapshot left by a
+	// failed earlier Undo of this same restore is reused.
+	pre, reuse, err := s.queryCheckpoint(ctx, `WHERE session_id=? AND kind='undo' AND rowid>(SELECT rowid FROM workspace_chat_checkpoints WHERE id=?) ORDER BY rowid DESC LIMIT 1`, id, safety.ID)
+	if err != nil {
+		return checkpoint.RestoreResult{}, err
+	}
+	if !reuse {
+		pre = Checkpoint{ID: uuid.NewString(), SessionID: id, BranchID: safety.BranchID, MessageID: safety.MessageID, Kind: "undo"}
+	}
 	work := context.WithoutCancel(ctx)
 	store, timeout := s.checkpoints, s.restoreTimeout()
 	var res checkpoint.RestoreResult
 	err = s.whileRestoring(pid, d.Session, func() error {
+		if !reuse {
+			sctx, cancel := context.WithTimeout(work, timeout)
+			snap, e := snapshotWithin(sctx, store, d.Session.WorkspacePath)
+			cancel()
+			if e == nil && snap.Hash == "" {
+				e = errors.New("snapshot returned no tree")
+			}
+			if e != nil {
+				return fmt.Errorf("%w: the safety snapshot of the current files failed, so nothing was restored: %v", ErrCheckpointUnavailable, e)
+			}
+			pre.TreeHash, pre.Files, pre.Bytes, pre.Skipped = snap.Hash, snap.Files, snap.Bytes, snap.Skipped
+			if e = s.saveCheckpoint(work, pre); e != nil {
+				return e
+			}
+		}
 		var e error
 		res, e = restoreWithin(work, store, d.Session.WorkspacePath, safety.TreeHash, timeout)
 		if e != nil || len(res.Failed) > 0 {
@@ -607,6 +641,25 @@ func (s *Service) busyReason(ctx context.Context, pid string, sess Session) (str
 	return fmt.Sprintf("Another conversation in this folder is running: %s", title), nil
 }
 
+// undoOvertaken reports whether another conversation of the same checkout
+// recorded a turn checkpoint after the safety checkpoint safetyID. Maestro
+// conversations share no files. Callers hold s.mu.
+func (s *Service) undoOvertaken(ctx context.Context, pid string, sess Session, safetyID string) (bool, error) {
+	if pid == OrchestratorScope {
+		return false, nil
+	}
+	_, _, primary, err := s.scope(ctx, pid)
+	if err != nil {
+		return false, err
+	}
+	var found int
+	err = s.db.QueryRowContext(ctx, `SELECT 1 FROM workspace_chat_checkpoints c WHERE c.kind IN ('before','after') AND c.session_id<>? AND c.rowid>(SELECT rowid FROM workspace_chat_checkpoints WHERE id=?) AND c.session_id IN (SELECT id FROM workspace_chat_sessions WHERE project_id=? AND (id IN (SELECT session_id FROM workspace_chat_workspaces WHERE workspace_id=?) OR (? AND id NOT IN (SELECT session_id FROM workspace_chat_workspaces)))) LIMIT 1`, sess.ID, safetyID, pid, sess.WorkspaceID, primary).Scan(&found)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 // restoringCheckout names another conversation restoring files in a
 // checkout. Callers hold s.mu.
 func (s *Service) restoringCheckout(pid, workspaceID, except string) (string, bool) {
@@ -722,28 +775,44 @@ func restoreWithin(ctx context.Context, store checkpointer, worktree, tree strin
 // failed safety snapshot aborts before any file is touched; a restore that
 // leaves files behind returns *RestoreError and keeps the safety checkpoint.
 // Callers hold s.mu; it is held again on return.
+//
+// A safety checkpoint left by an unfinished restore with no turn since is
+// reused rather than replaced: the folder is half restored now, and Undo must
+// return to the folder as it was before the first attempt.
 func (s *Service) restoreFolder(ctx context.Context, pid string, sess Session, branchID, messageID, tree string) (Checkpoint, error) {
 	if err := s.rejectRemoval(ctx, pid, sess); err != nil {
 		return Checkpoint{}, err
 	}
 	store, timeout := s.checkpoints, s.restoreTimeout()
-	safety := Checkpoint{ID: uuid.NewString(), SessionID: sess.ID, BranchID: branchID, MessageID: messageID, Kind: "safety"}
-	err := s.whileRestoring(pid, sess, func() error {
-		sctx, cancel := context.WithTimeout(ctx, timeout)
-		snap, err := snapshotWithin(sctx, store, sess.WorkspacePath)
-		cancel()
-		if err == nil && snap.Hash == "" {
-			err = errors.New("snapshot returned no tree")
-		}
-		if err != nil {
-			return fmt.Errorf("%w: the safety snapshot of the current files failed, so nothing was restored: %v", ErrCheckpointUnavailable, err)
-		}
-		safety.TreeHash, safety.Files, safety.Bytes, safety.Skipped = snap.Hash, snap.Files, snap.Bytes, snap.Skipped
-		if err = s.saveCheckpoint(ctx, safety); err != nil {
-			return err
+	safety, reuse, err := s.queryCheckpoint(ctx, `WHERE session_id=? AND kind='safety' AND partial=1 AND NOT EXISTS (SELECT 1 FROM workspace_chat_checkpoints n WHERE n.session_id=workspace_chat_checkpoints.session_id AND n.rowid>workspace_chat_checkpoints.rowid AND n.kind IN ('before','after','safety')) ORDER BY rowid DESC LIMIT 1`, sess.ID)
+	if err != nil {
+		return Checkpoint{}, err
+	}
+	if !reuse {
+		safety = Checkpoint{ID: uuid.NewString(), SessionID: sess.ID, BranchID: branchID, MessageID: messageID, Kind: "safety"}
+	}
+	err = s.whileRestoring(pid, sess, func() error {
+		if !reuse {
+			sctx, cancel := context.WithTimeout(ctx, timeout)
+			snap, err := snapshotWithin(sctx, store, sess.WorkspacePath)
+			cancel()
+			if err == nil && snap.Hash == "" {
+				err = errors.New("snapshot returned no tree")
+			}
+			if err != nil {
+				return fmt.Errorf("%w: the safety snapshot of the current files failed, so nothing was restored: %v", ErrCheckpointUnavailable, err)
+			}
+			safety.TreeHash, safety.Files, safety.Bytes, safety.Skipped = snap.Hash, snap.Files, snap.Bytes, snap.Skipped
+			if err = s.saveCheckpoint(ctx, safety); err != nil {
+				return err
+			}
 		}
 		res, err := restoreWithin(ctx, store, sess.WorkspacePath, tree, timeout)
-		if err != nil || len(res.Failed) > 0 {
+		partial := err != nil || len(res.Failed) > 0
+		if _, e := s.db.ExecContext(ctx, `UPDATE workspace_chat_checkpoints SET partial=? WHERE id=?`, partial, safety.ID); e != nil {
+			log.Printf("workspace chat could not mark safety checkpoint %s: %v", safety.ID, e)
+		}
+		if partial {
 			log.Printf("workspace chat files restore for session %s incomplete (%d failed): %v", sess.ID, len(res.Failed), err)
 			return &RestoreError{Failed: res.Failed, Err: err}
 		}
