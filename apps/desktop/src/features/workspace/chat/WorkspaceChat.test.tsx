@@ -636,6 +636,30 @@ describe('WorkspaceChat', () => {
     expect(command.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.queryByText(/· streaming/)).not.toBeInTheDocument()
   })
+  it('announces a failed turn clearly with retry and details', async () => {
+    vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({ session: { ...session, status: 'failed', error: 'codex app-server exited\nexit status 1: model overloaded' }, messages: [{ ...message, text: 'Do the thing', created_at: '2026-10-04T10:00:00Z' }] })
+    open()
+    await selectConversation()
+    const notice = await screen.findByRole('alert', { name: 'Turn failed' })
+    expect(notice).toHaveTextContent('The agent hit an error and stopped')
+    expect(notice).toHaveTextContent('codex app-server exited')
+    fireEvent.click(screen.getByRole('button', { name: 'Details' }))
+    expect(screen.getByText(/model overloaded/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    await waitFor(() => expect(api.sendWorkspaceChatMessage).toHaveBeenCalledWith(config, 'project-a', 'chat-a', expect.any(String), 'Do the thing'))
+  })
+  it('words resolved requests of the current turn plainly and drops old ones', async () => {
+    vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({ session, messages: [{ ...message, text: 'Check status', created_at: '2026-10-04T10:00:00Z' }], requests: [
+      { id: 'old', turn_id: 'turn-0', method: 'item/commandExecution/requestApproval', params: { command: 'ls' }, status: 'unknown', created_at: '2026-10-04T09:00:00Z' },
+      { id: 'new', turn_id: 'turn-1', method: 'item/commandExecution/requestApproval', params: { command: 'git status' }, status: 'stale', created_at: '2026-10-04T10:00:05Z' },
+    ] })
+    open()
+    await selectConversation()
+    expect(await screen.findByText('Run git status')).toBeInTheDocument()
+    expect(screen.getByText(/expired: the agent moved on/)).toBeInTheDocument()
+    expect(screen.queryByText('Run ls')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Agent request unknown/)).not.toBeInTheDocument()
+  })
   it('places dated tool activity before its completed assistant response', async () => {
     vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({ session, messages: [
       { ...message, text: 'Inspect repository', created_at: '2026-10-04T10:00:00Z' },

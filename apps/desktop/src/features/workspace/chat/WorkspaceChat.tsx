@@ -223,6 +223,69 @@ function AgentDivider({ name, color }: { name: string; color?: string }) {
   return <div role="separator" aria-label={`Switched to ${name}`} className="mb-5 flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground/60"><span className="h-px flex-1 bg-border/60" />{color ? <span aria-hidden="true" className="size-1.5 rounded-full" style={{ backgroundColor: color }} /> : null}<span>Switched to {name}</span><span className="h-px flex-1 bg-border/60" /></div>
 }
 
+/** What a resolved approval or question was about, in plain words. */
+function requestSubject(request: WorkspaceChatRequest): string {
+  const params = record(request.params)
+  if (request.method === 'item/commandExecution/requestApproval') {
+    const command = textValue(params.command) || (Array.isArray(params.command) ? params.command.join(' ') : '')
+    return command ? `Run ${firstLine(command)}` : 'Run a command'
+  }
+  if (request.method === 'item/fileChange/requestApproval') return 'Change files'
+  if (request.method === 'item/tool/requestUserInput') return 'Question for you'
+  return 'Request'
+}
+
+const REQUEST_OUTCOME: Record<string, string> = {
+  answered: 'answered',
+  stale: 'expired: the agent moved on before you replied',
+  unknown: 'closed without a reply',
+}
+
+/** Resolved approvals and questions of the current turn, as quiet trace lines. */
+function ResolvedRequests({ requests }: { requests: WorkspaceChatRequest[] }) {
+  if (!requests.length) return null
+  return (
+    <ol aria-label="Resolved agent requests" className="relative ml-[3px] border-l border-border/50 pl-4">
+      {requests.map(request => (
+        <li key={request.id} className="relative flex items-baseline gap-2 py-1 text-[12px]">
+          <span aria-hidden="true" className={`absolute -left-[20.5px] top-[11px] size-[7px] rounded-full ring-[3px] ring-background ${request.status === 'answered' ? 'bg-muted-foreground/35' : 'bg-amber-500/70'}`} />
+          <span className="shrink-0 font-medium text-foreground/75">Approval</span>
+          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground/70">{requestSubject(request)}</span>
+          <span className={`shrink-0 text-[10.5px] ${request.status === 'answered' ? 'text-muted-foreground/60' : 'text-amber-600 dark:text-amber-400'}`}>{REQUEST_OUTCOME[request.status] ?? request.status}</span>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+/** End-of-conversation notice when the last turn failed or was interrupted. */
+function TurnNotice({ status, error, onRetry }: { status: string; error?: string; onRetry?: () => void }) {
+  const [showDetails, setShowDetails] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const failed = status === 'failed'
+  const detail = (error ?? '').trim()
+  const headline = firstLine(detail)
+  const hasMore = detail.length > headline.length
+  return (
+    <section role="alert" aria-label={failed ? 'Turn failed' : 'Turn interrupted'}
+      className={`relative overflow-hidden rounded-xl py-3 pl-4 pr-3 animate-in fade-in slide-in-from-bottom-1 duration-200 ${failed ? 'bg-destructive/[0.06]' : 'bg-amber-500/[0.06]'}`}>
+      <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-[3px] ${failed ? 'bg-destructive/70' : 'bg-amber-500/70'}`} />
+      <p className={`text-[13px] font-semibold ${failed ? 'text-destructive' : 'text-amber-600 dark:text-amber-400'}`}>
+        {failed ? 'The agent hit an error and stopped' : 'This turn was interrupted'}
+      </p>
+      <p className="mt-0.5 text-[12.5px] leading-relaxed text-foreground/75">
+        {headline || (failed ? 'No reason was reported.' : 'It stopped before finishing. Nothing is lost; you can continue from here.')}
+      </p>
+      {showDetails && hasMore && <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-background/60 px-3 py-2 font-mono text-[11px] leading-5 text-muted-foreground">{detail}</pre>}
+      <div className="mt-2 flex items-center gap-3 text-[12px] font-medium">
+        {onRetry && <button type="button" onClick={onRetry} className="text-foreground transition-colors hover:text-primary">Try again</button>}
+        {hasMore && <button type="button" onClick={() => setShowDetails(value => !value)} className="text-muted-foreground transition-colors hover:text-foreground">{showDetails ? 'Hide details' : 'Details'}</button>}
+        {detail && <button type="button" onClick={() => { void navigator.clipboard?.writeText(detail).then(() => setCopied(true), () => {}) }} className="text-muted-foreground transition-colors hover:text-foreground">{copied ? 'Copied' : 'Copy error'}</button>}
+      </div>
+    </section>
+  )
+}
+
 /**
  * The running turn as one chronological stream: what the agent wrote and what it
  * did, interleaved in the order it happened, so new steps never jump above text
@@ -946,6 +1009,12 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
     })
   }
 
+  /** Re-sends the last prompt after a failed or interrupted turn; the draft stays untouched. */
+  const retryLastPrompt = () => {
+    const last = [...messages].reverse().find(m => m.role === 'user')
+    if (last?.text.trim()) send(last.text)
+  }
+
   const breadcrumb = <>
     <span className="max-w-36 shrink-0 truncate text-[11px] text-muted-foreground">{projectName}</span><ChevronRight className="size-3 shrink-0 text-muted-foreground/50" />
     <h2 className={`min-w-8 truncate text-[13px] font-medium ${breadcrumbSlot === undefined ? 'flex-1' : 'max-w-[50ch]'}`}>{titleEditor ? <input autoFocus aria-label="Conversation name" value={titleEditor.value} disabled={pending} onFocus={e => e.currentTarget.select()} onChange={e => setTitleEditor({ ...titleEditor, value: e.target.value })} onBlur={() => { void saveTitle() }} onKeyDown={e => { if (e.nativeEvent.isComposing) return; if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); void saveTitle() } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setTitleEditor(null) } }} className="w-full min-w-[20ch] rounded border border-border bg-background px-1 outline-none focus:border-primary" /> : <button type="button" aria-label={`Rename conversation: ${conversationTitle}`} title={conversationTitle} disabled={pending || !!creating.current || (sessionId !== '' && snapshot?.session.id !== sessionId)} onClick={() => setTitleEditor({ id: sessionId, original: conversationTitle, value: conversationTitle })} className="block w-full max-w-[50ch] truncate rounded px-1 text-left hover:bg-accent disabled:opacity-50">{conversationTitle}</button>}</h2>
@@ -997,7 +1066,10 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
             const trailing = datedTimeline ? events.filter(e => { const at = Date.parse(e.created_at); return Number.isFinite(at) ? at > after : working }) : events
             return working ? <LiveTurn events={trailing} projectId={projectId} /> : <AgentActivity events={trailing} />
           })()}
-          {snapshot?.requests?.filter(request => request.status !== 'pending').map(request => <p key={request.id} role="status" className="text-[11px] text-muted-foreground">Agent request {request.status}</p>)}
+          <ResolvedRequests requests={(snapshot?.requests ?? []).filter(request => request.status !== 'pending' && (!messages.length || !Number.isFinite(Date.parse(request.created_at)) ? working : Date.parse(request.created_at) > Date.parse(messages[messages.length - 1].created_at)))} />
+          {!working && (snapshot?.session.status === 'failed' || snapshot?.session.status === 'interrupted') && snapshot.session.id === sessionId && (
+            <TurnNotice status={snapshot.session.status} error={snapshot.session.error} onRetry={retryLastPrompt} />
+          )}
           {working && (
             <AgentWorkingStatus
               key={sessionId}
@@ -1032,7 +1104,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
         <div aria-label="Agent decisions" className="mb-2 max-h-[40vh] space-y-2 overflow-auto">{snapshot?.requests?.filter(request => request.status === 'pending').map(request => <RuntimeRequestCard key={`${sessionId}:${request.id}`} request={request} disabled={pending || !working || !!observationError || !!blockedRequests[request.id]} onReply={answer => reply(request, answer)} />)}</div>
         {legacyGeminiSession && <p role="status" className="mb-2 text-xs text-muted-foreground">Gemini conversation history is preserved and read-only. Choose a current harness to start a new conversation.</p>}
         {uncertainSession === sessionId && sessionId && <p role="status" className="mb-2 text-xs text-destructive">Delivery is uncertain. Your draft is retained; inspect the conversation before starting a new turn.</p>}
-        {creating.current && creating.current.sessionId !== sessionId && <p role="status" className="mb-2 text-xs text-muted-foreground">Recover the pending chat from Conversations before sending another message.</p>}{submitted.current && submitted.current.sessionId !== sessionId && <p role="status" className="mb-2 text-xs text-muted-foreground">Resolve the pending message in its conversation before sending another message.</p>}{storageWarning && <p role="status" className="mb-2 text-xs text-muted-foreground">{storageWarning}</p>}{snapshot?.session.error && <p role="status" className="mb-2 text-xs text-destructive">{snapshot.session.error}</p>}
+        {creating.current && creating.current.sessionId !== sessionId && <p role="status" className="mb-2 text-xs text-muted-foreground">Recover the pending chat from Conversations before sending another message.</p>}{submitted.current && submitted.current.sessionId !== sessionId && <p role="status" className="mb-2 text-xs text-muted-foreground">Resolve the pending message in its conversation before sending another message.</p>}{storageWarning && <p role="status" className="mb-2 text-xs text-muted-foreground">{storageWarning}</p>}
         <div className="relative">
         <AgentMentionMenu candidates={mentionOptions} active={mention?.active ?? 0} onActiveChange={index => setMention(previous => previous ? { ...previous, active: index } : previous)} onPick={agent => pickMention(agent.name)} />
         <div
