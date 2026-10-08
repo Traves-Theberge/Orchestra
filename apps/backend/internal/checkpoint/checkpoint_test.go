@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -773,4 +774,149 @@ func TestDiffReportsTheSameSwapFailureAsRestore(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v want %v", got, want)
 	}
+}
+
+func TestRestoreDoesNotDeleteToolCreatedSelfIgnoringGitignore(t *testing.T) {
+	wt := newWorktree(t)
+	s := newStore(t, 0)
+	ctx := context.Background()
+	writeFile(t, wt, "a.txt", "alpha")
+	tr, err := s.Snapshot(ctx, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// pytest creates a self-ignoring cache folder after the checkpoint.
+	writeFile(t, wt, ".pytest_cache/.gitignore", "*\n")
+	writeFile(t, wt, ".pytest_cache/v/cache/nodeids", "ids")
+	writeFile(t, wt, "a.txt", "changed")
+	changes, err := s.Diff(ctx, wt, tr.Hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Change{{Path: "a.txt", Kind: ChangeModify}}
+	if !reflect.DeepEqual(changes, want) {
+		t.Fatalf("got %v want %v", changes, want)
+	}
+	for i := 0; i < 2; i++ {
+		res, err := s.Restore(ctx, wt, tr.Hash)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Deleted != 0 || len(res.Failed) != 0 {
+			t.Fatalf("restore %d: %+v", i, res)
+		}
+		if mustRead(t, wt, ".pytest_cache/.gitignore") != "*\n" || mustRead(t, wt, ".pytest_cache/v/cache/nodeids") != "ids" {
+			t.Fatalf("restore %d damaged the cache", i)
+		}
+	}
+	after, err := s.Snapshot(ctx, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Files != 1 {
+		t.Fatalf("Files=%d, want 1", after.Files)
+	}
+}
+
+func TestRestoreDoesNotRecreateStrayDirsFromIgnoredTreeGitignores(t *testing.T) {
+	wt := newWorktree(t)
+	s := newStore(t, 0)
+	ctx := context.Background()
+	writeFile(t, wt, ".gitignore", "vendor/\n")
+	writeFile(t, wt, "a.txt", "alpha")
+	writeFile(t, wt, "vendor/pkg/.gitignore", "*.tmp\n")
+	writeFile(t, wt, "vendor/pkg/lib.go", "pkg")
+	tr, err := s.Snapshot(ctx, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(wt, "vendor", "pkg")); err != nil {
+		t.Fatal(err)
+	}
+	changes, err := s.Diff(ctx, wt, tr.Hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(changes) != 0 {
+		t.Fatalf("unexpected changes %v", changes)
+	}
+	if _, err := s.Restore(ctx, wt, tr.Hash); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(wt, "vendor", "pkg")); !os.IsNotExist(err) {
+		t.Fatal("vendor/pkg was recreated")
+	}
+}
+
+func TestSnapshotDoesNotWalkIgnoredTrees(t *testing.T) {
+	wt := newWorktree(t)
+	s := newStore(t, 0)
+	writeFile(t, wt, ".gitignore", "node_modules/\n")
+	writeFile(t, wt, "a.txt", "alpha")
+	for i := 0; i < 50; i++ {
+		writeFile(t, wt, filepath.Join("node_modules", "p"+strings.Repeat("x", i), "deep", "f.js"), "x")
+	}
+	var visited []string
+	old := readDir
+	readDir = func(name string) ([]os.DirEntry, error) {
+		visited = append(visited, filepath.ToSlash(name))
+		return os.ReadDir(name)
+	}
+	defer func() { readDir = old }()
+	if _, err := s.Snapshot(context.Background(), wt); err != nil {
+		t.Fatal(err)
+	}
+	if len(visited) == 0 {
+		t.Fatal("expected the worktree root to be read")
+	}
+	for _, v := range visited {
+		if strings.Contains(v, "node_modules") {
+			t.Fatalf("walked into ignored tree: %s", v)
+		}
+	}
+}
+
+func BenchmarkSnapshotIgnoredTree(b *testing.B) {
+	if _, err := exec.LookPath("git"); err != nil {
+		b.Skip("git not found")
+	}
+	wt := b.TempDir()
+	must := func(err error) {
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+	must(os.WriteFile(filepath.Join(wt, ".gitignore"), []byte("node_modules/\n"), 0o644))
+	must(os.WriteFile(filepath.Join(wt, "a.txt"), []byte("alpha"), 0o644))
+	for d := 0; d < 3000; d++ {
+		dir := filepath.Join(wt, "node_modules", "pkg"+strings.Repeat("d", d%7), filepath.Join("l", "m", "n"), "d"+strconv.Itoa(d))
+		must(os.MkdirAll(dir, 0o755))
+		for f := 0; f < 20; f++ {
+			must(os.WriteFile(filepath.Join(dir, "f"+strconv.Itoa(f)+".js"), []byte("x"), 0o644))
+		}
+	}
+	s := NewStore(b.TempDir(), 0)
+	ctx := context.Background()
+	if _, err := s.Snapshot(ctx, wt); err != nil {
+		b.Fatal(err)
+	}
+	b.Run("snapshot", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			if _, err := s.Snapshot(ctx, wt); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	b.Run("findRuleFiles", func(b *testing.B) {
+		g, done, err := s.open(ctx, wt)
+		if err != nil {
+			b.Fatal(err)
+		}
+		defer done()
+		for i := 0; i < b.N; i++ {
+			if _, err := findRuleFiles(ctx, g); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
