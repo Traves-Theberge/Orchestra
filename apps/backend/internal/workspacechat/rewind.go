@@ -29,6 +29,22 @@ import (
 
 var ErrCheckpointUnavailable = errors.New("no file checkpoint for that message")
 
+// shownError reads as text for the user while errors.Is still matches its
+// sentinel, so the API keeps the sentinel's code and status.
+type shownError struct {
+	text     string
+	sentinel error
+}
+
+func (e *shownError) Error() string { return e.text }
+func (e *shownError) Unwrap() error { return e.sentinel }
+
+var (
+	errMessageNotShown = &shownError{"That message is not on the version you are viewing.", ErrNotFound}
+	errForeignVersion  = &shownError{"That version does not belong to this conversation.", ErrNotFound}
+	errNothingToUndo   = &shownError{"There is nothing to undo.", ErrCheckpointUnavailable}
+)
+
 // RestoreError reports a files restore that left some paths unrestored (or
 // stopped with Err). The safety checkpoint taken before it is kept.
 type RestoreError struct {
@@ -398,7 +414,7 @@ func (s *Service) branchExists(ctx context.Context, sessionID, branchID string) 
 	var found int
 	err := s.db.QueryRowContext(ctx, `SELECT 1 FROM workspace_chat_branches WHERE session_id=? AND id=?`, sessionID, branchID).Scan(&found)
 	if errors.Is(err, sql.ErrNoRows) {
-		return ErrNotFound
+		return errForeignVersion
 	}
 	return err
 }
@@ -445,14 +461,14 @@ func (s *Service) UndoRestore(ctx context.Context, pid, id string) (checkpoint.R
 		return checkpoint.RestoreResult{}, ErrBusy
 	}
 	if pid == OrchestratorScope || s.checkpoints == nil || d.Session.WorkspacePath == "" {
-		return checkpoint.RestoreResult{}, ErrCheckpointUnavailable
+		return checkpoint.RestoreResult{}, errNothingToUndo
 	}
 	safety, ok, err := s.queryCheckpoint(ctx, `WHERE session_id=? AND kind='safety' ORDER BY rowid DESC LIMIT 1`, id)
 	if err != nil {
 		return checkpoint.RestoreResult{}, err
 	}
 	if !ok {
-		return checkpoint.RestoreResult{}, ErrCheckpointUnavailable
+		return checkpoint.RestoreResult{}, errNothingToUndo
 	}
 	if err = s.rejectRemoval(ctx, pid, d.Session); err != nil {
 		return checkpoint.RestoreResult{}, err
@@ -637,7 +653,7 @@ func (s *Service) rewindTarget(ctx context.Context, d Detail, messageID string, 
 		}
 	}
 	if idx < 0 {
-		return Message{}, 0, "", ErrNotFound
+		return Message{}, 0, "", errMessageNotShown
 	}
 	if edit && d.Messages[idx].Role != "user" {
 		return Message{}, 0, "", ErrInvalid

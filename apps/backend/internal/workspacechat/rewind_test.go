@@ -953,7 +953,7 @@ func TestActivateBranchRestoresThatBranchesFiles(t *testing.T) {
 	if n := countRows(t, s, `SELECT COUNT(*) FROM workspace_chat_branch_seed WHERE session_id=?`, sess.ID); n != 1 {
 		t.Fatalf("switching must reseed the provider thread: %d", n)
 	}
-	if _, err = s.ActivateBranch(ctx, pid, sess.ID, "no-such-branch", false); !errors.Is(err, ErrNotFound) {
+	if _, err = s.ActivateBranch(ctx, pid, sess.ID, "no-such-branch", false); !errors.Is(err, ErrNotFound) || err.Error() != "That version does not belong to this conversation." {
 		t.Fatalf("unknown branch: %v", err)
 	}
 }
@@ -1032,7 +1032,7 @@ func TestUndoRestoreNeedsASafetyCheckpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	turn := say(t, s, pid, sess.ID, "c1", "one")
-	if _, err = s.UndoRestore(ctx, pid, sess.ID); !errors.Is(err, ErrCheckpointUnavailable) {
+	if _, err = s.UndoRestore(ctx, pid, sess.ID); !errors.Is(err, ErrCheckpointUnavailable) || err.Error() != "There is nothing to undo." {
 		t.Fatalf("undo without a safety checkpoint: %v", err)
 	}
 	if _, err = s.Edit(ctx, pid, sess.ID, EditRequest{MessageID: turn.Message.ID, RestoreFiles: true, SendRequest: SendRequest{ClientMessageID: "e1", Text: "uno"}}); err != nil {
@@ -1049,7 +1049,7 @@ func TestUndoRestoreNeedsASafetyCheckpoint(t *testing.T) {
 	if got := store.restored(); len(got) != 2 || got[1] != safety {
 		t.Fatalf("undo should restore the safety tree %s: %v", safety, got)
 	}
-	if _, err = s.UndoRestore(ctx, pid, sess.ID); !errors.Is(err, ErrCheckpointUnavailable) {
+	if _, err = s.UndoRestore(ctx, pid, sess.ID); !errors.Is(err, ErrCheckpointUnavailable) || err.Error() != "There is nothing to undo." {
 		t.Fatalf("undo twice: %v", err)
 	}
 }
@@ -1107,13 +1107,13 @@ func TestRewindRejectsMessagesFromAnotherBranch(t *testing.T) {
 	}
 	settled(t, s, pid, sess.ID)
 	// "two" lives only on main now, which is not the active branch.
-	if _, err = s.Edit(ctx, pid, sess.ID, EditRequest{MessageID: hidden.Message.ID, SendRequest: SendRequest{ClientMessageID: "e2", Text: "zwei"}}); !errors.Is(err, ErrNotFound) {
+	if _, err = s.Edit(ctx, pid, sess.ID, EditRequest{MessageID: hidden.Message.ID, SendRequest: SendRequest{ClientMessageID: "e2", Text: "zwei"}}); !errors.Is(err, ErrNotFound) || err.Error() != "That message is not on the version you are viewing." {
 		t.Fatalf("edit of a hidden message: %v", err)
 	}
-	if _, err = s.Regenerate(ctx, pid, sess.ID, RegenerateRequest{MessageID: hidden.Message.ID, ClientMessageID: "r1"}); !errors.Is(err, ErrNotFound) {
+	if _, err = s.Regenerate(ctx, pid, sess.ID, RegenerateRequest{MessageID: hidden.Message.ID, ClientMessageID: "r1"}); !errors.Is(err, ErrNotFound) || err.Error() != "That message is not on the version you are viewing." {
 		t.Fatalf("regenerate of a hidden message: %v", err)
 	}
-	if _, err = s.PreviewRewind(ctx, pid, sess.ID, hidden.Message.ID); !errors.Is(err, ErrNotFound) {
+	if _, err = s.PreviewRewind(ctx, pid, sess.ID, hidden.Message.ID); !errors.Is(err, ErrNotFound) || err.Error() != "That message is not on the version you are viewing." {
 		t.Fatalf("preview of a hidden message: %v", err)
 	}
 	if n := len(branchIDs(t, s, sess.ID)); n != 1 {
