@@ -74,7 +74,8 @@ async function start() {
   const env = {
     ...process.env,
     PATH: extraPath ? `${process.env.PATH}${path.delimiter}${extraPath}` : process.env.PATH,
-    ORCHESTRA_HOST: host,
+    ORCHESTRA_SERVER_HOST: hostname,
+    ORCHESTRA_SERVER_PORT: port,
     ORCHESTRA_WORKSPACE_ROOT: process.env.ORCHESTRA_WORKSPACE_ROOT || path.join(os.homedir(), '.orchestra', 'workspaces'),
   }
   // The desktop dev build sends no token; a token here would 401 every request.

@@ -112,6 +112,12 @@ func newAntigravityNativeSessionWithArgs(ctx context.Context, command string, pr
 	if conversationID != "" {
 		args = append(args, "--conversation", conversationID)
 	}
+	// Headless AGY cannot ask for permission, so it denies reads outside the
+	// workspace. Agents like superpowers read their skills from these shared
+	// directories, so add them (read access) instead of failing the turn.
+	for _, dir := range antigravityReadableDirs() {
+		args = append(args, "--add-dir", dir)
+	}
 	release := func() {
 		if applied.overlay != nil {
 			applied.overlay.release()
@@ -496,6 +502,11 @@ func (s *AntigravityNativeSession) read(r io.Reader) {
 			var resultErr error
 			if status != "SUCCESS" {
 				resultErr = fmt.Errorf("Antigravity result status %q: %s", status, rawString(result["error"]))
+			} else if denied := antigravityDeniedActions(result["denied_actions"]); strings.TrimSpace(text) == "" && len(denied) > 0 {
+				// A turn that only hit permission denials produced nothing; say so instead of
+				// completing silently with an empty reply.
+				nativeResult.Status = "failed"
+				resultErr = fmt.Errorf("Antigravity denied %s and ended the turn without replying. Headless mode cannot ask for permission, so the agent could not finish", strings.Join(denied, ", "))
 			}
 			select {
 			case resultCh <- antigravityTurnResult{result: nativeResult, err: resultErr}:
@@ -511,6 +522,49 @@ func (s *AntigravityNativeSession) read(r io.Reader) {
 	} else {
 		s.fail(io.EOF)
 	}
+}
+
+// antigravityReadableDirs lists the shared agent and skill directories that
+// exist on this machine, for --add-dir.
+func antigravityReadableDirs() []string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return nil
+	}
+	var dirs []string
+	for _, candidate := range []string{
+		filepath.Join(home, ".agents"),
+		filepath.Join(home, ".gemini", "antigravity-cli"),
+	} {
+		if info, statErr := os.Stat(candidate); statErr == nil && info.IsDir() {
+			dirs = append(dirs, candidate)
+		}
+	}
+	return dirs
+}
+
+// antigravityDeniedActions names the tool actions AGY refused in a turn result.
+func antigravityDeniedActions(raw json.RawMessage) []string {
+	var denied []struct {
+		Action      string `json:"action"`
+		DisplayName string `json:"display_name"`
+	}
+	if len(raw) == 0 || json.Unmarshal(raw, &denied) != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var names []string
+	for _, item := range denied {
+		name := item.DisplayName
+		if name == "" {
+			name = item.Action
+		}
+		if name != "" && !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	return names
 }
 
 func rawString(value json.RawMessage) string {

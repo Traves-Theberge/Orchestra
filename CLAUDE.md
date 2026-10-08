@@ -129,7 +129,7 @@ State management: React hooks + SSE-driven server state, no Redux/Zustand.
 |----------|---------|
 | `ORCHESTRA_API_TOKEN` | Bearer token (required for non-loopback) |
 | `ORCHESTRA_WORKSPACE_ROOT` | Workspace root directory |
-| `ORCHESTRA_HOST` | Bind address (default `127.0.0.1:3284`) |
+| `ORCHESTRA_SERVER_HOST` / `ORCHESTRA_SERVER_PORT` | Bind address (the desktop dev script uses `127.0.0.1:4010`) |
 | `ORCHESTRA_AGENT_PROVIDER` | Default agent (CODEX/CLAUDE/OPENCODE/ANTIGRAVITY/OMP/8GENT) |
 | `ORCHESTRA_TRACKER_TYPE` | `memory`, `sqlite`, or `github` |
 | `ORCHESTRA_TRACKER_ENDPOINT` | `owner/repo` for GitHub tracker |

@@ -73,6 +73,10 @@ func TestAntigravityStreamFixtureProcess(t *testing.T) {
 		}
 		response := "agy-ok"
 		turnCount++
+		if os.Getenv("ORCHESTRA_AGY_FIXTURE_DENIED") == "1" {
+			send(map[string]any{"event": "result", "result": map[string]any{"conversation_id": threadID, "status": "SUCCESS", "response": "", "num_turns": turnCount, "denied_actions": []map[string]any{{"action": "read_file", "display_name": "ViewFile"}}}})
+			continue
+		}
 		mode := os.Getenv("ORCHESTRA_AGY_FIXTURE_COUNTER_MODE")
 		resultCount := turnCount
 		if mode == "skip-first" && turnCount == 1 {
@@ -284,5 +288,48 @@ func TestAntigravityNativeRequiresRequestedAgentAndModelConfirmation(t *testing.
 				t.Fatalf("session init error = %v, want substring %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestAntigravityNativeReportsDeniedActionsInsteadOfAnEmptyReply(t *testing.T) {
+	command, prefixArgs := antigravityFixtureCommand(t)
+	workspace := t.TempDir()
+	request := TurnRequest{Workspace: workspace, WorkspaceRoot: workspace, ProjectRootWorkspace: true, SessionID: "fixture", RequestedAgentID: "reviewer"}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	session, err := newAntigravityNativeSessionWithArgs(ctx, command, prefixArgs, request, "", func(NativeEvent) {}, []string{"ORCHESTRA_AGY_FIXTURE=1", "ORCHESTRA_AGY_FIXTURE_DENIED=1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = session.Close() }()
+	result, err := session.SendTurn(context.Background(), "use a skill", "")
+	if err == nil || !strings.Contains(err.Error(), "denied ViewFile") || result.Status != "failed" {
+		t.Fatalf("denied-only turn must fail loudly, got result=%#v err=%v", result, err)
+	}
+}
+
+func TestAntigravityDeniedActionsDeduplicatesAndPrefersDisplayNames(t *testing.T) {
+	got := antigravityDeniedActions(json.RawMessage(`[{"action":"read_file","display_name":"ViewFile"},{"action":"read_file","display_name":"ViewFile"},{"action":"run_command"}]`))
+	if len(got) != 2 || got[0] != "ViewFile" || got[1] != "run_command" {
+		t.Fatalf("got %v", got)
+	}
+	if antigravityDeniedActions(nil) != nil || antigravityDeniedActions(json.RawMessage("not json")) != nil {
+		t.Fatal("malformed input must yield nothing")
+	}
+}
+
+func TestAntigravityReadableDirsListsOnlyExistingSharedDirs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if dirs := antigravityReadableDirs(); len(dirs) != 0 {
+		t.Fatalf("no dirs exist yet: %v", dirs)
+	}
+	if err := os.MkdirAll(filepath.Join(home, ".agents", "skills"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dirs := antigravityReadableDirs()
+	if len(dirs) != 1 || dirs[0] != filepath.Join(home, ".agents") {
+		t.Fatalf("got %v", dirs)
 	}
 }
