@@ -350,6 +350,12 @@ func (s *Service) ActivateBranch(ctx context.Context, pid, id, branchID string, 
 	if err != nil {
 		return Detail{}, err
 	}
+	if current == branchID {
+		// Already showing it (a retried request, a double click): nothing to
+		// switch, and restoring again would replace the safety snapshot that
+		// Undo restore needs with one of the already-restored folder.
+		return s.Detail(ctx, pid, id)
+	}
 	work := context.WithoutCancel(ctx)
 	var safety *Checkpoint
 	if restoreFiles {
@@ -370,19 +376,17 @@ func (s *Service) ActivateBranch(ctx context.Context, pid, id, branchID string, 
 			return Detail{}, s.revertRestore(work, pid, id, c, err)
 		}
 	}
-	if current != branchID {
-		native, err := s.switchBranch(work, pid, d.Session, func(*sql.Tx) (string, error) { return branchID, nil })
-		if err != nil {
-			if safety != nil {
-				return Detail{}, s.revertRestore(work, pid, id, *safety, err)
-			}
-			return Detail{}, err
+	native, err := s.switchBranch(work, pid, d.Session, func(*sql.Tx) (string, error) { return branchID, nil })
+	if err != nil {
+		if safety != nil {
+			return Detail{}, s.revertRestore(work, pid, id, *safety, err)
 		}
-		s.mu.Unlock()
-		locked = false
-		if native != nil {
-			closeNative(native)
-		}
+		return Detail{}, err
+	}
+	s.mu.Unlock()
+	locked = false
+	if native != nil {
+		closeNative(native)
 	}
 	return s.Detail(work, pid, id)
 }

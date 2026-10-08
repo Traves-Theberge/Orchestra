@@ -958,6 +958,69 @@ func TestActivateBranchRestoresThatBranchesFiles(t *testing.T) {
 	}
 }
 
+func TestActivateTheActiveBranchIsANoOp(t *testing.T) {
+	r := newRewindRegistry()
+	r.write = writeFromPrompt
+	s, pid, project := checkpointFixture(t, r)
+	realStore(t, s)
+	ctx := context.Background()
+	sess, err := s.Create(ctx, pid, "codex", "noop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	say(t, s, pid, sess.ID, "c1", "write base.txt base")
+	turn := say(t, s, pid, sess.ID, "c2", "write a.txt main")
+	if _, err = s.Edit(ctx, pid, sess.ID, EditRequest{MessageID: turn.Message.ID, RestoreFiles: true, SendRequest: SendRequest{ClientMessageID: "e1", Text: "write a.txt branch"}}); err != nil {
+		t.Fatal(err)
+	}
+	settled(t, s, pid, sess.ID)
+	branch := branchIDs(t, s, sess.ID)[0]
+	// The user edits the folder after the turn; a no-op switch must not touch it.
+	path := filepath.Join(project, "a.txt")
+	if err = os.WriteFile(path, []byte("user edit"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`UPDATE workspace_chat_native SET thread_id='kept-thread' WHERE session_id=?`, sess.ID); err != nil {
+		t.Fatal(err)
+	}
+	thread := func() string {
+		var v string
+		if err := s.db.QueryRow(`SELECT COALESCE((SELECT thread_id FROM workspace_chat_native WHERE session_id=?),'')`, sess.ID).Scan(&v); err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	threadBefore := thread()
+	checkpoints := countRows(t, s, `SELECT COUNT(*) FROM workspace_chat_checkpoints WHERE session_id=?`, sess.ID)
+	safeties := countRows(t, s, `SELECT COUNT(*) FROM workspace_chat_checkpoints WHERE session_id=? AND kind='safety'`, sess.ID)
+	seeds := countRows(t, s, `SELECT COUNT(*) FROM workspace_chat_branch_seed WHERE session_id=?`, sess.ID)
+
+	for _, restore := range []bool{true, false} {
+		d, err := s.ActivateBranch(ctx, pid, sess.ID, branch, restore)
+		if err != nil {
+			t.Fatalf("activate the active branch (restore=%v): %v", restore, err)
+		}
+		if d.Messages[2].Text != "write a.txt branch" {
+			t.Fatalf("view changed: %v", texts(d))
+		}
+	}
+	if raw, err := os.ReadFile(path); err != nil || string(raw) != "user edit" {
+		t.Fatalf("folder touched: %q %v", raw, err)
+	}
+	if n := countRows(t, s, `SELECT COUNT(*) FROM workspace_chat_checkpoints WHERE session_id=?`, sess.ID); n != checkpoints {
+		t.Fatalf("checkpoint rows %d -> %d", checkpoints, n)
+	}
+	if n := countRows(t, s, `SELECT COUNT(*) FROM workspace_chat_checkpoints WHERE session_id=? AND kind='safety'`, sess.ID); n != safeties {
+		t.Fatalf("safety rows %d -> %d", safeties, n)
+	}
+	if n := countRows(t, s, `SELECT COUNT(*) FROM workspace_chat_branch_seed WHERE session_id=?`, sess.ID); n != seeds {
+		t.Fatalf("seed rows %d -> %d", seeds, n)
+	}
+	if got := thread(); got != threadBefore {
+		t.Fatalf("native thread reset: %q -> %q", threadBefore, got)
+	}
+}
+
 func TestUndoRestoreNeedsASafetyCheckpoint(t *testing.T) {
 	r := newRewindRegistry()
 	s, pid, _ := checkpointFixture(t, r)
