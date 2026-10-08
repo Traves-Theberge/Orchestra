@@ -836,6 +836,7 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 func (s *Service) run(ctx context.Context, cancel context.CancelFunc, sess Session, m Message, turn agents.TurnRequest) {
 	defer s.wg.Done()
 	defer cancel()
+	defer s.recoverTurn(sess, m)
 	reasoning := newReasoningStream(turn.SessionID)
 	result, err := s.registry.RunTurn(ctx, agents.Provider(sess.Provider), turn, func(e agents.Event) {
 		for _, ne := range reasoning.events(e) {

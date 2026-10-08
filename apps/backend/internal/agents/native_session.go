@@ -110,11 +110,22 @@ func (r *Registry) StartNativeSession(ctx context.Context, provider Provider, re
 		return nil, fmt.Errorf("native turn budgets are not supported")
 	}
 	command, _ := r.NativeCommandFor(provider)
+	// A failed start must return a true nil interface: returning the concrete
+	// constructors' nil pointers would produce a non-nil NativeSession that
+	// panics on its first method call.
 	if NormalizeProvider(string(provider)) == ProviderAntigravity {
-		return NewAntigravityNativeSession(ctx, command, request, threadID, onEvent)
+		session, err := NewAntigravityNativeSession(ctx, command, request, threadID, onEvent)
+		if err != nil {
+			return nil, err
+		}
+		return session, nil
 	}
 	if NormalizeProvider(string(provider)) == ProviderOMP {
-		return NewOMPNativeSession(ctx, command, request, threadID, onEvent)
+		session, err := NewOMPNativeSession(ctx, command, request, threadID, onEvent)
+		if err != nil {
+			return nil, err
+		}
+		return session, nil
 	}
 	return NewCodexNativeSession(ctx, command, request, threadID, onEvent)
 }

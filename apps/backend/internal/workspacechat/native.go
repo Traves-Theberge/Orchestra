@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"io"
+	"log"
+	"runtime/debug"
 	"strings"
 
 	"github.com/orchestra/orchestra/apps/backend/internal/agents"
@@ -244,9 +246,29 @@ func (s *Service) recordEvent(id string, e agents.NativeEvent) error {
 	}
 	return tx.Commit()
 }
+
+// recoverTurn keeps a bug inside one turn from taking the whole backend down:
+// it logs the panic with its stack and marks this conversation failed.
+func (s *Service) recoverTurn(sess Session, m Message) {
+	recovered := recover()
+	if recovered == nil {
+		return
+	}
+	log.Printf("workspace chat turn for session %s panicked: %v\n%s", sess.ID, recovered, debug.Stack())
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.active, sess.ID)
+	delete(s.native, sess.ID)
+	delete(s.nativePrefixes, sess.ID)
+	if err := s.finish(sess, m, "", "failed", "unknown", "The agent turn hit an internal error and was stopped. Details are in the backend log; you can send again."); err != nil {
+		_, _ = s.db.Exec(`UPDATE workspace_chat_sessions SET status='failed',error='The agent turn hit an internal error and was stopped.' WHERE id=?`, sess.ID)
+	}
+}
+
 func (s *Service) runNative(ctx context.Context, cancel context.CancelFunc, sess Session, m Message, turn agents.TurnRequest) {
 	defer s.wg.Done()
 	defer cancel()
+	defer s.recoverTurn(sess, m)
 	s.nativeFailures.Delete(sess.ID)
 	prefix := uuid.NewString() + ":"
 	onEvent := func(e agents.NativeEvent) {
