@@ -164,6 +164,11 @@ type Service struct {
 	agentCatalog         *agentcatalog.Service
 	mcpSource            MCPSource
 	nativeAgents         map[string]string
+	// checkpoints snapshots a conversation's folder around each turn; nil
+	// disables checkpoints. snapshotTimeout bounds each snapshot.
+	checkpoints     checkpointer
+	snapshotTimeout time.Duration
+	worktreeLocks   sync.Map
 }
 
 // New recovers incomplete deliveries as unknown; it never resubmits them.
@@ -219,7 +224,7 @@ func New(database *db.DB, registry Registry, roots []string) (*Service, error) {
 	if err = tx.Commit(); err != nil {
 		return nil, err
 	}
-	return &Service{db: database, registry: registry, roots: append([]string(nil), roots...), active: map[string]context.CancelFunc{}, native: map[string]agents.NativeSession{}, nativePrefixes: map[string]string{}, nativeAgents: map[string]string{}}, nil
+	return &Service{db: database, registry: registry, roots: append([]string(nil), roots...), active: map[string]context.CancelFunc{}, native: map[string]agents.NativeSession{}, nativePrefixes: map[string]string{}, nativeAgents: map[string]string{}, snapshotTimeout: defaultSnapshotTimeout}, nil
 }
 
 // ConfigureAgentCatalog installs the single scoped catalog used to validate
@@ -861,6 +866,8 @@ func (s *Service) run(ctx context.Context, cancel context.CancelFunc, sess Sessi
 	defer s.wg.Done()
 	defer cancel()
 	defer s.recoverTurn(sess, m)
+	// The message is durably accepted; record the folder before the harness runs.
+	s.checkpointTurn(sess, "", m.ID, "before")
 	reasoning := newReasoningStream(turn.SessionID)
 	result, err := s.registry.RunTurn(ctx, agents.Provider(sess.Provider), turn, func(e agents.Event) {
 		for _, ne := range reasoning.events(e) {
@@ -894,16 +901,20 @@ func (s *Service) run(ctx context.Context, cancel context.CancelFunc, sess Sessi
 		errorText = "Turn interrupted. Workspace files were retained; inspect changes before retrying."
 	}
 	output := assistantText(result.Output)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	defer delete(s.active, sess.ID)
-	if err := s.finish(sess, m, output, status, msgStatus, errorText); err != nil {
-		log.Printf("workspace chat finalization failed for session %s: %v", sess.ID, err)
-		// Best effort recovery. If SQLite is unavailable, persisted running/stopping
-		// remains blocked by Send; restarting marks those deliveries unknown.
-		_, _ = s.db.Exec(`UPDATE workspace_chat_sessions SET status='interrupted',error='Chat history persistence failed; delivery outcome unknown. Inspect before sending again.' WHERE id=?`, sess.ID)
-		_, _ = s.db.Exec(`UPDATE workspace_chat_messages SET status='unknown' WHERE id=?`, m.ID)
-	}
+	func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		defer delete(s.active, sess.ID)
+		if err := s.finish(sess, m, output, status, msgStatus, errorText); err != nil {
+			log.Printf("workspace chat finalization failed for session %s: %v", sess.ID, err)
+			// Best effort recovery. If SQLite is unavailable, persisted running/stopping
+			// remains blocked by Send; restarting marks those deliveries unknown.
+			_, _ = s.db.Exec(`UPDATE workspace_chat_sessions SET status='interrupted',error='Chat history persistence failed; delivery outcome unknown. Inspect before sending again.' WHERE id=?`, sess.ID)
+			_, _ = s.db.Exec(`UPDATE workspace_chat_messages SET status='unknown' WHERE id=?`, m.ID)
+		}
+	}()
+	// Outside the mutex: the turn has ended whatever its outcome.
+	s.checkpointTurn(sess, "", m.ID, "after")
 }
 func (s *Service) finish(sess Session, m Message, output, status, msgStatus, errorText string) error {
 	tx, txErr := s.db.Begin()

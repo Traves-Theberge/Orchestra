@@ -24,6 +24,7 @@ import (
 	"github.com/orchestra/orchestra/apps/backend/internal/agents"
 	"github.com/orchestra/orchestra/apps/backend/internal/api"
 	"github.com/orchestra/orchestra/apps/backend/internal/automations"
+	"github.com/orchestra/orchestra/apps/backend/internal/checkpoint"
 	"github.com/orchestra/orchestra/apps/backend/internal/config"
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
 	"github.com/orchestra/orchestra/apps/backend/internal/harnessaccounts"
@@ -252,6 +253,9 @@ func Run(logger zerolog.Logger) error {
 		return fmt.Errorf("workspace chat: %w", chatErr)
 	}
 	defer chatService.Close()
+	// Per-turn file checkpoints live outside every project, under the workspace
+	// root; files over 2 MB are left out of snapshots.
+	chatService.SetCheckpointStore(checkpoint.NewStore(filepath.Join(cfg.WorkspaceRoot, ".orchestra", "checkpoints"), 2*1024*1024))
 	automationService, autoErr := automations.New(warehouseDB, automations.Options{
 		Chat:        chatService,
 		MaestroRoot: filepath.Join(cfg.WorkspaceRoot, ".orchestra", "orchestrator"),
