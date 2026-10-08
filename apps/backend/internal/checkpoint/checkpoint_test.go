@@ -206,7 +206,7 @@ func TestFilesOverTheCapAreSkipped(t *testing.T) {
 func hashTree(t *testing.T, root string) map[string][32]byte {
 	t.Helper()
 	out := map[string][32]byte{}
-	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -217,11 +217,14 @@ func hashTree(t *testing.T, root string) map[string][32]byte {
 		}
 		b, err := os.ReadFile(p)
 		if err != nil {
-			t.Fatal(err)
+			return err
 		}
 		out[rel] = sha256.Sum256(b)
 		return nil
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	return out
 }
 
@@ -250,8 +253,8 @@ func TestProjectGitDirIsNeverTouched(t *testing.T) {
 	if after := hashTree(t, gitDir); !reflect.DeepEqual(before, after) {
 		t.Fatal(".git directory changed")
 	}
-	if strings.HasPrefix(storeDir, wt) {
-		t.Fatal("shadow store must live outside the worktree")
+	if rel, err := filepath.Rel(wt, storeDir); err == nil && !strings.HasPrefix(rel, "..") {
+		t.Fatalf("shadow store must live outside the worktree (rel=%q)", rel)
 	}
 	// The project .git must not appear inside snapshots either.
 	changes, err := s.Diff(ctx, wt, tr.Hash)
@@ -400,5 +403,218 @@ func TestEmptyFolderSnapshot(t *testing.T) {
 	}
 	if got := readAll(t, wt); len(got) != 0 {
 		t.Fatalf("folder not empty: %v", got)
+	}
+}
+
+func gitIn(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v %s", args, err, out)
+	}
+}
+
+func mustRead(t *testing.T, root, rel string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+	if err != nil {
+		t.Fatalf("read %s: %v", rel, err)
+	}
+	return string(b)
+}
+
+func TestRestoreDoesNotDeleteFilesThatWereIgnoredAtCheckpointTime(t *testing.T) {
+	wt := newWorktree(t)
+	s := newStore(t, 0)
+	ctx := context.Background()
+	gi := ".env\nnode_modules/\n"
+	writeFile(t, wt, ".gitignore", gi)
+	writeFile(t, wt, "a.txt", "alpha")
+	writeFile(t, wt, ".env", "SECRET=1\r\n")
+	writeFile(t, wt, "node_modules/pkg/index.js", "module")
+	tr, err := s.Snapshot(ctx, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An agent rewrites .gitignore so the ignored files become visible.
+	writeFile(t, wt, ".gitignore", "")
+	writeFile(t, wt, "a.txt", "changed")
+	writeFile(t, wt, "new.txt", "new")
+	if _, err := s.Restore(ctx, wt, tr.Hash); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustRead(t, wt, ".env"); got != "SECRET=1\r\n" {
+		t.Fatalf(".env changed: %q", got)
+	}
+	if got := mustRead(t, wt, "node_modules/pkg/index.js"); got != "module" {
+		t.Fatalf("node_modules file changed: %q", got)
+	}
+	if got := mustRead(t, wt, ".gitignore"); got != gi {
+		t.Fatalf(".gitignore not restored: %q", got)
+	}
+	if got := mustRead(t, wt, "a.txt"); got != "alpha" {
+		t.Fatalf("a.txt not restored: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(wt, "new.txt")); !os.IsNotExist(err) {
+		t.Fatal("new.txt should have been deleted")
+	}
+}
+
+func TestRestoreDoesNotDeleteAFileThatShrankBelowTheCap(t *testing.T) {
+	wt := newWorktree(t)
+	s := newStore(t, 100)
+	ctx := context.Background()
+	writeFile(t, wt, "a.txt", "alpha")
+	writeFile(t, wt, "data.bin", strings.Repeat("x", 200))
+	tr, err := s.Snapshot(ctx, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, wt, "data.bin", "tiny")
+	writeFile(t, wt, "a.txt", "changed")
+	if _, err := s.Restore(ctx, wt, tr.Hash); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustRead(t, wt, "data.bin"); got != "tiny" {
+		t.Fatalf("data.bin was touched: %q", got)
+	}
+	if got := mustRead(t, wt, "a.txt"); got != "alpha" {
+		t.Fatalf("a.txt = %q", got)
+	}
+}
+
+func TestRestoreDoesNotDeleteANestedRepoThatLostItsGitDir(t *testing.T) {
+	wt := newWorktree(t)
+	s := newStore(t, 0)
+	ctx := context.Background()
+	writeFile(t, wt, "a.txt", "alpha")
+	writeFile(t, wt, "sub/f.txt", "nested")
+	gitIn(t, filepath.Join(wt, "sub"), "init", "-q")
+	tr, err := s.Snapshot(ctx, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tr.Files != 1 {
+		t.Fatalf("nested repo should be excluded: %+v", tr)
+	}
+	if err := os.RemoveAll(filepath.Join(wt, "sub", ".git")); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, wt, "a.txt", "changed")
+	if _, err := s.Restore(ctx, wt, tr.Hash); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustRead(t, wt, "sub/f.txt"); got != "nested" {
+		t.Fatalf("nested file lost: %q", got)
+	}
+	if got := mustRead(t, wt, "a.txt"); got != "alpha" {
+		t.Fatalf("a.txt = %q", got)
+	}
+}
+
+func TestDiffMatchesRestoreForProtectedAndIgnoredPaths(t *testing.T) {
+	wt := newWorktree(t)
+	s := newStore(t, 100)
+	ctx := context.Background()
+	writeFile(t, wt, ".gitignore", ".env\n")
+	writeFile(t, wt, "a.txt", "alpha")
+	writeFile(t, wt, ".env", "S=1")
+	writeFile(t, wt, "big.bin", strings.Repeat("x", 200))
+	tr, err := s.Snapshot(ctx, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, wt, ".gitignore", "")
+	writeFile(t, wt, "big.bin", "tiny")
+	writeFile(t, wt, "a.txt", "changed")
+	writeFile(t, wt, "extra.txt", "extra")
+	changes, err := s.Diff(ctx, wt, tr.Hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Change{
+		{Path: ".gitignore", Kind: ChangeModify},
+		{Path: "a.txt", Kind: ChangeModify},
+		{Path: "extra.txt", Kind: ChangeDelete},
+	}
+	if !reflect.DeepEqual(changes, want) {
+		t.Fatalf("got %v want %v", changes, want)
+	}
+	res, err := s.Restore(ctx, wt, tr.Hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Written != 2 || res.Deleted != 1 || len(res.Failed) != 0 {
+		t.Fatalf("restore %+v does not match diff", res)
+	}
+	if mustRead(t, wt, ".env") != "S=1" || mustRead(t, wt, "big.bin") != "tiny" {
+		t.Fatal("protected/ignored file touched")
+	}
+}
+
+func TestInvalidTreeHashIsRejected(t *testing.T) {
+	wt := newWorktree(t)
+	s := newStore(t, 0)
+	ctx := context.Background()
+	seed(t, wt)
+	if _, err := s.Snapshot(ctx, wt); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, wt, "init", "-q") // gives a branch-like name nothing to do with the store
+	g, done, err := s.open(ctx, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, err := g.run(ctx, []byte("blob"), "hash-object", "-w", "--stdin")
+	done()
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(t.TempDir(), "x")
+	cases := []string{
+		"", "-x", "--output=" + marker, "HEAD", "master", "refs/heads/master",
+		strings.Repeat("a", 40), strings.TrimSpace(string(blob)), strings.Repeat("A", 40),
+	}
+	before := readAll(t, wt)
+	for _, h := range cases {
+		if _, err := s.Diff(ctx, wt, h); err == nil || errors.Is(err, ErrUnavailable) {
+			t.Errorf("Diff(%q) err=%v", h, err)
+		}
+		if _, err := s.Restore(ctx, wt, h); err == nil || errors.Is(err, ErrUnavailable) {
+			t.Errorf("Restore(%q) err=%v", h, err)
+		}
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatal("--output option was honoured")
+	}
+	if after := readAll(t, wt); !reflect.DeepEqual(before, after) {
+		t.Fatal("folder changed")
+	}
+}
+
+func TestShadowStoreInsideWorktreeIsRejected(t *testing.T) {
+	requireGit(t)
+	ctx := context.Background()
+	hash := strings.Repeat("a", 40)
+	wt := t.TempDir()
+	s := NewStore(filepath.Join(wt, ".store"), 0)
+	if _, err := s.Snapshot(ctx, wt); !errors.Is(err, ErrUnsafeStore) {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if _, err := s.Diff(ctx, wt, hash); !errors.Is(err, ErrUnsafeStore) {
+		t.Fatalf("Diff: %v", err)
+	}
+	if _, err := s.Restore(ctx, wt, hash); !errors.Is(err, ErrUnsafeStore) {
+		t.Fatalf("Restore: %v", err)
+	}
+	// Worktree inside the store directory is rejected too.
+	store := t.TempDir()
+	inner := filepath.Join(store, "proj")
+	if err := os.MkdirAll(inner, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewStore(store, 0).Snapshot(ctx, inner); !errors.Is(err, ErrUnsafeStore) {
+		t.Fatalf("worktree in store: %v", err)
 	}
 }

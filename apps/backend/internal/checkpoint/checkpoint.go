@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -20,6 +21,10 @@ import (
 
 // ErrUnavailable means git is missing or the shadow store is unusable.
 var ErrUnavailable = errors.New("checkpoint unavailable")
+
+// ErrUnsafeStore means the shadow store and the worktree overlap, which would
+// make snapshots include (and restores delete) the store's own objects.
+var ErrUnsafeStore = errors.New("checkpoint store overlaps the worktree")
 
 // Tree describes a recorded snapshot of a folder.
 type Tree struct {
@@ -78,6 +83,10 @@ var gitConfigArgs = []string{
 	"-c", "core.quotepath=false",
 }
 
+var treeHashRe = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
+
+const protectedRefPrefix = "refs/orchestra/protected/"
+
 func (s *Store) shadowDir(worktree string) string {
 	key := filepath.Clean(worktree)
 	if runtime.GOOS == "windows" {
@@ -89,12 +98,15 @@ func (s *Store) shadowDir(worktree string) string {
 
 type gitRun struct {
 	shadow, worktree, index string
+	noLiteral               bool // check-ignore rejects GIT_LITERAL_PATHSPECS
 }
 
-func (g gitRun) run(ctx context.Context, stdin []byte, args ...string) ([]byte, error) {
+// exec runs git and returns stdout, the exit code and stderr. A non-zero exit
+// code is not an error; err is set only when git could not be run at all.
+func (g gitRun) exec(ctx context.Context, stdin []byte, args ...string) ([]byte, int, string, error) {
 	gitPath, err := exec.LookPath("git")
 	if err != nil {
-		return nil, fmt.Errorf("%w: git not found: %v", ErrUnavailable, err)
+		return nil, -1, "", fmt.Errorf("%w: git not found: %v", ErrUnavailable, err)
 	}
 	full := append(append([]string{}, gitConfigArgs...), args...)
 	cmd := exec.CommandContext(ctx, gitPath, full...)
@@ -118,6 +130,9 @@ func (g gitRun) run(ctx context.Context, stdin []byte, args ...string) ([]byte, 
 	} else {
 		env = append(env, "GIT_INDEX_FILE="+filepath.Join(g.shadow, "index"))
 	}
+	if g.noLiteral {
+		env = append(env, "GIT_LITERAL_PATHSPECS=0")
+	}
 	cmd.Env = env
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)
@@ -126,29 +141,64 @@ func (g gitRun) run(ctx context.Context, stdin []byte, args ...string) ([]byte, 
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			return nil, -1, "", ctx.Err()
 		}
 		var ee *exec.ExitError
 		if !errors.As(err, &ee) {
-			return nil, fmt.Errorf("%w: running git: %v", ErrUnavailable, err)
+			return nil, -1, "", fmt.Errorf("%w: running git: %v", ErrUnavailable, err)
 		}
-		return nil, fmt.Errorf("git %s: %v: %s", args[0], err, strings.TrimSpace(stderr.String()))
+		return stdout.Bytes(), ee.ExitCode(), strings.TrimSpace(stderr.String()), nil
 	}
-	return stdout.Bytes(), nil
+	return stdout.Bytes(), 0, "", nil
 }
 
-// open prepares the shadow repo for worktree and returns a runner that uses a
-// fresh private index (removed by the returned cleanup).
-func (s *Store) open(ctx context.Context, worktree string) (gitRun, func(), error) {
-	if _, err := exec.LookPath("git"); err != nil {
-		return gitRun{}, nil, fmt.Errorf("%w: git not found: %v", ErrUnavailable, err)
-	}
-	abs, err := filepath.Abs(worktree)
+// run is exec that treats any non-zero exit as an error.
+func (g gitRun) run(ctx context.Context, stdin []byte, args ...string) ([]byte, error) {
+	out, code, stderr, err := g.exec(ctx, stdin, args...)
 	if err != nil {
-		return gitRun{}, nil, err
+		return nil, err
 	}
+	if code != 0 {
+		return nil, fmt.Errorf("git %s: exit status %d: %s", args[0], code, stderr)
+	}
+	return out, nil
+}
+
+func samePathOrInside(child, parent string) bool {
+	if runtime.GOOS == "windows" {
+		child, parent = strings.ToLower(child), strings.ToLower(parent)
+	}
+	if child == parent {
+		return true
+	}
+	return strings.HasPrefix(child, strings.TrimRight(parent, string(filepath.Separator))+string(filepath.Separator))
+}
+
+func resolve(p string) string {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		abs = filepath.Clean(p)
+	}
+	if r, err := filepath.EvalSymlinks(abs); err == nil {
+		return r
+	}
+	return abs
+}
+
+// open validates the paths, prepares the shadow repo for worktree and returns
+// a runner that uses a fresh private index (removed by the returned cleanup).
+func (s *Store) open(ctx context.Context, worktree string) (gitRun, func(), error) {
+	abs := resolve(worktree)
 	if st, err := os.Stat(abs); err != nil || !st.IsDir() {
 		return gitRun{}, nil, fmt.Errorf("worktree %q is not a directory", worktree)
+	}
+	// The store dir may not exist yet; resolve it through its nearest parent.
+	storeAbs := resolve(s.dir)
+	if samePathOrInside(storeAbs, abs) || samePathOrInside(abs, storeAbs) {
+		return gitRun{}, nil, fmt.Errorf("%w: store %q, worktree %q", ErrUnsafeStore, storeAbs, abs)
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		return gitRun{}, nil, fmt.Errorf("%w: git not found: %v", ErrUnavailable, err)
 	}
 	shadow := s.shadowDir(abs)
 	g := gitRun{shadow: shadow, worktree: abs}
@@ -172,6 +222,25 @@ func (s *Store) open(ctx context.Context, worktree string) (gitRun, func(), erro
 	os.Remove(name) // git wants a missing file, not an empty one
 	g.index = name
 	return g, func() { os.Remove(name); os.Remove(name + ".lock") }, nil
+}
+
+// checkTree validates treeHash syntactically and confirms it names a tree
+// object in the shadow store.
+func checkTree(ctx context.Context, g gitRun, treeHash string) error {
+	if !treeHashRe.MatchString(treeHash) {
+		return fmt.Errorf("invalid tree hash %q", treeHash)
+	}
+	out, code, _, err := g.exec(ctx, nil, "cat-file", "-t", treeHash)
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		return fmt.Errorf("tree %s does not exist in the checkpoint store", treeHash)
+	}
+	if t := strings.TrimSpace(string(out)); t != "tree" {
+		return fmt.Errorf("object %s is a %s, not a tree", treeHash, t)
+	}
+	return nil
 }
 
 func splitNul(b []byte) []string {
@@ -198,17 +267,25 @@ func isProjectGit(p string) bool {
 }
 
 // snapshot writes the current folder state into the shadow object store and
-// returns the tree. It records nothing else.
-func (s *Store) snapshot(ctx context.Context, g gitRun) (Tree, error) {
+// returns the tree plus the paths it excluded for reasons other than ignore
+// rules (over-cap files, nested repository roots).
+func (s *Store) snapshot(ctx context.Context, g gitRun) (Tree, []string, error) {
 	out, err := g.run(ctx, nil, "ls-files", "-z", "--others", "--exclude-standard")
 	if err != nil {
-		return Tree{}, err
+		return Tree{}, nil, err
 	}
 	var tree Tree
-	var keep []string
+	var keep, protected []string
 	for _, p := range splitNul(out) {
-		if strings.HasSuffix(p, "/") || isProjectGit(p) {
-			continue // nested repositories and the project's own .git
+		if strings.HasSuffix(p, "/") {
+			// Nested repository: protect its root so Restore never deletes it.
+			if r := strings.TrimSuffix(p, "/"); r != "" && !isProjectGit(r) {
+				protected = append(protected, r)
+			}
+			continue
+		}
+		if isProjectGit(p) {
+			continue
 		}
 		st, err := os.Lstat(filepath.Join(g.worktree, filepath.FromSlash(p)))
 		if err != nil || st.IsDir() {
@@ -216,6 +293,7 @@ func (s *Store) snapshot(ctx context.Context, g gitRun) (Tree, error) {
 		}
 		if s.maxFileBytes > 0 && st.Mode().IsRegular() && st.Size() > s.maxFileBytes {
 			tree.Skipped++
+			protected = append(protected, p)
 			continue
 		}
 		keep = append(keep, p)
@@ -226,15 +304,101 @@ func (s *Store) snapshot(ctx context.Context, g gitRun) (Tree, error) {
 	}
 	if len(keep) > 0 {
 		if _, err := g.run(ctx, joinNul(keep), "add", "-A", "-f", "--pathspec-from-file=-", "--pathspec-file-nul"); err != nil {
-			return Tree{}, err
+			return Tree{}, nil, err
 		}
 	}
 	h, err := g.run(ctx, nil, "write-tree")
 	if err != nil {
-		return Tree{}, err
+		return Tree{}, nil, err
 	}
 	tree.Hash = strings.TrimSpace(string(h))
-	return tree, nil
+	return tree, protected, nil
+}
+
+// saveProtected stores the manifest of excluded paths for a tree.
+func saveProtected(ctx context.Context, g gitRun, treeHash string, paths []string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	sort.Strings(paths)
+	out, err := g.run(ctx, joinNul(paths), "hash-object", "-w", "--stdin")
+	if err != nil {
+		return err
+	}
+	_, err = g.run(ctx, nil, "update-ref", protectedRefPrefix+treeHash, strings.TrimSpace(string(out)))
+	return err
+}
+
+// loadProtected returns the manifest for a tree; a missing manifest means
+// there are no protected paths.
+func loadProtected(ctx context.Context, g gitRun, treeHash string) ([]string, error) {
+	out, code, _, err := g.exec(ctx, nil, "rev-parse", "--verify", "-q", protectedRefPrefix+treeHash)
+	if err != nil {
+		return nil, err
+	}
+	if code != 0 {
+		return nil, nil
+	}
+	blob, err := g.run(ctx, nil, "cat-file", "blob", strings.TrimSpace(string(out)))
+	if err != nil {
+		return nil, err
+	}
+	return splitNul(blob), nil
+}
+
+func isProtected(path string, protected []string) bool {
+	for _, p := range protected {
+		if path == p || strings.HasPrefix(path, p+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// ignoredUnderTarget reports which paths the target tree's own .gitignore
+// files (i.e. the ignore rules in force after a restore) would ignore.
+func ignoredUnderTarget(ctx context.Context, g gitRun, treeHash string, paths []string) (map[string]bool, error) {
+	ignored := map[string]bool{}
+	if len(paths) == 0 {
+		return ignored, nil
+	}
+	tmp, err := os.MkdirTemp("", "checkpoint-ignore-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(tmp)
+	list, err := g.run(ctx, nil, "ls-tree", "-r", "-z", "--name-only", treeHash)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range splitNul(list) {
+		if p != ".gitignore" && !strings.HasSuffix(p, "/.gitignore") {
+			continue
+		}
+		content, err := g.run(ctx, nil, "cat-file", "blob", treeHash+":"+p)
+		if err != nil {
+			return nil, err
+		}
+		dst := filepath.Join(tmp, filepath.FromSlash(p))
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(dst, content, 0o644); err != nil {
+			return nil, err
+		}
+	}
+	tg := gitRun{shadow: g.shadow, worktree: tmp, index: g.index, noLiteral: true}
+	out, code, stderr, err := tg.exec(ctx, joinNul(paths), "check-ignore", "--no-index", "-z", "--stdin")
+	if err != nil {
+		return nil, err
+	}
+	if code != 0 && code != 1 { // 1 means nothing ignored
+		return nil, fmt.Errorf("git check-ignore: exit status %d: %s", code, stderr)
+	}
+	for _, p := range splitNul(out) {
+		ignored[p] = true
+	}
+	return ignored, nil
 }
 
 // Snapshot records the current state of worktree and returns its tree.
@@ -244,11 +408,24 @@ func (s *Store) Snapshot(ctx context.Context, worktree string) (Tree, error) {
 		return Tree{}, err
 	}
 	defer done()
-	return s.snapshot(ctx, g)
+	tree, protected, err := s.snapshot(ctx, g)
+	if err != nil {
+		return Tree{}, err
+	}
+	if err := saveProtected(ctx, g, tree.Hash, protected); err != nil {
+		return Tree{}, err
+	}
+	return tree, nil
 }
 
-func (s *Store) diff(ctx context.Context, g gitRun, treeHash string) ([]Change, error) {
-	cur, err := s.snapshot(ctx, g)
+// plan computes what Restore(treeHash) will do. Deletions of paths that were
+// excluded at checkpoint time (protected manifest) or that are ignored under
+// the restored ignore rules are dropped.
+func (s *Store) plan(ctx context.Context, g gitRun, treeHash string) ([]Change, error) {
+	if err := checkTree(ctx, g, treeHash); err != nil {
+		return nil, err
+	}
+	cur, _, err := s.snapshot(ctx, g)
 	if err != nil {
 		return nil, err
 	}
@@ -260,8 +437,13 @@ func (s *Store) diff(ctx context.Context, g gitRun, treeHash string) ([]Change, 
 	if err != nil {
 		return nil, err
 	}
+	protected, err := loadProtected(ctx, g, treeHash)
+	if err != nil {
+		return nil, err
+	}
 	parts := splitNul(out)
-	var changes []Change
+	var all []Change
+	var delPaths []string
 	for i := 0; i+1 < len(parts); i += 2 {
 		var kind ChangeKind
 		switch parts[i][0] {
@@ -269,10 +451,24 @@ func (s *Store) diff(ctx context.Context, g gitRun, treeHash string) ([]Change, 
 			kind = ChangeCreate
 		case 'D':
 			kind = ChangeDelete
+			if !isProtected(parts[i+1], protected) {
+				delPaths = append(delPaths, parts[i+1])
+			}
 		default:
 			kind = ChangeModify
 		}
-		changes = append(changes, Change{Path: parts[i+1], Kind: kind})
+		all = append(all, Change{Path: parts[i+1], Kind: kind})
+	}
+	ignored, err := ignoredUnderTarget(ctx, g, treeHash, delPaths)
+	if err != nil {
+		return nil, err
+	}
+	changes := make([]Change, 0, len(all))
+	for _, c := range all {
+		if c.Kind == ChangeDelete && (isProtected(c.Path, protected) || ignored[c.Path]) {
+			continue
+		}
+		changes = append(changes, c)
 	}
 	sort.Slice(changes, func(i, j int) bool { return changes[i].Path < changes[j].Path })
 	return changes, nil
@@ -281,26 +477,60 @@ func (s *Store) diff(ctx context.Context, g gitRun, treeHash string) ([]Change, 
 // Diff reports what Restore(treeHash) would do to the folder. It records no
 // checkpoint and does not modify the folder.
 func (s *Store) Diff(ctx context.Context, worktree, treeHash string) ([]Change, error) {
+	if !treeHashRe.MatchString(treeHash) {
+		return nil, fmt.Errorf("invalid tree hash %q", treeHash)
+	}
 	g, done, err := s.open(ctx, worktree)
 	if err != nil {
 		return nil, err
 	}
 	defer done()
-	return s.diff(ctx, g, treeHash)
+	return s.plan(ctx, g, treeHash)
 }
 
 const batchSize = 200
 
-// Restore makes the folder equal to treeHash (ignored and over-cap files are
-// left alone). Per-file problems are reported in RestoreResult.Failed.
+func checkoutBatch(ctx context.Context, g gitRun, res *RestoreResult, paths []string) (failed []string, err error) {
+	for start := 0; start < len(paths); start += batchSize {
+		end := start + batchSize
+		if end > len(paths) {
+			end = len(paths)
+		}
+		batch := paths[start:end]
+		if _, e := g.run(ctx, joinNul(batch), "checkout-index", "-f", "-z", "--stdin"); e == nil {
+			res.Written += len(batch)
+			continue
+		} else if ctx.Err() != nil {
+			return failed, ctx.Err()
+		}
+		for _, p := range batch {
+			if _, e := g.run(ctx, joinNul([]string{p}), "checkout-index", "-f", "-z", "--stdin"); e != nil {
+				if ctx.Err() != nil {
+					return failed, ctx.Err()
+				}
+				failed = append(failed, p)
+				continue
+			}
+			res.Written++
+		}
+	}
+	return failed, nil
+}
+
+// Restore makes the folder equal to treeHash. Ignored paths and paths that
+// were excluded when the checkpoint was taken (over-cap files, nested repos)
+// are never deleted. Per-file problems are reported in RestoreResult.Failed.
 func (s *Store) Restore(ctx context.Context, worktree, treeHash string) (RestoreResult, error) {
 	res := RestoreResult{Failed: []FileFailure{}}
+	if !treeHashRe.MatchString(treeHash) {
+		return res, fmt.Errorf("invalid tree hash %q", treeHash)
+	}
 	g, done, err := s.open(ctx, worktree)
 	if err != nil {
 		return res, err
 	}
 	defer done()
-	changes, err := s.diff(ctx, g, treeHash)
+	changes, err := s.plan(ctx, g, treeHash)
 	if err != nil {
 		return res, err
 	}
@@ -311,17 +541,27 @@ func (s *Store) Restore(ctx context.Context, worktree, treeHash string) (Restore
 		return res, err
 	}
 
-	// Deletions first so file/directory swaps can be written afterwards.
-	var writes []string
-	var dirs []string
+	var writes, deletes []string
 	for _, c := range changes {
-		if c.Kind != ChangeDelete {
+		if c.Kind == ChangeDelete {
+			deletes = append(deletes, c.Path)
+		} else {
 			writes = append(writes, c.Path)
-			continue
 		}
-		full := filepath.Join(g.worktree, filepath.FromSlash(c.Path))
+	}
+
+	// Writes first (this brings back the target's .gitignore files); the
+	// delete set was already filtered against those rules by plan.
+	failedWrites, err := checkoutBatch(ctx, g, &res, writes)
+	if err != nil {
+		return res, err
+	}
+
+	var dirs []string
+	for _, p := range deletes {
+		full := filepath.Join(g.worktree, filepath.FromSlash(p))
 		if err := os.Remove(full); err != nil && !os.IsNotExist(err) {
-			res.Failed = append(res.Failed, FileFailure{Path: c.Path, Reason: err.Error()})
+			res.Failed = append(res.Failed, FileFailure{Path: p, Reason: err.Error()})
 			continue
 		}
 		res.Deleted++
@@ -329,30 +569,32 @@ func (s *Store) Restore(ctx context.Context, worktree, treeHash string) (Restore
 	}
 	pruneEmptyDirs(g.worktree, dirs)
 
-	for start := 0; start < len(writes); start += batchSize {
-		end := start + batchSize
-		if end > len(writes) {
-			end = len(writes)
+	// A write can be blocked by a directory whose files were just deleted
+	// (file/directory swap); retry those once.
+	if len(failedWrites) > 0 {
+		still, err := checkoutBatch(ctx, g, &res, failedWrites)
+		if err != nil {
+			return res, err
 		}
-		batch := writes[start:end]
-		if _, err := g.run(ctx, joinNul(batch), "checkout-index", "-f", "-z", "--stdin"); err == nil {
-			res.Written += len(batch)
-			continue
-		} else if ctx.Err() != nil {
-			return res, ctx.Err()
-		}
-		for _, p := range batch {
-			if _, err := g.run(ctx, joinNul([]string{p}), "checkout-index", "-f", "-z", "--stdin"); err != nil {
-				if ctx.Err() != nil {
-					return res, ctx.Err()
-				}
-				res.Failed = append(res.Failed, FileFailure{Path: p, Reason: err.Error()})
+		for _, p := range still {
+			ok, reason, _ := g.checkoutReason(ctx, p)
+			if ok {
+				res.Written++
 				continue
 			}
-			res.Written++
+			res.Failed = append(res.Failed, FileFailure{Path: p, Reason: reason})
 		}
 	}
 	return res, nil
+}
+
+// checkoutReason re-runs a single checkout to capture git's error text.
+func (g gitRun) checkoutReason(ctx context.Context, p string) (bool, string, error) {
+	_, err := g.run(ctx, joinNul([]string{p}), "checkout-index", "-f", "-z", "--stdin")
+	if err != nil {
+		return false, err.Error(), err
+	}
+	return true, "", nil
 }
 
 // pruneEmptyDirs removes now-empty directories, walking up from each start
