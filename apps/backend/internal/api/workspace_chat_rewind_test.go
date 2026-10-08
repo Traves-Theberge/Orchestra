@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -286,6 +287,9 @@ func TestUndoRestoreRoundTrip(t *testing.T) {
 		t.Fatalf("undo %d %s", status, data)
 	}
 	var res checkpoint.RestoreResult
+	if !strings.Contains(string(data), `"failed":[]`) {
+		t.Fatalf("failed must serialize as an empty array: %s", data)
+	}
 	if err := json.Unmarshal(data, &res); err != nil || res.Written != 1 {
 		t.Fatalf("result %s", data)
 	}
@@ -464,5 +468,129 @@ func TestRewindPathRuleMatchesTheRoutes(t *testing.T) {
 		if rewindPath.MatchString(p) {
 			t.Errorf("%s matched", p)
 		}
+	}
+}
+
+func TestRewindCarveOutUsesTheEscapedPath(t *testing.T) {
+	var got time.Duration
+	r := chi.NewRouter()
+	r.Use(globalRequestTimeout)
+	r.With(middleware.Timeout(rewindRequestTimeout)).Post("/api/v1/projects/p/chat/sessions/{session_id}/edit", func(w http.ResponseWriter, r *http.Request) {
+		if dl, ok := r.Context().Deadline(); ok {
+			got = time.Until(dl)
+		}
+	})
+	req := httptest.NewRequest("POST", "/api/v1/projects/p/chat/sessions/a%2Fb/edit", nil)
+	if req.URL.RawPath == "" {
+		t.Fatal("expected an escaped path")
+	}
+	r.ServeHTTP(httptest.NewRecorder(), req)
+	if got < 85*time.Second || got > 90*time.Second {
+		t.Fatalf("deadline %v, want ~90s", got)
+	}
+	if !rewindPath.MatchString(req.URL.EscapedPath()) {
+		t.Fatal("escaped path not matched")
+	}
+}
+
+// TestRealRouterRewindRoutesMatchTheCarveOut walks the real router: the paths
+// matching the global timeout's skip rule are exactly the ten rewind routes,
+// and those routes sit in the extra timeout group. The group's deadline cannot
+// be observed through the real handlers, so the group is detected by its
+// middleware count as reported by chi.Walk: ordinary chat routes carry the
+// global chain plus bearer auth, rewind routes exactly one more (the 90 s
+// timeout). TestRewindRoutesGetALongerTimeout checks the timeout values.
+func TestRealRouterRewindRoutesMatchTheCarveOut(t *testing.T) {
+	h := newRewindHarness(t, false)
+	routes, ok := h.router.(chi.Routes)
+	if !ok {
+		t.Fatalf("router is %T", h.router)
+	}
+	want := map[string]bool{}
+	for _, scope := range []string{"/api/v1/projects/{project_id}", "/api/v1/orchestrator"} {
+		for _, tail := range []string{"/rewind/preview", "/edit", "/regenerate", "/branches/{branch_id}/activate", "/restore/undo"} {
+			want["POST "+scope+"/chat/sessions/{session_id}"+tail] = true
+		}
+	}
+	chain := map[string]int{}
+	skipped := map[string]bool{}
+	err := chi.Walk(routes, func(method, route string, handler http.Handler, mws ...func(http.Handler) http.Handler) error {
+		key := method + " " + route
+		chain[key] = len(mws)
+		if rewindPath.MatchString(strings.NewReplacer("{project_id}", "p", "{session_id}", "s", "{branch_id}", "b").Replace(route)) {
+			skipped[key] = true
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key := range want {
+		if !skipped[key] {
+			t.Errorf("%s is not matched by the carve-out", key)
+		}
+	}
+	for key := range skipped {
+		if !want[key] {
+			t.Errorf("%s is matched by the carve-out but is not a rewind route", key)
+		}
+	}
+	for key := range want {
+		scope := "/api/v1/orchestrator"
+		if strings.Contains(key, "{project_id}") {
+			scope = "/api/v1/projects/{project_id}"
+		}
+		sibling := "POST " + scope + "/chat/sessions/{session_id}/messages"
+		if chain[sibling] == 0 || chain[key] != chain[sibling]+1 {
+			t.Errorf("%s has %d middlewares, want %d (ordinary chat route + the rewind timeout)", key, chain[key], chain[sibling]+1)
+		}
+	}
+}
+
+func TestRestoreMessagesBoundErrorText(t *testing.T) {
+	long := strings.Repeat("é", 500)
+	rec := httptest.NewRecorder()
+	(&Server{}).chatError(rec, &workspacechat.RestoreError{Err: errors.New(long), Failed: []checkpoint.FileFailure{{Path: "a.txt", Reason: long}}})
+	body := rec.Body.String()
+	if strings.Contains(body, strings.Repeat("é", 150)+strings.Repeat("é", 100)) || !strings.Contains(body, "…") || rec.Code != 409 {
+		t.Fatalf("restore_partial not bounded: %d %s", rec.Code, body)
+	}
+	rec = httptest.NewRecorder()
+	(&Server{}).chatError(rec, &workspacechat.FilesRestoredError{Err: errors.New(long)})
+	body = rec.Body.String()
+	if len(body) > 700 || !strings.Contains(body, "…") || !utf8.ValidString(body) {
+		t.Fatalf("files_restored not bounded: %d bytes %s", len(body), body)
+	}
+	rec = httptest.NewRecorder()
+	(&Server{}).chatError(rec, &workspacechat.FilesRestoredError{})
+	if rec.Code != 409 {
+		t.Fatalf("nil cause: %d", rec.Code)
+	}
+}
+
+// nilFailedStore is a checkpoint store whose restores leave Failed nil.
+type nilFailedStore struct{}
+
+func (nilFailedStore) Snapshot(context.Context, string) (checkpoint.Tree, error) {
+	return checkpoint.Tree{Hash: "tree"}, nil
+}
+func (nilFailedStore) Diff(context.Context, string, string) ([]checkpoint.Change, error) {
+	return nil, nil
+}
+func (nilFailedStore) Restore(context.Context, string, string) (checkpoint.RestoreResult, error) {
+	return checkpoint.RestoreResult{Written: 1}, nil
+}
+
+func TestUndoRestoreFailedIsAnEmptyArray(t *testing.T) {
+	h := newRewindHarness(t, false)
+	h.chat.SetCheckpointStore(nilFailedStore{})
+	d := h.send("c1", "first")
+	if status, data := h.call("POST", h.base+"/edit", `{"message_id":"`+d.Messages[0].ID+`","client_message_id":"c2","text":"second","restore_files":true}`); status != 202 {
+		t.Fatalf("edit %d %s", status, data)
+	}
+	h.detail()
+	status, data := h.call("POST", h.base+"/restore/undo", "")
+	if status != 200 || !strings.Contains(string(data), `"failed":[]`) {
+		t.Fatalf("undo %d %s", status, data)
 	}
 }

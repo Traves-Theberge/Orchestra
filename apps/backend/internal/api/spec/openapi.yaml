@@ -946,16 +946,6 @@ components:
         requested_agent_format: { type: string }
         effective_agent_id: { type: string }
         agent_observation: { type: string }
-        has_checkpoint: { type: boolean, description: A user message with a before-turn file snapshot. }
-        versions:
-          type: array
-          description: Sibling versions at a fork point (on the first message after the fork).
-          items:
-            type: object
-            required: [branch_id, active]
-            properties:
-              branch_id: { type: string }
-              active: { type: boolean }
 
     WorkspaceChatArchiveRequest:
       type: object
@@ -1076,6 +1066,16 @@ components:
         requested_agent_format: { type: string }
         effective_agent_id: { type: string }
         agent_observation: { type: string }
+        has_checkpoint: { type: boolean, description: A user message with a before-turn file snapshot. }
+        versions:
+          type: array
+          description: Sibling versions at a fork point (on the first message after the fork).
+          items:
+            type: object
+            required: [branch_id, active]
+            properties:
+              branch_id: { type: string }
+              active: { type: boolean }
 
     WorkspaceChatEvent:
       type: object
@@ -1487,6 +1487,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/WorkspaceChatRewindPreview' }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
@@ -1510,6 +1511,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/WorkspaceChatAccepted' }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
@@ -1535,6 +1537,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/WorkspaceChatAccepted' }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
@@ -1561,6 +1564,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/WorkspaceChatHistory' }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
@@ -1579,6 +1583,8 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/WorkspaceChatRestoreResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
