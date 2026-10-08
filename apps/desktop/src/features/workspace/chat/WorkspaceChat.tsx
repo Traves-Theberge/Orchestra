@@ -10,6 +10,9 @@ import { useChatZoom } from './chat-zoom'
 import { CHAT_SESSION_EVENT } from './MaestroConversations'
 import { markConversationSeen } from './conversation-status'
 import { extractHtmlRendersFromEvents, type HtmlRenderReference } from './html-render'
+import { RewindDialog } from './RewindDialog'
+import { UndoRestoreBanner } from './UndoRestoreBanner'
+import { useRewind } from './rewind-controller'
 
 const IMPLEMENT_REFERENCE_HTML_LIMIT = 24_000
 
@@ -814,6 +817,16 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
   }, [sessionId])
   useEffect(() => { const input = textareaRef.current; if (input) { input.style.height = 'auto'; input.style.height = `${Math.min(240, Math.max(88, input.scrollHeight))}px` } }, [draft])
 
+  const rewind = useRewind({
+    config, projectId, sessionId, working, selectedSession, mounted, mutationPending, setPending, setSnapshot, setSessions,
+    // The same model, effort and agent a normal send passes.
+    sendPreferences: () => ({
+      ...(selectedModel ? { requested_model: selectedModel } : {}),
+      ...(selectedEffort ? { requested_reasoning_effort: selectedEffort } : {}),
+      ...selectedAgent,
+    }),
+  })
+
   const mutate = useCallback(async (action: () => Promise<void>, allowPreacceptRejection = false) => {
     if (mutationPending.current) return
     mutationPending.current = true
@@ -910,6 +923,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
     }
     const messageId = crypto.randomUUID()
     const targetId = sessionId || crypto.randomUUID()
+    rewind.clearUndoOffer()
     submitted.current = { sessionId: targetId, messageId, text }
     followRef.current = true
     void mutate(async () => {
@@ -950,6 +964,12 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
     }, true)
   }
   const variantActionsDisabled = !storageReady || legacyGeminiSession || working || pending || !sessionId || snapshot?.session.id !== sessionId || !!creating.current || !!submitted.current || uncertainSession === sessionId || !!observationError
+  const rewindDisabledReason = rewind.rewinding ? 'Rewinding…'
+    : working ? 'Wait for the current turn to finish'
+    : variantActionsDisabled ? 'Unavailable right now' : undefined
+  const rewindHandlers = rewind.handlers
+  const messageRewind = useMemo(() => sessionId ? { ...rewindHandlers, disabledReason: rewindDisabledReason } : undefined,
+    [sessionId, rewindHandlers, rewindDisabledReason])
   const regenerateVariant = (index: number, render: HtmlRenderReference) => send(regenerateVariantPrompt(index, render))
   const implementVariant = (index: number, render: HtmlRenderReference) => send(implementVariantPrompt(index, render))
 
@@ -1082,7 +1102,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
             <div data-rail-message-id={message.id}>
               {index > 0 && message.provider && messages[index - 1].provider && message.provider !== messages[index - 1].provider && <HarnessDivider provider={message.provider} />}
               {(() => { const change = agentSwitch(index); return change ? <AgentDivider {...change} /> : null })()}
-              <ChatMessage message={message} provider={message.provider || snapshot?.session.provider || ''} projectId={projectId} htmlRenders={htmlRenders} onRegenerateVariant={stableActions.regenerate} onImplementVariant={stableActions.implement} variantActionsDisabled={variantActionsDisabled} {...messageAgent(index)} />
+              <ChatMessage message={message} provider={message.provider || snapshot?.session.provider || ''} projectId={projectId} htmlRenders={htmlRenders} onRegenerateVariant={stableActions.regenerate} onImplementVariant={stableActions.implement} variantActionsDisabled={variantActionsDisabled} rewind={messageRewind} {...messageAgent(index)} />
             </div>
           </Fragment>
         )
@@ -1110,7 +1130,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
     </>
   // messageAgent/agentSwitch read only messages, the session and the agent directory, all listed here.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  ), [messages, events, working, datedTimeline, turnBuckets, snapshot?.requests, snapshot?.session, sessionId, projectId, provider, variantActionsDisabled, agentDirectory, turnStartedAt, stableActions])
+  ), [messages, events, working, datedTimeline, turnBuckets, snapshot?.requests, snapshot?.session, sessionId, projectId, provider, variantActionsDisabled, messageRewind, agentDirectory, turnStartedAt, stableActions])
 
   return (
     <section aria-label={`${projectName} workspace chat`} onKeyDown={e => {
@@ -1160,6 +1180,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
       <footer data-chat-composer-placement={draftHero ? 'centered' : 'docked'} className={`${draftHero ? 'absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2' : 'mx-auto shrink-0'} w-full max-w-[808px] px-4 pb-3 pt-1 sm:px-6`}>
         {draftHero && <div className="relative mb-7 px-1"><div className="pointer-events-none absolute -left-20 -top-20 size-64 rounded-full bg-primary/[0.055] blur-3xl" aria-hidden="true" /><h3 className="relative max-w-[680px] text-[clamp(27px,3vw,38px)] font-semibold leading-[1.16] tracking-[-0.035em] text-foreground">What would you like to build?</h3><p className="relative mt-3 max-w-[550px] text-[14px] leading-6 text-muted-foreground">Describe a goal, ask a question, or make a change. Start wherever you are.</p></div>}
         <div aria-label="Agent decisions" className="mb-2 max-h-[40vh] space-y-2 overflow-auto">{snapshot?.requests?.filter(request => request.status === 'pending').map(request => <RuntimeRequestCard key={`${sessionId}:${request.id}`} request={request} disabled={pending || !working || !!observationError || !!blockedRequests[request.id]} onReply={answer => reply(request, answer)} />)}</div>
+        {rewind.banner && <UndoRestoreBanner {...rewind.banner} />}
         {legacyGeminiSession && <p role="status" className="mb-2 text-xs text-muted-foreground">Gemini conversation history is preserved and read-only. Choose a current harness to start a new conversation.</p>}
         {uncertainSession === sessionId && sessionId && <p role="status" className="mb-2 text-xs text-destructive">Delivery is uncertain. Your draft is retained; inspect the conversation before starting a new turn.</p>}
         {creating.current && creating.current.sessionId !== sessionId && <p role="status" className="mb-2 text-xs text-muted-foreground">Recover the pending chat from Conversations before sending another message.</p>}{submitted.current && submitted.current.sessionId !== sessionId && <p role="status" className="mb-2 text-xs text-muted-foreground">Resolve the pending message in its conversation before sending another message.</p>}{storageWarning && <p role="status" className="mb-2 text-xs text-muted-foreground">{storageWarning}</p>}
@@ -1268,6 +1289,7 @@ function ScopedWorkspaceChat({ config, projectId, projectName, headerTools, head
         <p className="mt-2.5 px-1 text-[10px] tracking-wide text-muted-foreground/65">{working ? 'Drafts stay unsent until the current turn finishes · Esc to interrupt' : 'Enter to send · Shift+Enter for a new line'}</p>
       </footer>
       </div>
+      <RewindDialog {...rewind.dialog} />
     </section>
   )
 }

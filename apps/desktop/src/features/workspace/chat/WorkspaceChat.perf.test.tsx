@@ -49,6 +49,9 @@ it('typing in the composer never re-renders the conversation', async () => {
   render(<AppTooltipProvider><WorkspaceChat config={config} projectId="project-a" projectName="Alpha" /></AppTooltipProvider>)
   act(() => useAppStore.getState().requestWorkspaceConversation('project-a', 'chat-a'))
   await screen.findByText('Message 79')
+  // Edit/Regenerate are wired into every message: their props must stay stable too.
+  expect(screen.getAllByRole('button', { name: 'Edit message' })).toHaveLength(40)
+  expect(screen.getAllByRole('button', { name: 'Regenerate response' })).toHaveLength(40)
   const before = markdownRenders.count
   const composer = screen.getByLabelText('Message agent')
   for (const text of ['H', 'He', 'Hel', 'Hell', 'Hello', 'Hello there']) fireEvent.change(composer, { target: { value: text } })
