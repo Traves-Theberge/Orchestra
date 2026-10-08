@@ -1,7 +1,7 @@
 import { AppTooltipProvider } from '@ui/tooltip-wrapper'
 import { type ReactElement } from 'react'
-import { act, cleanup, fireEvent, render as renderBase, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, configure, fireEvent, getConfig, render as renderBase, screen, waitFor, within } from '@testing-library/react'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { webcrypto } from 'node:crypto'
 import * as api from '@core/api/client'
 import { resetAppStore, useAppStore } from '@core/store'
@@ -42,8 +42,8 @@ const render = (ui: ReactElement) => renderBase(ui, { wrapper: AppTooltipProvide
 const open = (projectId = 'project-a') => render(<WorkspaceChat config={config} projectId={projectId} projectName="Alpha" />)
 async function selectConversation(projectId = 'project-a') {
   act(() => useAppStore.getState().requestWorkspaceConversation(projectId, session.id))
-  await screen.findByRole('button', { name: 'Rename conversation: Review changes' })
-  await screen.findByText('Fixed the bug')
+  await screen.findByRole('button', { name: 'Rename conversation: Review changes' }, { timeout: 5000 })
+  await screen.findByText('Fixed the bug', undefined, { timeout: 5000 })
 }
 const dialog = () => screen.getByRole('dialog')
 
@@ -62,6 +62,10 @@ beforeEach(() => {
   vi.mocked(api.previewWorkspaceChatRewind).mockResolvedValue(preview)
 })
 afterEach(() => { cleanup() })
+// Under a full parallel run each render is slow; the 1 s findBy default flakes.
+const asyncTimeout = getConfig().asyncUtilTimeout
+beforeAll(() => { configure({ asyncUtilTimeout: 5000 }) })
+afterAll(() => { configure({ asyncUtilTimeout: asyncTimeout }) })
 
 async function editTo(text: string) {
   fireEvent.click(screen.getByRole('button', { name: 'Edit message' }))
