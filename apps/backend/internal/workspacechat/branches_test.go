@@ -2,9 +2,12 @@ package workspacechat
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"reflect"
 	"testing"
 
+	"github.com/orchestra/orchestra/apps/backend/internal/agents"
 	"github.com/orchestra/orchestra/apps/backend/internal/db"
 )
 
@@ -92,6 +95,7 @@ func TestExistingConversationsAreUnchangedByMigration(t *testing.T) {
 	for _, stmt := range []string{
 		`ALTER TABLE workspace_chat_messages DROP COLUMN branch_id`,
 		`ALTER TABLE workspace_chat_events DROP COLUMN branch_id`,
+		`ALTER TABLE workspace_chat_requests DROP COLUMN branch_id`,
 		`DROP TABLE workspace_chat_branches`,
 		`DROP TABLE workspace_chat_active_branch`,
 		`DROP TABLE workspace_chat_checkpoints`,
@@ -290,6 +294,171 @@ func TestDeleteRemovesBranchesCheckpointsAndSeed(t *testing.T) {
 		if n != 0 {
 			t.Fatalf("%s kept %d rows", table, n)
 		}
+	}
+}
+
+func TestSiblingViaBranchKeepsVersionsConsistentAcrossAllViews(t *testing.T) {
+	s, database, _, pid := nativeFixture(t)
+	ctx := context.Background()
+	sess, err := s.Create(ctx, pid, "codex", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	insertBranchMessage(t, database, "m1", sess.ID, "", "2026-01-01T00:00:01Z")
+	m2 := insertBranchMessage(t, database, "m2", sess.ID, "", "2026-01-01T00:00:02Z")
+	insertBranchMessage(t, database, "m3", sess.ID, "", "2026-01-01T00:00:03Z")
+	b := newBranch(t, s, sess.ID, sess.ID, m2, "2026-01-01T00:00:02Z")
+	insertBranchMessage(t, database, "b1", sess.ID, b.ID, "2026-01-01T00:00:04Z")
+	// Editing b1 again while viewing B forks B at a point B inherited from main.
+	d := newBranch(t, s, sess.ID, b.ID, m2, "2026-01-01T00:00:02Z")
+	insertBranchMessage(t, database, "d1", sess.ID, d.ID, "2026-01-01T00:00:05Z")
+	views := []struct {
+		active, first string
+		ids           []string
+	}{
+		{sess.ID, "m3", []string{"m1", "m2", "m3"}},
+		{b.ID, "b1", []string{"m1", "m2", "b1"}},
+		{d.ID, "d1", []string{"m1", "m2", "d1"}},
+	}
+	for _, view := range views {
+		activate(t, database, sess.ID, view.active)
+		detail, err := s.Detail(ctx, pid, sess.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := messageIDs(detail); !reflect.DeepEqual(got, view.ids) {
+			t.Fatalf("view %s = %v", view.active, got)
+		}
+		want := []VersionRef{{BranchID: sess.ID}, {BranchID: b.ID}, {BranchID: d.ID}}
+		for i := range want {
+			want[i].Active = want[i].BranchID == view.active
+		}
+		for _, m := range detail.Messages {
+			var expected []VersionRef
+			if m.ID == view.first {
+				expected = want
+			}
+			if !reflect.DeepEqual(m.Versions, expected) {
+				t.Fatalf("view %s: %s versions = %#v, want %#v", view.active, m.ID, m.Versions, expected)
+			}
+		}
+	}
+}
+
+func TestFirstMessageEditBranchShowsNoParentEventsOrMessages(t *testing.T) {
+	s, database, _, pid := nativeFixture(t)
+	ctx := context.Background()
+	sess, err := s.Create(ctx, pid, "codex", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	insertBranchMessage(t, database, "m1", sess.ID, "", "2026-01-01T00:00:01Z")
+	insertBranchEvent(t, database, sess.ID, "", "2026-01-01T00:00:02Z")
+	insertBranchMessage(t, database, "m2", sess.ID, "", "2026-01-01T00:00:03Z")
+	insertBranchEvent(t, database, sess.ID, "", "2026-01-01T00:00:04Z")
+	c := newBranch(t, s, sess.ID, sess.ID, 0, "")
+	insertBranchMessage(t, database, "c1", sess.ID, c.ID, "2026-01-01T00:00:05Z")
+	own := insertBranchEvent(t, database, sess.ID, c.ID, "2026-01-01T00:00:06Z")
+	activate(t, database, sess.ID, c.ID)
+	d, err := s.Detail(ctx, pid, sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := messageIDs(d); !reflect.DeepEqual(got, []string{"c1"}) {
+		t.Fatalf("messages = %v", got)
+	}
+	if len(d.Events) != 1 || d.Events[0].Sequence != own {
+		t.Fatalf("events = %#v, want only %d", d.Events, own)
+	}
+}
+
+func TestCreateBranchRejectsEmptyForkTimeWhenOrdinalPositive(t *testing.T) {
+	s, _, _, pid := nativeFixture(t)
+	ctx := context.Background()
+	sess, err := s.Create(ctx, pid, "codex", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if _, err = s.createBranch(ctx, tx, sess.ID, sess.ID, 3, ""); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("empty fork time accepted: %v", err)
+	}
+}
+
+func TestResolvedRequestsAreScopedToTheirBranch(t *testing.T) {
+	s, database, _, pid := nativeFixture(t)
+	ctx := context.Background()
+	sess, err := s.Create(ctx, pid, "codex", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := func(id string) {
+		t.Helper()
+		if err := s.recordEvent(sess.ID, agents.NativeEvent{Type: "server_request", TurnID: "turn", RequestID: id, Payload: json.RawMessage(`{"method":"item/commandExecution/requestApproval","params":{"command":"ls"}}`)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m1 := insertBranchMessage(t, database, "m1", sess.ID, "", "2026-01-01T00:00:01Z")
+	request("on-main")
+	b := newBranch(t, s, sess.ID, sess.ID, m1, "2026-01-01T00:00:01Z")
+	activate(t, database, sess.ID, b.ID)
+	request("on-b")
+	requestIDs := func() []string {
+		t.Helper()
+		d, err := s.Detail(ctx, pid, sess.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids := []string{}
+		for _, r := range d.Requests {
+			ids = append(ids, r.ID)
+		}
+		return ids
+	}
+	if got := requestIDs(); !reflect.DeepEqual(got, []string{"on-b"}) {
+		t.Fatalf("branch requests = %v", got)
+	}
+	activate(t, database, sess.ID, sess.ID)
+	if got := requestIDs(); !reflect.DeepEqual(got, []string{"on-main"}) {
+		t.Fatalf("main requests = %v", got)
+	}
+}
+
+func TestTimeNotAfterWithDifferentFractionalDigits(t *testing.T) {
+	// Lexically ".1Z" sorts after ".12Z"; as instants it is earlier.
+	if !timeNotAfter("2026-01-01T00:00:05.1Z", "2026-01-01T00:00:05.12Z") {
+		t.Fatal(".1 should not be after .12")
+	}
+	if timeNotAfter("2026-01-01T00:00:05.12Z", "2026-01-01T00:00:05.1Z") {
+		t.Fatal(".12 should be after .1")
+	}
+	if !timeNotAfter("2026-01-01T00:00:05Z", "2026-01-01T00:00:05.000000001Z") || timeNotAfter("2026-01-01T00:00:05.5Z", "2026-01-01T00:00:05Z") {
+		t.Fatal("whole-second stamps compare as instants")
+	}
+}
+
+func TestDanglingActiveBranchWritesToMain(t *testing.T) {
+	s, database, _, pid := nativeFixture(t)
+	ctx := context.Background()
+	sess, err := s.Create(ctx, pid, "codex", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	activate(t, database, sess.ID, "ghost")
+	if _, err = s.Send(ctx, pid, sess.ID, SendRequest{ClientMessageID: "a", Text: "hi"}); err != nil {
+		t.Fatal(err)
+	}
+	d := awaitIdle(t, s, pid, sess.ID)
+	if len(d.Messages) != 2 || len(d.Events) == 0 {
+		t.Fatalf("turn hidden: %d messages, %d events", len(d.Messages), len(d.Events))
+	}
+	var dangling int
+	if err = database.QueryRow(`SELECT (SELECT COUNT(*) FROM workspace_chat_messages WHERE session_id=? AND branch_id<>'')+(SELECT COUNT(*) FROM workspace_chat_events WHERE session_id=? AND branch_id<>'')`, sess.ID, sess.ID).Scan(&dangling); err != nil || dangling != 0 {
+		t.Fatalf("rows tagged with a dangling branch: %d %v", dangling, err)
 	}
 }
 

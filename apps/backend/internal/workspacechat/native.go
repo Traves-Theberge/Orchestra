@@ -172,16 +172,21 @@ func (s *Service) loadNative(ctx context.Context, d *Detail, after int64, chain 
 	if err != nil {
 		return err
 	}
-	rows, err = s.db.QueryContext(ctx, `SELECT id,turn_id,method,params,status,answer,client_response_id,created_at FROM workspace_chat_requests WHERE session_id=? ORDER BY created_at`, d.Session.ID)
+	// Runtime requests follow the same chain, so one branch's answered approvals
+	// never appear in another branch's view.
+	rows, err = s.db.QueryContext(ctx, `SELECT id,turn_id,method,params,status,answer,client_response_id,created_at,COALESCE(NULLIF(branch_id,''),session_id) FROM workspace_chat_requests WHERE session_id=? ORDER BY created_at`, d.Session.ID)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var r RuntimeRequest
-		var params, answer string
-		if err = rows.Scan(&r.ID, &r.TurnID, &r.Method, &params, &r.Status, &answer, &r.ClientResponseID, &r.CreatedAt); err != nil {
+		var params, answer, branchID string
+		if err = rows.Scan(&r.ID, &r.TurnID, &r.Method, &params, &r.Status, &answer, &r.ClientResponseID, &r.CreatedAt, &branchID); err != nil {
 			return err
+		}
+		if !eventVisible(chain, branchID, r.CreatedAt) {
+			continue
 		}
 		r.Params = json.RawMessage(params)
 		if answer != "" {
@@ -210,7 +215,7 @@ func (s *Service) recordEvent(id string, e agents.NativeEvent) error {
 			return nil
 		}
 	}
-	branchID, err := activeBranchIn(context.Background(), tx, id)
+	branchID, err := writeBranchIn(context.Background(), tx, id)
 	if err != nil {
 		return err
 	}
@@ -240,7 +245,7 @@ func (s *Service) recordEvent(id string, e agents.NativeEvent) error {
 		if sessionStatus == "running" && terminal == 0 {
 			status = "pending"
 		}
-		if _, err = tx.Exec(`INSERT INTO workspace_chat_requests(session_id,id,turn_id,method,params,status,created_at) VALUES(?,?,?,?,?,?,?)`, id, e.RequestID, e.TurnID, p.Method, string(p.Params), status, stamp()); err != nil {
+		if _, err = tx.Exec(`INSERT INTO workspace_chat_requests(session_id,id,turn_id,method,params,status,created_at,branch_id) VALUES(?,?,?,?,?,?,?,?)`, id, e.RequestID, e.TurnID, p.Method, string(p.Params), status, stamp(), storedBranch(id, branchID)); err != nil {
 			return err
 		}
 	}

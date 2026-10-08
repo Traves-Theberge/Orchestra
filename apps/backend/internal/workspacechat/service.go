@@ -773,7 +773,7 @@ func (s *Service) send(ctx context.Context, pid, id string, req SendRequest, val
 	if _, err = tx.ExecContext(ctx, `INSERT INTO workspace_chat_workspaces(session_id,workspace_id,cwd) VALUES(?,?,?) ON CONFLICT(session_id) DO NOTHING`, id, d.Session.WorkspaceID, d.Session.WorkspacePath); err != nil {
 		return Accepted{}, err
 	}
-	branchID, err := activeBranchIn(ctx, tx, id)
+	branchID, err := writeBranchIn(ctx, tx, id)
 	if err != nil {
 		return Accepted{}, err
 	}

@@ -271,7 +271,9 @@ func (s *Service) ArchivedCatalog(ctx context.Context, projectID string) ([]Sess
 }
 
 // ArchivedDetailAfter reads retained transcript/provider observations without
-// resolving the checkout or starting a provider process.
+// resolving the checkout or starting a provider process. It shows the active
+// branch but intentionally carries no Versions or HasCheckpoint: archived
+// conversations are read-only, so there is nothing to switch or rewind.
 func (s *Service) ArchivedDetailAfter(ctx context.Context, projectID, sessionID, workspaceID, cwd string, after int64) (Detail, error) {
 	if projectID == "" || projectID == OrchestratorScope || sessionID == "" || workspaceID == "" || cwd == "" || !filepath.IsAbs(cwd) || after < 0 {
 		return Detail{}, ErrInvalid

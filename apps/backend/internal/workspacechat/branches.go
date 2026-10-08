@@ -39,18 +39,23 @@ type Checkpoint struct {
 	Skipped   int    `json:"skipped"`
 }
 
-// VersionRef lists one sibling version at a fork point.
+// VersionRef lists one sibling version at a fork point: the branch owning the
+// forked-after message first, then the branches forked there in creation
+// order. Active marks the version whose messages continue past the fork point
+// in the current view (an ancestor of the viewed branch can be that version).
 type VersionRef struct {
 	BranchID string `json:"branch_id"`
 	Active   bool   `json:"active"`
 }
 
 // chainLink bounds what one branch contributes to a view: its messages up to
-// MaxOrdinal and its events up to MaxTime ("" means unbounded).
+// MaxOrdinal and, when Bounded (every ancestor), its events up to MaxTime. An
+// ancestor with an empty MaxTime contributes no events.
 type chainLink struct {
 	BranchID   string
 	MaxOrdinal int64
 	MaxTime    string
+	Bounded    bool
 }
 
 // effectiveBranch maps a stored branch_id to its branch (empty is main).
@@ -64,7 +69,7 @@ func migrateBranches(d *db.DB) error {
 		return err
 	}
 	// Existing rows keep branch_id '' and so stay on the main branch.
-	for _, table := range []string{"workspace_chat_messages", "workspace_chat_events"} {
+	for _, table := range []string{"workspace_chat_messages", "workspace_chat_events", "workspace_chat_requests"} {
 		if _, err := d.Exec(`ALTER TABLE ` + table + ` ADD COLUMN branch_id TEXT NOT NULL DEFAULT ''`); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			return err
 		}
@@ -88,6 +93,21 @@ func activeBranchIn(ctx context.Context, q rowQuerier, sessionID string) (string
 
 func (s *Service) activeBranchID(ctx context.Context, sessionID string) (string, error) {
 	return activeBranchIn(ctx, s.db, sessionID)
+}
+
+// writeBranchIn is the branch new rows join: the active branch, or main when
+// the active pointer dangles, matching what visibleChain shows.
+func writeBranchIn(ctx context.Context, q rowQuerier, sessionID string) (string, error) {
+	active, err := activeBranchIn(ctx, q, sessionID)
+	if err != nil || active == sessionID {
+		return active, err
+	}
+	var found int
+	err = q.QueryRowContext(ctx, `SELECT 1 FROM workspace_chat_branches WHERE session_id=? AND id=?`, sessionID, active).Scan(&found)
+	if errors.Is(err, sql.ErrNoRows) {
+		return sessionID, nil
+	}
+	return active, err
 }
 
 // storedBranch is the branch_id column value for a branch: empty for main, so
@@ -120,7 +140,7 @@ func (s *Service) branchChain(ctx context.Context, sessionID, branchID string) (
 		}
 		seen[parent] = true
 		child := chain[len(chain)-1]
-		chain = append(chain, chainLink{BranchID: parent, MaxOrdinal: min(forkOrdinal, child.MaxOrdinal), MaxTime: earlier(forkTime, child.MaxTime)})
+		chain = append(chain, chainLink{BranchID: parent, MaxOrdinal: min(forkOrdinal, child.MaxOrdinal), MaxTime: ancestorTime(forkTime, child), Bounded: true})
 		id = parent
 	}
 	return chain, nil
@@ -151,12 +171,12 @@ func chainPredicate(chain []chainLink) (string, []any) {
 	return `(` + strings.Join(clauses, ` OR `) + `)`, args
 }
 
-// eventVisible applies the chain to an event. Ancestors are bounded by time
-// because the UI buckets events to messages by timestamp.
+// eventVisible applies the chain to an event or runtime request. Ancestors are
+// bounded by time because the UI buckets events to messages by timestamp.
 func eventVisible(chain []chainLink, branchID, createdAt string) bool {
 	for _, link := range chain {
 		if link.BranchID == branchID {
-			return link.MaxTime == "" || timeNotAfter(createdAt, link.MaxTime)
+			return !link.Bounded || link.MaxTime != "" && timeNotAfter(createdAt, link.MaxTime)
 		}
 	}
 	return false
@@ -173,15 +193,47 @@ func timeNotAfter(at, bound string) bool {
 	return !a.After(b)
 }
 
-// earlier is the tighter of two time bounds ("" is unbounded).
-func earlier(a, b string) string {
-	if a == "" || b != "" && !timeNotAfter(a, b) {
-		return b
+// ancestorTime is the event bound of a parent link: the tighter of its fork
+// time and the bound of the link below it. Empty means the beginning of time
+// (a fork before the first message), except below an unbounded head.
+func ancestorTime(forkTime string, child chainLink) string {
+	if !child.Bounded {
+		return forkTime
 	}
-	return a
+	if forkTime == "" || child.MaxTime == "" {
+		return ""
+	}
+	if timeNotAfter(forkTime, child.MaxTime) {
+		return forkTime
+	}
+	return child.MaxTime
 }
 
+// createBranch records a fork. The fork point is attached to the branch that
+// owns the forked-after message, so editing an inherited message from a
+// branch makes a sibling of that branch rather than a child of it, and every
+// view lists the same versions.
 func (s *Service) createBranch(ctx context.Context, tx *sql.Tx, sessionID, parentID string, forkAfterOrdinal int64, forkAfterTime string) (Branch, error) {
+	if forkAfterOrdinal < 0 || forkAfterOrdinal > 0 && forkAfterTime == "" {
+		return Branch{}, ErrInvalid
+	}
+	seen := map[string]bool{}
+	for parentID != sessionID && !seen[parentID] {
+		seen[parentID] = true
+		var grandparent string
+		var parentFork int64
+		err := tx.QueryRowContext(ctx, `SELECT parent_id,fork_after_ordinal FROM workspace_chat_branches WHERE session_id=? AND id=?`, sessionID, parentID).Scan(&grandparent, &parentFork)
+		if errors.Is(err, sql.ErrNoRows) {
+			return Branch{}, ErrInvalid
+		}
+		if err != nil {
+			return Branch{}, err
+		}
+		if forkAfterOrdinal > parentFork {
+			break
+		}
+		parentID = grandparent
+	}
 	b := Branch{ID: uuid.NewString(), SessionID: sessionID, ParentID: parentID, ForkAfterOrdinal: forkAfterOrdinal, ForkAfterTime: forkAfterTime, CreatedAt: stamp()}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO workspace_chat_branches(id,session_id,parent_id,fork_after_ordinal,fork_after_time,created_at) VALUES(?,?,?,?,?,?)`, b.ID, b.SessionID, b.ParentID, b.ForkAfterOrdinal, b.ForkAfterTime, b.CreatedAt); err != nil {
 		return Branch{}, err
@@ -242,12 +294,12 @@ func (s *Service) decorateBranches(ctx context.Context, sessionID string, chain 
 		parent  string
 		ordinal int64
 	}
-	var points []forkPoint
-	children := map[forkPoint][]string{}
-	rows, err = s.db.QueryContext(ctx, `SELECT id,parent_id,fork_after_ordinal FROM workspace_chat_branches WHERE session_id=? ORDER BY rowid`, sessionID)
+	rows, err = s.db.QueryContext(ctx, `SELECT id,parent_id,fork_after_ordinal FROM workspace_chat_branches WHERE session_id=? ORDER BY created_at,rowid`, sessionID)
 	if err != nil {
 		return err
 	}
+	var ids []string
+	forks := map[string]forkPoint{}
 	for rows.Next() {
 		var id string
 		var p forkPoint
@@ -255,22 +307,39 @@ func (s *Service) decorateBranches(ctx context.Context, sessionID string, chain 
 			rows.Close()
 			return err
 		}
-		if _, ok := children[p]; !ok {
-			points = append(points, p)
-		}
-		children[p] = append(children[p], id)
+		ids = append(ids, id)
+		forks[id] = p
 	}
 	err = rows.Err()
 	rows.Close()
 	if err != nil {
 		return err
 	}
+	// Group by the fork point's owner (as createBranch stores it), so rows
+	// written with a literal parent still list consistent versions.
+	var points []forkPoint
+	children := map[forkPoint][]string{}
+	for _, id := range ids {
+		p := forks[id]
+		for steps := 0; p.parent != sessionID && steps < len(ids); steps++ {
+			parent, ok := forks[p.parent]
+			if !ok || p.ordinal > parent.ordinal {
+				break
+			}
+			p.parent = parent.parent
+		}
+		if _, ok := children[p]; !ok {
+			points = append(points, p)
+		}
+		children[p] = append(children[p], id)
+	}
 	bound := map[string]int64{}
 	for _, link := range chain {
 		bound[link.BranchID] = link.MaxOrdinal
 	}
 	for _, p := range points {
-		// The shown side is the child on the chain, else the parent itself.
+		// The shown side is the version on the chain whose messages follow the
+		// fork point: a forked branch on the chain, else the owner itself.
 		active := ""
 		for _, id := range children[p] {
 			if _, ok := bound[id]; ok {
