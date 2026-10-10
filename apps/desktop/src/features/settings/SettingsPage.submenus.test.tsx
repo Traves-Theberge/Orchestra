@@ -165,4 +165,11 @@ describe('Settings selector walkthroughs', () => {
     expect(setMode).toHaveBeenCalledExactlyOnceWith('auto')
     expect(setTheme).not.toHaveBeenCalled()
   })
+
+  it('offers spelling languages in the Editor section and degrades without Electron', () => {
+    renderSettings()
+    const editor = document.querySelector('[data-settings-section="editor"]')
+    expect(editor).toHaveTextContent('Spelling Languages')
+    expect(editor).toHaveTextContent('Spellcheck languages can be changed in the desktop app.')
+  })
 })
