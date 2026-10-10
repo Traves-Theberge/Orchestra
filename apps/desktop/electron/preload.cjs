@@ -45,6 +45,26 @@ contextBridge.exposeInMainWorld('orchestraDesktop', {
     ipcRenderer.on('orchestra:chat-zoom', listener)
     return () => ipcRenderer.removeListener('orchestra:chat-zoom', listener)
   },
+  /** Editable-field context menu payloads; while subscribed, main skips its native fallback menu. */
+  onSpellContextMenu: (callback) => {
+    const listener = (_event, payload) => callback(payload)
+    ipcRenderer.on('orchestra:spell:context-menu', listener)
+    ipcRenderer.send('orchestra:spell:subscribe', true)
+    let active = true
+    return () => {
+      if (!active) return
+      active = false
+      ipcRenderer.removeListener('orchestra:spell:context-menu', listener)
+      ipcRenderer.send('orchestra:spell:subscribe', false)
+    }
+  },
+  replaceMisspelling: (word) => ipcRenderer.invoke('orchestra:spell:replace', word),
+  addToDictionary: (word) => ipcRenderer.invoke('orchestra:spell:add-word', word),
+  ignoreWord: (word) => ipcRenderer.invoke('orchestra:spell:ignore-word', word),
+  getSpellSettings: () => ipcRenderer.invoke('orchestra:spell:get-settings'),
+  setSpellLanguages: (languages) => ipcRenderer.invoke('orchestra:spell:set-languages', languages),
+  availableSpellLanguages: () => ipcRenderer.invoke('orchestra:spell:get-settings').then((settings) => settings.availableLanguages),
+  editAction: (action) => ipcRenderer.invoke('orchestra:spell:edit', action),
   openOAuthWindow: (provider) => {
     if (typeof provider !== 'string') throw new Error('provider must be a string')
     return ipcRenderer.invoke('orchestra:oauth-window', provider)
