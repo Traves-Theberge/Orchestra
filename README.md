@@ -12,7 +12,7 @@
 
 <p align="center">
   <strong>The unified AI coding workspace and multi-agent orchestrator.</strong><br/>
-  Run Claude Code, Codex, OpenCode, and Antigravity side-by-side with native terminals and git diffs, while Maestro coordinates tasks, isolated worktrees, and review gates across your repositories.
+  Run Claude Code, Codex, OpenCode, and Antigravity side-by-side with native terminals, git diffs, and visual Kanban — while Maestro coordinates tasks, scheduled automations, isolated worktrees, and review gates across your repositories.
 </p>
 
 <p align="center">
