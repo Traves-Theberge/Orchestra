@@ -135,22 +135,28 @@ func (s *Service) decorate(ctx context.Context, v *Session) error {
 	}
 	return err
 }
-func (s *Service) loadNative(ctx context.Context, d *Detail, after int64) error {
+
+// loadNative reads events on the visible branch chain. Cursor stays the
+// session's newest sequence, hidden or not, so incremental polling advances.
+func (s *Service) loadNative(ctx context.Context, d *Detail, after int64, chain []chainLink) error {
 	d.Events = []ChatEvent{}
 	d.Requests = []RuntimeRequest{}
 	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(sequence),0) FROM workspace_chat_events WHERE session_id=?`, d.Session.ID).Scan(&d.Cursor); err != nil {
 		return err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT sequence,event,created_at FROM workspace_chat_events WHERE session_id=? AND sequence>? ORDER BY sequence`, d.Session.ID, after)
+	rows, err := s.db.QueryContext(ctx, `SELECT sequence,event,created_at,COALESCE(NULLIF(branch_id,''),session_id) FROM workspace_chat_events WHERE session_id=? AND sequence>? ORDER BY sequence`, d.Session.ID, after)
 	if err != nil {
 		return err
 	}
 	for rows.Next() {
 		var e ChatEvent
-		var raw string
-		if err = rows.Scan(&e.Sequence, &raw, &e.CreatedAt); err != nil {
+		var raw, branchID string
+		if err = rows.Scan(&e.Sequence, &raw, &e.CreatedAt, &branchID); err != nil {
 			rows.Close()
 			return err
+		}
+		if !eventVisible(chain, branchID, e.CreatedAt) {
+			continue
 		}
 		if err = json.Unmarshal([]byte(raw), &e.NativeEvent); err != nil {
 			rows.Close()
@@ -166,16 +172,21 @@ func (s *Service) loadNative(ctx context.Context, d *Detail, after int64) error 
 	if err != nil {
 		return err
 	}
-	rows, err = s.db.QueryContext(ctx, `SELECT id,turn_id,method,params,status,answer,client_response_id,created_at FROM workspace_chat_requests WHERE session_id=? ORDER BY created_at`, d.Session.ID)
+	// Runtime requests follow the same chain, so one branch's answered approvals
+	// never appear in another branch's view.
+	rows, err = s.db.QueryContext(ctx, `SELECT id,turn_id,method,params,status,answer,client_response_id,created_at,COALESCE(NULLIF(branch_id,''),session_id) FROM workspace_chat_requests WHERE session_id=? ORDER BY created_at`, d.Session.ID)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var r RuntimeRequest
-		var params, answer string
-		if err = rows.Scan(&r.ID, &r.TurnID, &r.Method, &params, &r.Status, &answer, &r.ClientResponseID, &r.CreatedAt); err != nil {
+		var params, answer, branchID string
+		if err = rows.Scan(&r.ID, &r.TurnID, &r.Method, &params, &r.Status, &answer, &r.ClientResponseID, &r.CreatedAt, &branchID); err != nil {
 			return err
+		}
+		if !eventVisible(chain, branchID, r.CreatedAt) {
+			continue
 		}
 		r.Params = json.RawMessage(params)
 		if answer != "" {
@@ -204,7 +215,11 @@ func (s *Service) recordEvent(id string, e agents.NativeEvent) error {
 			return nil
 		}
 	}
-	if _, err = tx.Exec(`INSERT INTO workspace_chat_events(session_id,event,created_at) VALUES(?,?,?)`, id, string(raw), stamp()); err != nil {
+	branchID, err := writeBranchIn(context.Background(), tx, id)
+	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`INSERT INTO workspace_chat_events(session_id,event,created_at,branch_id) VALUES(?,?,?,?)`, id, string(raw), stamp(), storedBranch(id, branchID)); err != nil {
 		return err
 	}
 	if e.Type == "server_request" {
@@ -230,7 +245,7 @@ func (s *Service) recordEvent(id string, e agents.NativeEvent) error {
 		if sessionStatus == "running" && terminal == 0 {
 			status = "pending"
 		}
-		if _, err = tx.Exec(`INSERT INTO workspace_chat_requests(session_id,id,turn_id,method,params,status,created_at) VALUES(?,?,?,?,?,?,?)`, id, e.RequestID, e.TurnID, p.Method, string(p.Params), status, stamp()); err != nil {
+		if _, err = tx.Exec(`INSERT INTO workspace_chat_requests(session_id,id,turn_id,method,params,status,created_at,branch_id) VALUES(?,?,?,?,?,?,?,?)`, id, e.RequestID, e.TurnID, p.Method, string(p.Params), status, stamp(), storedBranch(id, branchID)); err != nil {
 			return err
 		}
 	}
@@ -248,21 +263,29 @@ func (s *Service) recordEvent(id string, e agents.NativeEvent) error {
 }
 
 // recoverTurn keeps a bug inside one turn from taking the whole backend down:
-// it logs the panic with its stack and marks this conversation failed.
+// it logs the panic with its stack and marks this conversation failed. Before
+// that it still takes the after checkpoint, while the turn owns the session:
+// the harness may have changed files before the bug fired, and the after row
+// records what that version left behind. checkpointTurn recovers its own
+// panics, so it cannot escape this handler.
 func (s *Service) recoverTurn(sess Session, m Message) {
 	recovered := recover()
 	if recovered == nil {
 		return
 	}
 	log.Printf("workspace chat turn for session %s panicked: %v\n%s", sess.ID, recovered, debug.Stack())
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.active, sess.ID)
-	delete(s.native, sess.ID)
-	delete(s.nativePrefixes, sess.ID)
-	if err := s.finish(sess, m, "", "failed", "unknown", "The agent turn hit an internal error and was stopped. Details are in the backend log; you can send again."); err != nil {
-		_, _ = s.db.Exec(`UPDATE workspace_chat_sessions SET status='failed',error='The agent turn hit an internal error and was stopped.' WHERE id=?`, sess.ID)
-	}
+	s.settleTurn(sess, m)
+	func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		delete(s.active, sess.ID)
+		s.setTurnPhase(sess.ID, "")
+		delete(s.native, sess.ID)
+		delete(s.nativePrefixes, sess.ID)
+		if err := s.finish(sess, m, "", "failed", "unknown", "The agent turn hit an internal error and was stopped. Details are in the backend log; you can send again."); err != nil {
+			_, _ = s.db.Exec(`UPDATE workspace_chat_sessions SET status='failed',error='The agent turn hit an internal error and was stopped.' WHERE id=?`, sess.ID)
+		}
+	}()
 }
 
 func (s *Service) runNative(ctx context.Context, cancel context.CancelFunc, sess Session, m Message, turn agents.TurnRequest) {
@@ -274,6 +297,15 @@ func (s *Service) runNative(ctx context.Context, cancel context.CancelFunc, sess
 	turn.ToolExecutor = s.diagnosticToolExecutor(sess.ID, turn.ToolExecutor)
 	defer cancel()
 	defer s.recoverTurn(sess, m)
+	// The message is durably accepted; record the folder before the harness
+	// (a new or a resumed provider process) sees the turn. Until beginDispatch,
+	// Stop cancels ctx instead of interrupting the provider, which has no turn
+	// yet; the cancel also cuts the snapshot short.
+	s.checkpointTurnCtx(ctx, sess, "", m.ID, "before")
+	if !s.beginDispatch(ctx, sess.ID) {
+		s.settleUndispatched(sess, m)
+		return
+	}
 	s.nativeFailures.Delete(sess.ID)
 	prefix := uuid.NewString() + ":"
 	onEvent := func(e agents.NativeEvent) {
@@ -419,27 +451,31 @@ func (s *Service) runNative(ctx context.Context, cancel context.CancelFunc, sess
 	if err != nil && native != nil {
 		closeNative(native)
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	defer delete(s.active, sess.ID)
-	if err != nil {
-		delete(s.native, sess.ID)
-		delete(s.nativePrefixes, sess.ID)
-	}
-	if e := s.finish(sess, m, result.Text, status, msgStatus, errorText); e != nil {
-		_, _ = s.db.Exec(`UPDATE workspace_chat_messages SET status='unknown' WHERE id=?`, m.ID)
-		_, _ = s.db.Exec(`UPDATE workspace_chat_sessions SET status='interrupted',error='Chat persistence failed; outcome unknown.' WHERE id=?`, sess.ID)
-	} else {
-		// Conversation delivery remains unknown after a provider failure, but
-		// the observed invocation failure is a diagnostic error. Do not discard
-		// that evidence by using the message's conservative delivery status.
-		if status == "failed" {
-			outcome = diagnosticOutcome(ctx, "failed")
-		} else {
-			outcome = diagnosticOutcome(ctx, msgStatus)
+	s.settleTurn(sess, m)
+	func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		defer delete(s.active, sess.ID)
+		s.setTurnPhase(sess.ID, "")
+		if err != nil {
+			delete(s.native, sess.ID)
+			delete(s.nativePrefixes, sess.ID)
 		}
-	}
-	_, _ = s.db.Exec(`UPDATE workspace_chat_requests SET status='stale' WHERE session_id=? AND status='pending'`, sess.ID)
+		if e := s.finish(sess, m, result.Text, status, msgStatus, errorText); e != nil {
+			_, _ = s.db.Exec(`UPDATE workspace_chat_messages SET status='unknown' WHERE id=?`, m.ID)
+			_, _ = s.db.Exec(`UPDATE workspace_chat_sessions SET status='interrupted',error='Chat persistence failed; outcome unknown.' WHERE id=?`, sess.ID)
+		} else {
+			// Conversation delivery remains unknown after a provider failure, but
+			// the observed invocation failure is a diagnostic error. Do not discard
+			// that evidence by using the message's conservative delivery status.
+			if status == "failed" {
+				outcome = diagnosticOutcome(ctx, "failed")
+			} else {
+				outcome = diagnosticOutcome(ctx, msgStatus)
+			}
+		}
+		_, _ = s.db.Exec(`UPDATE workspace_chat_requests SET status='stale' WHERE session_id=? AND status='pending'`, sess.ID)
+	}()
 }
 func (s *Service) Reply(ctx context.Context, pid, id, requestID string, req ReplyRequest) (RuntimeRequest, error) {
 	if req.ClientResponseID == "" || len(req.ClientResponseID) > 200 || len(req.Answer) == 0 || len(req.Answer) > maxText || !json.Valid(req.Answer) {
@@ -469,7 +505,7 @@ func (s *Service) Reply(ctx context.Context, pid, id, requestID string, req Repl
 		return r, nil
 	}
 	native := s.native[id]
-	if r.Status != "pending" || native == nil || d.Session.Status != "running" {
+	if r.Status != "pending" || native == nil || d.Session.Status != "running" || s.restoring[id] != nil {
 		return RuntimeRequest{}, ErrBusy
 	}
 	if err = validateReply(r, req.Answer); err != nil {

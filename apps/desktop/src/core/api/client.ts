@@ -357,6 +357,10 @@ export type WorkspaceChatMessage = {
   requested_agent_content_hash?: string; requested_agent_format?: string
   effective_agent_id?: string; agent_observation?: string
   provider?: string
+  /** True when a file checkpoint exists for this user message (edit/rewind can restore files). */
+  has_checkpoint?: boolean
+  /** Sibling versions of an edited user message; present only when it has been edited. */
+  versions?: { branch_id: string; active: boolean }[]
 }
 export type WorkspaceChatEvent = {
   sequence: number; type: string; thread_id?: string; turn_id?: string; item_id?: string
@@ -446,6 +450,51 @@ export function sendWorkspaceChatMessage(config: BackendConfig, projectId: strin
 export function stopWorkspaceChatTurn(config: BackendConfig, projectId: string, sessionId: string) {
   return requestJSON<{ session: WorkspaceChatSession }>(config,
     `${workspaceChatPath(projectId)}/sessions/${encodeURIComponent(sessionId)}/stop`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+}
+export type WorkspaceChatFileChange = { path: string; kind: 'create' | 'modify' | 'delete' | 'keep' }
+export type WorkspaceChatRewindPreview = {
+  message_id: string; has_checkpoint: boolean; files_available: boolean; busy_reason?: string
+  changes: WorkspaceChatFileChange[]; changed_since_turn: string[]; skipped: number
+}
+export type WorkspaceChatRestoreResult = { written: number; deleted: number; failed: { path: string; reason: string }[] }
+/** Error codes the rewind routes return in `error.code` (documentation only). */
+export type WorkspaceChatRewindErrorCode = 'chat_busy' | 'checkpoint_unavailable' | 'restore_partial' | 'files_restored' | 'invalid_chat_request' | 'chat_not_found'
+// Restoring files can outlast the default 30s client timeout; the backend allows 90s.
+const REWIND_TIMEOUT_MS = 90000
+export function previewWorkspaceChatRewind(config: BackendConfig, projectId: string, sessionId: string, messageId: string) {
+  return requestJSON<WorkspaceChatRewindPreview>(config,
+    `${workspaceChatPath(projectId)}/sessions/${encodeURIComponent(sessionId)}/rewind/preview`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message_id: messageId }),
+    })
+}
+export function editWorkspaceChatMessage(config: BackendConfig, projectId: string, sessionId: string, input: {
+  message_id: string; text: string; client_message_id: string; restore_files: boolean
+  requested_model?: string; requested_reasoning_effort?: string
+  agent_id?: string; agent_scope?: string; agent_content_hash?: string; agent_format?: string
+}) {
+  return requestJSON<{ session: WorkspaceChatSession; message: WorkspaceChatMessage }>(config,
+    `${workspaceChatPath(projectId)}/sessions/${encodeURIComponent(sessionId)}/edit`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+    }, REWIND_TIMEOUT_MS)
+}
+export function regenerateWorkspaceChatResponse(config: BackendConfig, projectId: string, sessionId: string,
+  input: { message_id: string; client_message_id: string; restore_files: boolean }) {
+  return requestJSON<{ session: WorkspaceChatSession; message: WorkspaceChatMessage }>(config,
+    `${workspaceChatPath(projectId)}/sessions/${encodeURIComponent(sessionId)}/regenerate`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+    }, REWIND_TIMEOUT_MS)
+}
+export function activateWorkspaceChatBranch(config: BackendConfig, projectId: string, sessionId: string, branchId: string, restoreFiles: boolean) {
+  return requestJSON<WorkspaceChatSnapshot>(config,
+    `${workspaceChatPath(projectId)}/sessions/${encodeURIComponent(sessionId)}/branches/${encodeURIComponent(branchId)}/activate`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ restore_files: restoreFiles }),
+    }, REWIND_TIMEOUT_MS)
+}
+export function undoWorkspaceChatRestore(config: BackendConfig, projectId: string, sessionId: string) {
+  return requestJSON<WorkspaceChatRestoreResult>(config,
+    `${workspaceChatPath(projectId)}/sessions/${encodeURIComponent(sessionId)}/restore/undo`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+    }, REWIND_TIMEOUT_MS)
 }
 export function replyWorkspaceChatRequest(config: BackendConfig, projectId: string, sessionId: string,
   requestId: string, clientResponseId: string, answer: Record<string, unknown>) {

@@ -1,5 +1,5 @@
-import { memo, useMemo, useState } from 'react'
-import { AlertTriangle, Check, Copy } from 'lucide-react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, Copy, Pencil, RotateCcw } from 'lucide-react'
 import { HarnessIcon } from '@ui/HarnessIcon'
 import { MarkdownRenderer } from '@ui/MarkdownRenderer'
 import type { WorkspaceChatMessage } from '@core/api/client'
@@ -37,17 +37,100 @@ function messageTime(value: string): string {
   return Number.isFinite(time) ? new Date(time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''
 }
 
-function UserMessage({ message, images, text }: { message: WorkspaceChatMessage; images: { name: string; url: string }[]; text: string }) {
+/** Edit, regenerate and version switching; one object so the memo compares it cheaply. */
+export type ChatMessageRewind = {
+  /** Set while rewinding is unavailable; the actions are disabled with this as their title. */
+  disabledReason?: string
+  onEdit: (message: WorkspaceChatMessage, text: string) => void
+  onRegenerate: (message: WorkspaceChatMessage) => void
+  onSwitchVersion: (branchId: string) => void
+}
+
+const ACTION_BUTTON = 'rounded p-1 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40'
+
+/** In-place editor for a sent message: Enter sends, Shift+Enter is a newline, Escape cancels. */
+function MessageEditor({ initial, disabledReason, onSubmit, onCancel }: { initial: string; disabledReason?: string; onSubmit: (text: string) => void; onCancel: () => void }) {
+  const [value, setValue] = useState(initial)
+  const ref = useRef<HTMLTextAreaElement>(null)
+  useLayoutEffect(() => {
+    const input = ref.current
+    if (input) { input.style.height = 'auto'; input.style.height = `${Math.min(320, input.scrollHeight)}px` }
+  }, [value])
+  const text = value.trim()
+  const canSend = !!text && text !== initial.trim() && !disabledReason
+  const submit = () => { if (canSend) onSubmit(text) }
+  return (
+    <div className="w-full rounded-[20px] rounded-br-md bg-foreground/[0.07] px-4 pb-2 pt-2.5">
+      <textarea ref={ref} autoFocus aria-label="Edit message" value={value} rows={1}
+        onFocus={e => { const end = e.currentTarget.value.length; e.currentTarget.setSelectionRange(end, end) }}
+        onChange={e => setValue(e.target.value)}
+        onKeyDown={e => {
+          if (e.nativeEvent.isComposing) return
+          if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onCancel() }
+          else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() }
+        }}
+        className="block max-h-80 w-full resize-none bg-transparent text-[14px] leading-relaxed text-foreground outline-none" />
+      <div className="mt-1.5 flex items-center justify-end gap-1.5 text-[12px]">
+        <button type="button" onClick={onCancel} className="rounded-md px-2.5 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Cancel</button>
+        <button type="button" onClick={submit} disabled={!canSend} title={disabledReason}
+          className="rounded-md bg-foreground/90 px-2.5 py-1 font-medium text-background transition-opacity hover:bg-foreground disabled:opacity-30">Send</button>
+      </div>
+    </div>
+  )
+}
+
+/** `‹ 1 / 2 ›` between the versions of an edited message. */
+function VersionSwitcher({ versions, rewind }: { versions: NonNullable<WorkspaceChatMessage['versions']>; rewind: ChatMessageRewind }) {
+  const index = Math.max(0, versions.findIndex(version => version.active))
+  const blocked = !!rewind.disabledReason
+  const step = (offset: number, label: string) => {
+    const target = versions[index + offset]
+    return (
+      <button type="button" aria-label={label} title={rewind.disabledReason || label} disabled={!target || blocked}
+        onClick={() => { if (target) rewind.onSwitchVersion(target.branch_id) }}
+        className="rounded p-0.5 transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-35">
+        {offset < 0 ? <ChevronLeft className="size-3" /> : <ChevronRight className="size-3" />}
+      </button>
+    )
+  }
+  return (
+    <div role="group" aria-label={`Message version ${index + 1} of ${versions.length}`} className="flex items-center tabular-nums text-muted-foreground/70">
+      {step(-1, 'Previous version')}
+      <span className="px-0.5">{index + 1} / {versions.length}</span>
+      {step(1, 'Next version')}
+    </div>
+  )
+}
+
+function UserMessage({ message, images, text, rewind }: { message: WorkspaceChatMessage; images: { name: string; url: string }[]; text: string; rewind?: ChatMessageRewind }) {
   const [expanded, setExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [editing, setEditing] = useState(false)
   const long = text.length > 700 || text.split('\n').length > 10
   const time = messageTime(message.created_at)
   const problem = message.status === 'failed' || message.status === 'cancelled'
   const copy = async () => {
     try { await navigator.clipboard.writeText(message.text); setCopied(true); setTimeout(() => setCopied(false), 1200) } catch { /* clipboard unavailable */ }
   }
+  // Only the text is editable; attached images go along unchanged. The editor
+  // stays open with the text until the edit lands (the edited message then
+  // replaces this one); Cancel or a failure in the dialog keeps the text here.
+  const submitEdit = (edited: string) => {
+    if (!rewind) return
+    const imageMarkdown = images.map(image => `![${image.name}](${image.url})`).join('\n\n')
+    rewind.onEdit(message, imageMarkdown ? `${edited}\n\n${imageMarkdown}` : edited)
+  }
+  const editButton = useRef<HTMLButtonElement>(null)
+  const refocusEdit = useRef(false)
+  const cancelEdit = () => { refocusEdit.current = true; setEditing(false) }
+  useEffect(() => {
+    if (editing || !refocusEdit.current) return
+    refocusEdit.current = false
+    editButton.current?.focus()
+  }, [editing])
+  const versions = rewind && message.versions && message.versions.length > 1 ? message.versions : undefined
   return (
-    <article data-chat-message="user" aria-label="Your message" className="group/message ml-auto flex min-w-0 max-w-[82%] flex-col items-end gap-1.5">
+    <article data-chat-message="user" aria-label="Your message" className={`group/message ml-auto flex min-w-0 flex-col items-end gap-1.5 ${editing ? 'w-full max-w-[92%]' : 'max-w-[82%]'}`}>
       {images.length > 0 && (
         <div className="flex flex-wrap justify-end gap-2">
           {images.map((img, idx) => (
@@ -56,7 +139,9 @@ function UserMessage({ message, images, text }: { message: WorkspaceChatMessage;
           ))}
         </div>
       )}
-      {text && (
+      {editing && rewind ? (
+        <MessageEditor initial={text} disabledReason={rewind.disabledReason} onSubmit={submitEdit} onCancel={cancelEdit} />
+      ) : text && (
         <div className={`relative rounded-[20px] rounded-br-md px-4 py-2.5 text-[14px] leading-relaxed text-foreground ${problem ? 'bg-destructive/10' : 'bg-foreground/[0.07]'}`}>
           <p className={`whitespace-pre-wrap break-words ${long && !expanded ? 'line-clamp-[10]' : ''}`}><LinkifiedText text={text} /></p>
           {long && (
@@ -66,18 +151,27 @@ function UserMessage({ message, images, text }: { message: WorkspaceChatMessage;
           )}
         </div>
       )}
-      <div className="flex h-4 items-center gap-2 pr-1 text-[10.5px] text-muted-foreground/60 opacity-0 transition-opacity duration-150 group-hover/message:opacity-100 group-focus-within/message:opacity-100">
-        {problem && <span className="text-destructive opacity-100">Not delivered</span>}
-        {time && <time dateTime={message.created_at}>{time}</time>}
-        <button
-          type="button"
-          onClick={() => void copy()}
-          aria-label="Copy message"
-          title={copied ? 'Copied' : 'Copy message'}
-          className="rounded p-1 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-        </button>
+      <div className="flex h-4 items-center gap-2 pr-1 text-[10.5px] text-muted-foreground/60">
+        <div className="flex items-center gap-2 opacity-0 transition-opacity duration-150 group-hover/message:opacity-100 group-focus-within/message:opacity-100">
+          {problem && <span className="text-destructive opacity-100">Not delivered</span>}
+          {time && <time dateTime={message.created_at}>{time}</time>}
+          {rewind && !editing && (
+            <button ref={editButton} type="button" onClick={() => setEditing(true)} disabled={!!rewind.disabledReason} aria-label="Edit message"
+              title={rewind.disabledReason || 'Edit message'} className={ACTION_BUTTON}>
+              <Pencil className="size-3.5" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => void copy()}
+            aria-label="Copy message"
+            title={copied ? 'Copied' : 'Copy message'}
+            className={ACTION_BUTTON}
+          >
+            {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+          </button>
+        </div>
+        {versions && rewind && <VersionSwitcher versions={versions} rewind={rewind} />}
       </div>
     </article>
   )
@@ -93,6 +187,7 @@ function ChatMessageView({
   variantActionsDisabled = false,
   agent,
   agentObservation,
+  rewind,
 }: {
   message: WorkspaceChatMessage
   provider: string
@@ -105,6 +200,8 @@ function ChatMessageView({
   /** Agent the turn ran under (assistant messages only). */
   agent?: { name: string; color: string }
   agentObservation?: AgentObservation
+  /** Edit (your messages), Regenerate (replies) and version switching; absent hides them. */
+  rewind?: ChatMessageRewind
 }) {
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const user = message.role === 'user'
@@ -127,7 +224,7 @@ function ChatMessageView({
     }
   }
 
-  if (user && userPayload) return <UserMessage message={message} images={userPayload.images} text={userPayload.cleanedText || (userPayload.images.length ? '' : message.text)} />
+  if (user && userPayload) return <UserMessage message={message} images={userPayload.images} text={userPayload.cleanedText || (userPayload.images.length ? '' : message.text)} rewind={rewind} />
 
   return (
     <article
@@ -219,11 +316,17 @@ function ChatMessageView({
               Could not copy response.
             </span>
           )}
+          {rewind && message.role === 'assistant' && (
+            <button type="button" aria-label="Regenerate response" onClick={() => rewind.onRegenerate(message)} disabled={!!rewind.disabledReason}
+              title={rewind.disabledReason || 'Regenerate response'} className={ACTION_BUTTON}>
+              <RotateCcw className="size-3.5" />
+            </button>
+          )}
           <button
             aria-label="Copy response"
             onClick={() => void copy()}
             title={copyState === 'copied' ? 'Copied' : 'Copy response'}
-            className="rounded p-1 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className={ACTION_BUTTON}
           >
             {copyState === 'copied' ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
           </button>
@@ -234,9 +337,12 @@ function ChatMessageView({
 }
 
 type ChatMessageProps = Parameters<typeof ChatMessageView>[0]
+const sameRewind = (a?: ChatMessageRewind, b?: ChatMessageRewind) => a === b || (!!a && !!b
+  && a.disabledReason === b.disabledReason && a.onEdit === b.onEdit && a.onRegenerate === b.onRegenerate && a.onSwitchVersion === b.onSwitchVersion)
 /** Messages re-render only when their content or display inputs change, not on every timeline update. */
 export const ChatMessage = memo(ChatMessageView, (a: ChatMessageProps, b: ChatMessageProps) =>
   a.message === b.message && a.provider === b.provider && a.projectId === b.projectId
+  && sameRewind(a.rewind, b.rewind)
   && a.variantActionsDisabled === b.variantActionsDisabled
   && a.onRegenerateVariant === b.onRegenerateVariant && a.onImplementVariant === b.onImplementVariant
   && (a.htmlRenders ?? NO_RENDERS).length === (b.htmlRenders ?? NO_RENDERS).length

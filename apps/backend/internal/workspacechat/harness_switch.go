@@ -58,7 +58,7 @@ func (s *Service) SwitchProvider(ctx context.Context, pid, id string, req Switch
 		s.mu.Unlock()
 		return d.Session, nil
 	}
-	if _, ok := s.active[id]; ok || d.Session.Status == "running" || d.Session.Status == "stopping" {
+	if _, ok := s.active[id]; ok || s.restoring[id] != nil || d.Session.Status == "running" || d.Session.Status == "stopping" {
 		s.mu.Unlock()
 		return Session{}, ErrBusy
 	}

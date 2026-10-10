@@ -34,7 +34,7 @@ func (s *Service) RemoveIdleAccount(ctx context.Context, accountID string, remov
 		return err
 	}
 	for _, id := range ids {
-		if s.active[id] != nil {
+		if s.active[id] != nil || s.restoring[id] != nil {
 			s.mu.Unlock()
 			return fmt.Errorf("%w: account has an active conversation", ErrBusy)
 		}

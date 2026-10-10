@@ -10,7 +10,7 @@ import (
 // conversation owns; it never touches workspace files.
 var (
 	chatMessageTables = []string{"workspace_chat_message_providers", "workspace_chat_message_agents", "workspace_chat_submissions", "workspace_chat_submission_efforts", "workspace_chat_submission_inputs", "workspace_chat_submission_agents"}
-	chatSessionTables = []string{"workspace_chat_events", "workspace_chat_requests", "workspace_chat_native", "workspace_chat_native_agents", "workspace_chat_modes", "workspace_chat_efforts", "workspace_chat_agent_selection", "workspace_chat_creation_options", "workspace_chat_account_bindings", "workspace_chat_workspaces", "workspace_chat_lifecycle", "workspace_chat_handoffs"}
+	chatSessionTables = []string{"workspace_chat_events", "workspace_chat_requests", "workspace_chat_native", "workspace_chat_native_agents", "workspace_chat_modes", "workspace_chat_efforts", "workspace_chat_agent_selection", "workspace_chat_creation_options", "workspace_chat_account_bindings", "workspace_chat_workspaces", "workspace_chat_lifecycle", "workspace_chat_handoffs", "workspace_chat_branches", "workspace_chat_active_branch", "workspace_chat_checkpoints", "workspace_chat_branch_seed"}
 )
 
 // Delete permanently removes an idle conversation and its history.
@@ -25,7 +25,7 @@ func (s *Service) Delete(ctx context.Context, pid, id string) error {
 		s.mu.Unlock()
 		return err
 	}
-	if _, active := s.active[id]; active || sess.Status == "running" || sess.Status == "stopping" {
+	if _, active := s.active[id]; active || s.restoring[id] != nil || sess.Status == "running" || sess.Status == "stopping" {
 		s.mu.Unlock()
 		return ErrBusy
 	}

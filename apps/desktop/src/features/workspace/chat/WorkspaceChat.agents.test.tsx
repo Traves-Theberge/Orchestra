@@ -13,6 +13,8 @@ vi.mock('@core/api/client', () => ({
   createWorkspaceChatSession: vi.fn(), fetchWorkspaceChat: vi.fn(), renameWorkspaceChatSession: vi.fn(),
   switchWorkspaceChatProvider: vi.fn(), sendWorkspaceChatMessage: vi.fn(), stopWorkspaceChatTurn: vi.fn(),
   replyWorkspaceChatRequest: vi.fn(), fetchUnifiedAgents: vi.fn(), fetchHarnessCapabilities: vi.fn(),
+  previewWorkspaceChatRewind: vi.fn(), editWorkspaceChatMessage: vi.fn(), regenerateWorkspaceChatResponse: vi.fn(),
+  activateWorkspaceChatBranch: vi.fn(), undoWorkspaceChatRestore: vi.fn(),
 }))
 vi.mock('@core/api/agent-catalog', () => ({ fetchAgentCatalog: vi.fn() }))
 
@@ -132,6 +134,29 @@ describe('WorkspaceChat agents', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
     await waitFor(() => expect(api.sendWorkspaceChatMessage).toHaveBeenCalledExactlyOnceWith(config, 'project-a', 'chat-a', expect.any(String), 'Go', 'provider-model', undefined,
       { agent_id: reviewerId, agent_scope: 'global', agent_content_hash: 'h1', agent_format: 'markdown' }))
+  })
+
+  it('re-runs an edit with the same model and agent a send passes', async () => {
+    localStorage.setItem(`orchestra.agent-model-memory.v1:${config.baseUrl}`, JSON.stringify({ [reviewerId]: { model: 'provider-model', effort: '' } }))
+    const prompt: api.WorkspaceChatMessage = { id: 'u1', session_id: 'chat-a', role: 'user', text: 'Fix it', status: 'completed', created_at: '2026-10-08T10:00:00Z' }
+    vi.mocked(api.fetchWorkspaceChat).mockResolvedValue({ session, messages: [prompt], events: [], requests: [] })
+    vi.mocked(api.previewWorkspaceChatRewind).mockResolvedValue({ message_id: 'u1', has_checkpoint: false, files_available: false, changes: [], changed_since_turn: [], skipped: 0 })
+    vi.mocked(api.editWorkspaceChatMessage).mockResolvedValue({ session: { ...session, status: 'running' }, message: { ...prompt, id: 'u2' } })
+    open()
+    await selectConversation()
+    fireEvent.click(screen.getByRole('button', { name: 'Choose agent mode' }))
+    fireEvent.click(await screen.findByRole('option', { name: /Reviewer/ }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Choose harness and model' })).toHaveTextContent('Provider Model'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit message' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Edit message' }), { target: { value: 'Fix it properly' } })
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Edit message' }), { key: 'Enter' })
+    const dialog = await screen.findByRole('dialog')
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Edit and re-run' })).toBeEnabled())
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Edit and re-run' }))
+    await waitFor(() => expect(api.editWorkspaceChatMessage).toHaveBeenCalledExactlyOnceWith(config, 'project-a', 'chat-a', {
+      message_id: 'u1', text: 'Fix it properly', client_message_id: expect.any(String), restore_files: false,
+      requested_model: 'provider-model', agent_id: reviewerId, agent_scope: 'global', agent_content_hash: 'h1', agent_format: 'markdown',
+    }))
   })
 
   it('remembers a model picked while an agent is selected', async () => {

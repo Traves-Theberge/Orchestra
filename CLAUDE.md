@@ -100,6 +100,8 @@ Key packages:
 
 Background workers in `app/run.go`: execution worker (claims & dispatches issues), refresh worker (syncs tracker state), telemetry watcher, garbage collector.
 
+**Chat rewind (edit/regenerate)**: `internal/checkpoint` takes shadow-git snapshots of the workspace (private `GIT_DIR` under `<workspace_root>/.orchestra/checkpoints`, 2 MB per-file cap, protected paths skipped, links never followed). `internal/workspacechat` builds on it: `branches.go` (conversation branches), `turn_checkpoints.go` (per-turn before/after snapshots), `rewind.go` (Edit, Regenerate, ActivateBranch, PreviewRewind, UndoRestore). Five routes per scope: `rewind/preview`, `edit`, `regenerate`, `branches/{id}/activate`, `restore/undo`. Error codes: `chat_busy`, `checkpoint_unavailable`, `restore_partial`, `files_restored`. UI lives in `features/workspace/chat` (`rewind-controller.ts`, `RewindDialog`, `UndoRestoreBanner`). Scope: UI chat only (files + conversation); Maestro is conversation-only, no file rollback.
+
 ### Frontend structure (`apps/desktop/`)
 - `App.tsx` — Root component managing all global state, section routing, keyboard shortcuts
 - `lib/orchestra-client.ts` — HTTP client wrapping all backend API calls
