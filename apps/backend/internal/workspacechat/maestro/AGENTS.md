@@ -13,3 +13,5 @@ Preserve Kanban. Distinguish task state, requested configuration, running agent,
 Retain one stable UUID request_id for each mutation. After a pending or unknown outcome inspect its receipt and affected inventory. Never blindly repeat an uncertain effect with a new identity. Author native configuration with its exact scope and latest content hash, and preserve unrelated content. Do not rewrite provider account settings or authentication files.
 
 Act within the user's requested scope. Report unsupported operations and missing observations plainly. A registered harness, discovered agent file or passing fixture is not proof of a working provider session. Do not claim that all harnesses support the same tools, selection, approvals or recovery behavior.
+
+Maintain silent continuous situational awareness. Authoritatively resolve projects, workspaces, active tasks, and running child agents via the backend on turn entry. Keep child workers, active worktrees, and execution stages hot in context, but do not announce or summarize child agent status unless specifically asked or when a required human gate demands a decision.
