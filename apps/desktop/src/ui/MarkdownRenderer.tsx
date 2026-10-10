@@ -10,6 +10,9 @@ import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 import rehypeSlug from 'rehype-slug'
 import { MermaidBlock } from './MermaidBlock'
 import { CodeBlock } from './CodeBlock'
+import { textOf } from './reactText'
+import { HtmlPreviewBlock } from './HtmlPreviewBlock'
+import { looksLikeHtmlDocument, prepareMarkdown } from './markdownFences'
 import { HtmlRenderFrame } from '@features/workspace/chat/html-render'
 import { useAppStore } from '@core/store'
 import { LinkDropdown } from './LinkDropdown'
@@ -54,42 +57,37 @@ function StreamingVisualizationSkeleton() {
   )
 }
 
-const CUSTOM_WIDGET_LANGS = [
-  'orchestra-html',
-  'html-render',
-  'html-preview',
-  'html-visualization',
-  'mermaid',
-]
+const HTML_WIDGET_LANGS = ['orchestra-html', 'html-render', 'html-preview', 'html-visualization']
 
-function isCustomWidgetBlock(node: any, children: any): boolean {
-  if (node?.children && Array.isArray(node.children)) {
-    for (const child of node.children) {
-      const cls = child?.properties?.className
-      const classList: string[] = Array.isArray(cls) ? cls : typeof cls === 'string' ? cls.split(/\s+/) : []
-      for (const c of classList) {
-        const match = /language-([a-zA-Z0-9_-]+)/.exec(c)
-        if (match && CUSTOM_WIDGET_LANGS.includes(match[1])) return true
-      }
-    }
-  }
+/** Fence language, lower-cased, from a className like `hljs language-HTML`. */
+function fenceLanguage(className: unknown): string {
+  const classes = Array.isArray(className) ? className.join(' ') : typeof className === 'string' ? className : ''
+  const lang = /language-([a-zA-Z0-9_-]+)/.exec(classes)?.[1]?.toLowerCase() ?? ''
+  return lang === 'htm' ? 'html' : lang
+}
 
-  const childList = Array.isArray(children) ? children : [children]
-  for (const child of childList) {
-    if (child && typeof child === 'object' && 'props' in child) {
-      const cls = (child as any).props?.className ?? ''
-      const match = /language-([a-zA-Z0-9_-]+)/.exec(cls)
-      if (match && CUSTOM_WIDGET_LANGS.includes(match[1])) return true
+interface HastLike {
+  type?: string
+  tagName?: string
+  value?: string
+  properties?: { className?: unknown }
+  children?: HastLike[]
+}
 
-      const nodeCls = (child as any).props?.node?.properties?.className
-      const classList: string[] = Array.isArray(nodeCls) ? nodeCls : typeof nodeCls === 'string' ? nodeCls.split(/\s+/) : []
-      for (const c of classList) {
-        const m = /language-([a-zA-Z0-9_-]+)/.exec(c)
-        if (m && CUSTOM_WIDGET_LANGS.includes(m[1])) return true
-      }
-    }
-  }
+function hastText(node: HastLike | undefined): string {
+  if (!node) return ''
+  if (node.type === 'text') return node.value ?? ''
+  return Array.isArray(node.children) ? node.children.map(hastText).join('') : ''
+}
 
+/** Widgets render their own container, so the surrounding <pre> is dropped. */
+function isCustomWidgetBlock(node: HastLike | undefined, enableMermaid: boolean, enableHtmlPreview: boolean): boolean {
+  const code = node?.children?.find((child) => child?.tagName === 'code')
+  if (!code) return false
+  const lang = fenceLanguage(code.properties?.className)
+  if (HTML_WIDGET_LANGS.includes(lang)) return true
+  if (lang === 'mermaid') return enableMermaid
+  if (lang === 'html') return enableHtmlPreview && looksLikeHtmlDocument(hastText(code))
   return false
 }
 
@@ -99,6 +97,8 @@ interface MarkdownRendererProps {
   allowHtml?: boolean
   enableMermaid?: boolean
   enableMath?: boolean
+  /** Preview plain ```html fences that hold a full page in the sandboxed frame. */
+  enableHtmlPreview?: boolean
   isStreaming?: boolean
   /** Override or extend the default react-markdown component map */
   components?: Components
@@ -116,6 +116,7 @@ export function MarkdownRenderer({
   allowHtml = false,
   enableMermaid = true,
   enableMath = true,
+  enableHtmlPreview = true,
   isStreaming = false,
   components: componentOverrides,
   remarkPlugins: extraRemarkPlugins,
@@ -123,6 +124,9 @@ export function MarkdownRenderer({
   linkProjectId,
 }: MarkdownRendererProps) {
   const theme = useAppStore((s) => s.theme)
+  // Render-time only: fixes fence variants and one-line Mermaid for every
+  // provider, including messages saved before this existed.
+  const prepared = useMemo(() => prepareMarkdown(content), [content])
   const openBrowserTab = useAppStore((s) => s.openBrowserTab)
   const setActiveSection = useAppStore((s) => s.setActiveSection)
 
@@ -147,34 +151,45 @@ export function MarkdownRenderer({
   const mergedComponents = useMemo<Components>(() => {
     const defaults: Components = {
       pre({ children, className: cls, node, ...props }: any) {
-        if (isCustomWidgetBlock(node, children)) {
+        if (isCustomWidgetBlock(node, enableMermaid, enableHtmlPreview)) {
           return <>{children}</>
         }
         return <pre className={`relative border-0 ${cls ?? ''}`.trim()} {...props}>{children}</pre>
       },
       code({ children, className: cls, node, ...props }: any) {
-        const match = /language-([a-zA-Z0-9_-]+)/.exec(cls ?? '')
-        const language = match?.[1] ?? ''
+        const language = fenceLanguage(cls)
         const isInline = !node?.position || !cls
+        // The fence was never closed: still streaming, or the message was cut off.
+        const pending = prepared.openFenceLine !== null && node?.position?.start?.line === prepared.openFenceLine
 
         if (isInline) {
           return <code className="bg-muted px-1.5 py-0.5 rounded text-sm" {...props}>{children}</code>
         }
 
         if (enableMermaid && language === 'mermaid') {
-          return <MermaidBlock code={String(children).trim()} theme={theme} />
+          return <MermaidBlock code={textOf(children).trim()} theme={theme} isStreaming={isStreaming} pending={pending} />
         }
 
-        if (['orchestra-html', 'html-render', 'html-preview', 'html-visualization'].includes(language)) {
-          const rawHtml = String(children).trim()
+        if (enableHtmlPreview && language === 'html') {
+          const rawHtml = textOf(children).trim()
+          if (looksLikeHtmlDocument(rawHtml)) {
+            return <HtmlPreviewBlock source={rawHtml} className={cls} pending={pending}>{children}</HtmlPreviewBlock>
+          }
+        }
+
+        if (HTML_WIDGET_LANGS.includes(language)) {
+          const rawHtml = textOf(children).trim()
           const titleMatch = /<!--\s*title:\s*(.+?)\s*-->/i.exec(rawHtml) || /<h[12][^>]*>(.+?)<\/h[12]>/i.exec(rawHtml)
           const title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, '').trim() : 'Visualization'
 
           if (isStreaming) {
-            const isClosed = isCodeFenceClosed(content, rawHtml)
+            const isClosed = isCodeFenceClosed(prepared.content, rawHtml)
             if (!isClosed) {
               return <StreamingVisualizationSkeleton />
             }
+          } else if (pending) {
+            // Truncated reply: show the partial source rather than a broken page.
+            return <pre className="relative border-0"><CodeBlock className={cls}>{children}</CodeBlock></pre>
           }
 
           return (
@@ -207,7 +222,7 @@ export function MarkdownRenderer({
       },
     }
     return componentOverrides ? { ...defaults, ...componentOverrides } : defaults
-  }, [enableMermaid, theme, componentOverrides, openBrowserTab, setActiveSection, linkProjectId, isStreaming, content])
+  }, [enableMermaid, enableHtmlPreview, theme, componentOverrides, openBrowserTab, setActiveSection, linkProjectId, isStreaming, prepared])
 
   return (
     <div className={`prose prose-sm dark:prose-invert max-w-none ${className}`}>
@@ -216,7 +231,7 @@ export function MarkdownRenderer({
         rehypePlugins={rehypePlugins}
         components={mergedComponents}
       >
-        {content}
+        {prepared.content}
       </ReactMarkdown>
     </div>
   )

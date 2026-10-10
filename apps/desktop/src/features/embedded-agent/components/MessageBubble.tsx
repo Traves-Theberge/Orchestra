@@ -62,7 +62,7 @@ export function MessageBubble({ message, onAction, isStreaming }: MessageBubbleP
             <div className="whitespace-pre-wrap break-words">{message.content}</div>
           ) : (
             <div className="agent-markdown break-words">
-              <MarkdownRenderer content={message.content} />
+              <MarkdownRenderer content={message.content} isStreaming={isStreaming} />
             </div>
           )
         )}
