@@ -6,6 +6,7 @@ import { PullRequestCodeView } from './PullRequestCodeView'
 import { PRConversations } from './PRConversations'
 import { PRTimeline } from './PRTimeline'
 import { useAppStore } from '@core/store'
+import { LinkDropdown } from '@ui/LinkDropdown'
 
 type ReviewTab = 'summary' | 'timeline' | 'code'
 type MergeMethod = 'merge' | 'squash' | 'rebase'
@@ -133,7 +134,9 @@ function PRReviewPanel({
         >
           <X size={14} />
         </button>
-          <a href={currentPR.html_url} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{currentPR.base.label.split(':')[0]}/{currentPR.html_url.split('/').at(-3)} <span className="text-primary">#{pr.number}</span></a>
+          <LinkDropdown href={currentPR.html_url} linkProjectId={projectId} className="min-w-0 flex-1 truncate text-xs text-muted-foreground no-underline hover:text-foreground">
+            {currentPR.base.label.split(':')[0]}/{currentPR.html_url.split('/').at(-3)} <span className="text-primary font-medium">#{pr.number}</span>
+          </LinkDropdown>
             <span className="inline-flex items-center gap-1.5 shrink-0 rounded-md border border-border/40 px-2 py-1">
               <span className={`size-1.5 rounded-full ${status.dot}`} />
               <span className={`text-[10.5px] font-medium tracking-tight ${status.text}`}>{status.label}</span>
@@ -161,7 +164,7 @@ function PRReviewPanel({
           <PullRequestCodeView key={`${snapshotPR?.base.sha}:${snapshotPR?.head.sha}`} storageKey={`orchestra:pr-viewed:v1:${encodeURIComponent(config.baseUrl)}:${projectId}:${encodeURIComponent(currentPR.html_url)}:${pr.number}:${snapshotPR?.base.sha}:${snapshotPR?.head.sha}`} diff={diffText} comments={comments} mode={diffMode} onModeChange={setDiffMode} />
         ) : tab === 'summary' ? (
           <div className="h-full overflow-auto p-5 text-sm">
-            <div className="mb-4 flex items-center gap-3 text-xs text-muted-foreground"><span>{currentPR.user.login}</span><span>Opened {new Date(currentPR.created_at).toLocaleDateString()}</span><a href={currentPR.html_url} target="_blank" rel="noreferrer" className="text-primary">Open on GitHub</a></div>
+            <div className="mb-4 flex items-center gap-3 text-xs text-muted-foreground"><span>{currentPR.user.login}</span><span>Opened {new Date(currentPR.created_at).toLocaleDateString()}</span><LinkDropdown href={currentPR.html_url} linkProjectId={projectId} className="text-primary font-medium">Open on GitHub</LinkDropdown></div>
             <p className="whitespace-pre-wrap leading-6">{currentPR.body || 'No description provided.'}</p>
             <h3 className="mt-6 mb-2 font-semibold">Linked tasks</h3>
             {issues.filter(issue => issue.project_id === projectId && issue.branch_name === currentPR.head.ref).map(issue => <button key={issue.id ?? issue.identifier} disabled={!onInspectTask} onClick={() => onInspectTask?.(issue.identifier ?? issue.issue_identifier ?? issue.id ?? '')} className="block py-1 text-xs text-primary disabled:text-muted-foreground">{issue.identifier ?? issue.issue_identifier} · {issue.title} · {issue.state}</button>)}

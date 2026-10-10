@@ -61,7 +61,7 @@ export function DescriptionEditor({ value, onChange, onBlur, theme, projectId }:
       aria-label="Edit description"
       tabIndex={0}
       className="flex-1 min-h-0 rounded-lg cursor-text transition-all group/md relative overflow-auto"
-      onClick={(e) => { if (!(e.target instanceof Element) || !e.target.closest('a, button, input, summary')) setEditing(true) }}
+      onClick={(e) => { if (!(e.target instanceof Element) || !e.target.closest('a, button, input, summary, [role="menuitem"], [data-radix-collection-item]')) setEditing(true) }}
       onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setEditing(true) } }}
     >
       <div className="absolute top-2 right-2 opacity-0 group-hover/md:opacity-100 transition-opacity">

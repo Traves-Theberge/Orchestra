@@ -28,10 +28,13 @@ function expectFormattedBody(container: HTMLElement) {
 }
 
 describe('task description Markdown', () => {
-  it('formats tracker item bodies safely and opens links in the owning project', () => {
+  it('formats tracker item bodies safely and opens links in the owning project', async () => {
     const { container } = render(<WorkItemDetail item={item} />)
     expectFormattedBody(container)
-    fireEvent.click(screen.getByRole('link', { name: 'Reference' }))
+    const link = screen.getByRole('link', { name: /Reference/i })
+    fireEvent.keyDown(link, { key: 'Enter' })
+    const option = await screen.findByText('Open in Workspace')
+    fireEvent.click(option)
     expect(actions.openBrowserTab).toHaveBeenCalledWith('https://example.com/spec', 'project')
   })
 
@@ -47,11 +50,14 @@ describe('task description Markdown', () => {
     expectFormattedBody(container)
   })
 
-  it('keeps links interactive in editable previews and preserves source when editing', () => {
+  it('keeps links interactive in editable previews and preserves source when editing', async () => {
     const onChange = vi.fn()
     const { container } = render(<DescriptionEditor value={description} onChange={onChange} onBlur={vi.fn()} projectId="project" />)
     expectFormattedBody(container)
-    fireEvent.click(screen.getByRole('link', { name: 'Reference' }))
+    const link = screen.getByRole('link', { name: /Reference/i })
+    fireEvent.keyDown(link, { key: 'Enter' })
+    const option = await screen.findByText('Open in Workspace')
+    fireEvent.click(option)
     expect(actions.openBrowserTab).toHaveBeenCalledWith('https://example.com/spec', 'project')
     expect(screen.queryByRole('textbox')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Edit description' }))

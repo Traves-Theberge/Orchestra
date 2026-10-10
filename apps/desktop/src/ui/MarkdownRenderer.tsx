@@ -12,6 +12,7 @@ import { MermaidBlock } from './MermaidBlock'
 import { CodeBlock } from './CodeBlock'
 import { HtmlRenderFrame } from '@features/workspace/chat/html-render'
 import { useAppStore } from '@core/store'
+import { LinkDropdown } from './LinkDropdown'
 import 'katex/dist/katex.min.css'
 
 const sanitizeSchema = {
@@ -193,23 +194,15 @@ export function MarkdownRenderer({
           </CodeBlock>
         )
       },
-      a({ href, children, ...props }: any) {
+      a({ href, children, ...props }: React.ComponentPropsWithoutRef<'a'>) {
         const isExternal = typeof href === 'string' && /^https?:\/\//i.test(href)
-        if (!isExternal) {
+        if (!isExternal || !href) {
           return <a href={href} {...props}>{children}</a>
         }
         return (
-          <a
-            href={href}
-            onClick={(e) => {
-              e.preventDefault()
-              setActiveSection('CONSOLE')
-              openBrowserTab(href, linkProjectId)
-            }}
-            {...props}
-          >
+          <LinkDropdown href={href} linkProjectId={linkProjectId} {...props}>
             {children}
-          </a>
+          </LinkDropdown>
         )
       },
     }

@@ -26,6 +26,7 @@ import { Badge } from '@ui/badge'
 import { MarkdownRenderer } from '@ui/MarkdownRenderer'
 import { Button } from '@ui/button'
 import { AppTooltip } from '@ui/tooltip-wrapper'
+import { LinkDropdown } from '@ui/LinkDropdown'
 import { CustomDropdown } from '@layout/shared/controls'
 import type { TimelineItem } from '@layout/types'
 import { harnessDisplayName } from '@features/agents/lib/agent-display'
@@ -459,14 +460,15 @@ export function OverviewTab({
             <div className="p-2.5 shrink-0">
               <div className="text-[8px] font-black uppercase tracking-widest text-muted-foreground mb-2">Remote System</div>
               {issueUrl ? (
-                <button
-                  type="button"
-                  onClick={() => void handleOpenExternal(issueUrl)}
-                  className="flex w-full items-center gap-2 p-1.5 rounded bg-primary/5 border border-primary/10 text-primary hover:bg-primary/10 transition-all"
+                <LinkDropdown
+                  href={issueUrl}
+                  className="flex w-full items-center justify-between p-1.5 rounded bg-primary/5 border border-primary/10 text-primary hover:bg-primary/10 transition-all no-underline"
                 >
-                  <ExternalLink size={10} />
-                  <span className="text-[9px] font-bold truncate">Open in Tracker</span>
-                </button>
+                  <span className="flex items-center gap-2 min-w-0 truncate">
+                    <ExternalLink size={10} className="shrink-0" />
+                    <span className="text-[9px] font-bold truncate">Open in Tracker</span>
+                  </span>
+                </LinkDropdown>
               ) : (
                 <div className="text-[9px] text-muted-foreground/40 italic">No external link</div>
               )}
