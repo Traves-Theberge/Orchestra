@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -73,6 +74,9 @@ func TestAntigravityStreamFixtureProcess(t *testing.T) {
 			os.Exit(5)
 		}
 		response := "agy-ok"
+		if custom := os.Getenv("ORCHESTRA_AGY_FIXTURE_RESPONSE"); custom != "" {
+			response = custom
+		}
 		turnCount++
 		if os.Getenv("ORCHESTRA_AGY_FIXTURE_DENIED") == "1" {
 			send(map[string]any{"event": "result", "result": map[string]any{"conversation_id": threadID, "status": "SUCCESS", "response": "", "num_turns": turnCount, "denied_actions": []map[string]any{{"action": "read_file", "display_name": "ViewFile"}}}})
@@ -163,6 +167,41 @@ func TestAntigravityNativeStreamTurnsAndExactConversationResume(t *testing.T) {
 	}
 	if len(events) < 7 {
 		t.Fatalf("expected init and turn events to be observed, got %d", len(events))
+	}
+}
+
+// Multi-line replies (e.g. fenced Mermaid diagrams) must reach the chat with
+// their newlines intact, both in streamed deltas and in the persisted result.
+func TestAntigravityNativePreservesNewlinesInDeltasAndResult(t *testing.T) {
+	command, prefixArgs := antigravityFixtureCommand(t)
+	workspace := t.TempDir()
+	reply := "Diagram:\n\n```mermaid\nflowchart LR\r\n  A[\"x\"] --> B\n  subgraph S\n    B --> C\n  end\n```\n"
+	var mu sync.Mutex
+	var deltas strings.Builder
+	onEvent := func(event NativeEvent) {
+		if event.Type == "item/agentMessage/delta" {
+			mu.Lock()
+			deltas.WriteString(event.Delta)
+			mu.Unlock()
+		}
+	}
+	request := TurnRequest{Workspace: workspace, WorkspaceRoot: workspace, ProjectRootWorkspace: true, SessionID: "fixture", RequestedAgentID: "reviewer"}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	session, err := newAntigravityNativeSessionWithArgs(ctx, command, prefixArgs, request, "", onEvent, []string{"ORCHESTRA_AGY_FIXTURE=1", "ORCHESTRA_AGY_FIXTURE_RESPONSE=" + reply})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = session.Close() }()
+	result, err := session.SendTurn(context.Background(), "draw", "")
+	if err != nil || result.Text != reply {
+		t.Fatalf("result text = %q, %v; want %q", result.Text, err, reply)
+	}
+	mu.Lock()
+	got := deltas.String()
+	mu.Unlock()
+	if got != reply {
+		t.Fatalf("streamed deltas = %q; want %q", got, reply)
 	}
 }
 

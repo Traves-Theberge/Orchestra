@@ -207,7 +207,6 @@ function ChatMessageView({
         <MarkdownRenderer
           content={assistantPayload.text}
           linkProjectId={projectId}
-          enableMermaid={false}
           className="break-words text-[15px] leading-7 [&_p]:my-3 [&_pre]:max-w-full [&_pre]:overflow-auto [&_pre]:rounded-xl [&_pre]:border-none [&_pre]:bg-muted/30 [&_pre]:px-4 [&_pre]:py-5 [&_table]:block [&_table]:overflow-auto"
         />
       ) : null}

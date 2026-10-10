@@ -122,7 +122,7 @@ export function GitHubIssuesTab({
             </div>
             {expandedIssue === issue.number && (
               <div className="ml-6 px-2 py-1.5 text-[11.5px] text-muted-foreground/85">
-                <MarkdownRenderer content={issue.body || 'No description'} className="mb-2 break-words text-[11.5px] leading-relaxed text-muted-foreground/85 prose-headings:text-sm prose-headings:text-foreground prose-a:text-primary prose-pre:overflow-x-auto prose-pre:bg-muted/40" />
+                <MarkdownRenderer content={issue.body || 'No description'} enableHtmlPreview={false} className="mb-2 break-words text-[11.5px] leading-relaxed text-muted-foreground/85 prose-headings:text-sm prose-headings:text-foreground prose-a:text-primary prose-pre:overflow-x-auto prose-pre:bg-muted/40" />
                 <button
                   onClick={() => onToggleIssueState(issue)}
                   disabled={loading}

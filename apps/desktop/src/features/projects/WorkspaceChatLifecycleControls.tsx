@@ -4,6 +4,7 @@ import type { BackendConfig, ProjectWorktree, WorkspaceChatSession, WorkspaceCha
 import { fetchArchivedWorkspaceChat, fetchWorkspaceChat, setWorkspaceChatArchived, stopWorkspaceChatTurn } from '@core/api/client'
 import { sameObservedPath } from './workspace-agent-projection'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@ui/dialog'
+import { MarkdownRenderer } from '@ui/MarkdownRenderer'
 
 export function WorkspaceChatArchiveControl({
   config,
@@ -192,7 +193,7 @@ export function WorkspaceArchiveHistory({
             {!messages.length && <p className="text-xs text-muted-foreground">No messages in this conversation.</p>}
             {messages.map(message => <article key={message.id} className="space-y-1 text-xs">
               <p className="font-medium capitalize text-muted-foreground">{message.role}</p>
-              <p className="whitespace-pre-wrap break-words">{message.text}</p>
+              {message.role === 'user' ? <p className="whitespace-pre-wrap break-words">{message.text}</p> : <MarkdownRenderer content={message.text} className="break-words text-xs" />}
             </article>)}
           </div>}
         </div>

@@ -341,7 +341,7 @@ function LiveTurn({ events, projectId }: { events: WorkspaceChatEvent[]; project
           {group.items.map(item => <ActivityStepRow key={item.key} step={item.step} />)}
         </ol>
       ) : (
-        <MarkdownRenderer key={group.key} content={group.text} enableMermaid={false} isStreaming={true} linkProjectId={projectId} className="break-words text-[15px] leading-7 [&_p]:my-3 [&_pre]:overflow-auto [&_pre]:rounded-xl [&_pre]:bg-muted/30" />
+        <MarkdownRenderer key={group.key} content={group.text} isStreaming={true} linkProjectId={projectId} className="break-words text-[15px] leading-7 [&_p]:my-3 [&_pre]:overflow-auto [&_pre]:rounded-xl [&_pre]:bg-muted/30" />
       ))}
     </section>
   )

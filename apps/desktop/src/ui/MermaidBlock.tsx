@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import mermaid from 'mermaid'
 import DOMPurify from 'dompurify'
+import { CodeBlock, CopyButton } from './CodeBlock'
 
 let renderQueue: Promise<void> = Promise.resolve()
 let initializedTheme: 'light' | 'dark' | null = null
@@ -9,8 +10,12 @@ function ensureInitialized(theme: 'light' | 'dark') {
   if (initializedTheme === theme) return
   mermaid.initialize({
     startOnLoad: false,
-    theme: theme === 'light' ? 'default' : 'dark',
+    // Calm palettes: neutral greys in light, mermaid's dark theme in dark.
+    theme: theme === 'light' ? 'neutral' : 'dark',
     securityLevel: 'strict',
+    // Never inject mermaid's "Syntax error" bomb SVG into the page.
+    suppressErrorRendering: true,
+    fontFamily: 'inherit',
   })
   initializedTheme = theme
 }
@@ -19,15 +24,35 @@ function ensureInitialized(theme: 'light' | 'dark') {
 // regenerating one with a fresh random id (which causes the visible flash).
 let nextMermaidId = 0
 
-export function MermaidBlock({ code, theme }: { code: string; theme?: 'light' | 'dark' }) {
+/** Render the diagram at its natural width so wide charts scroll instead of shrinking. */
+function applyNaturalWidth(svg: SVGSVGElement | null) {
+  if (!svg) return
+  const max = parseFloat(svg.style.maxWidth)
+  if (Number.isFinite(max) && max > 0) {
+    svg.setAttribute('width', String(max))
+    svg.style.maxWidth = 'none'
+  }
+  svg.style.height = 'auto'
+}
+
+interface MermaidBlockProps {
+  code: string
+  theme?: 'light' | 'dark'
+  /** The message is still streaming: an invalid block is just incomplete. */
+  isStreaming?: boolean
+  /** The fence has not been closed yet (streaming or truncated). */
+  pending?: boolean
+}
+
+export function MermaidBlock({ code, theme, isStreaming = false, pending = false }: MermaidBlockProps) {
   const svgContainerRef = useRef<HTMLDivElement>(null)
   const idRef = useRef<string>(`mermaid-${++nextMermaidId}`)
   const lastRenderedRef = useRef<{ code: string; theme?: string } | null>(null)
   // hasSvg tracks whether the container currently has a rendered diagram in
-  // it. While false, we render the source as a `<pre>` so the user sees text
-  // instead of a blank box (e.g. mid-typing or first paint).
+  // it. While false we show the source as a code block, so the user always
+  // sees readable text: mid-stream, before first paint, or when it fails.
   const [hasSvg, setHasSvg] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const incomplete = isStreaming || pending
 
   useEffect(() => {
     const last = lastRenderedRef.current
@@ -35,10 +60,13 @@ export function MermaidBlock({ code, theme }: { code: string; theme?: 'light' | 
 
     let cancelled = false
     const trimmed = code.trim()
-    if (!trimmed) {
+    const clear = () => {
       if (svgContainerRef.current) svgContainerRef.current.innerHTML = ''
+      lastRenderedRef.current = null
       setHasSvg(false)
-      lastRenderedRef.current = { code, theme }
+    }
+    if (!trimmed) {
+      clear()
       return
     }
 
@@ -49,8 +77,8 @@ export function MermaidBlock({ code, theme }: { code: string; theme?: 'light' | 
         const isValid = await tryParse(trimmed)
         if (cancelled) return
         if (!isValid) {
-          // Mid-typing: keep the existing SVG (if any) instead of flashing.
-          setError(null)
+          // Mid-stream: keep the previous diagram (no flash). Final: show the source.
+          if (!incomplete) clear()
           return
         }
         const { svg } = await mermaid.render(idRef.current, trimmed)
@@ -64,39 +92,35 @@ export function MermaidBlock({ code, theme }: { code: string; theme?: 'light' | 
           ADD_TAGS: ['foreignObject', 'style'],
           ADD_ATTR: ['xmlns', 'xmlns:xlink', 'transform', 'preserveAspectRatio'],
         })
+        applyNaturalWidth(svgContainerRef.current.querySelector('svg'))
         lastRenderedRef.current = { code, theme }
         setHasSvg(true)
-        setError(null)
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Render failed')
+      } catch {
+        if (!cancelled) clear()
       }
     })
 
     return () => { cancelled = true }
-  }, [code, theme])
+  }, [code, theme, incomplete])
 
-  if (error) {
-    return (
-      <div className="rounded border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400">
-        <p className="font-medium mb-1">Mermaid render error</p>
-        <pre className="whitespace-pre-wrap">{code}</pre>
-      </div>
-    )
-  }
-
-  // Always mount the same DOM nodes — the SVG container is hidden when we
-  // haven't rendered yet, and a fallback `<pre>` shows the source so the
-  // user sees content instead of a blank gap. Keeping both nodes mounted
-  // (rather than swapping React subtrees) avoids any layout flicker.
+  // Both nodes stay mounted (the SVG container is hidden until rendered) so
+  // swapping between source and diagram never causes layout flicker.
   return (
-    <div className="my-2">
-      <div
-        ref={svgContainerRef}
-        className={`flex justify-center [&_svg]:max-w-full ${hasSvg ? '' : 'hidden'}`}
-      />
+    <div className="my-3" data-testid="mermaid-block" data-state={hasSvg ? 'diagram' : 'source'}>
+      <div className={`group relative rounded-xl bg-muted/25 ${hasSvg ? '' : 'hidden'}`}>
+        <CopyButton text={code} title="Copy diagram source" />
+        <div className="overflow-x-auto px-4 py-5">
+          <div
+            ref={svgContainerRef}
+            role="img"
+            aria-label="Mermaid diagram"
+            className="mx-auto flex w-max min-w-full justify-center"
+          />
+        </div>
+      </div>
       {!hasSvg && (
-        <pre className="rounded border border-border/60 bg-muted/40 p-3 text-xs whitespace-pre-wrap font-mono">
-          {code}
+        <pre className="relative border-0">
+          <CodeBlock className="language-mermaid">{code}</CodeBlock>
         </pre>
       )}
     </div>
@@ -105,8 +129,7 @@ export function MermaidBlock({ code, theme }: { code: string; theme?: 'light' | 
 
 async function tryParse(code: string): Promise<boolean> {
   try {
-    await mermaid.parse(code)
-    return true
+    return Boolean(await mermaid.parse(code, { suppressErrors: true }))
   } catch {
     return false
   }
