@@ -313,6 +313,7 @@ function ProfileField({ label, value, onChange }: { label: string, value: string
     <section className="space-y-2">
       <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">{label}</h4>
       <input
+        spellCheck={false}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="w-full max-w-sm h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20"
@@ -341,6 +342,7 @@ function CreateDialog({
         <div className="py-2">
           <label htmlFor={nameId} className="text-xs font-semibold text-foreground/60 mb-1.5 block">Profile name</label>
           <input
+            spellCheck={false}
             id={nameId}
             value={name}
             onChange={(e) => setName(e.target.value.replace(/[^a-zA-Z0-9._-]/g, ''))}

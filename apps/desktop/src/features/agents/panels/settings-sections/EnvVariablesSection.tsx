@@ -46,6 +46,7 @@ export function EnvVariablesSection({ local, updateField }: EnvVariablesSectionP
           <div key={key} className="flex items-center gap-2 group">
             <span className="text-[10px] font-mono font-bold text-primary/70 shrink-0 w-[140px] truncate">{key}</span>
             <input
+              spellCheck={false}
               type="text"
               value={value}
               onChange={(e) => handleEnvValueChange(key, e.target.value)}
@@ -63,6 +64,7 @@ export function EnvVariablesSection({ local, updateField }: EnvVariablesSectionP
 
       <div className="flex items-center gap-2">
         <input
+          spellCheck={false}
           type="text"
           placeholder="KEY"
           value={newEnvKey}
@@ -71,6 +73,7 @@ export function EnvVariablesSection({ local, updateField }: EnvVariablesSectionP
           className="w-[140px] h-7 bg-muted/10 rounded-lg border border-border/30 px-3 font-mono text-[10px] text-foreground placeholder:text-muted-foreground/20 focus:outline-none focus:border-primary/30 transition-colors"
         />
         <input
+          spellCheck={false}
           type="text"
           placeholder="value"
           value={newEnvValue}

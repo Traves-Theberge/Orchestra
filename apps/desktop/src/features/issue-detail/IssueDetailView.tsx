@@ -625,6 +625,7 @@ export function IssueDetailView({
             <div className="flex-1 p-8 flex flex-col">
               {isEditable ? (
                 <input
+                  spellCheck={true}
                   className="w-full bg-transparent text-xl font-bold text-foreground outline-none focus:outline-none placeholder:text-muted-foreground/20 mb-1"
                   value={localTitle}
                   onChange={e => dispatchWorkflow({ type: 'set-title', value: e.target.value })}

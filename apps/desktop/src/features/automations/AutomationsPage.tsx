@@ -247,7 +247,7 @@ export function AutomationsPage({ config, onOpenTask }: { config: BackendConfig;
           <div className="flex shrink-0 flex-wrap items-center gap-2 px-4 py-3">
             <label className="relative w-60">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input aria-label="Search automations" placeholder="Search automations" className="h-7 pl-8 text-[12px]" value={query} onChange={event => setQuery(event.target.value)} />
+              <Input spellCheck={false} aria-label="Search automations" placeholder="Search automations" className="h-7 pl-8 text-[12px]" value={query} onChange={event => setQuery(event.target.value)} />
             </label>
             <FilterPill label="Status" value={statusFilter} options={STATUS_FILTER_LABELS} onChange={setStatusFilter} />
             <FilterPill label="Last run" value={lastRunFilter} options={LAST_RUN_FILTER_LABELS} onChange={setLastRunFilter} />

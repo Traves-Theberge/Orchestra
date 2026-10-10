@@ -178,6 +178,7 @@ function PRReviewPanel({
       {/* Action bar */}
       <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-t border-border/30 shrink-0 bg-background">
         <textarea
+          spellCheck={true}
           value={reviewBody}
           onChange={(e) => setReviewBody(e.target.value)}
           placeholder="Leave a review comment…"

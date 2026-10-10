@@ -310,6 +310,7 @@ function FormBody({
 
       <div className="flex-1 flex flex-col overflow-hidden px-8 pb-4 gap-y-3">
         <input
+          spellCheck={true}
           className="w-full bg-transparent border-none outline-none text-3xl font-semibold tracking-tight placeholder:text-muted-foreground/30 focus:ring-0 focus:outline-none p-0 selection:bg-primary/30"
           placeholder="What needs to be done?"
           value={title}
@@ -327,6 +328,7 @@ function FormBody({
           }}
         >
           <textarea
+            spellCheck={true}
             className="w-full h-full bg-transparent border-none outline-none text-[13px] text-foreground/80 placeholder:text-muted-foreground/30 focus:ring-0 focus:outline-none p-0 resize-none min-h-0 selection:bg-primary/20 leading-relaxed"
             placeholder="Describe the task for the agent…"
             value={description}

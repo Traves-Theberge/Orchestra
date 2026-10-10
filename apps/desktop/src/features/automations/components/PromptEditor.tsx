@@ -9,6 +9,7 @@ export function PromptEditor({ value, onChange, invalid }: { value: string; onCh
   const editorSettings = useAppStore(s => s.editorSettings)
   const fallback = (
     <textarea
+      spellCheck={true}
       aria-label="Prompt"
       value={value}
       onChange={event => onChange(event.target.value)}

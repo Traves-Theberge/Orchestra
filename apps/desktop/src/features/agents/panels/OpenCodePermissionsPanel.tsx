@@ -293,6 +293,7 @@ function ListField({
       </div>
       <div className="flex gap-2">
         <input
+          spellCheck={false}
           value={draft}
           disabled={disabled}
           onChange={(event) => setDraft(event.target.value)}

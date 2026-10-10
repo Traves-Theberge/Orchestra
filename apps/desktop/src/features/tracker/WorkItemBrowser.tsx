@@ -108,6 +108,7 @@ export function WorkItemBrowser({
         <div className="relative">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
           <input
+            spellCheck={false}
             type="text"
             placeholder="Search title or identifier…"
             value={filter.search ?? ''}

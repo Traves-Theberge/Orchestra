@@ -233,6 +233,7 @@ export function BranchManagerView({ config, projectId }: BranchManagerViewProps)
             <div className="relative min-w-[120px] flex-1">
               <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50" />
               <input
+                spellCheck={false}
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -289,6 +290,7 @@ export function BranchManagerView({ config, projectId }: BranchManagerViewProps)
             <div className="p-3 rounded-md bg-foreground/[0.02] border border-border/40">
               <div className="flex items-center gap-2 flex-wrap">
                 <input
+                  spellCheck={false}
                   type="text"
                   value={newBranchName}
                   onChange={(e) => setNewBranchName(e.target.value)}

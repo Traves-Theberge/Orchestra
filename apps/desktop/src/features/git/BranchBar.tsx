@@ -315,6 +315,7 @@ export function BranchBar({
             <div className="mt-2 pt-2 border-t border-border/40 px-1">
               {creating ? (
                 <input
+                  spellCheck={false}
                   ref={inputRef}
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}

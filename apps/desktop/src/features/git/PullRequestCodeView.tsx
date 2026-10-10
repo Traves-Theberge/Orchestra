@@ -22,7 +22,7 @@ export function PullRequestCodeView({ diff, storageKey, mode, onModeChange, comm
   const filtered = files.filter(file => file.path.toLowerCase().includes(query.toLowerCase()))
   return <div className="flex h-full min-h-0 flex-col">
     <div className="flex shrink-0 items-center gap-3 px-4 py-2 text-xs">
-      <input aria-label="Filter changed files" placeholder="Filter files…" value={query} onChange={event => setQuery(event.target.value)} className="min-w-0 flex-1 rounded-md bg-muted px-3 py-1.5 outline-none" />
+      <input spellCheck={false} aria-label="Filter changed files" placeholder="Filter files…" value={query} onChange={event => setQuery(event.target.value)} className="min-w-0 flex-1 rounded-md bg-muted px-3 py-1.5 outline-none" />
       <span className="text-muted-foreground">{files.length} files · {files.filter(file => isViewed(file.path)).length} viewed</span>
       <button aria-pressed={mode === 'unified'} onClick={() => onModeChange('unified')}>Unified</button>
       <button aria-pressed={mode === 'split'} onClick={() => onModeChange('split')}>Split</button>

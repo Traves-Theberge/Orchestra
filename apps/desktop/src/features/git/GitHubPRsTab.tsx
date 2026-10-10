@@ -68,12 +68,14 @@ export function GitHubPRsTab({
       {showCreatePR && (
         <div className="mb-3 p-3 rounded-md bg-muted/20 space-y-2">
           <input
+            spellCheck={true}
             value={newPRTitle}
             onChange={(e) => setNewPRTitle(e.target.value)}
             placeholder="PR title"
             className="w-full h-8 px-3 rounded-md bg-background text-[12px] font-medium placeholder:text-muted-foreground/50 outline-none focus:ring-1 focus:ring-primary/40 transition-all"
           />
           <textarea
+            spellCheck={true}
             value={newPRBody}
             onChange={(e) => setNewPRBody(e.target.value)}
             placeholder="Description"

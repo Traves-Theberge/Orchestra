@@ -58,6 +58,7 @@ export function CreateRepoDialog({ projectName, onCancel, onCreate }: CreateRepo
           <div className="space-y-1.5">
             <label htmlFor={nameId} className="text-[10.5px] font-bold uppercase tracking-[0.16em] text-muted-foreground/60">Repository name</label>
             <input
+              spellCheck={false}
               id={nameId}
               type="text"
               value={name}
@@ -71,6 +72,7 @@ export function CreateRepoDialog({ projectName, onCancel, onCreate }: CreateRepo
           <div className="space-y-1.5">
             <label htmlFor={descriptionId} className="text-[10.5px] font-bold uppercase tracking-[0.16em] text-muted-foreground/60">Description</label>
             <textarea
+              spellCheck={true}
               id={descriptionId}
               rows={2}
               value={description}

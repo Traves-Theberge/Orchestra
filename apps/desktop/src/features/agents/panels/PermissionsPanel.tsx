@@ -125,6 +125,7 @@ function PermissionList({
           </div>
           <div className="flex gap-1.5">
             <input
+              spellCheck={false}
               id={inputId}
               value={newValue}
               onChange={e => setNewValue(e.target.value)}

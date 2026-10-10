@@ -205,6 +205,7 @@ function HooksPanelEditor({
           <div className="flex items-center gap-2 border-t border-border/20 pt-3">
             {allowCustomEvents ? (
               <input
+                spellCheck={false}
                 className="h-8 w-[150px] rounded-lg border border-border bg-background px-3 text-xs font-mono focus:ring-2 focus:ring-primary/20 outline-none"
                 value={newEvent}
                 onChange={e => setNewEvent(e.target.value)}
@@ -221,12 +222,14 @@ function HooksPanelEditor({
               />
             )}
             <input
+              spellCheck={false}
               className="h-8 flex-1 rounded-lg border border-border bg-background px-3 text-xs font-mono focus:ring-2 focus:ring-primary/20 outline-none"
               value={newCommand}
               onChange={e => setNewCommand(e.target.value)}
               placeholder="Command"
             />
             <input
+              spellCheck={false}
               className="h-8 w-[100px] rounded-lg border border-border bg-background px-3 text-xs font-mono focus:ring-2 focus:ring-primary/20 outline-none"
               value={newMatcher}
               onChange={e => setNewMatcher(e.target.value)}

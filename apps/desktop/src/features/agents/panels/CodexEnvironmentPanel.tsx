@@ -94,6 +94,7 @@ function CodexEnvironmentPanelEditor({ items, scope, projectName, saving, onSave
       <section className="space-y-2">
         <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">History Persistence</h4>
         <input
+          spellCheck={false}
           value={fields.history}
           onChange={(event) => setField('history.persistence', event.target.value)}
           placeholder="save-all"
@@ -104,6 +105,7 @@ function CodexEnvironmentPanelEditor({ items, scope, projectName, saving, onSave
       <section className="space-y-2">
         <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">History Max Bytes</h4>
         <input
+          spellCheck={false}
           value={fields.historyMaxBytes}
           onChange={(event) => setField('history.max_bytes', event.target.value)}
           placeholder="1048576"
@@ -114,6 +116,7 @@ function CodexEnvironmentPanelEditor({ items, scope, projectName, saving, onSave
       <section className="space-y-2">
         <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Shell Environment Inherit</h4>
         <input
+          spellCheck={false}
           value={fields.inheritEnv}
           onChange={(event) => setField('shell_environment_policy.inherit', event.target.value)}
           placeholder="all"
@@ -124,6 +127,7 @@ function CodexEnvironmentPanelEditor({ items, scope, projectName, saving, onSave
       <section className="space-y-2">
         <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Shell Include Only</h4>
         <input
+          spellCheck={false}
           value={fields.includeOnly}
           onChange={(event) => setArrayField('shell_environment_policy.include_only', event.target.value)}
           placeholder="PATH HOME"
@@ -134,6 +138,7 @@ function CodexEnvironmentPanelEditor({ items, scope, projectName, saving, onSave
       <section className="space-y-2">
         <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Shell Exclude</h4>
         <input
+          spellCheck={false}
           value={fields.exclude}
           onChange={(event) => setArrayField('shell_environment_policy.exclude', event.target.value)}
           placeholder="AWS_SECRET_ACCESS_KEY"
@@ -157,6 +162,7 @@ function CodexEnvironmentPanelEditor({ items, scope, projectName, saving, onSave
       <section className="space-y-2">
         <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Workspace Write Writable Roots</h4>
         <input
+          spellCheck={false}
           value={fields.writableRoots}
           onChange={(event) => setArrayField('sandbox_workspace_write.writable_roots', event.target.value)}
           placeholder="/tmp /var/tmp"
@@ -167,6 +173,7 @@ function CodexEnvironmentPanelEditor({ items, scope, projectName, saving, onSave
       <section className="space-y-2">
         <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">File Opener</h4>
         <input
+          spellCheck={false}
           value={fields.fileOpener}
           onChange={(event) => setField('file_opener', event.target.value)}
           placeholder="vscode"
@@ -177,6 +184,7 @@ function CodexEnvironmentPanelEditor({ items, scope, projectName, saving, onSave
       <section className="space-y-2">
         <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Log Directory</h4>
         <input
+          spellCheck={false}
           value={fields.logDir}
           onChange={(event) => setField('log_dir', event.target.value)}
           placeholder="~/.codex/log"
@@ -187,6 +195,7 @@ function CodexEnvironmentPanelEditor({ items, scope, projectName, saving, onSave
       <section className="space-y-2">
         <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">SQLite Home</h4>
         <input
+          spellCheck={false}
           value={fields.sqliteHome}
           onChange={(event) => setField('sqlite_home', event.target.value)}
           placeholder="~/.codex/sqlite"
@@ -275,6 +284,7 @@ function CodexEnvironmentPanelEditor({ items, scope, projectName, saving, onSave
       <section className="space-y-2">
         <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Notify Command</h4>
         <input
+          spellCheck={false}
           value={fields.notify}
           onChange={(event) => setNotify(event.target.value)}
           placeholder="terminal-notifier -message"

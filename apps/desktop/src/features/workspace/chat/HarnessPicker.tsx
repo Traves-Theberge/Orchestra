@@ -74,7 +74,7 @@ export function HarnessPicker({ providers, provider, disabled, locked, catalog, 
           </div>
 
           <div className="my-4 border-t border-border/60" />
-          <div className="mb-2 flex items-center gap-3"><p className="min-w-0 flex-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Model</p><label className="flex w-48 max-w-[55%] items-center gap-2 rounded-lg border border-border/70 bg-background/50 px-2.5 py-1.5 focus-within:border-primary/40"><Search className="size-3.5 text-muted-foreground" /><input ref={input} aria-label="Search models" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search models" className="min-w-0 flex-1 bg-transparent text-[11px] outline-none placeholder:text-muted-foreground/70" /></label></div>
+          <div className="mb-2 flex items-center gap-3"><p className="min-w-0 flex-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Model</p><label className="flex w-48 max-w-[55%] items-center gap-2 rounded-lg border border-border/70 bg-background/50 px-2.5 py-1.5 focus-within:border-primary/40"><Search className="size-3.5 text-muted-foreground" /><input spellCheck={false} ref={input} aria-label="Search models" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search models" className="min-w-0 flex-1 bg-transparent text-[11px] outline-none placeholder:text-muted-foreground/70" /></label></div>
           <div role="listbox" aria-label="Model for next turn" className="grid max-h-[182px] grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2" onKeyDown={event => {
             if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
             event.preventDefault()

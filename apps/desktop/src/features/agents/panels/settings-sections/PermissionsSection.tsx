@@ -40,6 +40,7 @@ function PermissionList({
       </div>
       <div className="flex gap-1.5">
         <input
+          spellCheck={false}
           value={newValue}
           onChange={e => setNewValue(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && onAdd()}

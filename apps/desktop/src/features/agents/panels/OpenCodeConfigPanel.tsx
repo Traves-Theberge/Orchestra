@@ -207,6 +207,7 @@ function ConfigEditor({ selected, parsed, eyebrow, saving, onSave }: ConfigEdito
 
           <Field label="Default Agent">
             <input
+              spellCheck={false}
               value={state.defaultAgent}
               onChange={(event) => dispatch({ type: 'setDefaultAgent', value: event.target.value })}
               placeholder="build"
@@ -429,6 +430,7 @@ function ListField({
       </div>
       <div className="flex gap-2">
         <input
+          spellCheck={false}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {

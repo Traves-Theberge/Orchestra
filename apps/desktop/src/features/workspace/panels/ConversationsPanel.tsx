@@ -73,6 +73,7 @@ export function ConversationsPanel({ projectId }: { projectId: string }) {
           <div className="relative">
             <Search size={12} className="absolute left-2.5 top-2.5 text-muted-foreground/60" />
             <input
+              spellCheck={false}
               type="text"
               placeholder="Search conversations…"
               value={search}

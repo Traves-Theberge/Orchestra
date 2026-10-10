@@ -225,15 +225,15 @@ function CommandsShell({ items, selected, effectiveSelectedKey, eyebrow, saving,
               <div className="text-[10px] text-foreground/45 font-mono truncate">{selected.path}</div>
               <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-5">
                 <Field label="Description">
-                  <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Run tests with coverage" className="w-full max-w-md h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                  <input spellCheck={true} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Run tests with coverage" className="w-full max-w-md h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20" />
                 </Field>
 
                 <Field label="Agent">
-                  <input value={agent} onChange={(event) => setAgent(event.target.value)} placeholder="build" className="w-full max-w-md h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                  <input spellCheck={false} value={agent} onChange={(event) => setAgent(event.target.value)} placeholder="build" className="w-full max-w-md h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20" />
                 </Field>
 
                 <Field label="Model">
-                  <input value={model} onChange={(event) => setModel(event.target.value)} placeholder="anthropic/claude-sonnet-4-5" className="w-full max-w-md h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                  <input spellCheck={false} value={model} onChange={(event) => setModel(event.target.value)} placeholder="anthropic/claude-sonnet-4-5" className="w-full max-w-md h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20" />
                 </Field>
 
                 <Field label="Prompt">
@@ -295,6 +295,7 @@ function CreateDialog({
         <div className="py-2">
           <label htmlFor={nameId} className="text-xs font-semibold text-muted-foreground mb-1.5 block">Name</label>
           <input
+            spellCheck={false}
             id={nameId}
             value={name}
             onChange={(e) => setName(e.target.value.replace(/[^a-zA-Z0-9._/-]/g, '-'))}

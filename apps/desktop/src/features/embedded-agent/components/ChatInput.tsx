@@ -42,6 +42,7 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled }: ChatInputPr
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <textarea
+            spellCheck={true}
             ref={textareaRef}
             rows={1}
             value={value}

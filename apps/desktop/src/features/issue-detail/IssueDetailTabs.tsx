@@ -146,6 +146,7 @@ export function LogsTab({
             <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-2.5 text-muted-foreground/40" />
               <input
+                spellCheck={false}
                 type="text"
                 placeholder="Filter logs..."
                 value={logFilter}
