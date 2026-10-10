@@ -1,5 +1,7 @@
 export { }
 
+import type { SpellContextMenuPayload, SpellEditAction, SpellSettings } from '../core/spellcheck/spell-bridge'
+
 type BackendConfig = {
   baseUrl: string
   apiToken: string
@@ -50,6 +52,16 @@ declare global {
       /** Chat zoom requests from shortcuts, Ctrl+wheel and pinch. Absent in browser mode. */
       onChatZoom?: (callback: (request: 'in' | 'out' | 'reset') => void) => () => void
       openOAuthWindow?: (provider: string) => Promise<string>
+      /** Spellcheck bridge; all optional because browser mode has no Electron. */
+      onSpellContextMenu?: (callback: (payload: SpellContextMenuPayload) => void) => () => void
+      replaceMisspelling?: (word: string) => Promise<boolean>
+      addToDictionary?: (word: string) => Promise<boolean>
+      /** Accepts the word until the app quits. */
+      ignoreWord?: (word: string) => Promise<boolean>
+      getSpellSettings?: () => Promise<SpellSettings>
+      setSpellLanguages?: (languages: string[]) => Promise<SpellSettings>
+      availableSpellLanguages?: () => Promise<string[]>
+      editAction?: (action: SpellEditAction) => Promise<boolean>
       fs: {
         readDir: (dirPath: string) => Promise<Array<{ name: string; isDirectory: boolean }>>
         readFile: (filePath: string) => Promise<{ content: string; isBinary: boolean; tooLarge?: boolean }>
