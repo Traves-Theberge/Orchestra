@@ -498,6 +498,7 @@ export function FileExplorer() {
             </DialogDescription>
           </DialogHeader>
           <input
+            spellCheck={false}
             type="text"
             value={promptValue}
             onChange={(e) => setPromptValue(e.target.value)}

@@ -41,6 +41,7 @@ import {
   Info,
 } from 'lucide-react'
 import { Button } from '@ui/button'
+import { SpellLanguagesList } from '@ui/spell-languages'
 import {
   Dialog,
   DialogClose,
@@ -504,6 +505,7 @@ export function SettingsPage({
                 </div>
                 <div className="flex items-center gap-2">
                   <input
+                    spellCheck={false}
                     type="text"
                     value={homepageDraft}
                     onChange={(e) => setHomepageDraft(e.target.value)}
@@ -538,9 +540,10 @@ export function SettingsPage({
 
           {/* ── Editor ── */}
           <section data-settings-section="editor" className="rounded-xl transition-colors duration-500 scroll-mt-4">
-            <SectionHeading icon={Type} title="Editor" description="Code editor configuration" />
+            <SectionHeading icon={Type} title="Editor" description="Code editor and spelling" />
             <div className="mt-4">
               <EditorSettingsPane />
+              <SpellingSettingsPane />
             </div>
           </section>
 
@@ -860,6 +863,7 @@ function EditorSettingsPane() {
         <div className="md:col-span-2">
           <p className="text-[9px] font-black uppercase tracking-[0.16em] text-muted-foreground mb-1">Font Family</p>
           <input
+            spellCheck={false}
             value={editorSettings.fontFamily}
             placeholder="Default (inherit from theme)"
             onChange={(e) => setEditorSettings({ fontFamily: e.target.value })}
@@ -928,6 +932,16 @@ function EditorSettingsPane() {
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+function SpellingSettingsPane() {
+  return (
+    <div className="mt-3 p-4 rounded-xl border border-border/40 bg-gradient-to-b from-card via-card to-muted/20">
+      <p className="text-[9px] font-black uppercase tracking-[0.16em] text-muted-foreground mb-1">Spelling Languages</p>
+      <p className="text-[11px] text-muted-foreground/80 mb-2">Prose fields such as chat, issues and commit messages are checked. Right-click a word for suggestions.</p>
+      <SpellLanguagesList className="max-h-64" />
     </div>
   )
 }
@@ -1289,6 +1303,7 @@ function ThemeStudioEditorPane({
           <div className="min-w-0 flex-1">
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary/75">Draft</p>
             <input
+              spellCheck={true}
               value={draft.name}
               onChange={(event) => onDraftNameChange(event.target.value)}
               className="mt-2 w-full rounded-xl border border-border/40 bg-background px-3 py-2 text-lg font-black tracking-tight outline-none focus:ring-2 focus:ring-primary/30"
@@ -1811,6 +1826,7 @@ function RoleEditorCard({
                 className="size-8 shrink-0 cursor-pointer rounded-md border border-border/40 bg-card p-0.5 disabled:cursor-not-allowed"
               />
               <input
+                spellCheck={false}
                 value={hexValue}
                 disabled={disabled}
                 onChange={(event) => {
@@ -1924,6 +1940,7 @@ function ChartPaletteEditor({
                 className="size-8 shrink-0 cursor-pointer rounded-md border border-border/40 bg-card p-0.5"
               />
               <input
+                spellCheck={false}
                 value={hslTripletToHex(stop)}
                 onChange={(event) => {
                   const next = hexToHslTriplet(event.target.value)
@@ -1990,6 +2007,7 @@ function TextField({
     <label className="block">
       <span className="mb-1 block text-[9px] font-black uppercase tracking-[0.16em] text-muted-foreground">{label}</span>
       <input
+        spellCheck={false}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="w-full rounded-lg border border-border/40 bg-card px-3 py-2 text-[11px] outline-none focus:ring-2 focus:ring-primary/20"
@@ -2368,6 +2386,7 @@ function TrackerAuthField({
         {field.label}{field.required && <span className="text-destructive ml-0.5">*</span>}
       </label>
       <input
+        spellCheck={field.key === 'display_name'}
         id={fieldId}
         type={field.type}
         className="w-full h-8 rounded-md border border-border/50 bg-background px-3 text-[12px] text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring/50 transition-colors"
@@ -3160,6 +3179,7 @@ function NewProfileField({
       <label htmlFor={inputId} className="block text-[9px] font-black uppercase tracking-wider text-muted-foreground px-1">New Profile</label>
       <div className="flex gap-2">
         <input
+          spellCheck={true}
           id={inputId}
           className="h-9 flex-1 rounded-lg border border-border bg-background px-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-sm"
           value={newProfileName}
@@ -3205,6 +3225,7 @@ function EndpointUrlField({
           <Globe className="size-3" />
         </div>
         <input
+          spellCheck={false}
           id={inputId}
           className={`h-9 w-full rounded-lg border bg-background pl-8 pr-3 text-xs font-mono focus:ring-2 transition-all shadow-sm ${baseUrlInvalid ? 'border-destructive/60 focus:ring-destructive/20 focus:border-destructive' : 'border-border focus:ring-primary/20 focus:border-primary'}`}
           value={baseUrl}
@@ -3243,6 +3264,7 @@ function AccessTokenField({
           <ShieldCheck className="size-3" />
         </div>
         <input
+          spellCheck={false}
           id={inputId}
           type={showToken ? 'text' : 'password'}
           className="h-9 w-full rounded-lg border border-border bg-background pl-8 pr-9 text-xs font-mono focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-sm"
@@ -3525,6 +3547,7 @@ function UnsandboxConfigForm({ config, disabled }: { config: BackendConfig | nul
           <div className="space-y-1">
             <label htmlFor={publicKeyId} className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Public Key</label>
             <input
+              spellCheck={false}
               id={publicKeyId}
               type="text"
               value={publicKey}
@@ -3540,6 +3563,7 @@ function UnsandboxConfigForm({ config, disabled }: { config: BackendConfig | nul
             </label>
             <div className="relative">
               <input
+                spellCheck={false}
                 id={secretKeyId}
                 type={showSecret ? 'text' : 'password'}
                 value={secretKey}

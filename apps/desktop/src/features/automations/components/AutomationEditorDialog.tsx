@@ -215,6 +215,7 @@ export function AutomationEditorDialog({ config, open, automation, template, onO
           <div className="flex min-w-0 flex-1 flex-col gap-3 p-5">
             <div>
               <input
+                spellCheck={true}
                 aria-label="Automation name"
                 autoFocus
                 value={values.name}
@@ -285,7 +286,7 @@ export function AutomationEditorDialog({ config, open, automation, template, onO
                 <ToggleGroupItem value="new_worktree" aria-label="New worktree"><GitBranch />New worktree</ToggleGroupItem>
               </ToggleGroup>
               {values.project_id && values.workspace_mode === 'new_worktree' ? (
-                <Input aria-label="Base branch" placeholder="Base branch (project default)" value={values.base_branch} onChange={event => set('base_branch', event.target.value)} />
+                <Input spellCheck={false} aria-label="Base branch" placeholder="Base branch (project default)" value={values.base_branch} onChange={event => set('base_branch', event.target.value)} />
               ) : null}
             </RailSection>
 
@@ -310,7 +311,7 @@ export function AutomationEditorDialog({ config, open, automation, template, onO
             </RailSection>
 
             <RailSection label="Precheck" hint="Optional shell command; a non-zero exit skips the scheduled run.">
-              <Input aria-label="Precheck command" className="font-mono" placeholder="e.g. ./scripts/has-changes.sh" value={values.precheck.command}
+              <Input spellCheck={false} aria-label="Precheck command" className="font-mono" placeholder="e.g. ./scripts/has-changes.sh" value={values.precheck.command}
                 onChange={event => set('precheck', { ...values.precheck, command: event.target.value })} />
               <label className="flex items-center gap-2 text-[12px] text-muted-foreground">
                 Timeout

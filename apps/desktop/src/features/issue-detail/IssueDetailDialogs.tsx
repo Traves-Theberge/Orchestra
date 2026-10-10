@@ -57,6 +57,7 @@ export function PRReviewDialog({
             <div className="space-y-2">
               <label htmlFor={titleId} className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 ml-1">PR Title</label>
               <input
+                spellCheck={true}
                 id={titleId}
                 className="w-full bg-muted/30 border border-border/50 rounded-xl px-4 py-3 text-sm font-bold placeholder:text-muted-foreground/20 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
                 value={prTitle}
@@ -67,6 +68,7 @@ export function PRReviewDialog({
             <div className="space-y-2">
               <label htmlFor={descriptionId} className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 ml-1">Description</label>
               <textarea
+                spellCheck={true}
                 id={descriptionId}
                 className="w-full bg-muted/30 border border-border/50 rounded-xl px-4 py-3 text-sm font-medium placeholder:text-muted-foreground/20 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all min-h-[160px] leading-relaxed resize-none"
                 value={prBody}

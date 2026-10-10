@@ -308,6 +308,7 @@ export function UnsandboxTab({
 
         <Field label="Code">
           <textarea
+            spellCheck={false}
             value={code}
             onChange={(e) => setCode(e.target.value)}
             onKeyDown={handleKeyDown}

@@ -72,12 +72,14 @@ export function GitHubIssuesTab({
       {showCreateIssue && (
         <div className="mb-3 p-3 rounded-md bg-muted/20 space-y-2">
           <input
+            spellCheck={true}
             value={newIssueTitle}
             onChange={(e) => setNewIssueTitle(e.target.value)}
             placeholder="Issue title"
             className="w-full h-8 px-3 rounded-md bg-background text-[12px] font-medium placeholder:text-muted-foreground/50 outline-none focus:ring-1 focus:ring-primary/40 transition-all"
           />
           <textarea
+            spellCheck={true}
             value={newIssueBody}
             onChange={(e) => setNewIssueBody(e.target.value)}
             placeholder="Description (optional)"

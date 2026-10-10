@@ -35,6 +35,7 @@ export function FeedbackDialog({ onSubmit, onCancel, hasPR }: FeedbackDialogProp
             : 'Describe what needs to change. Orchestra will return the task to planning with your feedback and prior task context.'}
         </p>
         <textarea
+          spellCheck={true}
           value={feedback}
           onChange={(e) => setFeedback(e.target.value)}
           placeholder="What needs to change?"

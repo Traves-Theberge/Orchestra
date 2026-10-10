@@ -151,6 +151,7 @@ export function BrowserContent({ tab }: BrowserContentProps) {
           }}
         >
           <input
+            spellCheck={false}
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
             className="w-full bg-background border border-border rounded px-2 py-0.5 text-xs text-foreground outline-none focus:border-primary"

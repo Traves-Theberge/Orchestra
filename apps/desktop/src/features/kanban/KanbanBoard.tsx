@@ -1095,6 +1095,7 @@ export function KanbanBoard({
           <div className="py-2">
             <label htmlFor={feedbackId} className="text-xs font-semibold text-muted-foreground mb-1.5 block">Feedback</label>
             <textarea
+              spellCheck={true}
               id={feedbackId}
               value={feedbackText}
               onChange={(e) => setFeedbackText(e.target.value)}

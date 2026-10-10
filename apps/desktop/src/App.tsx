@@ -25,6 +25,7 @@ import { Toaster } from '@ui/sonner'
 import { SectionErrorBoundary } from '@ui/section-error-boundary'
 import { AppCommandPalette } from '@layout/AppCommandPalette'
 import { AppDialogs } from '@layout/AppDialogs'
+import { SpellContextMenuHost } from '@ui/spell-context-menu'
 import {
   useBackendConfig,
   useNotifications,
@@ -622,6 +623,7 @@ export default function App() {
 
       <AppCommandPalette onCreateIssue={handleCreateIssue} onTogglePolling={handleTogglePolling} />
       <Toaster />
+      <SpellContextMenuHost />
     </AppTooltipProvider>
   )
 }

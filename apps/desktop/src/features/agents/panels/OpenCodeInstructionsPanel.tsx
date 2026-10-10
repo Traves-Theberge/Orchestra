@@ -145,6 +145,7 @@ function InstructionsEditor({ selected, parsed, eyebrow, saving, onSave }: Instr
             </div>
             <div className="flex gap-2">
               <input
+                spellCheck={false}
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
                 onKeyDown={(event) => {

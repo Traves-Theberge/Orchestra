@@ -318,6 +318,7 @@ function CreateDialog({
         <div className="py-2">
           <label htmlFor={nameId} className="text-xs font-semibold text-foreground/60 mb-1.5 block">Rule name</label>
           <input
+            spellCheck={false}
             id={nameId}
             value={name}
             onChange={(e) => setName(e.target.value.replace(/[^a-zA-Z0-9._-]/g, ''))}

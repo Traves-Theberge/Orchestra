@@ -54,7 +54,7 @@ export function RunsDashboard({ config, onBack, onOpenRun }: { config: BackendCo
       <div className="flex shrink-0 items-center gap-2 px-4 py-3">
         <label className="relative w-64">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input aria-label="Search runs" placeholder="Search runs" className="pl-8" value={query} onChange={event => setQuery(event.target.value)} />
+          <Input spellCheck={false} aria-label="Search runs" placeholder="Search runs" className="pl-8" value={query} onChange={event => setQuery(event.target.value)} />
         </label>
         <Select value={status} onValueChange={value => setStatus(value as RunStatusFilter)}>
           <SelectTrigger aria-label="Status filter" className="w-40"><SelectValue /></SelectTrigger>

@@ -169,6 +169,7 @@ function StructuredField({ label, value, onChange }: { label: string, value: str
     <section className="space-y-2">
       <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">{label}</h4>
       <input
+        spellCheck={false}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20"

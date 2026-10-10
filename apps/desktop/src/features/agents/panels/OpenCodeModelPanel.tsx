@@ -89,6 +89,7 @@ function OpenCodeModelPanelEditor({ modelConfig, configContent, scope, projectNa
           <section className="space-y-2">
             <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Small Model</h4>
             <input
+              spellCheck={false}
               value={smallModel}
               onChange={(event) => setSmallModel(event.target.value)}
               placeholder="openai/gpt-5.3-codex-spark"

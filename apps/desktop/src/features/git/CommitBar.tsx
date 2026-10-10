@@ -61,6 +61,7 @@ export function CommitBar({
 
       {/* Subject */}
       <input
+        spellCheck={true}
         type="text"
         placeholder="Summary"
         value={subject}
@@ -72,6 +73,7 @@ export function CommitBar({
       {/* Body */}
       {showBody && (
         <textarea
+          spellCheck={true}
           value={body}
           onChange={(e) => setBody(e.target.value)}
           onKeyDown={handleKeyDown}

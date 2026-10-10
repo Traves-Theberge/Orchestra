@@ -32,6 +32,7 @@ export function DescriptionEditor({ value, onChange, onBlur, theme, projectId }:
           </button>
         </div>
         <textarea
+          spellCheck={true}
           ref={textareaRef}
           className="w-full flex-1 bg-transparent text-sm text-foreground font-mono outline-none focus:outline-none placeholder:text-muted-foreground/15 leading-relaxed resize-none p-4"
           value={value}

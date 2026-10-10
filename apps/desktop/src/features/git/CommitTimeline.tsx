@@ -45,6 +45,7 @@ export function CommitTimeline({
         <div className="relative">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50" />
           <input
+            spellCheck={false}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search commits…"

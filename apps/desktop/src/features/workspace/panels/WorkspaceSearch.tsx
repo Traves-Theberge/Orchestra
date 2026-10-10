@@ -110,6 +110,7 @@ export function WorkspaceSearch() {
       {/* Search input + toggles */}
       <div className="px-2 pb-2 flex flex-col gap-1.5">
         <input
+          spellCheck={false}
           ref={inputRef}
           type="text"
           value={searchQuery}

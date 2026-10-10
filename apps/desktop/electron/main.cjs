@@ -1,5 +1,6 @@
-const { app, BrowserWindow, ipcMain, safeStorage, shell, dialog, Menu } = require('electron')
+const { app, BrowserWindow, ipcMain, safeStorage, shell, dialog, Menu, session } = require('electron')
 const { openOAuthWindow } = require('./oauth-handler.cjs')
+const { setupSpellcheck, createSpellcheckStore } = require('./spellcheck.cjs')
 const path = require('node:path')
 const fs = require('node:fs/promises')
 const fsSync = require('node:fs')
@@ -342,6 +343,9 @@ function applyManagedBackendProfile() {
 
 const APP_ICON = path.join(__dirname, 'assets', 'icon.png')
 
+/** @type {Awaited<ReturnType<typeof setupSpellcheck>> | null} */
+let spellcheck = null
+
 // Zoom scales only the chats (the renderer applies it); the window itself stays at 100%.
 function requestChatZoom(win, request) {
   win.webContents.send('orchestra:chat-zoom', request)
@@ -363,8 +367,12 @@ function createWindow() {
       contextIsolation: true,
       sandbox: true,
       webviewTag: true,
+      spellcheck: true,
     },
   })
+
+  // Editable fields get the renderer's spelling menu (or a native fallback).
+  spellcheck?.attach(win.webContents, () => win)
 
   // Remove the menu entirely for a cleaner look
   Menu.setApplicationMenu(null)
@@ -694,6 +702,11 @@ app.whenReady().then(async () => {
     applyManagedBackendProfile()
     await persistProfilesState()
     await loadTokens()
+    try {
+      spellcheck = await setupSpellcheck({ app, session: session.defaultSession, ipcMain, Menu, store: createSpellcheckStore(app.getPath('userData')) })
+    } catch (error) {
+      console.error('Spellcheck setup failed; continuing without the custom menu:', error)
+    }
     createWindow()
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -710,6 +723,7 @@ app.whenReady().then(async () => {
 })
 
 app.on('before-quit', () => {
+  void spellcheck?.shutdown()
   void stopManagedBackend().catch((error) => {
     console.error('Failed to stop managed backend during quit:', error)
   })

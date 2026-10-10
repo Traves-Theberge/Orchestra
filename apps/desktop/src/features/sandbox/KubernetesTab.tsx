@@ -106,6 +106,7 @@ export function KubernetesTab({ config }: { config: BackendConfig | null }) {
         <div className="col-span-2 space-y-1">
           <FieldLabel>Kubeconfig Path</FieldLabel>
           <FieldInput
+            spellCheck={false}
             type="text"
             value={form.kubeconfig_path}
             onChange={(e) => setForm(f => ({ ...f, kubeconfig_path: e.target.value }))}
@@ -116,6 +117,7 @@ export function KubernetesTab({ config }: { config: BackendConfig | null }) {
         <div className="space-y-1">
           <FieldLabel>Namespace</FieldLabel>
           <FieldInput
+            spellCheck={false}
             type="text"
             value={form.namespace}
             onChange={(e) => setForm(f => ({ ...f, namespace: e.target.value }))}
@@ -126,6 +128,7 @@ export function KubernetesTab({ config }: { config: BackendConfig | null }) {
         <div className="space-y-1">
           <FieldLabel>Service Account</FieldLabel>
           <FieldInput
+            spellCheck={false}
             type="text"
             value={form.service_account}
             onChange={(e) => setForm(f => ({ ...f, service_account: e.target.value }))}
@@ -136,6 +139,7 @@ export function KubernetesTab({ config }: { config: BackendConfig | null }) {
         <div className="col-span-2 space-y-1">
           <FieldLabel>Agent Image</FieldLabel>
           <FieldInput
+            spellCheck={false}
             type="text"
             value={form.image}
             onChange={(e) => setForm(f => ({ ...f, image: e.target.value }))}
@@ -146,6 +150,7 @@ export function KubernetesTab({ config }: { config: BackendConfig | null }) {
         <div className="col-span-2 space-y-1">
           <FieldLabel>Git Repo URL</FieldLabel>
           <FieldInput
+            spellCheck={false}
             type="text"
             value={form.git_repo_url}
             onChange={(e) => setForm(f => ({ ...f, git_repo_url: e.target.value }))}

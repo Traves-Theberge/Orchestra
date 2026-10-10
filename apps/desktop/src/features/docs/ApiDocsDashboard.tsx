@@ -112,7 +112,7 @@ export function ApiDocsDashboard({ config }: { config: BackendConfig }) {
         <div className="shrink-0 py-5">
           <label className="flex h-10 items-center gap-2 rounded-md border border-border bg-card px-3 text-muted-foreground focus-within:ring-1 focus-within:ring-primary">
             <Search size={15} />
-            <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Filter by path, method, summary, or tag" className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/60" aria-label="Filter API operations" />
+            <input spellCheck={false} value={query} onChange={event => setQuery(event.target.value)} placeholder="Filter by path, method, summary, or tag" className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/60" aria-label="Filter API operations" />
             <span className="text-xs tabular-nums">{filtered.length}/{operations.length}</span>
           </label>
         </div>

@@ -193,6 +193,7 @@ function CodexModelPanelInner({ modelConfig, configContent, scope, projectName, 
           <section className="space-y-2">
             <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">Model Provider</h4>
             <input
+              spellCheck={false}
               value={state.provider}
               onChange={(event) => dispatch({ type: 'set-provider', value: event.target.value })}
               placeholder="openai"
@@ -234,6 +235,7 @@ function ProviderField({ label, value, onChange, placeholder }: { label: string,
     <section className="space-y-2">
       <h4 className="text-[10px] font-semibold uppercase tracking-widest text-foreground/45">{label}</h4>
       <input
+        spellCheck={false}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}

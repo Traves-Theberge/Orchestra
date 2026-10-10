@@ -82,6 +82,7 @@ function PRCreateForm({
           <div>
             <label htmlFor={titleId} className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50 mb-1 block">Title</label>
             <input
+              spellCheck={true}
               id={titleId}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -93,6 +94,7 @@ function PRCreateForm({
           <div>
             <label htmlFor={bodyId} className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50 mb-1 block">Description</label>
             <textarea
+              spellCheck={true}
               id={bodyId}
               value={body}
               onChange={(e) => setBody(e.target.value)}
@@ -106,6 +108,7 @@ function PRCreateForm({
             <div className="flex-1">
               <label htmlFor={baseId} className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50 mb-1 block">Base branch</label>
               <input
+                spellCheck={false}
                 id={baseId}
                 value={base}
                 onChange={(e) => setBase(e.target.value)}

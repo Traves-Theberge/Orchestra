@@ -102,6 +102,7 @@ export function TailscaleTab({ config }: { config: BackendConfig | null }) {
         <div className="space-y-1">
           <FieldLabel>SSH Host</FieldLabel>
           <FieldInput
+            spellCheck={false}
             type="text"
             value={form.ssh_host}
             onChange={(e) => setForm(f => ({ ...f, ssh_host: e.target.value }))}
@@ -122,6 +123,7 @@ export function TailscaleTab({ config }: { config: BackendConfig | null }) {
         <div className="space-y-1">
           <FieldLabel>SSH User</FieldLabel>
           <FieldInput
+            spellCheck={false}
             type="text"
             value={form.ssh_user}
             onChange={(e) => setForm(f => ({ ...f, ssh_user: e.target.value }))}
@@ -132,6 +134,7 @@ export function TailscaleTab({ config }: { config: BackendConfig | null }) {
         <div className="space-y-1">
           <FieldLabel>SSH Key Path</FieldLabel>
           <FieldInput
+            spellCheck={false}
             type="text"
             value={form.ssh_key_path}
             onChange={(e) => setForm(f => ({ ...f, ssh_key_path: e.target.value }))}
@@ -142,6 +145,7 @@ export function TailscaleTab({ config }: { config: BackendConfig | null }) {
         <div className="col-span-2 space-y-1">
           <FieldLabel>Worktree Root</FieldLabel>
           <FieldInput
+            spellCheck={false}
             type="text"
             value={form.worktree_root}
             onChange={(e) => setForm(f => ({ ...f, worktree_root: e.target.value }))}

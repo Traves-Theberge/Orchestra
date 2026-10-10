@@ -70,6 +70,7 @@ export function ScheduleEditor({ config, schedule, onChange, error }: {
       {schedule.kind === 'cron' ? (
         <div className="space-y-2">
           <Input
+            spellCheck={false}
             aria-label="Cron expression"
             placeholder="0 9 * * 1-5"
             className="font-mono"

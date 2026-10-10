@@ -560,6 +560,7 @@ export function AgentCatalogRow({
 
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <input
+                  spellCheck={true}
                   aria-label="New account label"
                   value={accountLabel}
                   maxLength={80}
@@ -676,6 +677,7 @@ export function AgentCatalogRow({
               </p>
             )}
             <textarea
+              spellCheck={false}
               id={`harness-command-${id}`}
               aria-label="Command template"
               rows={2}

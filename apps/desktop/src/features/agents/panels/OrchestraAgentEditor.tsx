@@ -105,11 +105,11 @@ export function OrchestraAgentEditor({ config, agent, projectId, template, capab
         <div className="flex min-w-0 flex-1 flex-col gap-3 p-5">
           <div className="flex items-center gap-3">
             <span aria-hidden="true" className="size-3 shrink-0 rounded-full" style={{ backgroundColor: agentColor(values.color, values.name || 'new') }} />
-            <input aria-label="Agent name" autoFocus={!editing} value={values.name} disabled={editing} aria-invalid={!!errors.name} onChange={event => set('name', event.target.value)} placeholder="agent-name"
+            <input spellCheck={false} aria-label="Agent name" autoFocus={!editing} value={values.name} disabled={editing} aria-invalid={!!errors.name} onChange={event => set('name', event.target.value)} placeholder="agent-name"
               className="min-w-0 flex-1 bg-transparent text-[20px] font-semibold tracking-tight outline-none placeholder:text-muted-foreground/60 disabled:opacity-80" />
           </div>
           {errors.name ? <p className="-mt-2 text-[11px] text-red-500">{errors.name}</p> : null}
-          <Input aria-label="Description" value={values.description} aria-invalid={!!errors.description} onChange={event => set('description', event.target.value)} placeholder="What this agent is for (shown in pickers)" />
+          <Input spellCheck={true} aria-label="Description" value={values.description} aria-invalid={!!errors.description} onChange={event => set('description', event.target.value)} placeholder="What this agent is for (shown in pickers)" />
           {errors.description ? <p className="text-[11px] text-red-500">{errors.description}</p> : null}
           <div className="flex min-h-0 flex-1 flex-col gap-1.5">
             <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Prompt</span>
@@ -142,11 +142,11 @@ export function OrchestraAgentEditor({ config, agent, projectId, template, capab
           <Field label="Color" htmlFor="agent-color" error={errors.color}>
             <div className="flex items-center gap-2">
               <input id="agent-color" type="color" aria-label="Agent color" value={values.color || agentColor('', values.name || 'new')} onChange={event => set('color', event.target.value)} className="h-8 w-10 cursor-pointer rounded border border-border bg-transparent" />
-              <Input aria-label="Color hex" value={values.color} placeholder="auto" onChange={event => set('color', event.target.value)} className="font-mono" />
+              <Input spellCheck={false} aria-label="Color hex" value={values.color} placeholder="auto" onChange={event => set('color', event.target.value)} className="font-mono" />
             </div>
           </Field>
           <Field label="Model" htmlFor="agent-model" hint="Optional. A per-message model choice overrides it.">
-            <Input id="agent-model" aria-label="Model" value={values.model} placeholder="Harness default" onChange={event => set('model', event.target.value)} />
+            <Input spellCheck={false} id="agent-model" aria-label="Model" value={values.model} placeholder="Harness default" onChange={event => set('model', event.target.value)} />
           </Field>
           <Field label="Effort">
             <Select value={values.effort || DEFAULT} onValueChange={value => set('effort', value === DEFAULT ? '' : value)}>

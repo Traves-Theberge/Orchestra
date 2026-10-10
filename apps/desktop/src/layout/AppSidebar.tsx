@@ -972,6 +972,7 @@ function DocsSubNav({ onBack }: { onBack: () => void }) {
         <div className="relative flex-1">
           <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 pointer-events-none" />
           <input
+            spellCheck={false}
             type="text"
             placeholder="Search…"
             value={searchQuery}

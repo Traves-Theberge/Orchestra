@@ -642,6 +642,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
                         {sourceType && sourceType !== 'sqlite' && sourceType !== 'linear' && sourceType !== 'jira' && (
                             <input
+                                spellCheck={false}
                                 type="password"
                                 value={sourceToken}
                                 onChange={(e) => { setSourceToken(e.target.value); setSourceTestResult(null); setTrackerProjects([]); setShowProjectPicker(false) }}
@@ -696,6 +697,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                     {sourceType === 'github' && (
                         <div className="flex items-center gap-2 flex-wrap">
                             <input
+                                spellCheck={false}
                                 type="text"
                                 value={sourceEndpoint}
                                 onChange={(e) => { setSourceEndpoint(e.target.value); setSourceTestResult(null) }}
@@ -846,6 +848,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                                         <div className="relative">
                                             <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50" />
                                             <input
+                                                spellCheck={false}
                                                 type="text"
                                                 value={fileQuery}
                                                 onChange={(e) => setFileQuery(e.target.value)}
