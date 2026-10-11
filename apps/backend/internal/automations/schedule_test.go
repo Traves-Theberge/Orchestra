@@ -139,33 +139,34 @@ func TestNextNeverFires(t *testing.T) {
 
 func TestNextDSTTransitions(t *testing.T) {
 	edm := mustLoc(t, "America/Edmonton")
-	// 2026-03-08 02:00 MST -> 03:00 MDT.
+	// Use historical transitions: Edmonton stopped changing clocks in 2026.
+	// 2025-03-09 02:00 MST -> 03:00 MDT.
 	daily, _ := Compile(Schedule{Kind: "daily", Time: "02:30", Timezone: "America/Edmonton"})
-	got := daily.NextN(time.Date(2026, 3, 7, 3, 0, 0, 0, edm), 3)
+	got := daily.NextN(time.Date(2025, 3, 8, 3, 0, 0, 0, edm), 3)
 	want := []time.Time{
-		time.Date(2026, 3, 8, 3, 0, 0, 0, edm), // gap: fires at the first instant after it
-		time.Date(2026, 3, 9, 2, 30, 0, 0, edm),
+		time.Date(2025, 3, 9, 3, 0, 0, 0, edm), // gap: fires at the first instant after it
+		time.Date(2025, 3, 10, 2, 30, 0, 0, edm),
 	}
 	if !got[0].Equal(want[0]) || !got[1].Equal(want[1]) {
 		t.Fatalf("spring forward daily: %v", got)
 	}
-	if got[0].Sub(time.Date(2026, 3, 7, 2, 30, 0, 0, edm)) != 23*time.Hour+30*time.Minute {
+	if got[0].Sub(time.Date(2025, 3, 8, 2, 30, 0, 0, edm)) != 23*time.Hour+30*time.Minute {
 		t.Fatalf("gap instant wrong: %v", got[0])
 	}
 	hourly, _ := Compile(Schedule{Kind: "hourly", Minute: 30, Timezone: "America/Edmonton"})
-	got = hourly.NextN(time.Date(2026, 3, 8, 1, 0, 0, 0, edm), 2)
-	if !got[0].Equal(time.Date(2026, 3, 8, 1, 30, 0, 0, edm)) || got[1].Sub(got[0]) != time.Hour {
+	got = hourly.NextN(time.Date(2025, 3, 9, 1, 0, 0, 0, edm), 2)
+	if !got[0].Equal(time.Date(2025, 3, 9, 1, 30, 0, 0, edm)) || got[1].Sub(got[0]) != time.Hour {
 		t.Fatalf("spring forward hourly must skip the missing wall hour without duplicates: %v", got)
 	}
-	// 2026-11-01 02:00 MDT -> 01:00 MST: 01:30 happens twice but fires once.
+	// 2025-11-02 02:00 MDT -> 01:00 MST: 01:30 happens twice but fires once.
 	fall, _ := Compile(Schedule{Kind: "daily", Time: "01:30", Timezone: "America/Edmonton"})
-	got = fall.NextN(time.Date(2026, 10, 31, 12, 0, 0, 0, edm), 2)
-	if got[0].Day() != 1 || got[0].Hour() != 1 || got[0].Minute() != 30 || got[1].Day() != 2 || got[1].Hour() != 1 {
+	got = fall.NextN(time.Date(2025, 11, 1, 12, 0, 0, 0, edm), 2)
+	if got[0].Day() != 2 || got[0].Hour() != 1 || got[0].Minute() != 30 || got[1].Day() != 3 || got[1].Hour() != 1 {
 		t.Fatalf("fall back daily: %v", got)
 	}
 	weekdays, _ := Compile(Schedule{Kind: "weekdays", Time: "09:00", Timezone: "America/Edmonton"})
-	got = weekdays.NextN(time.Date(2026, 10, 30, 10, 0, 0, 0, edm), 1) // Friday
-	if !got[0].Equal(time.Date(2026, 11, 2, 9, 0, 0, 0, edm)) || got[0].UTC().Hour() != 16 {
+	got = weekdays.NextN(time.Date(2025, 10, 31, 10, 0, 0, 0, edm), 1) // Friday
+	if !got[0].Equal(time.Date(2025, 11, 3, 9, 0, 0, 0, edm)) || got[0].UTC().Hour() != 16 {
 		t.Fatalf("weekday across fall back must keep 09:00 wall time: %v (%v)", got[0], got[0].UTC())
 	}
 }
