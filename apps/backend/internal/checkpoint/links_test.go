@@ -494,6 +494,13 @@ func TestIgnoreCheckerFallsBackWhenTheProcessDies(t *testing.T) {
 			if err := chk.p.cmd.Process.Kill(); err != nil {
 				t.Fatal(err)
 			}
+			// Windows Kill requests termination asynchronously. Reap the process
+			// before sending the batch that must exercise the dead-process fallback.
+			// Closing stdin also lets a Git for Windows launcher child exit.
+			_ = chk.p.stdin.Close()
+			if err := chk.p.cmd.Wait(); err == nil {
+				t.Fatal("killed check-ignore process unexpectedly succeeded")
+			}
 		}
 		got, err := chk.check(paths)
 		if err != nil {

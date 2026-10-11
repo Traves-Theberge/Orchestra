@@ -28,6 +28,12 @@ func TestWindowsShortAndLongWorkspaceRoots(t *testing.T) {
 		t.Fatalf("short path length %d", n)
 	}
 	short := windows.UTF16ToString(buf[:n])
+	if IDForGitWorktree("project", short) != IDForGitWorktree("project", root) {
+		t.Fatal("short and long aliases produced different workspace identities")
+	}
+	if IDForGitWorktree("project", filepath.Join(short, "future")) != IDForGitWorktree("project", filepath.Join(root, "future")) {
+		t.Fatal("uncreated checkout aliases produced different workspace identities")
+	}
 	if strings.EqualFold(short, root) {
 		t.Skip("volume does not expose short names")
 	}

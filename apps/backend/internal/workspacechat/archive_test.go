@@ -245,7 +245,11 @@ func TestArchiveMaterializesLegacyBindingOnlyForPrimaryRoot(t *testing.T) {
 		t.Fatalf("legacy root archive: %+v %v", archived, err)
 	}
 	var storedID, storedPath string
-	if err = database.QueryRow(`SELECT workspace_id,cwd FROM workspace_chat_workspaces WHERE session_id=?`, rootSession.ID).Scan(&storedID, &storedPath); err != nil || storedID != rootSession.WorkspaceID || storedPath != repo {
+	canonicalRepo, err := filepath.EvalSymlinks(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = database.QueryRow(`SELECT workspace_id,cwd FROM workspace_chat_workspaces WHERE session_id=?`, rootSession.ID).Scan(&storedID, &storedPath); err != nil || storedID != rootSession.WorkspaceID || storedPath != canonicalRepo {
 		t.Fatalf("archive did not persist exact root binding: %q %q %v", storedID, storedPath, err)
 	}
 	archives, err := svc.ArchivedCatalog(context.Background(), pid)

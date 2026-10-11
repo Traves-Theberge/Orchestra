@@ -30,6 +30,9 @@ type GitWorktree struct {
 // not change when the branch or HEAD changes, and survives process updates.
 func IDForGitWorktree(projectID, canonicalPath string) string {
 	path := filepath.Clean(canonicalPath)
+	if resolved, err := CanonicalPath(path); err == nil {
+		path = resolved
+	}
 	if runtime.GOOS == "windows" {
 		path = strings.ToLower(path)
 	}

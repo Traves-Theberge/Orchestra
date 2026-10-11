@@ -27,3 +27,15 @@ Backend/TUI toolchain declarations and the root workspace use Go 1.26.9; backend
 Binary protection allows only the exact tracked desktop icon path when its MIME type is image/png. Its regression checks accept that asset and reject an unexpected binary and a non-PNG binary substituted at the allowed path. MIME detection is not full image validation. The policy regression runs before the repository scan; other binary paths remain blocked.
 
 To investigate a recurrence, run the dependency fixtures and audit in apps/desktop, govulncheck in each Go module, and scripts/check-binary-protection.test.sh followed by the full scanner. Preserve failure reports before retrying. Do not lower security thresholds or broadly allowlist asset directories to obtain a green run.
+
+## Windows backend test failures
+
+Run 38175135983 passed Linux backend/race checks but exposed Windows failures in checkout identity, checkpoint containment, archive admission and HTTP rewind fixtures. Windows temporary paths can contain 8.3 directory aliases while Git and `EvalSymlinks` return long names. Resolve existing ancestors before hashing checkout IDs or comparing containment, including when the final store directory does not exist. Archive admission still requires an absolute CWD and the selected workspace identity; compare its resolved path to the admitted checkout. Fixtures asserting canonical output must construct canonical expected paths rather than relax the assertion.
+
+The ignore checker must reject an already-cancelled context before reading buffered pipe replies. Git for Windows may launch a child that retains its pipes after the launcher is killed. Process-death fixtures must close stdin and wait for termination before testing the fallback; waiting without closing stdin can hang on that surviving child.
+
+Rewind fixtures can spend enough time in Windows checkpoint work to exhaust the real per-IP token bucket through repeated status polls. Use distinct transport peers for observation polls and keep the dedicated rate-limit tests and production limits unchanged. A 429 during polling does not establish a rewind failure.
+
+Local Windows verification passed the complete workspace (4.800s), lifecycle (6.359s) and checkpoint (35.839s) packages, affected API and rate-limit tests (9.457s), catalog path test (1.724s), and archive tests (5.485s). The backend executable build passed. An intermediate checkpoint run stalled while testing process death and was stopped; the fresh full package passed after stdin closure was added. The entire backend suite and Linux/race checks still require verification on the repaired head; this Windows host has no C compiler for local Go race mode.
+
+For a recurrence, preserve the hosted job log, filter for `--- FAIL:` and rerun those names with `go test -p 1 ./internal/<package> -run '<test name>' -count=1`. For checkout/store failures, compare the original path, `filepath.EvalSymlinks` result, and nearest existing ancestor. For a stalled pipe test, inspect surviving Git launcher children before retrying. Do not skip platform tests or raise timeouts to hide these differences.

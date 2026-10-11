@@ -17,6 +17,8 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+
+	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
 )
 
 // ErrUnavailable means git is missing or the shadow store is unusable.
@@ -193,6 +195,9 @@ func samePathOrInside(child, parent string) bool {
 }
 
 func resolve(p string) string {
+	if resolved, err := workspace.CanonicalPath(p); err == nil {
+		return resolved
+	}
 	abs, err := filepath.Abs(p)
 	if err != nil {
 		abs = filepath.Clean(p)

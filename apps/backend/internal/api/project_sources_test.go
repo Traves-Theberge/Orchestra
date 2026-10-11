@@ -29,6 +29,10 @@ func TestProjectSourcesHTTPRealGit(t *testing.T) {
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	router, database := newTestRouterWithDB(t)
 	parent := t.TempDir()
+	parent, err := filepath.EvalSymlinks(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
 	create := func(source, name, remote string) string {
 		t.Helper()
 		body, _ := json.Marshal(map[string]string{"root_path": parent, "source": source, "name": name, "remote_url": remote})

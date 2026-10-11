@@ -119,8 +119,12 @@ func isWithinRoot(root string, path string) bool {
 	return rel != "." && rel != "" && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
 
-// Resolve existing ancestors on both sides of a comparison. On Windows this
-// also expands short names; unresolved children may still be provisioned later.
+// CanonicalPath resolves aliases through the nearest existing ancestor. On
+// Windows this also expands short names; unresolved children may be provisioned later.
+func CanonicalPath(path string) (string, error) {
+	return canonicalPath(path)
+}
+
 func canonicalPath(path string) (string, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {

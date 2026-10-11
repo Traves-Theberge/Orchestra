@@ -16,6 +16,10 @@ import (
 func testService(t *testing.T) (*Service, *db.DB, string) {
 	t.Helper()
 	home := t.TempDir()
+	home, err := filepath.EvalSymlinks(home)
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	database, err := db.Connect(filepath.Join(t.TempDir(), "catalog.sqlite"))

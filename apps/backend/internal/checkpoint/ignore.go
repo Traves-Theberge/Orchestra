@@ -97,6 +97,9 @@ func startIgnoreProc(ctx context.Context, g gitRun) (*ignoreProc, error) {
 // check reports, for each slash-separated path relative to the work tree,
 // whether ignore rules exclude it.
 func (c *ignoreChecker) check(paths []string) ([]bool, error) {
+	if err := c.ctx.Err(); err != nil {
+		return nil, err
+	}
 	if c.closed {
 		return nil, fmt.Errorf("git check-ignore: checker already closed")
 	}
