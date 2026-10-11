@@ -18,8 +18,14 @@ on:
       - 'packages/test-fixtures/**'
       - '.github/workflows/orchestra-desktop-smoke.yml'
   schedule:
-    - cron: '0 7 * * *'
+    # Keep a dependency-drift check without paying for idle daily native builds.
+    - cron: '0 7 * * 1'
   workflow_dispatch:
+    inputs:
+      native:
+        description: 'Also validate Windows Electron (uses additional runner minutes)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -33,9 +39,11 @@ concurrency:
 
 jobs:
   desktop-smoke:
+    timeout-minutes: 20
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        # Native acceptance remains available, but only on an explicit dispatch.
+        os: ${{ github.event_name == 'workflow_dispatch' && inputs.native && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -67,7 +75,7 @@ jobs:
         run: npm run test
 
       - name: Test evidence gate
-        run: node --test scripts/release-readiness.test.mjs scripts/fixture-environment.test.mjs scripts/security-dependencies.test.mjs electron/managed-backend.test.cjs electron/spellcheck.test.cjs
+        run: node --test scripts/ci-budget.test.mjs scripts/release-readiness.test.mjs scripts/fixture-environment.test.mjs scripts/security-dependencies.test.mjs electron/managed-backend.test.cjs electron/spellcheck.test.cjs
 
       - name: Build renderer
         run: npm run build
@@ -91,3 +99,4 @@ jobs:
           name: orchestra-desktop-release-readiness-report-${{ matrix.os }}
           path: apps/desktop/reports
           if-no-files-found: ignore
+          retention-days: 3
