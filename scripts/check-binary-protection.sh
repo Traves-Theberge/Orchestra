@@ -114,6 +114,12 @@ is_text_file() {
 
 is_allowed_binary_path() {
   local path="$1"
+  # Electron needs this tracked icon. Match its exact path and PNG MIME so the
+  # asset exception cannot admit executables or arbitrary binaries beside it.
+  if [[ "$path" == "apps/desktop/electron/assets/icon.png" ]]; then
+    [[ "$(file --brief --mime-type "$path" 2>/dev/null || true)" == "image/png" ]]
+    return
+  fi
   is_match "$path" "${ALLOWED_BINARY_PATHS[@]}"
 }
 

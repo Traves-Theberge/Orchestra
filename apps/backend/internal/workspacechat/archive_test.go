@@ -245,7 +245,11 @@ func TestArchiveMaterializesLegacyBindingOnlyForPrimaryRoot(t *testing.T) {
 		t.Fatalf("legacy root archive: %+v %v", archived, err)
 	}
 	var storedID, storedPath string
-	if err = database.QueryRow(`SELECT workspace_id,cwd FROM workspace_chat_workspaces WHERE session_id=?`, rootSession.ID).Scan(&storedID, &storedPath); err != nil || storedID != rootSession.WorkspaceID || storedPath != repo {
+	canonicalRepo, err := filepath.EvalSymlinks(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = database.QueryRow(`SELECT workspace_id,cwd FROM workspace_chat_workspaces WHERE session_id=?`, rootSession.ID).Scan(&storedID, &storedPath); err != nil || storedID != rootSession.WorkspaceID || storedPath != canonicalRepo {
 		t.Fatalf("archive did not persist exact root binding: %q %q %v", storedID, storedPath, err)
 	}
 	archives, err := svc.ArchivedCatalog(context.Background(), pid)
@@ -271,7 +275,7 @@ func TestArchiveMaterializesLegacyBindingOnlyForPrimaryRoot(t *testing.T) {
 	}
 	defer reopened.Close()
 	reopenedArchives, err := reopened.ArchivedCatalog(context.Background(), pid)
-	if err != nil || len(reopenedArchives) != 1 || reopenedArchives[0].WorkspaceID != archived.WorkspaceID || reopenedArchives[0].WorkspacePath != repo {
+	if err != nil || len(reopenedArchives) != 1 || reopenedArchives[0].WorkspaceID != archived.WorkspaceID || reopenedArchives[0].WorkspacePath != canonicalRepo {
 		t.Fatalf("archive binding did not survive database reopen: %+v %v", reopenedArchives, err)
 	}
 	if _, err = reopened.Unarchive(context.Background(), pid, rootSession.ID, ArchiveRequest{WorkspaceID: archived.WorkspaceID, CWD: repo, ExpectedStatus: "idle", ExpectedVersion: 1}); err != nil {
@@ -315,7 +319,11 @@ func TestArchiveRejectsPendingRemovalFence(t *testing.T) {
 	if err = database.QueryRow(`SELECT workspace_id FROM workspace_chat_workspaces WHERE session_id=?`, session.ID).Scan(&workspaceID); err != nil {
 		t.Fatal(err)
 	}
-	receipt, _ := json.Marshal(map[string]any{"path": repo})
+	canonicalRepo, err := filepath.EvalSymlinks(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, _ := json.Marshal(map[string]any{"path": canonicalRepo})
 	if _, err = database.Exec(`INSERT INTO worktree_removal_requests(request_id,project_id,workspace_id,digest,receipt,status) VALUES('pending-1',?,?,?,?, 'pending')`, pid, workspaceID, "digest", string(receipt)); err != nil {
 		t.Fatal(err)
 	}

@@ -13,6 +13,10 @@ func TestListGitWorktreesKeepsRegisteredLinkedCheckoutPrimaryAndFiltersRoots(t *
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	t.Setenv("GIT_TERMINAL_PROMPT", "0")
 	root := t.TempDir()
+	root, err := canonicalPath(root)
+	if err != nil {
+		t.Fatal(err)
+	}
 	repository := filepath.Join(root, "repo")
 	linked := filepath.Join(root, "linked checkout")
 	run := func(args ...string) {

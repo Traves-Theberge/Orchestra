@@ -56,6 +56,7 @@ type rewindHarness struct {
 	router http.Handler
 	chat   *workspacechat.Service
 	runner *gatedRunner
+	polls  int
 }
 
 // newRewindHarness serves a real chat service over a temp project folder with
@@ -116,7 +117,15 @@ func (h *rewindHarness) detail() workspacechat.Detail {
 	var d workspacechat.Detail
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		status, data := h.call("GET", h.base, "")
+		// Polling observes asynchronous checkpoint work, rather than testing
+		// request throttling. Use a distinct transport peer per observation.
+		h.polls++
+		req := httptest.NewRequest("GET", h.base, nil)
+		req.Header.Set("Authorization", "Bearer fixture-token")
+		req.RemoteAddr = "[2001:db8::" + strconv.FormatInt(int64(h.polls), 16) + "]:1"
+		rec := httptest.NewRecorder()
+		h.router.ServeHTTP(rec, req)
+		status, data := rec.Code, rec.Body.Bytes()
 		if status != 200 {
 			h.t.Fatalf("detail %d %s", status, data)
 		}

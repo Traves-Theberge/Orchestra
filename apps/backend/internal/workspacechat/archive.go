@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+
+	"github.com/orchestra/orchestra/apps/backend/internal/workspace"
 )
 
 // ArchiveRequest is an optimistic, checkout-scoped lifecycle mutation.
@@ -98,7 +100,8 @@ func (s *Service) setArchived(ctx context.Context, projectID, sessionID string, 
 			return Session{}, err
 		}
 	}
-	if id != req.WorkspaceID || cwd != req.CWD {
+	requestCWD, pathErr := workspace.CanonicalPath(req.CWD)
+	if id != req.WorkspaceID || pathErr != nil || cwd != requestCWD {
 		return Session{}, ErrForbidden
 	}
 	sess, err := scanSession(s.db.QueryRowContext(ctx, `SELECT `+sessionFields+` FROM workspace_chat_sessions WHERE project_id=? AND id=?`, projectID, sessionID))

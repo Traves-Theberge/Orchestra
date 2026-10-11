@@ -27,6 +27,9 @@ jobs:
       run: |
         chmod +x scripts/check-binary-protection.sh
 
+    - name: Verify binary protection policy
+      run: bash scripts/check-binary-protection.test.sh
+
     - name: 🔍 Scan for blocked binaries and sensitive files
       run: |
         ./scripts/check-binary-protection.sh --repo
